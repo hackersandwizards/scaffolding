@@ -606,3 +606,62 @@ describe("check-staged", () => {
     expect(r.out).toContain("admin-check not installed");
   });
 });
+
+describe("chrome", () => {
+  test("CHROME_BINARY wins, else the newest cached build of this platform, the shell on request", async () => {
+    const { cachedChrome, chromeBinary } = await import("../lib/chrome.ts");
+    const cache = temp();
+    const platform =
+      process.platform === "darwin" ? (process.arch === "arm64" ? "mac_arm" : "mac") : "linux";
+    const exe =
+      process.platform === "darwin"
+        ? "Google Chrome for Testing.app/Contents/MacOS/Google Chrome for Testing"
+        : "chrome";
+    const plant = (kind: string, build: string, file: string) => {
+      const path = join(cache, kind, build, `${kind}-x`, file);
+      write("/", { [path]: "" });
+      return path;
+    };
+    plant("chrome", `${platform}-9.0.1`, exe);
+    const newest = plant("chrome", `${platform}-10.0.1`, exe);
+    plant("chrome", `other-99.0.0`, exe);
+    const shell = plant("chrome-headless-shell", `${platform}-10.0.1`, "chrome-headless-shell");
+    const saved = { ...process.env };
+    process.env.PUPPETEER_CACHE_DIR = cache;
+    delete process.env.CHROME_BINARY;
+    try {
+      expect(cachedChrome()).toBe(newest);
+      expect(cachedChrome({ shell: true })).toBe(shell);
+      process.env.CHROME_BINARY = "/opt/own-chrome";
+      expect(chromeBinary()).toBe("/opt/own-chrome");
+    } finally {
+      process.env = saved;
+    }
+  });
+});
+
+describe("serve", () => {
+  test("two servers started at once get their own ports; one that exits fails at once", async () => {
+    const { serve } = await import("../lib/serve.ts");
+    const app = join(temp(), "app.ts");
+    writeFileSync(
+      app,
+      "Bun.serve({ hostname: process.env.HOST, port: Number(process.env.PORT), fetch: () => new Response(process.env.PORT) });\n",
+    );
+    const [a, b] = await Promise.all([
+      serve([process.execPath, app]),
+      serve([process.execPath, app]),
+    ]);
+    try {
+      expect(a.url).not.toBe(b.url);
+      expect(await (await fetch(a.url)).text()).toBe(new URL(a.url).port);
+      expect(await (await fetch(b.url)).text()).toBe(new URL(b.url).port);
+    } finally {
+      a.stop();
+      b.stop();
+    }
+    const started = Date.now();
+    await expect(serve([process.execPath, "-e", "process.exit(3)"])).rejects.toThrow("it exited");
+    expect(Date.now() - started).toBeLessThan(5_000);
+  });
+});

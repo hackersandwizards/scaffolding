@@ -21,7 +21,9 @@
     "./eslint/astro": "./config/eslint-astro.js",
     "./tsconfig/bun.json": "./config/tsconfig.bun.json",
     "./tsconfig/astro.json": "./config/tsconfig.astro.json",
-    "./prettier": "./config/prettier.js"
+    "./prettier": "./config/prettier.js",
+    "./chrome": "./lib/chrome.ts",
+    "./serve": "./lib/serve.ts"
   },
   "files": [
     "bin",
