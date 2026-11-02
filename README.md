@@ -5,7 +5,7 @@ skeleton every repository starts from, the commands its gate runs, the configs i
 shell of its catalog.
 
 ```sh
-bun add -d github:hackersandwizards/scaffolding#v0.3.2
+bun add -d github:hackersandwizards/scaffolding#v0.3.3
 ```
 
 ## Commands
@@ -81,12 +81,24 @@ export default defineConfig({
 
 The shell (`catalog/`: Layout, Home, rail, tiles and `catalog.css`) reads brand's token roles by
 name only, and the repository's `css` supplies them. Options beyond the four above: `title`
-(default "Catalog"), `href`, `previews`, `previewStates` (the story names a tile draws and links first, such as `["light"]`), `head`, `header` (default brand's `AppHeader` and
+(default "Catalog"), `href` (default the site's root, Astro's `base`), `previews`, `previewStates` (the story names a tile draws and links first, such as `["light"]`), `head`, `header` (default brand's `AppHeader` and
 `header.css`) and `home`, a page of the repository that renders `Home.astro` with its foundations
 in the default slot and a control such as a theme toggle in the `nav` slot. `copy` lists globs, relative to the
 repository, of files the built pages reach by a relative path rather than through Vite, such as
 brand's stylesheets under `node_modules`: each match lands in the build at the same path, and a
-pattern matching nothing fails the build.
+pattern matching nothing fails the build. With `CI=true`, a copied file that is still a Git LFS
+pointer fails it too.
+
+A project Pages site, published under `/<repo>/`, sets Astro's `base: "/<repo>"` in its
+`defineConfig`; the catalog's links and the header's default link follow it.
+
+Under an agent, `astro dev` moves itself into the background, and with `--root catalog` that
+background server resolves `catalog` from inside `catalog/`, so the command waits 30 s for it and
+fails. `ASTRO_DEV_BACKGROUND=1` keeps it in the foreground and changes nothing for a person:
+
+```json
+{ "dev": "ASTRO_DEV_BACKGROUND=1 bun --bun astro dev --root catalog", "catalog": "bun run dev" }
+```
 
 **CSS origin.** In a repository's sources, a stylesheet from a company package comes only from
 brand's `exports`; the shell's styles load only under `catalog/`; no other company package's CSS
@@ -153,7 +165,7 @@ publishes `dist/`:
 ```yaml
 jobs:
   pages:
-    uses: hackersandwizards/scaffolding/.github/workflows/pages.yml@v0.3.2
+    uses: hackersandwizards/scaffolding/.github/workflows/pages.yml@v0.3.3
     permissions:
       contents: read
       pages: write

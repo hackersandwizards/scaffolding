@@ -13,12 +13,17 @@ export function git(args: string[], cwd = process.cwd()): Buffer {
 export const repoRoot = (cwd = process.cwd()) =>
   git(["rev-parse", "--show-toplevel"], cwd).toString().trim();
 
-/** Tracked files, or with `staged` the added, copied, modified and renamed paths in the index. */
+/**
+ * The working tree's files, tracked and untracked but not ignored, so a file the next commit adds
+ * is judged before the commit hook sees it; with `staged`, the added, copied, modified and renamed
+ * paths in the index.
+ */
 export function listFiles(root: string, staged: boolean): string[] {
   const args = staged
     ? ["diff", "--cached", "--name-only", "--diff-filter=ACMR", "-z"]
-    : ["ls-files", "-z"];
-  return git(args, root).toString().split("\0").filter(Boolean);
+    : ["ls-files", "-z", "--cached", "--others", "--exclude-standard", "--deduplicate"];
+  const files = git(args, root).toString().split("\0").filter(Boolean);
+  return staged ? files : files.filter((path) => existsSync(`${root}/${path}`));
 }
 
 /** A staged file is read from the index, so unstaged lines neither pass nor block the commit. */

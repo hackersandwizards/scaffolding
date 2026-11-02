@@ -52,8 +52,11 @@ const bin = (name: string) => `bun ${join(home, "bin", `${name}.ts`)}`;
 const shared: Record<string, string> = {
   format: "bun --bun prettier --check --log-level warn .",
   lint: "bun --bun eslint --cache --concurrency=auto .",
-  // Custom properties only from brand's tokens or the repository's own (the stylelint base).
-  styles: 'bun --bun stylelint "**/*.css" --allow-empty-input --ignore-path .gitignore',
+  // Custom properties only from brand's tokens or the repository's own (the stylelint base). One
+  // line per finding: the default formatter's table threw "Subject parameter value width" in a
+  // phase-2 run with findings, and a plain line format has no table.
+  styles:
+    'bun --bun stylelint "**/*.css" --allow-empty-input --ignore-path .gitignore --formatter compact',
   typecheck: `bun --bun ${config.typecheck ?? "tsc --noEmit"}`,
   structure: bin("check-structure"),
   coupling: bin("check-coupling"),

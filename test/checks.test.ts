@@ -133,6 +133,18 @@ describe("check-coupling", () => {
     expect(found[0]).toContain("src/new.ts");
   });
 
+  test("the full run judges the files the next commit adds, as the commit hook will", () => {
+    const dir = repo({ "package.json": "{}", "src/gone.ts": "export {};\n" });
+    write(dir, { "catalog/Type.astro": 'const BRAND = "../../node_modules/x";\n' });
+    rmSync(join(dir, "src/gone.ts"));
+    const want = [
+      "[check-coupling] catalog/Type.astro: path leaves the repository; take it from the package its owner publishes (../../node_modules/x)",
+    ];
+    expect(lines(run(dir, "check-coupling").out, "check-coupling")).toEqual(want);
+    sh(dir, ["add", "catalog/Type.astro"]);
+    expect(lines(run(dir, "check-coupling", ["--staged"]).out, "check-coupling")).toEqual(want);
+  });
+
   test("CSS from company packages comes only from brand's exports, the shell's only under catalog/", () => {
     const dir = repo({
       "package.json": JSON.stringify({ name: "@hackersandwizards/fx" }),
@@ -418,6 +430,25 @@ describe("check-confidential", () => {
     expect(r.code).toBe(1);
   });
 
+  test("the tree audit fails an allow entry that matches nothing; a staged scan cannot tell", () => {
+    const kept = { check: "confidential", path: "a.md", reason: "test" };
+    const gone = { check: "confidential", path: "gone.md", reason: "old" };
+    const dir = repo({
+      "package.json": JSON.stringify({ scaffolding: { allow: [kept, gone] } }),
+      "a.md": "We met jane q doe.\n",
+    });
+    const audit = lines(
+      run(dir, "check-confidential", ["--tree", "HEAD"], env).out,
+      "check-confidential",
+    );
+    expect(audit).toEqual([
+      `[check-confidential] package.json: allow entry matches nothing (${JSON.stringify(gone)})`,
+    ]);
+    write(dir, { "b.md": "x\n" });
+    sh(dir, ["add", "b.md"]);
+    expect(run(dir, "check-confidential", ["--staged"], env).code).toBe(0);
+  });
+
   test.if(process.platform === "darwin")("an image that cannot be decoded is refused", () => {
     const dir = repo({ "package.json": "{}" });
     write(dir, { "bad.png": "not an image at all" });
@@ -640,6 +671,34 @@ describe("scaffolding check", () => {
     expect(r.code).toBe(1);
   });
 
+  test("the styles step prints one line per finding and fails", () => {
+    const { styles: _, ...noStyles } = skip;
+    const dir = repo({
+      "package.json": JSON.stringify({
+        name: "fx",
+        type: "module",
+        scaffolding: { skip: noStyles },
+      }),
+      "node_modules/@hackersandwizards/brand/package.json": JSON.stringify({
+        exports: { "./tokens.root.css": "./tokens.root.css" },
+      }),
+      "node_modules/@hackersandwizards/brand/tokens.root.css": ":root { --color-ink: #000; }\n",
+      "stylelint.config.js": `import styles from "${join(import.meta.dir, "..", "config", "stylelint.js")}";\nexport default styles();\n`,
+      "src/bad.css": "a { color: var(--color-nope); }\n",
+    });
+    mkdirSync(join(dir, "node_modules/.bin"));
+    symlinkSync(
+      join(import.meta.dir, "..", "node_modules/stylelint/bin/stylelint.mjs"),
+      join(dir, "node_modules/.bin/stylelint"),
+    );
+    const r = run(dir, "scaffolding", ["check"], { CHECK_LOCK: join(dir, ".lock") });
+    expect(r.out).toContain(
+      'src/bad.css: line 1, col 16, error - Unexpected custom property "--color-nope"',
+    );
+    expect(r.out).toContain("FAIL styles");
+    expect(r.code).toBe(1);
+  });
+
   test("an unknown key, an unknown skip and a skip without reason go red", () => {
     for (const config of [
       { skip, chek: [] },
@@ -673,10 +732,16 @@ describe("catalog", () => {
     const dist = join(fixture, "dist");
     made.push(dist, join(fixture, "catalog", ".astro"), join(fixture, "catalog", "node_modules"));
     const astro = join(import.meta.dir, "..", "node_modules", ".bin", "astro");
-    const r = spawnSync(astro, ["build", "--root", "catalog"], { cwd: fixture, encoding: "utf8" });
+    const build = (args: string[] = [], env: Record<string, string> = {}) =>
+      spawnSync(astro, ["build", "--root", "catalog", ...args], {
+        cwd: fixture,
+        encoding: "utf8",
+        env: { ...process.env, CI: "", ...env },
+      });
+    const r = build();
     expect(r.status).toBe(0);
     const home = readFileSync(join(dist, "catalog/index.html"), "utf8");
-    expect(home).toContain('<header class="fx-header">Fx</header>');
+    expect(home).toContain('<header class="fx-header"><a href="/">Fx</a></header>');
     expect(home).toContain("fx catalog/stories · 2 components · 4 states");
     expect(home.indexOf(">Types <")).toBeLessThan(home.indexOf(">Parts <"));
     expect(home).toContain('src="/catalog/stories/Types/box-types/two"');
@@ -685,6 +750,17 @@ describe("catalog", () => {
     expect(readdirSync(join(dist, "assets")).sort()).toEqual(["logo.svg", "nested"]);
     expect(readFileSync(join(dist, "assets/nested/page.css"), "utf8")).toBe(
       "a {\n  color: red;\n}\n",
+    );
+    // A project Pages site sets Astro's base: the links and the header's default follow it.
+    expect(build(["--base", "/fx"]).status).toBe(0);
+    const based = readFileSync(join(dist, "catalog/index.html"), "utf8");
+    expect(based).toContain('<header class="fx-header"><a href="/fx/">Fx</a></header>');
+    expect(based).toContain('src="/fx/catalog/stories/Types/box-types/two"');
+    // In CI a copied file still a Git LFS pointer fails the build; locally it passes.
+    const ci = build([], { CI: "true" });
+    expect(ci.status).not.toBe(0);
+    expect(`${ci.stdout}${ci.stderr}`).toContain(
+      "catalog copy: still Git LFS pointers: assets/nested/lfs.woff2",
     );
   }, 60_000);
 });

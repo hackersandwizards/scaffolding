@@ -5,12 +5,16 @@
 // build lands in the repository's dist/; in an Astro app the stories sit in catalog/stories beside
 // src/ and the app's own build carries the catalog.
 //
+// A project Pages site under /<repo>/ sets Astro's own `base` in its defineConfig: Astrobook's
+// links, the tiles and the header's default link follow it, and `copy` lands at the same path
+// under the build, which Pages serves under the base.
+//
 // The shell reads brand's token roles by name only and depends on no brand package: the
 // repository passes brand's CSS in `css`. The header defaults to brand's AppHeader and header.css,
 // named as strings the repository resolves; a repository without brand passes its own.
 import astrobook from "astrobook";
 import type { AstroIntegration } from "astro";
-import { cpSync, existsSync, globSync, readFileSync } from "node:fs";
+import { cpSync, existsSync, globSync, readdirSync, readFileSync, statSync } from "node:fs";
 import { basename, dirname, join, relative } from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -34,7 +38,7 @@ export type CatalogOptions = {
    * draws "Dark" before "Light". A file with none of them shows its first state. */
   previewStates?: string[];
   title?: string;
-  /** Where the header's lockup links. */
+  /** Where the header's lockup links; default the site's root, Astro's `base`. */
   href?: string;
   /** Draw each tile's first state; off for states that load slowly or may not be framed. */
   previews?: boolean;
@@ -48,7 +52,8 @@ export type CatalogOptions = {
   header?: { component: string; css?: string[] };
   /** Files the built pages reach by a relative path rather than through Vite, such as brand's
    * stylesheets and logos under node_modules: globs relative to the repository, each match copied
-   * into the build at the same relative path, symlinks followed. */
+   * into the build at the same relative path, symlinks followed. In CI (`CI=true`) a copied file
+   * that is still a Git LFS pointer fails the build, so a published page never links one. */
   copy?: string[];
 };
 
@@ -75,6 +80,10 @@ function installed(name: string, from: string): string | undefined {
     if (dirname(dir) === dir) return undefined;
   }
 }
+
+const POINTER = "version https://git-lfs.github.com/spec/";
+const isPointer = (file: string) =>
+  readFileSync(file).subarray(0, POINTER.length).toString() === POINTER;
 
 const packageOf = (spec: string) =>
   spec.startsWith(".") || spec.startsWith("/")
@@ -112,7 +121,7 @@ export function catalog(options: CatalogOptions): AstroIntegration {
         const spec = (s: string) => JSON.stringify(s.startsWith(".") ? join(root, s) : s);
         const shared = {
           product: options.product,
-          href: options.href,
+          href: options.href ?? `${params.config.base.replace(/\/$/, "")}/`,
           title: options.title ?? "Catalog",
           lead: options.lead,
           previews: options.previews ?? true,
@@ -154,13 +163,25 @@ export function catalog(options: CatalogOptions): AstroIntegration {
       },
       "astro:build:done": ({ dir }) => {
         const out = fileURLToPath(dir);
+        const pointers: string[] = [];
         for (const pattern of options.copy ?? []) {
           const found = globSync(pattern, { cwd: repo });
           // A pattern matching nothing would leave a page without its stylesheet, silently.
           if (found.length === 0) throw new Error(`catalog copy: ${pattern} matches nothing`);
-          for (const file of found)
-            cpSync(join(repo, file), join(out, file), { recursive: true, dereference: true });
+          for (const file of found) {
+            const target = join(out, file);
+            cpSync(join(repo, file), target, { recursive: true, dereference: true });
+            const copied = statSync(target).isDirectory()
+              ? readdirSync(target, { recursive: true, encoding: "utf8" }).map((f) => join(file, f))
+              : [file];
+            for (const f of copied)
+              if (statSync(join(out, f)).isFile() && isPointer(join(out, f))) pointers.push(f);
+          }
         }
+        // A clone or a Git dependency without its LFS objects holds pointers, which a browser
+        // shows as a broken image. Locally a pointer may be a file .lfsconfig leaves out.
+        if (process.env.CI === "true" && pointers.length)
+          throw new Error(`catalog copy: still Git LFS pointers: ${pointers.join(", ")}`);
       },
     },
   };

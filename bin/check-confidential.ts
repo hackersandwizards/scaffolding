@@ -396,8 +396,10 @@ else if (argv.includes("--staged") || commit) {
 }
 scanBinaries(binaries);
 
+// The tree audit, the gate's step, sees every file, so an allow entry matching nothing there is
+// stale. A partial scan (staged, one commit, a message) or one without the list cannot tell.
 finish(
   "check-confidential",
-  [...listProblem, ...applyAllow(root, "confidential", findings, false)],
+  [...listProblem, ...applyAllow(root, "confidential", findings, Boolean(tree && list))],
   started,
 );
