@@ -1,6 +1,8 @@
 #!/usr/bin/env bun
 // scaffolding check
-// The full gate, read from the `scaffolding` key of package.json. The shared steps (format, lint,
+// The full gate, read from the `scaffolding` key of package.json. It first runs
+// `bun install --frozen-lockfile`: a tree a pin-raising merge left behind gets installed, and a
+// lockfile out of step fails under its own name, not a later step's. The shared steps (format, lint,
 // typecheck, structure, coupling, unique names, confidential, tests) run side by side; then the repository's own
 // `check` steps run in order, an inner array side by side. The whole run holds the checkout's
 // check lock. A failing shared step stops the run before the repository's steps.
@@ -100,7 +102,8 @@ async function group(steps: [string, string][]): Promise<boolean> {
 }
 
 const started = performance.now();
-let ok = await group(Object.entries(shared));
+let ok = await group([["install", "bun install --frozen-lockfile"]]);
+if (ok) ok = await group(Object.entries(shared));
 for (const entry of (config.check ?? []) as (string | string[])[]) {
   if (!ok) break;
   const steps = (Array.isArray(entry) ? entry : [entry]).map((s): [string, string] => [

@@ -70,7 +70,9 @@ the pre-push hook refuses a push from an old clone that still carries one of tho
 
 ## Pipelines
 
-Checks run locally in the git hooks and in `bun run check`. CI only builds and deploys. A
+Checks run locally in the git hooks and in `bun run check`. The `post-merge` and `post-checkout`
+hooks run `bun install --frozen-lockfile` when `bun.lock` or `package.json` changed, and
+`bun run check` starts with the same install. CI only builds and deploys. A
 repository that publishes GitHub Pages calls the reusable workflow:
 
 ```yaml
