@@ -67,6 +67,7 @@ const fixturePackage = {
 const acme = {
   "node_modules/@acme/pkg/package.json": JSON.stringify({
     name: "@acme/pkg",
+    version: "1.2.0",
     exports: { "./tokens": "./tokens.ts", "./elements/*": "./elements/*" },
   }),
 };
@@ -106,6 +107,21 @@ describe("check-coupling", () => {
     expect(r.out).not.toContain("src/ok.ts");
     expect(r.out).not.toContain("escape");
     expect(r.out).not.toContain("registry@");
+  });
+
+  test("a Git pin that node_modules does not hold goes red", () => {
+    const pinned = (installed?: string) =>
+      repo({
+        "package.json": JSON.stringify({ dependencies: { "@acme/pkg": "github:acme/pkg#v1.2.0" } }),
+        ...(installed && {
+          "node_modules/@acme/pkg/package.json": JSON.stringify({ version: installed }),
+        }),
+      });
+    expect(run(pinned("1.2.0"), "check-coupling").code).toBe(0);
+    expect(run(pinned("1.1.0"), "check-coupling").out).toContain(
+      "node_modules holds 1.1.0, not the pinned 1.2.0",
+    );
+    expect(run(pinned(), "check-coupling").out).toContain("node_modules holds nothing");
   });
 
   test("checks only staged files with --staged", () => {
@@ -239,6 +255,29 @@ describe("check-confidential", () => {
     write(dir, { "a.md": "nothing\nzyx in lower case is a word here.\n" });
     sh(dir, ["add", "a.md"]);
     expect(run(dir, "check-confidential", ["--staged"], env).code).toBe(0);
+  });
+
+  test("a one-word name in capitals matches only in capitals, a dictionary word included", () => {
+    const caps = join(temp(), "caps.txt");
+    writeFileSync(caps, "QUUX\nBRIDGE\nWidgetco\n");
+    const capsList = join(temp(), "caps.json");
+    writeFileSync(capsList, run(temp(), "check-confidential", ["build", caps]).out);
+    const capsEnv = { SCAFFOLDING_CONFIDENTIAL_TERMS: capsList, CI: "" };
+    const dir = repo({ "package.json": "{}", "a.md": "nothing\n" });
+    write(dir, { "a.md": "nothing\nQUUX and BRIDGE ship, so does widgetco.\n" });
+    sh(dir, ["add", "a.md"]);
+    const found = lines(
+      run(dir, "check-confidential", ["--staged"], capsEnv).out,
+      "check-confidential",
+    );
+    expect(found.map((l) => l.replace(/.*\(/, "")).sort()).toEqual([
+      "BRIDGE)",
+      "QUUX)",
+      "widgetco)",
+    ]);
+    write(dir, { "a.md": "nothing\nquux, Quux, the bridge and a Bridge stay ordinary words.\n" });
+    sh(dir, ["add", "a.md"]);
+    expect(run(dir, "check-confidential", ["--staged"], capsEnv).code).toBe(0);
   });
 
   test("only added lines count", () => {
@@ -535,5 +574,35 @@ describe("shared eslint config", () => {
     expect(r.status).toBe(1);
     expect(r.stdout).toContain("a.test.ts");
     expect(r.stdout).not.toContain("b.test.ts");
+  });
+});
+
+describe("check-staged", () => {
+  // A stand-in for admin's bin: red while any item file says "broken".
+  const adminCheck = "#!/bin/sh\n! grep -rl broken docs/tracking/items\n";
+  const pkg = JSON.stringify({
+    scaffolding: { private: true },
+    devDependencies: { "@hackersandwizards/admin": "github:acme/admin#v1.0.0" },
+  });
+
+  test("a staged item file runs admin-check, a broken one goes red", () => {
+    const dir = repo({ "package.json": pkg, "docs/tracking/items/a.md": "fine\n" });
+    write(dir, { "node_modules/.bin/admin-check": adminCheck });
+    spawnSync("chmod", ["+x", join(dir, "node_modules/.bin/admin-check")]);
+    write(dir, { "docs/tracking/items/a.md": "broken\n" });
+    sh(dir, ["add", "docs/tracking/items/a.md"]);
+    expect(run(dir, "check-staged").code).toBe(1);
+    write(dir, { "docs/tracking/items/a.md": "fine again\n" });
+    sh(dir, ["add", "docs/tracking/items/a.md"]);
+    expect(run(dir, "check-staged").code).toBe(0);
+  });
+
+  test("a staged item file without admin-check installed is refused", () => {
+    const dir = repo({ "package.json": pkg, "docs/tracking/items/a.md": "fine\n" });
+    write(dir, { "docs/tracking/items/a.md": "changed\n" });
+    sh(dir, ["add", "docs/tracking/items/a.md"]);
+    const r = run(dir, "check-staged");
+    expect(r.code).toBe(1);
+    expect(r.out).toContain("admin-check not installed");
   });
 });
