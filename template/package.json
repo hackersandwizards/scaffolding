@@ -17,6 +17,9 @@
   },
   "scaffolding": {
     "allow": [],
-    "check": []
+    "check": [],
+    "skip": {
+      "test": "new repository: no tests yet"
+    }
   }
 }

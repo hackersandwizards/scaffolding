@@ -1,15 +1,5 @@
 {
-  "compilerOptions": {
-    "target": "esnext",
-    "module": "esnext",
-    "moduleResolution": "bundler",
-    "resolveJsonModule": true,
-    "allowImportingTsExtensions": true,
-    "strict": true,
-    "noEmit": true,
-    "skipLibCheck": true,
-    "erasableSyntaxOnly": true,
-    "types": ["bun"]
-  },
+  "extends": "./config/tsconfig.bun.json",
+  "compilerOptions": { "allowImportingTsExtensions": true },
   "include": ["bin/**/*.ts", "lib/**/*.ts", "test/**/*.ts", "template/**/*.ts"]
 }

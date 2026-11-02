@@ -1,13 +1,14 @@
 #!/usr/bin/env bun
 // scaffolding check
 // The full gate, read from the `scaffolding` key of package.json. The shared steps (format, lint,
-// typecheck, structure, coupling, unique names, confidential) run side by side; then the repository's own
+// typecheck, structure, coupling, unique names, confidential, tests) run side by side; then the repository's own
 // `check` steps run in order, an inner array side by side. The whole run holds the checkout's
 // check lock. A failing shared step stops the run before the repository's steps.
 //
 //   "scaffolding": {
 //     "typecheck": "astro check",          // default: tsc --noEmit
 //     "uniqueNames": ["GET", "POST"],      // names the framework dictates
+//     "test": "test:coverage",             // required: the unit tests, or skip.test with a reason
 //     "skip": { "confidential": "private repository" },
 //     "check": ["validate:refs", ["test:coverage", "build"], "brand-colours"]
 //   }
@@ -18,7 +19,7 @@ import { spawn, spawnSync } from "node:child_process";
 import { join } from "node:path";
 import { readPackage, repoRoot } from "../lib/repo.ts";
 
-const KEYS = new Set(["allow", "private", "typecheck", "uniqueNames", "skip", "check"]);
+const KEYS = new Set(["allow", "private", "typecheck", "uniqueNames", "test", "skip", "check"]);
 
 if (process.argv[2] !== "check") {
   console.error("usage: scaffolding check");
@@ -43,6 +44,7 @@ const fail = (message: string): never => {
 };
 for (const key of Object.keys(config)) if (!KEYS.has(key)) fail(`unknown key scaffolding.${key}`);
 
+const script = (s: string) => (pkg.scripts?.[s] ? `bun run --silent ${s}` : s);
 const bin = (name: string) => `bun ${join(home, "bin", `${name}.ts`)}`;
 const shared: Record<string, string> = {
   format: "bun --bun prettier --check --log-level warn .",
@@ -52,7 +54,11 @@ const shared: Record<string, string> = {
   coupling: bin("check-coupling"),
   "unique-names": `${bin("check-unique-names")} ${(config.uniqueNames ?? []).join(" ")}`,
   confidential: `${bin("check-confidential")} --tree HEAD`,
+  // Tests are shared too: a gate without them is a skip someone wrote down, not one that drifted.
+  test: script(config.test ?? ""),
 };
+if (!config.test && !config.skip?.test)
+  fail("scaffolding.test is missing: name the tests, or skip.test with a reason");
 const skip: Record<string, string> = { ...config.skip };
 if (config.private) skip.confidential ??= "scaffolding.private";
 for (const [step, reason] of Object.entries(skip)) {
@@ -99,7 +105,7 @@ for (const entry of (config.check ?? []) as (string | string[])[]) {
   if (!ok) break;
   const steps = (Array.isArray(entry) ? entry : [entry]).map((s): [string, string] => [
     s,
-    pkg.scripts?.[s] ? `bun run --silent ${s}` : s,
+    script(s),
   ]);
   ok = await group(steps);
 }

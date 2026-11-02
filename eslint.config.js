@@ -1,11 +1,8 @@
-import js from "@eslint/js";
-import prettier from "eslint-config-prettier/flat";
-import tseslint from "typescript-eslint";
+// The package lints itself with the config it ships.
+import base from "./config/eslint.js";
 
-export default tseslint.config(
-  { ignores: ["node_modules/**", ".claude/**", ".githooks/**", "template/**"] },
-  js.configs.recommended,
-  ...tseslint.configs.recommended,
-  prettier,
+export default [
+  ...base,
+  { ignores: ["template/**"] },
   { languageOptions: { parserOptions: { tsconfigRootDir: import.meta.dirname } } },
-);
+];

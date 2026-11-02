@@ -84,15 +84,15 @@
         "reason": "planted cases the coupling tests feed to the check"
       }
     ],
-    "check": [
-      "bun test"
-    ],
-    "typecheck": "tsc --noEmit"
+    "check": [],
+    "typecheck": "tsc --noEmit",
+    "test": "bun test"
   },
   "dependencies": {
     "@eslint/js": "10.0.1",
     "eslint-config-prettier": "10.1.8",
     "typescript-eslint": "8.72.1",
     "globals": "17.14.0"
-  }
+  },
+  "prettier": "./config/prettier.js"
 }

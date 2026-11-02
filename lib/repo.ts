@@ -34,6 +34,7 @@ export type Package = {
     allow?: AllowEntry[];
     private?: boolean;
     typecheck?: string;
+    test?: string;
     uniqueNames?: string[];
     skip?: Record<string, string>;
     check?: (string | string[])[];

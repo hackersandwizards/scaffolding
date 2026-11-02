@@ -257,15 +257,21 @@ describe("check-confidential", () => {
     );
   });
 
-  test("an image under docs/tracking goes red without a list", () => {
+  test("an image under docs/tracking passes once read clean; one that cannot be read goes red", () => {
+    // A decodable 1x1 PNG: OCR reads it and finds no text.
+    const png = Buffer.from(
+      "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8DwHwAFBQIAX8jx0gAAAABJRU5ErkJggg==",
+      "base64",
+    );
     const dir = repo({ "package.json": "{}" });
-    write(dir, { "docs/tracking/shot.png": "not really a png" });
-    sh(dir, ["add", "docs/tracking/shot.png"]);
-    const r = run(dir, "check-confidential", ["--staged"], {
-      SCAFFOLDING_CONFIDENTIAL_TERMS: "/nonexistent",
-      CI: "",
-    });
-    expect(r.out).toContain("docs/tracking/shot.png: image or PDF in docs/tracking");
+    mkdirSync(join(dir, "docs/tracking/review"), { recursive: true });
+    writeFileSync(join(dir, "docs/tracking/review/shot.png"), png);
+    sh(dir, ["add", "docs/tracking/review/shot.png"]);
+    expect(run(dir, "check-confidential", ["--staged"], { ...env, CI: "" }).code).toBe(0);
+    write(dir, { "docs/tracking/review/broken.png": "not really a png" });
+    sh(dir, ["add", "docs/tracking/review/broken.png"]);
+    const r = run(dir, "check-confidential", ["--staged"], { ...env, CI: "" });
+    expect(r.out).toContain("docs/tracking/review/broken.png: image not read");
     expect(r.code).toBe(1);
   });
 
@@ -457,7 +463,7 @@ describe("check-confidential list source", () => {
     expect(m.calls()).toBe(0);
     write(m.dir, { "docs/tracking/shot.png": "x" });
     sh(m.dir, ["add", "docs/tracking/shot.png"]);
-    expect(m.check({ CI: "true" }).out).toContain("image or PDF in docs/tracking");
+    expect(m.check({ CI: "true" }).out).toContain("image or PDF in docs/tracking not read");
   });
 
   test("a PDF that cannot be read is refused", () => {
@@ -475,7 +481,7 @@ describe("scaffolding check", () => {
     repo({ "package.json": JSON.stringify({ name: "fx", type: "module", scripts, scaffolding }) });
   // Every shared step skipped, so only the runner's own logic is under test.
   const all = { format: "t", lint: "t", typecheck: "t", structure: "t", coupling: "t" };
-  const skip = { ...all, "unique-names": "t", confidential: "t" };
+  const skip = { ...all, "unique-names": "t", confidential: "t", test: "t" };
 
   test("runs the repository's steps in order and passes", () => {
     const dir = gate({ skip, check: ["mine", ["true", "true"]] }, { mine: "echo ran-mine" });
@@ -491,6 +497,18 @@ describe("scaffolding check", () => {
     expect(r.code).toBe(1);
     expect(r.out).toContain("FAIL false");
     expect(r.out).not.toContain("never-ran");
+  });
+
+  test("a gate without tests goes red unless the skip gives a reason", () => {
+    const { test: _, ...noTest } = skip;
+    const dir = gate({ skip: noTest });
+    const r = run(dir, "scaffolding", ["check"], { CHECK_LOCK: join(dir, ".lock") });
+    expect(r.code).toBe(1);
+    expect(r.out).toContain("scaffolding.test is missing");
+    const named = gate({ skip: noTest, test: "echo ran-tests" });
+    const ok = run(named, "scaffolding", ["check"], { CHECK_LOCK: join(named, ".lock") });
+    expect(ok.out).toContain("ran-tests");
+    expect(ok.code).toBe(0);
   });
 
   test("an unknown key, an unknown skip and a skip without reason go red", () => {
