@@ -30,7 +30,15 @@ export type Package = {
   packageManager?: string;
   engines?: Record<string, string>;
   scripts?: Record<string, string>;
-  scaffolding?: { allow?: AllowEntry[]; private?: boolean };
+  scaffolding?: {
+    allow?: AllowEntry[];
+    private?: boolean;
+    typecheck?: string;
+    test?: string;
+    uniqueNames?: string[];
+    skip?: Record<string, string>;
+    check?: (string | string[])[];
+  };
   [field: string]: unknown;
 };
 

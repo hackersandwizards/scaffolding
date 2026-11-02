@@ -63,12 +63,19 @@ for (const [path, target] of Object.entries<string>(skeleton.symlinks)) {
   } else add(path, `must be a symlink to ${target}`);
 }
 
-if (existsSync(at(".prettierrc.json"))) {
-  const rc = JSON.parse(readFileSync(at(".prettierrc.json"), "utf8"));
+// Prettier's own resolution, so the rules count from any config form, the shared one included.
+// The repository's prettier first, else this package's; without either the check fails closed.
+const prettierEntry = join(root, "node_modules/prettier/index.mjs");
+const prettier = await import(existsSync(prettierEntry) ? prettierEntry : "prettier").catch(
+  () => undefined,
+);
+if (!prettier) add("prettier config", "prettier not installed: bun install");
+else {
+  const rc = (await prettier.resolveConfig(at("package.json"))) ?? {};
   for (const [key, value] of Object.entries(skeleton.prettier))
     if (rc[key] !== value)
       add(
-        ".prettierrc.json",
+        "prettier config",
         `${key} must be ${JSON.stringify(value)}`,
         `${key}: ${JSON.stringify(rc[key])}`,
       );

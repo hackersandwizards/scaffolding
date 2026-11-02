@@ -9,14 +9,14 @@ bun add -d github:hackersandwizards/scaffolding#v0.2.0
 
 ## Commands
 
-| Command                         | Runs in                      | Checks                                                                                                                    |
-| ------------------------------- | ---------------------------- | ------------------------------------------------------------------------------------------------------------------------- |
-| `scaffold <dir>`                | once                         | Creates a repository from `template/` with this version pinned.                                                           |
-| `check-structure [--fix]`       | `bun run check`              | The repository against `skeleton.json`. `--fix` writes the identical files, the `.agents/skills` link and the hooks path. |
-| `check-coupling [--staged]`     | `bun run check`, pre-commit  | No path leaves the repository, no import past a package's `exports`, every Git dependency pinned to a version tag.        |
-| `check-confidential`            | pre-commit, commit-msg, push | Terms from a hashed list, Company OS screenshots, images in `docs/tracking/`, commits purged from history.                |
-| `check-staged`                  | pre-commit                   | gitleaks on the index, then `check-coupling` and `check-confidential`, then prettier and eslint on the staged files.      |
-| `check-unique-names [names...]` | `bun run check`              | Every module-scope function name outside tests is defined once.                                                           |
+| Command                         | Runs in                      | Checks                                                                                                                         |
+| ------------------------------- | ---------------------------- | ------------------------------------------------------------------------------------------------------------------------------ |
+| `scaffold <dir>`                | once                         | Creates a repository from `template/` with this version pinned.                                                                |
+| `check-structure [--fix]`       | `bun run check`              | The repository against `skeleton.json`. `--fix` writes the identical files, the `.agents/skills` link and the hooks path.      |
+| `check-coupling [--staged]`     | `bun run check`, pre-commit  | No path leaves the repository, no import past a package's `exports`, every Git dependency pinned to a version tag.             |
+| `check-confidential`            | pre-commit, commit-msg, push | Terms from a hashed list, Company OS screenshots and text in images (OCR, an unread image fails), commits purged from history. |
+| `check-staged`                  | pre-commit                   | gitleaks on the index, then `check-coupling` and `check-confidential`, then prettier and eslint on the staged files.           |
+| `check-unique-names [names...]` | `bun run check`              | Every module-scope function name outside tests is defined once.                                                                |
 
 ## Exceptions
 
@@ -70,7 +70,9 @@ the pre-push hook refuses a push from an old clone that still carries one of tho
 
 ## Pipelines
 
-Checks run locally in the git hooks and in `bun run check`. CI only builds and deploys. A
+Checks run locally in the git hooks and in `bun run check`. The `post-merge` and `post-checkout`
+hooks run `bun install --frozen-lockfile` when `bun.lock` or `package.json` changed, and
+`bun run check` starts with the same install. CI only builds and deploys. A
 repository that publishes GitHub Pages calls the reusable workflow:
 
 ```yaml

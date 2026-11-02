@@ -52,6 +52,11 @@ const hasher = (salt: string) => (s: string) =>
     .slice(0, 32);
 // NFKC first: macOS file names and some pasted text arrive decomposed, which splits words at accents.
 const words = (s: string) => s.normalize("NFKC").match(/[\p{L}\p{N}]+/gu) ?? [];
+// A one-word term written in capitals is a name in capitals (an acronym, a brand) and matches only
+// in capitals, so a company called QUUX never flags an ordinary word "quux". Three-letter terms
+// always do.
+const SLUG = /[\p{L}\p{N}]+(?:[-_/.][\p{L}\p{N}]+)+/gu;
+const capitals = (w: string) => /^\p{Lu}[\p{Lu}\p{N}]+$/u.test(w);
 
 if (argv[0] === "build") {
   const terms = readFileSync(argv[1] === "-" ? 0 : argv[1], "utf8")
@@ -85,9 +90,10 @@ if (argv[0] === "build") {
     for (const variant of variants) {
       const tokens = words(variant);
       const n = norm(variant);
-      if (n.length < 3 || (tokens.length === 1 && n.length > 3 && dict.has(n))) continue;
-      // A three-letter term is matched case-sensitive: the brand in capitals, not the word.
-      hashes.add(n.length === 3 ? h(`cs:${tokens[0]}`) : h(n));
+      const word = tokens.length === 1 && n.length > 3 && dict.has(n) && !capitals(tokens[0]);
+      if (n.length < 3 || word) continue;
+      const cased = tokens.length === 1 && (n.length === 3 || capitals(tokens[0]));
+      hashes.add(cased ? h(`cs:${tokens[0]}`) : h(n));
       maxTokens = Math.max(maxTokens, Math.min(tokens.length, 6));
     }
   }
@@ -237,13 +243,20 @@ function scanText(where: string, text: string) {
   const tokens = words(text);
   const lower = tokens.map((w) => w.toLowerCase());
   for (let i = 0; i < tokens.length; i++) {
-    if (tokens[i].length === 3 && bad.has(h(`cs:${tokens[i]}`))) found.add(tokens[i]);
+    if ((tokens[i].length === 3 || capitals(tokens[i])) && bad.has(h(`cs:${tokens[i]}`)))
+      found.add(tokens[i]);
     let gram = "";
     for (let n = 0; n < list.maxTokens && i + n < tokens.length; n++) {
       gram = n ? `${gram} ${lower[i + n]}` : lower[i];
       if (gram.length > 3 && bad.has(h(gram))) found.add(tokens.slice(i, i + n + 1).join(" "));
     }
   }
+  // A slug or path writes a capitalised name in lower case (quux-workshop, clients/quux/): a
+  // lower-case part of a joined token is checked as the name in capitals.
+  for (const [joined] of text.normalize("NFKC").matchAll(SLUG))
+    for (const part of joined.split(/[-_/.]/))
+      if (part.length > 3 && part === part.toLowerCase() && bad.has(h(`cs:${part.toUpperCase()}`)))
+        found.add(part);
   for (const name of found) report(where, name, "confidential term from the company records");
 }
 
@@ -264,9 +277,15 @@ function ocrBinary(): string | undefined {
 
 /** Reads every image and PDF; one that cannot be read is refused, since unread is unchecked. */
 function scanBinaries(files: { where: string; data: Buffer }[]) {
-  for (const { where } of files)
-    if (/(?:^|\/)docs\/tracking\//.test(where)) report(where, "", "image or PDF in docs/tracking");
-  if (!files.length || process.env.CI === "true") return;
+  if (!files.length) return;
+  // A review page's images may sit under docs/tracking once read clean. CI reads none, so there
+  // they stay refused rather than pass unread.
+  if (process.env.CI === "true") {
+    for (const { where } of files)
+      if (/(?:^|\/)docs\/tracking\//.test(where))
+        report(where, "", "image or PDF in docs/tracking not read: no OCR in CI");
+    return;
+  }
   mkdirSync(CACHE_DIR, { recursive: true });
   const scratch = mkdtempSync(join(CACHE_DIR, "scan-"));
   const texts = new Map<string, string>();

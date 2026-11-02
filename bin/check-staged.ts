@@ -4,11 +4,13 @@
 // never write: re-staging a rewritten file would sweep another session's unstaged lines in that
 // file into this commit. A file whose working tree differs from the index is checked from the index
 // on stdin, so those unstaged lines neither pass nor block this commit. A repository defining a
-// `validate:skills` script also runs it whenever the index touches `.claude/`; that validator reads
-// the working tree.
+// `validate:skills` script also runs it whenever the index touches `.claude/`, and one declaring
+// `@hackersandwizards/admin` runs `admin-check` whenever it touches `docs/tracking/items/`, over
+// docs/tracking as staged; the skills validator reads the working tree.
 import { spawn, spawnSync } from "node:child_process";
-import { existsSync, readFileSync } from "node:fs";
-import { availableParallelism } from "node:os";
+import { existsSync, mkdtempSync, readFileSync, rmSync } from "node:fs";
+import { availableParallelism, tmpdir } from "node:os";
+import { join } from "node:path";
 
 function refuseCommit(message: string): never {
   console.error(`[check:staged] ${message}`);
@@ -38,12 +40,20 @@ const skills =
   Boolean(pkg.scripts?.["validate:skills"]) &&
   spawnSync("git", ["diff", "--cached", "--quiet", "--", ".claude"]).status !== 0;
 
+const declared = { ...pkg.dependencies, ...pkg.devDependencies };
+const items =
+  Boolean(declared["@hackersandwizards/admin"]) &&
+  spawnSync("git", ["diff", "--cached", "--quiet", "--", "docs/tracking/items"]).status !== 0;
+// Fail closed: an item file that does not parse would reach the commit unread.
+if (items && !existsSync("node_modules/.bin/admin-check"))
+  refuseCommit("admin-check not installed: bun install");
+
 const listed = spawnSync("git", ["diff", "--cached", "--name-only", "--diff-filter=ACMR", "-z"], {
   encoding: "utf8",
 });
 if (listed.status !== 0) refuseCommit("git diff --cached failed");
 const staged = listed.stdout.split("\0").filter(Boolean);
-if (staged.length === 0 && !skills) process.exit(0);
+if (staged.length === 0 && !skills && !items) process.exit(0);
 const unstaged = spawnSync("git", ["diff", "--name-only", "-z"], { encoding: "utf8" });
 if (unstaged.status !== 0) refuseCommit("git diff failed");
 const differs = new Set(unstaged.stdout.split("\0"));
@@ -67,7 +77,6 @@ const stdinFlags: Record<string, (path: string) => string[]> = {
   prettier: (path) => ["--ignore-unknown", "--log-level", "warn", "--stdin-filepath", path],
   eslint: (path) => ["--cache", "--no-warn-ignored", "--stdin", "--stdin-filename", path],
 };
-const declared = { ...pkg.dependencies, ...pkg.devDependencies };
 
 // Chunked: a commit touching most of a repository passes more path bytes than ARG_MAX holds.
 const chunks: string[][] = [[]];
@@ -153,6 +162,26 @@ const runs = Object.entries(tools)
     ];
   });
 if (skills) runs.push(runStagedTool(process.execPath, ["run", "validate:skills"]));
+if (items) runs.push(checkStagedItems());
+
+// admin-check over the index, not the working tree: docs/tracking as staged, written to a temporary
+// folder, so another session's unstaged item edit neither blocks nor passes this commit.
+async function checkStagedItems(): Promise<ToolRun> {
+  const dir = mkdtempSync(join(tmpdir(), "check-staged-items-"));
+  try {
+    const tracked = spawnSync("git", ["ls-files", "-z", "--", "docs/tracking", "GOAL.md"], {
+      encoding: "utf8",
+    });
+    const copied = spawnSync("git", ["checkout-index", "-z", "--stdin", `--prefix=${dir}/`], {
+      input: tracked.stdout,
+    });
+    if (tracked.status || copied.status)
+      return { out: "[check:staged] could not copy the index\n", code: 1, stdout: Buffer.alloc(0) };
+    return await runStagedTool(`${process.cwd()}/node_modules/.bin/admin-check`, [dir]);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+}
 
 // Concurrent for speed, reported in a fixed order so the output reads the same on every run.
 let failed = false;

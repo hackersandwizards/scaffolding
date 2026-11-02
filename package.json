@@ -1,6 +1,6 @@
 {
   "name": "@hackersandwizards/scaffolding",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "description": "Repository skeleton and gate commands: scaffold, check-structure, check-coupling, check-confidential, check-staged, check-unique-names.",
   "license": "SEE LICENSE IN LICENSE",
   "type": "module",
@@ -10,17 +10,27 @@
     "check-coupling": "bin/check-coupling.ts",
     "check-confidential": "bin/check-confidential.ts",
     "check-staged": "bin/check-staged.ts",
-    "check-unique-names": "bin/check-unique-names.ts"
+    "check-unique-names": "bin/check-unique-names.ts",
+    "scaffolding": "bin/scaffolding.ts",
+    "check-lock": "bin/check-lock.ts"
   },
   "exports": {
     "./skeleton.json": "./skeleton.json",
-    "./template/*": "./template/*"
+    "./template/*": "./template/*",
+    "./eslint": "./config/eslint.js",
+    "./eslint/astro": "./config/eslint-astro.js",
+    "./tsconfig/bun.json": "./config/tsconfig.bun.json",
+    "./tsconfig/astro.json": "./config/tsconfig.astro.json",
+    "./prettier": "./config/prettier.js",
+    "./chrome": "./lib/chrome.ts",
+    "./serve": "./lib/serve.ts"
   },
   "files": [
     "bin",
     "lib",
     "template",
-    "skeleton.json"
+    "skeleton.json",
+    "config"
   ],
   "engines": {
     "bun": ">=1.3.0",
@@ -28,16 +38,28 @@
   },
   "packageManager": "bun@1.4.4",
   "peerDependencies": {
-    "typescript": ">=5"
+    "typescript": ">=5",
+    "eslint": ">=10",
+    "prettier": ">=3",
+    "eslint-plugin-astro": ">=1"
   },
   "peerDependenciesMeta": {
     "typescript": {
+      "optional": true
+    },
+    "eslint-plugin-astro": {
+      "optional": true
+    },
+    "eslint": {
+      "optional": true
+    },
+    "prettier": {
       "optional": true
     }
   },
   "scripts": {
     "prepare": "[ \"$(git rev-parse --show-toplevel 2>/dev/null)\" = \"$(pwd -P)\" ] && git config core.hooksPath .githooks || true",
-    "check": "bun install --frozen-lockfile && bun run format:check && bun run lint && bun run typecheck && bun test && bun bin/check-structure.ts && bun bin/check-coupling.ts && bun bin/check-unique-names.ts && bun bin/check-confidential.ts --tree HEAD",
+    "check": "bun bin/scaffolding.ts check",
     "check:staged": "bun bin/check-staged.ts",
     "format:check": "bun --bun prettier --check .",
     "lint": "bun --bun eslint --cache --concurrency=auto .",
@@ -46,13 +68,10 @@
     "check-confidential": "bun bin/check-confidential.ts"
   },
   "devDependencies": {
-    "@eslint/js": "10.0.1",
     "@types/bun": "1.4.4",
     "eslint": "10.14.0",
-    "eslint-config-prettier": "10.1.8",
     "prettier": "3.9.10",
-    "typescript": "6.0.3",
-    "typescript-eslint": "8.72.1"
+    "typescript": "6.0.3"
   },
   "scaffolding": {
     "allow": [
@@ -66,6 +85,16 @@
         "path": "test/checks.test.ts",
         "reason": "planted cases the coupling tests feed to the check"
       }
-    ]
-  }
+    ],
+    "check": [],
+    "typecheck": "tsc --noEmit",
+    "test": "bun test"
+  },
+  "dependencies": {
+    "@eslint/js": "10.0.1",
+    "eslint-config-prettier": "10.1.8",
+    "typescript-eslint": "8.72.1",
+    "globals": "17.14.0"
+  },
+  "prettier": "./config/prettier.js"
 }

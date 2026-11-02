@@ -6,6 +6,7 @@ import {
   readdirSync,
   readFileSync,
   rmSync,
+  symlinkSync,
   utimesSync,
   writeFileSync,
 } from "node:fs";
@@ -66,6 +67,7 @@ const fixturePackage = {
 const acme = {
   "node_modules/@acme/pkg/package.json": JSON.stringify({
     name: "@acme/pkg",
+    version: "1.2.0",
     exports: { "./tokens": "./tokens.ts", "./elements/*": "./elements/*" },
   }),
 };
@@ -107,6 +109,21 @@ describe("check-coupling", () => {
     expect(r.out).not.toContain("registry@");
   });
 
+  test("a Git pin that node_modules does not hold goes red", () => {
+    const pinned = (installed?: string) =>
+      repo({
+        "package.json": JSON.stringify({ dependencies: { "@acme/pkg": "github:acme/pkg#v1.2.0" } }),
+        ...(installed && {
+          "node_modules/@acme/pkg/package.json": JSON.stringify({ version: installed }),
+        }),
+      });
+    expect(run(pinned("1.2.0"), "check-coupling").code).toBe(0);
+    expect(run(pinned("1.1.0"), "check-coupling").out).toContain(
+      "node_modules holds 1.1.0, not the pinned 1.2.0",
+    );
+    expect(run(pinned(), "check-coupling").out).toContain("node_modules holds nothing");
+  });
+
   test("checks only staged files with --staged", () => {
     const dir = repo({ "package.json": "{}", "src/old.ts": 'import "../../x";\n' });
     write(dir, { "src/new.ts": 'import "../../y";\n' });
@@ -132,10 +149,20 @@ describe("check-coupling", () => {
   });
 });
 
+// What `bun install` would leave: this package under node_modules, so the shared configs resolve.
+function install(dir: string) {
+  mkdirSync(join(dir, "node_modules/@hackersandwizards"), { recursive: true });
+  symlinkSync(
+    join(import.meta.dir, ".."),
+    join(dir, "node_modules/@hackersandwizards/scaffolding"),
+  );
+}
+
 describe("scaffold and check-structure", () => {
   const parent = temp();
   const dir = join(parent, "demo");
   const made = run(parent, "scaffold", ["demo"]);
+  install(dir);
   write(dir, { "bun.lock": "" });
   sh(dir, ["config", "core.hooksPath", ".githooks"]);
 
@@ -157,7 +184,11 @@ describe("scaffold and check-structure", () => {
   test("a forbidden file, a wrong width and the hooks path go red", () => {
     const other = join(parent, "other");
     run(parent, "scaffold", ["other"]);
+    install(other);
+    const pkg = JSON.parse(readFileSync(join(other, "package.json"), "utf8"));
+    delete pkg.prettier;
     write(other, {
+      "package.json": JSON.stringify(pkg),
       "bun.lock": "",
       "eslint.config.mjs": "",
       ".prettierrc.json": JSON.stringify({
@@ -226,6 +257,34 @@ describe("check-confidential", () => {
     expect(run(dir, "check-confidential", ["--staged"], env).code).toBe(0);
   });
 
+  test("a one-word name in capitals matches only in capitals, a dictionary word included", () => {
+    const caps = join(temp(), "caps.txt");
+    writeFileSync(caps, "QUUX\nBRIDGE\nWidgetco\n");
+    const capsList = join(temp(), "caps.json");
+    writeFileSync(capsList, run(temp(), "check-confidential", ["build", caps]).out);
+    const capsEnv = { SCAFFOLDING_CONFIDENTIAL_TERMS: capsList, CI: "" };
+    const dir = repo({ "package.json": "{}", "a.md": "nothing\n" });
+    write(dir, { "a.md": "nothing\nQUUX and BRIDGE ship, so does widgetco.\n" });
+    sh(dir, ["add", "a.md"]);
+    const found = lines(
+      run(dir, "check-confidential", ["--staged"], capsEnv).out,
+      "check-confidential",
+    );
+    expect(found.map((l) => l.replace(/.*\(/, "")).sort()).toEqual([
+      "BRIDGE)",
+      "QUUX)",
+      "widgetco)",
+    ]);
+    write(dir, { "a.md": "nothing\nquux, Quux, the bridge and a Bridge stay ordinary words.\n" });
+    sh(dir, ["add", "a.md"]);
+    expect(run(dir, "check-confidential", ["--staged"], capsEnv).code).toBe(0);
+    write(dir, { "a.md": "nothing\nsee docs/quux-workshop/index.html\n" });
+    sh(dir, ["add", "a.md"]);
+    expect(
+      lines(run(dir, "check-confidential", ["--staged"], capsEnv).out, "check-confidential"),
+    ).toHaveLength(1);
+  });
+
   test("only added lines count", () => {
     const dir = repo({ "package.json": "{}", "a.md": "Acme Widgets GmbH\n" });
     write(dir, { "a.md": "Acme Widgets GmbH\nmore\n" });
@@ -242,15 +301,21 @@ describe("check-confidential", () => {
     );
   });
 
-  test("an image under docs/tracking goes red without a list", () => {
+  test("an image under docs/tracking passes once read clean; one that cannot be read goes red", () => {
+    // A decodable 1x1 PNG: OCR reads it and finds no text.
+    const png = Buffer.from(
+      "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8DwHwAFBQIAX8jx0gAAAABJRU5ErkJggg==",
+      "base64",
+    );
     const dir = repo({ "package.json": "{}" });
-    write(dir, { "docs/tracking/shot.png": "not really a png" });
-    sh(dir, ["add", "docs/tracking/shot.png"]);
-    const r = run(dir, "check-confidential", ["--staged"], {
-      SCAFFOLDING_CONFIDENTIAL_TERMS: "/nonexistent",
-      CI: "",
-    });
-    expect(r.out).toContain("docs/tracking/shot.png: image or PDF in docs/tracking");
+    mkdirSync(join(dir, "docs/tracking/review"), { recursive: true });
+    writeFileSync(join(dir, "docs/tracking/review/shot.png"), png);
+    sh(dir, ["add", "docs/tracking/review/shot.png"]);
+    expect(run(dir, "check-confidential", ["--staged"], { ...env, CI: "" }).code).toBe(0);
+    write(dir, { "docs/tracking/review/broken.png": "not really a png" });
+    sh(dir, ["add", "docs/tracking/review/broken.png"]);
+    const r = run(dir, "check-confidential", ["--staged"], { ...env, CI: "" });
+    expect(r.out).toContain("docs/tracking/review/broken.png: image not read");
     expect(r.code).toBe(1);
   });
 
@@ -442,7 +507,7 @@ describe("check-confidential list source", () => {
     expect(m.calls()).toBe(0);
     write(m.dir, { "docs/tracking/shot.png": "x" });
     sh(m.dir, ["add", "docs/tracking/shot.png"]);
-    expect(m.check({ CI: "true" }).out).toContain("image or PDF in docs/tracking");
+    expect(m.check({ CI: "true" }).out).toContain("image or PDF in docs/tracking not read");
   });
 
   test("a PDF that cannot be read is refused", () => {
@@ -452,5 +517,159 @@ describe("check-confidential list source", () => {
     const r = m.check({ PATH: `${stubDir}:/usr/bin:/bin` });
     expect(r.out).toContain("talk.pdf: PDF not read");
     expect(r.code).toBe(1);
+  });
+});
+
+describe("scaffolding check", () => {
+  const gate = (scaffolding: object, scripts: Record<string, string> = {}) =>
+    repo({ "package.json": JSON.stringify({ name: "fx", type: "module", scripts, scaffolding }) });
+  // Every shared step skipped, so only the runner's own logic is under test.
+  const all = { format: "t", lint: "t", typecheck: "t", structure: "t", coupling: "t" };
+  const skip = { ...all, "unique-names": "t", confidential: "t", test: "t" };
+
+  test("runs the repository's steps in order and passes", () => {
+    const dir = gate({ skip, check: ["mine", ["true", "true"]] }, { mine: "echo ran-mine" });
+    const r = run(dir, "scaffolding", ["check"], { CHECK_LOCK: join(dir, ".lock") });
+    expect(r.code).toBe(0);
+    expect(r.out).toContain("ran-mine");
+    expect(r.out).toContain("passed");
+  });
+
+  test("a failing step fails the gate and stops the later ones", () => {
+    const dir = gate({ skip, check: ["false", "echo never-ran"] });
+    const r = run(dir, "scaffolding", ["check"], { CHECK_LOCK: join(dir, ".lock") });
+    expect(r.code).toBe(1);
+    expect(r.out).toContain("FAIL false");
+    expect(r.out).not.toContain("never-ran");
+  });
+
+  test("a gate without tests goes red unless the skip gives a reason", () => {
+    const { test: _, ...noTest } = skip;
+    const dir = gate({ skip: noTest });
+    const r = run(dir, "scaffolding", ["check"], { CHECK_LOCK: join(dir, ".lock") });
+    expect(r.code).toBe(1);
+    expect(r.out).toContain("scaffolding.test is missing");
+    const named = gate({ skip: noTest, test: "echo ran-tests" });
+    const ok = run(named, "scaffolding", ["check"], { CHECK_LOCK: join(named, ".lock") });
+    expect(ok.out).toContain("ran-tests");
+    expect(ok.code).toBe(0);
+  });
+
+  test("an unknown key, an unknown skip and a skip without reason go red", () => {
+    for (const config of [
+      { skip, chek: [] },
+      { skip: { ...skip, lnt: "t" } },
+      { skip: { ...skip, lint: " " } },
+    ]) {
+      const dir = gate(config);
+      expect(run(dir, "scaffolding", ["check"], { CHECK_LOCK: join(dir, ".lock") }).code).toBe(1);
+    }
+  });
+});
+
+describe("shared eslint config", () => {
+  test("an empty test body goes red, a real one stays green", () => {
+    const dir = repo({
+      "eslint.config.js": `import base from "${join(import.meta.dir, "..", "config", "eslint.js")}";\nexport default base;\n`,
+      "a.test.ts": 'test("x", () => {});\n',
+      "b.test.ts": 'test("x", () => { expect(1).toBe(1); });\n',
+    });
+    const eslint = join(import.meta.dir, "..", "node_modules", ".bin", "eslint");
+    const r = spawnSync(eslint, ["a.test.ts", "b.test.ts"], { cwd: dir, encoding: "utf8" });
+    expect(r.status).toBe(1);
+    expect(r.stdout).toContain("a.test.ts");
+    expect(r.stdout).not.toContain("b.test.ts");
+  });
+});
+
+describe("check-staged", () => {
+  // A stand-in for admin's bin: red while any item file says "broken".
+  const adminCheck = '#!/bin/sh\n! grep -rl broken "${1:-.}/docs/tracking/items"\n';
+  const pkg = JSON.stringify({
+    scaffolding: { private: true },
+    devDependencies: { "@hackersandwizards/admin": "github:acme/admin#v1.0.0" },
+  });
+
+  test("a staged item file runs admin-check, a broken one goes red", () => {
+    const dir = repo({ "package.json": pkg, "docs/tracking/items/a.md": "fine\n" });
+    write(dir, { "node_modules/.bin/admin-check": adminCheck });
+    spawnSync("chmod", ["+x", join(dir, "node_modules/.bin/admin-check")]);
+    write(dir, { "docs/tracking/items/a.md": "broken\n" });
+    sh(dir, ["add", "docs/tracking/items/a.md"]);
+    expect(run(dir, "check-staged").code).toBe(1);
+    write(dir, { "docs/tracking/items/a.md": "fine again\n" });
+    expect(run(dir, "check-staged").code).toBe(1);
+    sh(dir, ["add", "docs/tracking/items/a.md"]);
+    expect(run(dir, "check-staged").code).toBe(0);
+    write(dir, { "docs/tracking/items/a.md": "broken, unstaged\n" });
+    expect(run(dir, "check-staged").code).toBe(0);
+  });
+
+  test("a staged item file without admin-check installed is refused", () => {
+    const dir = repo({ "package.json": pkg, "docs/tracking/items/a.md": "fine\n" });
+    write(dir, { "docs/tracking/items/a.md": "changed\n" });
+    sh(dir, ["add", "docs/tracking/items/a.md"]);
+    const r = run(dir, "check-staged");
+    expect(r.code).toBe(1);
+    expect(r.out).toContain("admin-check not installed");
+  });
+});
+
+describe("chrome", () => {
+  test("CHROME_BINARY wins, else the newest cached build of this platform, the shell on request", async () => {
+    const { cachedChrome, chromeBinary } = await import("../lib/chrome.ts");
+    const cache = temp();
+    const platform =
+      process.platform === "darwin" ? (process.arch === "arm64" ? "mac_arm" : "mac") : "linux";
+    const exe =
+      process.platform === "darwin"
+        ? "Google Chrome for Testing.app/Contents/MacOS/Google Chrome for Testing"
+        : "chrome";
+    const plant = (kind: string, build: string, file: string) => {
+      const path = join(cache, kind, build, `${kind}-x`, file);
+      write("/", { [path]: "" });
+      return path;
+    };
+    plant("chrome", `${platform}-9.0.1`, exe);
+    const newest = plant("chrome", `${platform}-10.0.1`, exe);
+    plant("chrome", `other-99.0.0`, exe);
+    const shell = plant("chrome-headless-shell", `${platform}-10.0.1`, "chrome-headless-shell");
+    const saved = { ...process.env };
+    process.env.PUPPETEER_CACHE_DIR = cache;
+    delete process.env.CHROME_BINARY;
+    try {
+      expect(cachedChrome()).toBe(newest);
+      expect(cachedChrome({ shell: true })).toBe(shell);
+      process.env.CHROME_BINARY = "/opt/own-chrome";
+      expect(chromeBinary()).toBe("/opt/own-chrome");
+    } finally {
+      process.env = saved;
+    }
+  });
+});
+
+describe("serve", () => {
+  test("two servers started at once get their own ports; one that exits fails at once", async () => {
+    const { serve } = await import("../lib/serve.ts");
+    const app = join(temp(), "app.ts");
+    writeFileSync(
+      app,
+      "Bun.serve({ hostname: process.env.HOST, port: Number(process.env.PORT), fetch: () => new Response(process.env.PORT) });\n",
+    );
+    const [a, b] = await Promise.all([
+      serve([process.execPath, app]),
+      serve([process.execPath, app]),
+    ]);
+    try {
+      expect(a.url).not.toBe(b.url);
+      expect(await (await fetch(a.url)).text()).toBe(new URL(a.url).port);
+      expect(await (await fetch(b.url)).text()).toBe(new URL(b.url).port);
+    } finally {
+      a.stop();
+      b.stop();
+    }
+    const started = Date.now();
+    await expect(serve([process.execPath, "-e", "process.exit(3)"])).rejects.toThrow("it exited");
+    expect(Date.now() - started).toBeLessThan(5_000);
   });
 });

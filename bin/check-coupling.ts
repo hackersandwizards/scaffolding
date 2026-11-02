@@ -2,7 +2,9 @@
 // check-coupling [--staged]
 // The machine-checkable lines of the coupling rule: no path leaves the repository (a sibling
 // checkout `../<repo>`), no import reaches into a package past its `exports`, and every Git
-// dependency is pinned to a version tag. A full run also reports stale allow entries.
+// dependency is pinned to a version tag that node_modules holds: a stale install renders with the
+// old engine while every file reads the new pin (documents once ran brand 0.21.6 against a v0.24.4
+// pin, and its list markers vanished). A full run also reports stale allow entries.
 import { existsSync, readFileSync } from "node:fs";
 import { dirname, posix, resolve } from "node:path";
 import {
@@ -102,6 +104,16 @@ if (!staged || listFiles(root, true).includes("package.json")) {
         flag("package.json", `${name}@${spec}`, "local path dependency");
       else if (GIT.test(spec) && !TAG.test(spec))
         flag("package.json", `${name}@${spec}`, "Git dependency not pinned to a version tag");
+      else if (GIT.test(spec) && field !== "peerDependencies") {
+        const pinned = TAG.exec(spec)![0].replace(/^#(?:semver:)?v?/, "");
+        const installed = (manifest(name)?.version as string | undefined) ?? "nothing";
+        if (installed !== pinned)
+          flag(
+            "package.json",
+            `${name}@${spec}`,
+            `node_modules holds ${installed}, not the pinned ${pinned}: bun install`,
+          );
+      }
     }
 }
 
