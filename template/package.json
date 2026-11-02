@@ -19,9 +19,7 @@
     "allow": [],
     "check": [],
     "skip": {
-      "test": "new repository: no tests yet",
-      "catalog": "new repository: no surface yet",
-      "styles": "new repository: no stylesheets and no brand yet"
+      "test": "new repository: no tests yet"
     }
   }
 }

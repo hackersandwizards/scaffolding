@@ -1,6 +1,6 @@
 {
   "name": "@hackersandwizards/scaffolding",
-  "version": "0.3.3",
+  "version": "0.4.0",
   "description": "Repository skeleton, gate commands, shared configs and the catalog shell: scaffold, scaffolding check, check-structure, check-coupling, check-confidential, check-staged, check-unique-names, check-lock, and the catalog preset.",
   "keywords": [
     "astro-component"
@@ -35,6 +35,8 @@
     "bin",
     "lib",
     "template",
+    "surface",
+    "admin-area",
     "skeleton.json",
     "config",
     "catalog"
@@ -103,6 +105,11 @@
         "reason": "its one relative path is the .agents/skills symlink target, resolved from .agents/, inside the repository"
       },
       {
+        "check": "structure",
+        "path": ".github/workflows/pages.yml",
+        "reason": "here it is the reusable workflow that the owned caller file of every other repository names"
+      },
+      {
         "check": "coupling",
         "path": "test/checks.test.ts",
         "reason": "planted cases the coupling tests feed to the check"
@@ -113,7 +120,8 @@
     "test": "bun test",
     "skip": {
       "catalog": "no surface: the package ships the catalog shell and has no catalog of its own",
-      "styles": "brand is not installed here, so its token file is not there to read; the shell's CSS reads brand's names by rule"
+      "styles": "brand is not installed here, so its token file is not there to read; the shell's CSS reads brand's names by rule",
+      "admin": "the package keeps no items; its tracking lives in Company OS"
     }
   },
   "dependencies": {

@@ -1,7 +1,8 @@
 # CLAUDE.md
 
 Public package `@hackersandwizards/scaffolding`: the repository skeleton (`template/`,
-`skeleton.json`), the gate commands in `bin/`, the shared configs in `config/` and the catalog
+`skeleton.json`, and `surface/` and `admin-area/`, which `scaffold` adds unless told the catalog or
+admin area lives elsewhere), the gate commands in `bin/`, the shared configs in `config/` and the catalog
 shell with its preset in `catalog/`. Repositories install it by Git tag and run the
 commands through `bun run`. README.md says what each command checks.
 

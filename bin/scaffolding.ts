@@ -3,8 +3,8 @@
 // The full gate, read from the `scaffolding` key of package.json. It first runs
 // `bun install --frozen-lockfile`: a tree a pin-raising merge left behind gets installed, and a
 // lockfile out of step fails under its own name, not a later step's. The shared steps (format, lint,
-// styles, typecheck, structure, coupling, unique names, confidential, tests, and the catalog build
-// through `bun run build`) run side by side; then the repository's own
+// styles, typecheck, structure, coupling, unique names, confidential, tests, the catalog build
+// through `bun run build`, and admin, the pinned admin's `admin-check`) run side by side; then the repository's own
 // `check` steps run in order, an inner array side by side. The whole run holds the checkout's
 // check lock. A failing shared step stops the run before the repository's steps.
 //
@@ -12,7 +12,7 @@
 //     "typecheck": "astro check",          // default: tsc --noEmit
 //     "uniqueNames": ["GET", "POST"],      // names the framework dictates
 //     "test": "test:coverage",             // required: the unit tests, or skip.test with a reason
-//     "skip": { "confidential": "private repository", "catalog": "no surface" },
+//     "skip": { "confidential": "private repository", "catalog": "no surface", "admin": "no items" },
 //     "check": ["validate:refs", ["test:coverage", "build"], "brand-colours"]
 //   }
 //
@@ -66,9 +66,14 @@ const shared: Record<string, string> = {
   test: script(config.test ?? ""),
   // The catalog build, so a broken one goes red here rather than on the Pages run.
   catalog: "bun run --silent build",
+  // The item files of the admin area, with the pinned admin's own check.
+  admin: "admin-check",
 };
 if (!config.test && !config.skip?.test)
   fail("scaffolding.test is missing: name the tests, or skip.test with a reason");
+const declared = { ...(pkg.dependencies as object), ...(pkg.devDependencies as object) };
+if (!("@hackersandwizards/admin" in declared) && !config.skip?.admin)
+  fail("@hackersandwizards/admin is not pinned: pin it, or skip.admin with a reason");
 const skip: Record<string, string> = { ...config.skip };
 if (config.private) skip.confidential ??= "scaffolding.private";
 for (const [step, reason] of Object.entries(skip)) {

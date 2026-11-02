@@ -1,9 +1,10 @@
 #!/usr/bin/env bun
 // check-structure [--fix]
-// The repository against the skeleton of the pinned scaffolding version: identical files, files
-// that must or must not exist, the `.agents/skills` link, the prettier rules, package.json fields
+// The repository against the skeleton of the pinned scaffolding version: identical files, owned
+// files (the Pages workflow, identical where present with this version filled in), files that must
+// or must not exist, the `.agents/skills` link, the prettier rules, package.json fields
 // and the hooks path. `--fix` writes what can be written from the template: identical files, the
-// link and the hooks path. A repository with a surface carries the catalog: the scripts `dev`,
+// link, the owned files and the hooks path. A repository with a surface carries the catalog: the scripts `dev`,
 // `catalog` and `build`, its stories in catalog/stories and an Astro config using the catalog
 // preset; `scaffolding.skip.catalog` with a reason drops all three. Every step of
 // `scaffolding.check` is a script named `check:<what>`.
@@ -16,6 +17,7 @@ import {
   readFileSync,
   readlinkSync,
   symlinkSync,
+  writeFileSync,
 } from "node:fs";
 import { dirname, join } from "node:path";
 import { applyAllow, finish, readPackage, repoRoot, type Finding } from "../lib/repo.ts";
@@ -52,6 +54,17 @@ for (const path of skeleton.same as string[]) {
         ? "differs from the skeleton (check-structure --fix)"
         : "missing (check-structure --fix)",
     );
+}
+// An owned file is optional, but where present it is the skeleton's, this version filled in.
+for (const path of skeleton.owned as string[]) {
+  if (!exists(path)) continue;
+  const template = readFileSync(join(home, "surface", path), "utf8").replaceAll(
+    "{{version}}",
+    own.version,
+  );
+  if (readFileSync(at(path), "utf8") === template) continue;
+  if (fix) writeFileSync(at(path), template);
+  else add(path, "differs from the skeleton (check-structure --fix)");
 }
 for (const path of skeleton.present as string[]) if (!exists(path)) add(path, "missing");
 for (const path of skeleton.absent as string[])

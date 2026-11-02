@@ -196,10 +196,26 @@ function install(dir: string) {
   );
 }
 
+// Local stand-ins for the company remotes scaffold reads brand's and admin's newest tag from.
+function remotes(tags: string[]) {
+  const base = temp();
+  for (const name of ["brand", "admin"]) {
+    const dir = join(base, `${name}.git`);
+    mkdirSync(dir);
+    sh(dir, ["init", "-q", "-b", "main"]);
+    sh(dir, ["commit", "-q", "--allow-empty", "-m", "init"]);
+    for (const tag of tags) sh(dir, ["tag", tag]);
+  }
+  return `${base}/`;
+}
+process.env.SCAFFOLDING_GIT_BASE = remotes(["v0.9.0", "v0.10.0", "v0.2.0", "latest"]);
+const ownVersion = JSON.parse(readFileSync(join(import.meta.dir, "..", "package.json"), "utf8"))
+  .version as string;
+
 describe("scaffold and check-structure", () => {
   const parent = temp();
   const dir = join(parent, "demo");
-  const made = run(parent, "scaffold", ["demo"]);
+  const made = run(parent, "scaffold", ["demo", "--port", "4655"]);
   install(dir);
   write(dir, { "bun.lock": "" });
   sh(dir, ["config", "core.hooksPath", ".githooks"]);
@@ -210,6 +226,83 @@ describe("scaffold and check-structure", () => {
     const r = run(dir, "check-structure");
     expect(r.out).toBe("");
     expect(r.code).toBe(0);
+  });
+
+  test("a full repository has its catalog and admin area, brand and admin on their newest tags", () => {
+    const pkg = JSON.parse(readFileSync(join(dir, "package.json"), "utf8"));
+    expect(pkg.devDependencies["@hackersandwizards/brand"]).toBe(
+      "github:hackersandwizards/brand#v0.10.0",
+    );
+    expect(pkg.devDependencies["@hackersandwizards/admin"]).toBe(
+      "github:hackersandwizards/admin#v0.10.0",
+    );
+    expect(pkg.scaffolding.skip).toEqual({ test: "new repository: no tests yet" });
+    expect(pkg.scripts.build).toBe("bun --bun astro build --root catalog");
+    const config = readFileSync(join(dir, "catalog/astro.config.ts"), "utf8");
+    expect(config).toContain('base: "/demo"');
+    expect(config).toContain("port: 4655 }");
+    expect(readFileSync(join(dir, ".github/workflows/pages.yml"), "utf8")).toContain(
+      `uses: hackersandwizards/scaffolding/.github/workflows/pages.yml@v${ownVersion}\n`,
+    );
+    expect(readdirSync(join(dir, "docs/tracking/items"))).toEqual(["goal.md"]);
+    expect(readdirSync(join(dir, "docs/tracking"))).toEqual(["items"]);
+    expect(readFileSync(join(dir, "tsconfig.json"), "utf8")).toContain('"catalog/**/*.ts"]');
+    const prettier = join(import.meta.dir, "..", "node_modules", ".bin", "prettier");
+    const formatted = spawnSync(prettier, ["--check", "."], { cwd: dir, encoding: "utf8" });
+    expect(`${formatted.stdout}${formatted.stderr}`).toContain("All matched files use Prettier");
+    expect(formatted.status).toBe(0);
+  });
+
+  test("--catalog-in and --admin-in leave both out and the skips name where they live", () => {
+    const minimal = join(parent, "minimal");
+    const r = run(
+      parent,
+      "scaffold",
+      ["minimal", "--catalog-in", "acme-private", "--admin-in", "acme-private"],
+      {
+        SCAFFOLDING_GIT_BASE: "/nonexistent/",
+      },
+    );
+    expect(r.code).toBe(0);
+    install(minimal);
+    write(minimal, { "bun.lock": "" });
+    sh(minimal, ["config", "core.hooksPath", ".githooks"]);
+    const pkg = JSON.parse(readFileSync(join(minimal, "package.json"), "utf8"));
+    expect(
+      Object.keys(pkg.devDependencies).filter((d) => d.startsWith("@hackersandwizards/")),
+    ).toEqual(["@hackersandwizards/scaffolding"]);
+    expect(pkg.scaffolding.skip).toEqual({
+      test: "new repository: no tests yet",
+      catalog: "the catalog lives in acme-private",
+      styles: "the catalog lives in acme-private",
+      admin: "the admin area lives in acme-private",
+    });
+    const top = readdirSync(minimal);
+    for (const path of ["catalog", ".github", "stylelint.config.js"])
+      expect(top).not.toContain(path);
+    expect(readdirSync(join(minimal, "docs/tracking"))).toEqual([".gitkeep"]);
+    expect(run(minimal, "check-structure").code).toBe(0);
+  });
+
+  test("a remote without a version tag fails scaffold", () => {
+    const r = run(parent, "scaffold", ["untagged"], { SCAFFOLDING_GIT_BASE: remotes(["latest"]) });
+    expect(r.code).toBe(1);
+    expect(r.out).toContain("no v<version> tag read from");
+  });
+
+  test("the owned Pages workflow: an edit goes red, --fix writes this version, absence passes", () => {
+    const path = join(dir, ".github/workflows/pages.yml");
+    const original = readFileSync(path, "utf8");
+    write(dir, { ".github/workflows/pages.yml": original.replace(`@v${ownVersion}`, "@v0.0.1") });
+    expect(lines(run(dir, "check-structure").out, "check-structure")).toEqual([
+      "[check-structure] .github/workflows/pages.yml: differs from the skeleton (check-structure --fix)",
+    ]);
+    run(dir, "check-structure", ["--fix"]);
+    expect(readFileSync(path, "utf8")).toBe(original);
+    expect(run(dir, "check-structure").code).toBe(0);
+    rmSync(path);
+    expect(run(dir, "check-structure").code).toBe(0);
+    write(dir, { ".github/workflows/pages.yml": original });
   });
 
   test("a drifted file goes red and --fix restores it", () => {
@@ -244,7 +337,7 @@ describe("scaffold and check-structure", () => {
 
   test("a repository with a surface carries the catalog; every gate step is a check:<what> script", () => {
     const other = join(parent, "surface");
-    run(parent, "scaffold", ["surface"]);
+    run(parent, "scaffold", ["surface", "--catalog-in", "x", "--admin-in", "x"]);
     install(other);
     write(other, { "bun.lock": "" });
     sh(other, ["config", "core.hooksPath", ".githooks"]);
@@ -287,8 +380,11 @@ describe("scaffold and check-structure", () => {
     expect(r.out).toContain("[check-structure] package.json: missing");
   });
 
-  test("a scaffolded repository passes check-coupling", () => {
-    expect(run(dir, "check-coupling").code).toBe(0);
+  test("a scaffolded repository passes check-coupling but for the pins bun install fetches", () => {
+    expect(lines(run(dir, "check-coupling").out, "check-coupling")).toEqual([
+      "[check-coupling] package.json: node_modules holds nothing, not the pinned 0.10.0: bun install (@hackersandwizards/admin@github:hackersandwizards/admin#v0.10.0)",
+      "[check-coupling] package.json: node_modules holds nothing, not the pinned 0.10.0: bun install (@hackersandwizards/brand@github:hackersandwizards/brand#v0.10.0)",
+    ]);
   });
 });
 
@@ -628,7 +724,14 @@ describe("scaffolding check", () => {
     structure: "t",
     coupling: "t",
   };
-  const skip = { ...all, "unique-names": "t", confidential: "t", test: "t", catalog: "t" };
+  const skip = {
+    ...all,
+    "unique-names": "t",
+    confidential: "t",
+    test: "t",
+    catalog: "t",
+    admin: "t",
+  };
 
   test("runs the repository's steps in order and passes", () => {
     const dir = gate({ skip, check: ["mine", ["true", "true"]] }, { mine: "echo ran-mine" });
@@ -697,6 +800,41 @@ describe("scaffolding check", () => {
     );
     expect(r.out).toContain("FAIL styles");
     expect(r.code).toBe(1);
+  });
+
+  test("the admin step runs the pinned admin-check; without admin pinned it needs skip.admin", () => {
+    const { admin: _, ...noAdmin } = skip;
+    const bare = gate({ skip: noAdmin });
+    const unpinned = run(bare, "scaffolding", ["check"], { CHECK_LOCK: join(bare, ".lock") });
+    expect(unpinned.code).toBe(1);
+    expect(unpinned.out).toContain(
+      "@hackersandwizards/admin is not pinned: pin it, or skip.admin with a reason",
+    );
+    const pinned = (verdict: string) => {
+      // A stand-in admin the gate's install links, with its bin.
+      const dir = repo({
+        "package.json": JSON.stringify({
+          name: "fx",
+          type: "module",
+          devDependencies: { "@hackersandwizards/admin": "file:./admin" },
+          scaffolding: { skip: noAdmin },
+        }),
+        "admin/package.json": JSON.stringify({
+          name: "@hackersandwizards/admin",
+          bin: { "admin-check": "check.sh" },
+        }),
+        "admin/check.sh": `#!/bin/sh\necho admin-check-ran\n${verdict}\n`,
+      });
+      spawnSync("chmod", ["+x", join(dir, "admin/check.sh")]);
+      return run(dir, "scaffolding", ["check"], { CHECK_LOCK: join(dir, ".lock") });
+    };
+    const red = pinned("exit 1");
+    expect(red.out).toContain("admin-check-ran");
+    expect(red.out).toContain("FAIL admin");
+    expect(red.code).toBe(1);
+    const green = pinned("exit 0");
+    expect(green.out).toContain("ok   admin");
+    expect(green.code).toBe(0);
   });
 
   test("an unknown key, an unknown skip and a skip without reason go red", () => {

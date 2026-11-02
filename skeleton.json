@@ -10,6 +10,7 @@
     ".githooks/post-checkout",
     "scripts/repo/only-bun.cjs"
   ],
+  "owned": [".github/workflows/pages.yml"],
   "present": [
     "README.md",
     "LICENSE",

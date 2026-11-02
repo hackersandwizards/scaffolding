@@ -5,27 +5,39 @@ skeleton every repository starts from, the commands its gate runs, the configs i
 shell of its catalog.
 
 ```sh
-bun add -d github:hackersandwizards/scaffolding#v0.3.3
+bun add -d github:hackersandwizards/scaffolding#v0.4.0
 ```
 
 ## Commands
 
-| Command                         | Runs in                      | Checks                                                                                                                                                                     |
-| ------------------------------- | ---------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `scaffold <dir>`                | once                         | Creates a repository from `template/` with this version pinned.                                                                                                            |
-| `scaffolding check`             | `bun run check`              | The whole gate, below.                                                                                                                                                     |
-| `check-structure [--fix]`       | `bun run check`              | The repository against `skeleton.json`, the catalog and the gate's script names (below). `--fix` writes the identical files, the `.agents/skills` link and the hooks path. |
-| `check-coupling [--staged]`     | `bun run check`, pre-commit  | No path leaves the repository, no import past a package's `exports`, every Git dependency pinned to a tag `node_modules` holds, and the CSS origin (below).                |
-| `check-lock`                    | `scaffolding check`          | One gate at a time per checkout.                                                                                                                                           |
-| `check-confidential`            | pre-commit, commit-msg, push | Terms from a hashed list, Company OS screenshots and text in images (OCR, an unread image fails), commits purged from history.                                             |
-| `check-staged`                  | pre-commit                   | gitleaks on the index, then `check-coupling` and `check-confidential`, then prettier and eslint on the staged files.                                                       |
-| `check-unique-names [names...]` | `bun run check`              | Every module-scope function name outside tests is defined once.                                                                                                            |
+| Command                         | Runs in                      | Checks                                                                                                                                                                               |
+| ------------------------------- | ---------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `scaffold <dir>`                | once                         | Creates a repository from `template/` with this version pinned, its catalog and admin area (below).                                                                                  |
+| `scaffolding check`             | `bun run check`              | The whole gate, below.                                                                                                                                                               |
+| `check-structure [--fix]`       | `bun run check`              | The repository against `skeleton.json`, the catalog and the gate's script names (below). `--fix` writes the identical and owned files, the `.agents/skills` link and the hooks path. |
+| `check-coupling [--staged]`     | `bun run check`, pre-commit  | No path leaves the repository, no import past a package's `exports`, every Git dependency pinned to a tag `node_modules` holds, and the CSS origin (below).                          |
+| `check-lock`                    | `scaffolding check`          | One gate at a time per checkout.                                                                                                                                                     |
+| `check-confidential`            | pre-commit, commit-msg, push | Terms from a hashed list, Company OS screenshots and text in images (OCR, an unread image fails), commits purged from history.                                                       |
+| `check-staged`                  | pre-commit                   | gitleaks on the index, then `check-coupling` and `check-confidential`, then prettier and eslint on the staged files.                                                                 |
+| `check-unique-names [names...]` | `bun run check`              | Every module-scope function name outside tests is defined once.                                                                                                                      |
+
+## A new repository
+
+`scaffold <dir> --port <port>` writes the skeleton, the catalog (`catalog/astro.config.ts` on the
+preset with `base: "/<name>"` and the port, an example component and story, `stylelint.config.js`,
+the scripts `dev`, `catalog` and `build`, the Pages workflow) and the admin area
+(`docs/tracking/items/goal.md`), and pins brand and admin to the newest tag on their remotes, so an
+admin or brand release reaches new repositories without a scaffolding release. A repository whose
+catalog or admin area lives in another repository leaves either out with `--catalog-in <repo>` or
+`--admin-in <repo>`; its `scaffolding.skip` names that repository. Registering the repository in
+the hub's sync list, creating it on GitHub and switching Pages on stay steps for a person.
 
 ## The gate
 
 `scaffolding check` runs `bun install --frozen-lockfile`, then the shared steps side by side:
 format, lint, styles (stylelint), typecheck, structure, coupling, unique names, confidential, the
-tests and the catalog build (`bun run build`). Then the repository's own steps from
+tests, the catalog build (`bun run build`) and admin (the item files, with the pinned
+`@hackersandwizards/admin`'s `admin-check`; a repository without admin pinned needs `skip.admin`). Then the repository's own steps from
 `scaffolding.check`, in order, an inner array side by side. A shared step drops only with a reason:
 
 ```json
@@ -160,12 +172,14 @@ Checks run locally in the git hooks and in `bun run check`. The `post-merge` and
 hooks run `bun install --frozen-lockfile` when `bun.lock` or `package.json` changed, and
 `bun run check` starts with the same install. CI only builds and deploys. A
 repository that publishes GitHub Pages calls the reusable workflow, which runs `bun run build` and
-publishes `dist/`:
+publishes `dist/`. The caller, `.github/workflows/pages.yml`, is owned: where it exists,
+`check-structure` compares it with the skeleton's (`surface/`) with this version filled in, and
+`--fix` writes it, so a pin raise is `bun add` plus `check-structure --fix`:
 
 ```yaml
 jobs:
   pages:
-    uses: hackersandwizards/scaffolding/.github/workflows/pages.yml@v0.3.3
+    uses: hackersandwizards/scaffolding/.github/workflows/pages.yml@v0.4.0
     permissions:
       contents: read
       pages: write

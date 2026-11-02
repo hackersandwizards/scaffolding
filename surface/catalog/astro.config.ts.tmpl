@@ -1,0 +1,17 @@
+import { defineConfig } from "astro/config";
+import { catalog } from "@hackersandwizards/scaffolding/catalog";
+
+// The catalog at /catalog/: every component as a story in catalog/stories, in scaffolding's shell.
+// The base is the project Pages path, https://hackersandwizards.github.io/{{name}}/.
+export default defineConfig({
+  base: "/{{name}}",
+  devToolbar: { enabled: false },
+  server: { host: "127.0.0.1", port: {{port}} },
+  integrations: [
+    catalog({
+      product: "{{name}}",
+      lead: "Every component of {{name}}, as a story.",
+      css: ["@hackersandwizards/brand/tokens.root.css", "@hackersandwizards/brand/elements.css"],
+    }),
+  ],
+});
