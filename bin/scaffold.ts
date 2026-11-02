@@ -57,6 +57,9 @@ const pkgPath = join(target, "package.json");
 const pkg = JSON.parse(readFileSync(pkgPath, "utf8"));
 // The eslint plugins come with this package, so only the tools themselves are pinned here.
 const tools = ["@types/bun", "eslint", "prettier", "typescript"];
+// Set here, not in the template: there it would govern this package's own template files with a
+// package that only resolves in a repository that installs it.
+pkg.prettier = "@hackersandwizards/scaffolding/prettier";
 pkg.devDependencies = {
   ...Object.fromEntries(tools.map((t) => [t, own.devDependencies[t]])),
   "@hackersandwizards/scaffolding": `github:hackersandwizards/scaffolding#v${own.version}`,

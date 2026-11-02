@@ -20,7 +20,8 @@
     "./eslint": "./config/eslint.js",
     "./eslint/astro": "./config/eslint-astro.js",
     "./tsconfig/bun.json": "./config/tsconfig.bun.json",
-    "./tsconfig/astro.json": "./config/tsconfig.astro.json"
+    "./tsconfig/astro.json": "./config/tsconfig.astro.json",
+    "./prettier": "./config/prettier.js"
   },
   "files": [
     "bin",

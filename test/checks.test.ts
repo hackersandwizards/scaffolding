@@ -6,6 +6,7 @@ import {
   readdirSync,
   readFileSync,
   rmSync,
+  symlinkSync,
   utimesSync,
   writeFileSync,
 } from "node:fs";
@@ -132,10 +133,20 @@ describe("check-coupling", () => {
   });
 });
 
+// What `bun install` would leave: this package under node_modules, so the shared configs resolve.
+function install(dir: string) {
+  mkdirSync(join(dir, "node_modules/@hackersandwizards"), { recursive: true });
+  symlinkSync(
+    join(import.meta.dir, ".."),
+    join(dir, "node_modules/@hackersandwizards/scaffolding"),
+  );
+}
+
 describe("scaffold and check-structure", () => {
   const parent = temp();
   const dir = join(parent, "demo");
   const made = run(parent, "scaffold", ["demo"]);
+  install(dir);
   write(dir, { "bun.lock": "" });
   sh(dir, ["config", "core.hooksPath", ".githooks"]);
 
@@ -157,7 +168,11 @@ describe("scaffold and check-structure", () => {
   test("a forbidden file, a wrong width and the hooks path go red", () => {
     const other = join(parent, "other");
     run(parent, "scaffold", ["other"]);
+    install(other);
+    const pkg = JSON.parse(readFileSync(join(other, "package.json"), "utf8"));
+    delete pkg.prettier;
     write(other, {
+      "package.json": JSON.stringify(pkg),
       "bun.lock": "",
       "eslint.config.mjs": "",
       ".prettierrc.json": JSON.stringify({
