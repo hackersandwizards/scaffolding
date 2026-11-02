@@ -1,14 +1,14 @@
 {
   "name": "@hackersandwizards/scaffolding",
-  "version": "0.1.1",
-  "description": "Repository skeleton and gate commands: scaffold, check-structure, check-coupling, check-leaks, check-staged, check-unique-names.",
+  "version": "0.2.0",
+  "description": "Repository skeleton and gate commands: scaffold, check-structure, check-coupling, check-confidential, check-staged, check-unique-names.",
   "license": "SEE LICENSE IN LICENSE",
   "type": "module",
   "bin": {
     "scaffold": "bin/scaffold.ts",
     "check-structure": "bin/check-structure.ts",
     "check-coupling": "bin/check-coupling.ts",
-    "check-leaks": "bin/check-leaks.ts",
+    "check-confidential": "bin/check-confidential.ts",
     "check-staged": "bin/check-staged.ts",
     "check-unique-names": "bin/check-unique-names.ts"
   },
@@ -37,13 +37,13 @@
   },
   "scripts": {
     "prepare": "[ \"$(git rev-parse --show-toplevel 2>/dev/null)\" = \"$(pwd -P)\" ] && git config core.hooksPath .githooks || true",
-    "check": "bun run format:check && bun run lint && bun run typecheck && bun test && bun bin/check-structure.ts && bun bin/check-coupling.ts && bun bin/check-unique-names.ts && bun bin/check-leaks.ts --tree HEAD",
+    "check": "bun run format:check && bun run lint && bun run typecheck && bun test && bun bin/check-structure.ts && bun bin/check-coupling.ts && bun bin/check-unique-names.ts && bun bin/check-confidential.ts --tree HEAD",
     "check:staged": "bun bin/check-staged.ts",
     "format:check": "bun --bun prettier --check .",
     "lint": "bun --bun eslint --cache --concurrency=auto .",
     "typecheck": "bun --bun tsc --noEmit",
     "fix": "bun --bun eslint --cache --concurrency=auto . --fix && bun --bun prettier --write .",
-    "check-leaks": "bun bin/check-leaks.ts"
+    "check-confidential": "bun bin/check-confidential.ts"
   },
   "devDependencies": {
     "@eslint/js": "10.0.1",

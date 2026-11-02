@@ -1,6 +1,6 @@
 #!/usr/bin/env bun
 // The pre-commit check every repository runs as `bun run check:staged`: the staged secret scan, the
-// staged coupling and leak checks, then `prettier --check` and `eslint` on the staged files. Check,
+// staged coupling and confidential-terms checks, then `prettier --check` and `eslint` on the staged files. Check,
 // never write: re-staging a rewritten file would sweep another session's unstaged lines in that
 // file into this commit. A file whose working tree differs from the index is checked from the index
 // on stdin, so those unstaged lines neither pass nor block this commit. A repository defining a
@@ -24,7 +24,7 @@ const scan = spawnSync(
 if (scan.error) refuseCommit("gitleaks not found: brew install gitleaks");
 if (scan.status !== 0) process.exit(1);
 
-for (const check of ["check-coupling.ts", "check-leaks.ts"]) {
+for (const check of ["check-coupling.ts", "check-confidential.ts"]) {
   const run = spawnSync(process.execPath, [`${import.meta.dir}/${check}`, "--staged"], {
     stdio: "inherit",
   });

@@ -1,6 +1,14 @@
 import { afterAll, describe, expect, test } from "bun:test";
 import { spawnSync } from "node:child_process";
-import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import {
+  mkdirSync,
+  mkdtempSync,
+  readdirSync,
+  readFileSync,
+  rmSync,
+  utimesSync,
+  writeFileSync,
+} from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 
@@ -176,50 +184,116 @@ describe("scaffold and check-structure", () => {
   });
 });
 
-describe("check-leaks", () => {
+describe("check-confidential", () => {
   const names = join(temp(), "names.txt");
   writeFileSync(names, "Acme Widgets GmbH\nJane Q Doe\nZYX\nEvery\n");
   const list = join(temp(), "list.json");
-  writeFileSync(list, run(temp(), "check-leaks", ["build", names]).out);
-  const env = { SCAFFOLDING_LEAK_LIST: list };
+  writeFileSync(list, run(temp(), "check-confidential", ["build", names]).out);
+  const env = { SCAFFOLDING_CONFIDENTIAL_TERMS: list, CI: "" };
 
-  test("the list holds hashes, not names, and drops dictionary words", () => {
+  test("the list holds hashes, not names, drops dictionary words and carries its build time", () => {
     const text = readFileSync(list, "utf8");
     expect(text).not.toMatch(/acme|jane|zyx/i);
     expect(JSON.parse(text).hashes).toHaveLength(4);
+    expect(Date.now() - Date.parse(JSON.parse(text).built)).toBeLessThan(60_000);
+  });
+
+  test("a term the public text already carries is left out, its legal-form variant too", () => {
+    const pub = join(temp(), "public.txt");
+    writeFileSync(pub, "<p>Our clients include Acme Widgets.</p>");
+    const r = spawnSync(
+      process.execPath,
+      [bin("check-confidential"), "build", "-", "--public", pub],
+      {
+        input: "Acme Widgets GmbH\nJane Q Doe\n",
+        encoding: "utf8",
+      },
+    );
+    expect(JSON.parse(r.stdout).hashes).toHaveLength(1);
   });
 
   test("a staged name goes red, ordinary text stays green", () => {
     const dir = repo({ "package.json": "{}", "a.md": "nothing\n" });
     write(dir, { "a.md": "nothing\nWe met jane q doe and every ZYX team.\n" });
     sh(dir, ["add", "a.md"]);
-    const found = lines(run(dir, "check-leaks", ["--staged"], env).out, "check-leaks");
+    const found = lines(
+      run(dir, "check-confidential", ["--staged"], env).out,
+      "check-confidential",
+    );
     expect(found.map((l) => l.replace(/.*\(/, "")).sort()).toEqual(["ZYX)", "jane q doe)"]);
     write(dir, { "a.md": "nothing\nzyx in lower case is a word here.\n" });
     sh(dir, ["add", "a.md"]);
-    expect(run(dir, "check-leaks", ["--staged"], env).code).toBe(0);
+    expect(run(dir, "check-confidential", ["--staged"], env).code).toBe(0);
   });
 
   test("only added lines count", () => {
     const dir = repo({ "package.json": "{}", "a.md": "Acme Widgets GmbH\n" });
     write(dir, { "a.md": "Acme Widgets GmbH\nmore\n" });
     sh(dir, ["add", "a.md"]);
-    expect(run(dir, "check-leaks", ["--staged"], env).code).toBe(0);
+    expect(run(dir, "check-confidential", ["--staged"], env).code).toBe(0);
   });
 
   test("the commit message is checked", () => {
     const dir = repo({ "package.json": "{}" });
     const msg = join(dir, "MSG");
     writeFileSync(msg, "fix: for Acme Widgets\n# Jane Q Doe in a comment line is ignored\n");
-    expect(run(dir, "check-leaks", ["--message-file", msg], env).out).toContain("(Acme Widgets)");
+    expect(run(dir, "check-confidential", ["--message-file", msg], env).out).toContain(
+      "(Acme Widgets)",
+    );
   });
 
   test("an image under docs/tracking goes red without a list", () => {
     const dir = repo({ "package.json": "{}" });
     write(dir, { "docs/tracking/shot.png": "not really a png" });
     sh(dir, ["add", "docs/tracking/shot.png"]);
-    const r = run(dir, "check-leaks", ["--staged"], { SCAFFOLDING_LEAK_LIST: "/nonexistent" });
+    const r = run(dir, "check-confidential", ["--staged"], {
+      SCAFFOLDING_CONFIDENTIAL_TERMS: "/nonexistent",
+      CI: "",
+    });
     expect(r.out).toContain("docs/tracking/shot.png: image or PDF in docs/tracking");
+    expect(r.code).toBe(1);
+  });
+
+  test("review findings: comment lines, file names, decomposed text and '++ ' lines count", () => {
+    const dir = repo({ "package.json": "{}" });
+    const msg = join(dir, "MSG");
+    writeFileSync(msg, "# Acme Widgets deal\n");
+    expect(run(dir, "check-confidential", ["--message-file", msg], env).code).toBe(1);
+    write(dir, {
+      "notes/acme-widgets.md": "x\n",
+      "a.md": "Jane Q Doe".normalize("NFD") + "\n++ Acme Widgets\n",
+    });
+    sh(dir, ["add", "notes/acme-widgets.md", "a.md"]);
+    const found = lines(
+      run(dir, "check-confidential", ["--staged"], env).out,
+      "check-confidential",
+    );
+    expect(found.some((l) => l.startsWith("[check-confidential] file names:"))).toBe(true);
+    expect(found.filter((l) => l.startsWith("[check-confidential] a.md:"))).toHaveLength(2);
+  });
+
+  test("an allow entry cannot switch off the list requirement", () => {
+    const dir = repo({
+      "package.json": JSON.stringify({
+        scaffolding: { allow: [{ check: "confidential", reason: "everything" }] },
+      }),
+    });
+    write(dir, { "a.md": "x\n" });
+    sh(dir, ["add", "a.md"]);
+    const r = run(dir, "check-confidential", ["--staged"], {
+      SCAFFOLDING_CONFIDENTIAL_TERMS: "/nonexistent",
+      CI: "",
+    });
+    expect(r.out).toContain("Refused");
+    expect(r.code).toBe(1);
+  });
+
+  test.if(process.platform === "darwin")("an image that cannot be decoded is refused", () => {
+    const dir = repo({ "package.json": "{}" });
+    write(dir, { "bad.png": "not an image at all" });
+    sh(dir, ["add", "bad.png"]);
+    const r = run(dir, "check-confidential", ["--staged"], env);
+    expect(r.out).toContain("bad.png: image not read");
     expect(r.code).toBe(1);
   });
 
@@ -227,7 +301,7 @@ describe("check-leaks", () => {
     const dir = repo({ "package.json": JSON.stringify({ scaffolding: { private: true } }) });
     write(dir, { "a.md": "Acme Widgets GmbH\n" });
     sh(dir, ["add", "a.md"]);
-    expect(run(dir, "check-leaks", ["--staged"], env).code).toBe(0);
+    expect(run(dir, "check-confidential", ["--staged"], env).code).toBe(0);
   });
 
   test("a push carrying a purged commit is refused, a clean one passes", () => {
@@ -239,9 +313,11 @@ describe("check-leaks", () => {
     sh(dir, ["add", "b.md"]);
     sh(dir, ["commit", "-qm", "purged"]);
     const purged = sh(dir, ["rev-parse", "HEAD"]).stdout.toString().trim();
-    write(dir, { ".leak-purged.json": run(dir, "check-leaks", ["purged", purged]).out });
+    write(dir, {
+      ".confidential-purged.json": run(dir, "check-confidential", ["purged", purged]).out,
+    });
     const push = (sha: string) =>
-      spawnSync(process.execPath, [bin("check-leaks"), "prepush", "origin", remote], {
+      spawnSync(process.execPath, [bin("check-confidential"), "prepush", "origin", remote], {
         cwd: dir,
         input: `refs/heads/main ${sha} refs/heads/main ${"0".repeat(40)}\n`,
         encoding: "utf8",
@@ -251,5 +327,130 @@ describe("check-leaks", () => {
     expect(refused.stderr).toContain("purged from this repository's history");
     const clean = sh(dir, ["rev-parse", "HEAD~1"]).stdout.toString().trim();
     expect(push(clean).status).toBe(0);
+  });
+});
+
+describe("check-confidential list source", () => {
+  const names = join(temp(), "names.txt");
+  writeFileSync(names, "Acme Widgets GmbH\n");
+  const fresh = run(temp(), "check-confidential", ["build", names]).out;
+  const builtDaysAgo = (days: number) =>
+    JSON.stringify({
+      ...JSON.parse(fresh),
+      built: new Date(Date.now() - days * 864e5).toISOString(),
+    });
+  const stubDir = temp();
+  writeFileSync(
+    join(stubDir, "gh"),
+    '#!/bin/sh\necho "$*" >> "$GH_STUB_LOG"\n[ "$GH_STUB" = ok ] && exec cat "$GH_STUB_FILE"\necho "HTTP 404: Not Found" >&2\nexit 1\n',
+    { mode: 0o755 },
+  );
+
+  /** A fresh checkout: a gh that grants or denies, and a cached copy of a given age. */
+  function machine(opts: {
+    gh: "ok" | "deny";
+    remote?: string;
+    cache?: string;
+    cacheDays?: number;
+  }) {
+    const home = temp();
+    const remote = join(home, "remote.json");
+    writeFileSync(remote, opts.remote ?? fresh);
+    const dir = repo({ "package.json": "{}", "a.md": "a\n" });
+    const cache = join(dir, "node_modules/.cache/scaffolding/confidential-terms.json");
+    if (opts.cache) {
+      write(dir, { "node_modules/.cache/scaffolding/confidential-terms.json": opts.cache });
+      const t = (Date.now() - (opts.cacheDays ?? 0) * 864e5) / 1000;
+      utimesSync(cache, t, t);
+    }
+    const log = join(home, "gh.log");
+    writeFileSync(log, "");
+    write(dir, { "a.md": "a\nA visit to Acme Widgets.\n" });
+    sh(dir, ["add", "a.md"]);
+    const env = {
+      HOME: home,
+      PATH: `${stubDir}:${process.env.PATH}`,
+      GH_STUB: opts.gh,
+      GH_STUB_FILE: remote,
+      GH_STUB_LOG: log,
+      CI: "",
+      SCAFFOLDING_CONFIDENTIAL_TERMS: "",
+    };
+    const check = (extra: Record<string, string> = {}) =>
+      run(dir, "check-confidential", ["--staged"], { ...env, ...extra });
+    const calls = () => readFileSync(log, "utf8").split("\n").filter(Boolean).length;
+    return { dir, home, check, calls, cache };
+  }
+
+  test("fresh machine with access: fetches, caches and finds the term", () => {
+    const m = machine({ gh: "ok" });
+    const r = m.check();
+    expect(r.code).toBe(1);
+    expect(r.out).toContain("(Acme Widgets)");
+    expect(m.calls()).toBe(1);
+    expect(readFileSync(m.cache, "utf8")).toBe(fresh);
+    // Bun's own transpiler cache may land in HOME; the command writes nothing there.
+    expect(readdirSync(m.home)).not.toContain(".config");
+    expect(readdirSync(m.home)).not.toContain(".cache");
+  });
+
+  test("a copy fetched within the day is used without a fetch", () => {
+    const m = machine({ gh: "deny", cache: fresh, cacheDays: 0.5 });
+    expect(m.check().out).toContain("(Acme Widgets)");
+    expect(m.calls()).toBe(0);
+  });
+
+  test("a stale copy within 7 days is used with a warning, retried at most hourly", () => {
+    const m = machine({ gh: "deny", cache: builtDaysAgo(2), cacheDays: 2 });
+    const first = m.check();
+    expect(first.out).toContain("using the copy fetched before");
+    expect(first.out).toContain("(Acme Widgets)");
+    expect(first.out).not.toContain("Refused");
+    expect(m.calls()).toBe(1);
+    expect(m.check().out).toContain("next fetch within the hour");
+    expect(m.calls()).toBe(1);
+  });
+
+  test("a stale copy is replaced when the fetch works", () => {
+    const m = machine({ gh: "ok", cache: builtDaysAgo(2), cacheDays: 2 });
+    m.check();
+    expect(m.calls()).toBe(1);
+    expect(readFileSync(m.cache, "utf8")).toBe(fresh);
+  });
+
+  test("a list built more than 7 days ago refuses, even freshly fetched", () => {
+    const m = machine({ gh: "ok", remote: builtDaysAgo(10) });
+    const r = m.check();
+    expect(r.code).toBe(1);
+    expect(r.out).toContain("list built 10 days ago, more than 7");
+    expect(r.out).toContain("gh auth login");
+  });
+
+  test("no access and no copy refuses the commit, even for text without a term", () => {
+    const m = machine({ gh: "deny" });
+    write(m.dir, { "a.md": "a\nnothing confidential\n" });
+    sh(m.dir, ["add", "a.md"]);
+    const r = m.check();
+    expect(r.code).toBe(1);
+    expect(r.out).toContain("HTTP 404");
+    expect(r.out).toContain("Refused");
+  });
+
+  test("CI skips the term step without fetching, the path rule still holds", () => {
+    const m = machine({ gh: "deny" });
+    expect(m.check({ CI: "true" }).code).toBe(0);
+    expect(m.calls()).toBe(0);
+    write(m.dir, { "docs/tracking/shot.png": "x" });
+    sh(m.dir, ["add", "docs/tracking/shot.png"]);
+    expect(m.check({ CI: "true" }).out).toContain("image or PDF in docs/tracking");
+  });
+
+  test("a PDF that cannot be read is refused", () => {
+    const m = machine({ gh: "ok" });
+    write(m.dir, { "a.md": "a\n", "talk.pdf": "%PDF-1.4" });
+    sh(m.dir, ["add", "a.md", "talk.pdf"]);
+    const r = m.check({ PATH: `${stubDir}:/usr/bin:/bin` });
+    expect(r.out).toContain("talk.pdf: PDF not read");
+    expect(r.code).toBe(1);
   });
 });

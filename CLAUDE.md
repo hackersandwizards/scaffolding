@@ -4,8 +4,8 @@ Public package `@hackersandwizards/scaffolding`: the repository skeleton (`templ
 `skeleton.json`) and the gate commands in `bin/`. Repositories install it by Git tag and run the
 commands through `bun run`. README.md says what each command checks.
 
-This repository is public. No client, deal, invoice, person record, name list or Company OS
-screenshot goes in, and `check-leaks` runs in its own hooks.
+This repository is public. No client, deal, invoice, person record, term list or Company OS
+screenshot goes in, and `check-confidential` runs in its own hooks.
 
 ## Checks
 
