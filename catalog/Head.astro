@@ -1,0 +1,178 @@
+---
+// Astrobook's <head> on every catalog page: the repository's own head (the preset's `head`), and
+// on a state's page a bar in place of Astrobook's sidebar, which is hidden everywhere, since the
+// home's tiles are the one index. The bar: back to the home, the file's folder and name, the
+// theme toggle and a link to the state alone (both lost with the sidebar), and a link per state,
+// folded into a disclosure above FOLD states. It sits in a <template> (allowed in <head>) that a
+// script moves into <main> on load and after each of Astrobook's client-side navigations.
+import modules from "virtual:astrobook/story-modules.mjs";
+import config from "virtual:astrobook/global-config.mjs";
+import RepositoryHead from "virtual:scaffolding/catalog-head";
+
+const FOLD = 12;
+type StoryModule = { name: string; directory?: string; stories: { id: string; name: string }[] };
+const slash = config.trailingSlash === "always" ? "/" : "";
+const trim = (s: string) => s.replace(/\/$/, "");
+const path = trim(decodeURI(Astro.url.pathname));
+const base = trim(config.dashboardBase);
+const id = path.startsWith(`${base}/`) ? path.slice(base.length + 1) : "";
+const mod = id
+  ? (modules as StoryModule[]).find((m) => m.stories.some((s) => s.id === id))
+  : undefined;
+const states = mod?.stories ?? [];
+const at = states.findIndex((s) => s.id === id);
+const folder = (mod?.directory || "Components").split("/").join(" / ");
+---
+
+<RepositoryHead />
+<style is:global>
+  #astrobook-sidebar,
+  astrobook-sidebar-resize-handle {
+    display: none !important;
+  }
+  .hw-catalogue-bar {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 0.5rem 1rem;
+    padding: 0.75rem 1.5rem;
+    border-bottom: 1px solid color-mix(in srgb, currentColor 15%, transparent);
+    font: 500 0.875rem/1.4 var(--font-sans, system-ui, sans-serif);
+  }
+  .hw-catalogue-bar a,
+  .hw-catalogue-bar button,
+  .hw-catalogue-bar summary {
+    display: inline-flex;
+    align-items: center;
+    min-height: 1.75rem;
+    color: inherit;
+    font: inherit;
+  }
+  .hw-catalogue-bar-where {
+    opacity: 0.75;
+  }
+  .hw-catalogue-bar-tools {
+    display: flex;
+    gap: 0.5rem 1rem;
+    margin-inline-start: auto;
+  }
+  .hw-catalogue-bar button,
+  .hw-catalogue-bar summary {
+    padding: 0 0.625rem;
+    border: 1px solid color-mix(in srgb, currentColor 25%, transparent);
+    border-radius: 0.375rem;
+    background: transparent;
+    cursor: pointer;
+  }
+  .hw-catalogue-bar details,
+  .hw-catalogue-bar > ul {
+    flex-basis: 100%;
+  }
+  .hw-catalogue-bar button[aria-pressed="true"] {
+    background: color-mix(in srgb, currentColor 12%, transparent);
+  }
+  .hw-catalogue-bar summary {
+    width: fit-content;
+    list-style: none;
+  }
+  .hw-catalogue-bar summary::-webkit-details-marker {
+    display: none;
+  }
+  .hw-catalogue-bar summary::after {
+    content: "▾";
+    margin-inline-start: 0.5rem;
+  }
+  .hw-catalogue-bar details[open] summary::after {
+    content: "▴";
+  }
+  .hw-catalogue-bar ul {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.25rem;
+    margin: 0;
+    padding: 0;
+    list-style: none;
+  }
+  .hw-catalogue-bar details ul {
+    margin-top: 0.5rem;
+  }
+  .hw-catalogue-bar li a {
+    padding: 0 0.625rem;
+    border: 1px solid color-mix(in srgb, currentColor 20%, transparent);
+    border-radius: 999px;
+    text-decoration: none;
+  }
+  .hw-catalogue-bar li a[aria-current] {
+    border-color: currentColor;
+    background: color-mix(in srgb, currentColor 12%, transparent);
+    font-weight: 700;
+  }
+</style>
+{
+  mod && (
+    <template id="hw-catalogue-bar">
+      <nav class="hw-catalogue-bar" aria-label="Catalog">
+        <a href={`${trim(config.astrobookBase)}/`}>
+          <span aria-hidden="true">←&nbsp;</span>Catalog
+        </a>
+        <span class="hw-catalogue-bar-where">
+          {folder} / <strong>{mod.name}</strong>
+        </span>
+        <span class="hw-catalogue-bar-tools">
+          <button type="button" data-hw-theme aria-pressed="false">
+            Dark theme
+          </button>
+          <a href={`${trim(config.storyBase)}/${id}${slash}`}>Open this state alone</a>
+        </span>
+        {(() => {
+          const list = (
+            <ul aria-label="States">
+              {states.map((s) => (
+                <li>
+                  <a href={`${base}/${s.id}${slash}`} aria-current={s.id === id ? "page" : undefined}>
+                    {s.name}
+                  </a>
+                </li>
+              ))}
+            </ul>
+          );
+          return states.length > FOLD ? (
+            <details>
+              <summary>
+                {states[at]?.name} · {at + 1} of {states.length} states
+              </summary>
+              {list}
+            </details>
+          ) : (
+            list
+          );
+        })()}
+      </nav>
+    </template>
+  )
+}
+<script is:inline>
+  (() => {
+    if (window.hwCatalogueBar) return;
+    window.hwCatalogueBar = true;
+    const theme = () => window.astroThemeToggle;
+    const pressed = () =>
+      document
+        .querySelector("[data-hw-theme]")
+        ?.setAttribute("aria-pressed", String(theme()?.getTheme?.() === "dark"));
+    const place = () => {
+      const bar = document.getElementById("hw-catalogue-bar");
+      const main = document.querySelector("main");
+      if (!bar || !main || main.querySelector(".hw-catalogue-bar")) return;
+      main.prepend(bar.content.cloneNode(true));
+      pressed();
+    };
+    document.addEventListener("DOMContentLoaded", place);
+    document.addEventListener("astro:after-swap", place);
+    document.addEventListener("click", (event) => {
+      if (!event.target.closest?.("[data-hw-theme]")) return;
+      theme()?.setTheme?.(theme().getTheme?.() === "dark" ? "light" : "dark");
+      pressed();
+    });
+  })();
+</script>

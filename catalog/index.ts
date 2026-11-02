@@ -1,6 +1,8 @@
 // catalog({ product, css, lead, previewSize, groupOrder, previewStates, copy }): the preset every
 // repository's catalog uses. It sets up Astrobook at /catalog over catalog/stories with the repository's CSS
 // list, the shell's home (Home.astro) and the header, and hands the options to the shell's pages.
+// The home's tiles are the one index: Astrobook draws each state, its sidebar hidden on every page,
+// and the shell's Head.astro puts a bar on a state's page (back to the home, the file's states).
 // In a repository whose Astro app is the catalog, catalog/astro.config.ts is the config and the
 // build lands in the repository's dist/; in an Astro app the stories sit in catalog/stories beside
 // src/ and the app's own build carries the catalog.
@@ -42,7 +44,8 @@ export type CatalogOptions = {
   href?: string;
   /** Draw each tile's first state; off for states that load slowly or may not be framed. */
   previews?: boolean;
-  /** Astrobook's <head> component, relative to the Astro root. */
+  /** The repository's <head> component, relative to the Astro root, rendered on every page inside
+   * the shell's Head.astro. */
   head?: string;
   /** The repository's own home page, relative to the Astro root, rendering Home.astro with its
    * foundations; without it the shell's Home.astro is the home. */
@@ -63,6 +66,7 @@ const BRAND_HEADER = {
 };
 const OPTIONS = "virtual:scaffolding/catalog";
 const HEADER = "virtual:scaffolding/catalog-header";
+const HEAD = "virtual:scaffolding/catalog-head";
 
 /** The nearest folder at or above `from` holding a package.json. */
 function packageDir(from: string): string {
@@ -137,13 +141,15 @@ export function catalog(options: CatalogOptions): AstroIntegration {
               {
                 name: "scaffolding-catalog",
                 resolveId: (id: string) =>
-                  id === OPTIONS || id === HEADER ? `\0${id}` : undefined,
+                  id === OPTIONS || id === HEADER || id === HEAD ? `\0${id}` : undefined,
                 load: (id: string) =>
                   id === `\0${OPTIONS}`
                     ? `export default ${JSON.stringify(shared)};`
                     : id === `\0${HEADER}`
                       ? `${(header.css ?? []).map((c) => `import ${spec(c)};`).join("")}export { default } from ${spec(header.component)};`
-                      : undefined,
+                      : id === `\0${HEAD}`
+                        ? `export { default } from ${spec(options.head ?? "astrobook/components/head.astro")};`
+                        : undefined,
               },
             ],
           },
@@ -153,7 +159,7 @@ export function catalog(options: CatalogOptions): AstroIntegration {
           subpath: "/catalog",
           title: `${options.product} catalog`,
           css: options.css,
-          head: options.head,
+          head: join(import.meta.dirname, "Head.astro"),
           home: options.home ?? join(import.meta.dirname, "Home.astro"),
         });
         await inner.hooks["astro:config:setup"]?.(params);

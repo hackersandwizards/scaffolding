@@ -175,12 +175,8 @@
   }
 }
 
-/* On an Astrobook home the catalog is the whole page: Astrobook's own sidebar, which lists the
-   states, shows on each story page instead. Unlayered, since Astrobook's own styles are. */
-[data-astrobook-root][data-active-story=""] #astrobook-sidebar,
-[data-astrobook-root][data-active-story=""] astrobook-sidebar-resize-handle {
-  display: none;
-}
+/* On an Astrobook home the catalog is the whole page (Head.astro hides Astrobook's sidebar on
+   every page). Unlayered, since Astrobook's own styles are. */
 [data-astrobook-root][data-active-story=""] main {
   padding: 0;
 }

@@ -884,6 +884,32 @@ describe("catalog", () => {
     expect(home.indexOf(">Types <")).toBeLessThan(home.indexOf(">Parts <"));
     expect(home).toContain('src="/catalog/stories/Types/box-types/two"');
     expect(readdirSync(join(dist, "catalog/stories/Parts/box-parts"))).toEqual(["one", "two"]);
+    // A state's page: the repository's head, the sidebar hidden, and the bar in its place.
+    const page = (p: string) => readFileSync(join(dist, "catalog", p, "index.html"), "utf8");
+    const state = page("dashboard/Parts/box-parts/two");
+    const css = readdirSync(join(dist, "_astro"))
+      .filter((f) => f.endsWith(".css"))
+      .map((f) => readFileSync(join(dist, "_astro", f), "utf8"))
+      .join("");
+    expect(state).toContain('<meta name="fx-head" content="repository">');
+    expect(`${state}${css}`).toMatch(
+      /#astrobook-sidebar,\s*astrobook-sidebar-resize-handle\s*\{\s*display:\s*none\s*!important/,
+    );
+    const bar = state.match(/<template id="hw-catalogue-bar">([\s\S]*?)<\/template>/)?.[1] ?? "";
+    expect(bar).toContain('<nav class="hw-catalogue-bar" aria-label="Catalog">');
+    expect(bar).toContain('href="/catalog/"');
+    expect(bar).toMatch(/Parts \/ <strong>BoxParts<\/strong>/);
+    expect(bar).toContain('<button type="button" data-hw-theme aria-pressed="false">');
+    expect(bar).toContain('href="/catalog/stories/Parts/box-parts/two">Open this state alone</a>');
+    expect(bar).toContain('<ul aria-label="States">');
+    expect(bar).toMatch(/href="\/catalog\/dashboard\/Parts\/box-parts\/one">One/);
+    expect(bar).toMatch(
+      /href="\/catalog\/dashboard\/Parts\/box-parts\/two" aria-current="page">Two/,
+    );
+    expect(state).toContain("main.prepend(bar.content.cloneNode(true))");
+    // The state alone and the home carry no bar.
+    expect(page("stories/Parts/box-parts/two")).not.toContain('id="hw-catalogue-bar"');
+    expect(home).not.toContain('id="hw-catalogue-bar"');
     // `copy`: each match at its own path, the rest of the folder left out.
     expect(readdirSync(join(dist, "assets")).sort()).toEqual(["logo.svg", "nested"]);
     expect(readFileSync(join(dist, "assets/nested/page.css"), "utf8")).toBe(

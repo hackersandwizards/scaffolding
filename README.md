@@ -5,7 +5,7 @@ skeleton every repository starts from, the commands its gate runs, the configs i
 shell of its catalog.
 
 ```sh
-bun add -d github:hackersandwizards/scaffolding#v0.4.0
+bun add -d github:hackersandwizards/scaffolding#v0.5.0
 ```
 
 ## Commands
@@ -91,9 +91,13 @@ export default defineConfig({
 });
 ```
 
-The shell (`catalog/`: Layout, Home, rail, tiles and `catalog.css`) reads brand's token roles by
+The home's tiles are the catalog's one index; Astrobook draws each state, its sidebar hidden on
+every page. A state's page carries a bar instead: back to the home, the file's folder and name, the
+theme toggle, a link to the state alone and a link per state, folded into a disclosure above 12.
+
+The shell (`catalog/`: Layout, Home, Head, rail, tiles and `catalog.css`) reads brand's token roles by
 name only, and the repository's `css` supplies them. Options beyond the four above: `title`
-(default "Catalog"), `href` (default the site's root, Astro's `base`), `previews`, `previewStates` (the story names a tile draws and links first, such as `["light"]`), `head`, `header` (default brand's `AppHeader` and
+(default "Catalog"), `href` (default the site's root, Astro's `base`), `previews`, `previewStates` (the story names a tile draws and links first, such as `["light"]`), `head` (the repository's own `<head>` component, rendered on every page), `header` (default brand's `AppHeader` and
 `header.css`) and `home`, a page of the repository that renders `Home.astro` with its foundations
 in the default slot and a control such as a theme toggle in the `nav` slot. `copy` lists globs, relative to the
 repository, of files the built pages reach by a relative path rather than through Vite, such as
@@ -179,7 +183,7 @@ publishes `dist/`. The caller, `.github/workflows/pages.yml`, is owned: where it
 ```yaml
 jobs:
   pages:
-    uses: hackersandwizards/scaffolding/.github/workflows/pages.yml@v0.4.0
+    uses: hackersandwizards/scaffolding/.github/workflows/pages.yml@v0.5.0
     permissions:
       contents: read
       pages: write

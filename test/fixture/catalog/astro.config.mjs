@@ -11,6 +11,7 @@ export default defineConfig({
       groupOrder: ["Types", "Parts"],
       previewStates: ["missing", "two"],
       header: { component: "./Header.astro" },
+      head: "./Head.astro",
       copy: ["assets/*.svg", "assets/nested"],
     }),
   ],
