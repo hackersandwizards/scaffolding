@@ -165,6 +165,12 @@ describe("scaffold and check-structure", () => {
     expect(out).toContain("core.hooksPath must be .githooks");
   });
 
+  test("a repository without package.json is reported, not a crash", () => {
+    const r = run(repo({ "a.md": "a\n" }), "check-structure");
+    expect(r.code).toBe(1);
+    expect(r.out).toContain("[check-structure] package.json: missing");
+  });
+
   test("a scaffolded repository passes check-coupling", () => {
     expect(run(dir, "check-coupling").code).toBe(0);
   });

@@ -4,7 +4,7 @@ How hackers&wizards sets up a code repository, as a package each repository pins
 skeleton every repository starts from and the commands its gate runs.
 
 ```sh
-bun add -d github:hackersandwizards/scaffolding#v0.1.0
+bun add -d github:hackersandwizards/scaffolding#v0.1.1
 ```
 
 ## Commands
@@ -59,7 +59,7 @@ repository that publishes GitHub Pages calls the reusable workflow:
 ```yaml
 jobs:
   pages:
-    uses: hackersandwizards/scaffolding/.github/workflows/pages.yml@v0.1.0
+    uses: hackersandwizards/scaffolding/.github/workflows/pages.yml@v0.1.1
     with:
       build: bun run build
       path: dist

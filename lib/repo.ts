@@ -1,5 +1,5 @@
 import { spawnSync } from "node:child_process";
-import { readFileSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 
 export type Finding = { check: string; path: string; text: string; message: string };
 type AllowEntry = { check?: string; path?: string; text?: string; reason?: string };
@@ -34,8 +34,10 @@ export type Package = {
   [field: string]: unknown;
 };
 
+/** A repository without package.json reads as empty; check-structure reports it missing. */
 export function readPackage(root: string): Package {
-  return JSON.parse(readFileSync(`${root}/package.json`, "utf8"));
+  const file = `${root}/package.json`;
+  return existsSync(file) ? JSON.parse(readFileSync(file, "utf8")) : {};
 }
 
 /** `*` matches within one path segment, `**` across segments. */

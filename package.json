@@ -1,6 +1,6 @@
 {
   "name": "@hackersandwizards/scaffolding",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "Repository skeleton and gate commands: scaffold, check-structure, check-coupling, check-leaks, check-staged, check-unique-names.",
   "license": "SEE LICENSE IN LICENSE",
   "type": "module",
