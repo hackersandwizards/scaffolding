@@ -1,0 +1,71 @@
+{
+  "name": "@hackersandwizards/scaffolding",
+  "version": "0.1.0",
+  "description": "Repository skeleton and gate commands: scaffold, check-structure, check-coupling, check-leaks, check-staged, check-unique-names.",
+  "license": "SEE LICENSE IN LICENSE",
+  "type": "module",
+  "bin": {
+    "scaffold": "bin/scaffold.ts",
+    "check-structure": "bin/check-structure.ts",
+    "check-coupling": "bin/check-coupling.ts",
+    "check-leaks": "bin/check-leaks.ts",
+    "check-staged": "bin/check-staged.ts",
+    "check-unique-names": "bin/check-unique-names.ts"
+  },
+  "exports": {
+    "./skeleton.json": "./skeleton.json",
+    "./template/*": "./template/*"
+  },
+  "files": [
+    "bin",
+    "lib",
+    "template",
+    "skeleton.json"
+  ],
+  "engines": {
+    "bun": ">=1.3.0",
+    "npm": "please-use-bun"
+  },
+  "packageManager": "bun@1.4.4",
+  "peerDependencies": {
+    "typescript": ">=5"
+  },
+  "peerDependenciesMeta": {
+    "typescript": {
+      "optional": true
+    }
+  },
+  "scripts": {
+    "prepare": "[ \"$(git rev-parse --show-toplevel 2>/dev/null)\" = \"$(pwd -P)\" ] && git config core.hooksPath .githooks || true",
+    "check": "bun run format:check && bun run lint && bun run typecheck && bun test && bun bin/check-structure.ts && bun bin/check-coupling.ts && bun bin/check-unique-names.ts && bun bin/check-leaks.ts --tree HEAD",
+    "check:staged": "bun bin/check-staged.ts",
+    "format:check": "bun --bun prettier --check .",
+    "lint": "bun --bun eslint --cache --concurrency=auto .",
+    "typecheck": "bun --bun tsc --noEmit",
+    "fix": "bun --bun eslint --cache --concurrency=auto . --fix && bun --bun prettier --write .",
+    "check-leaks": "bun bin/check-leaks.ts"
+  },
+  "devDependencies": {
+    "@eslint/js": "10.0.1",
+    "@types/bun": "1.4.4",
+    "eslint": "10.14.0",
+    "eslint-config-prettier": "10.1.8",
+    "prettier": "3.9.10",
+    "typescript": "6.0.3",
+    "typescript-eslint": "8.72.1"
+  },
+  "scaffolding": {
+    "allow": [
+      {
+        "check": "coupling",
+        "path": "skeleton.json",
+        "reason": "its one relative path is the .agents/skills symlink target, resolved from .agents/, inside the repository"
+      },
+      {
+        "check": "coupling",
+        "path": "test/checks.test.ts",
+        "reason": "planted cases the coupling tests feed to the check"
+      }
+    ]
+  }
+}

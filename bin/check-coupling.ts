@@ -1,0 +1,108 @@
+#!/usr/bin/env bun
+// check-coupling [--staged]
+// The machine-checkable lines of the coupling rule: no path leaves the repository (a sibling
+// checkout `../<repo>`), no import reaches into a package past its `exports`, and every Git
+// dependency is pinned to a version tag. A full run also reports stale allow entries.
+import { existsSync, readFileSync } from "node:fs";
+import { dirname, posix, resolve } from "node:path";
+import {
+  applyAllow,
+  finish,
+  listFiles,
+  readPackage,
+  reader,
+  repoRoot,
+  type Finding,
+} from "../lib/repo.ts";
+
+const started = performance.now();
+const staged = process.argv.includes("--staged");
+const root = repoRoot();
+const read = reader(root, staged);
+const findings: Finding[] = [];
+const flag = (path: string, text: string, message: string) =>
+  findings.push({ check: "coupling", path, text, message });
+
+const SCANNED =
+  /\.(?:[cm]?[jt]sx?|astro|vue|svelte|css|scss|pcss|html|sh|json|jsonc|toml|ya?ml)$|^\.githooks\//;
+const IMPORTING = /\.(?:[cm]?[jt]sx?|astro|vue|svelte|css|scss|pcss|html)$/;
+const TEST = /(?:^|\/)(?:__tests__|tests?|e2e)\/|\.(?:test|spec)\.[cm]?[jt]sx?$/;
+const SKIPPED = /(?:^|\/)(?:bun\.lock|package-lock\.json)$/;
+const UP = /(?<![\w./-])(?:\.\.\/)+[^\s"'`)\],;]*/g;
+const SPECIFIER =
+  /(?:\bfrom\s*|\bimport\s*\(?\s*|\brequire\s*\(\s*|@(?:import|use|forward|source|plugin|reference|config)\s+(?:url\()?\s*)["'`]([^"'`\n]+)["'`]/g;
+
+function exported(exports: unknown, subpath: string): boolean {
+  if (typeof exports === "string" || Array.isArray(exports)) return false;
+  if (!exports || typeof exports !== "object") return true;
+  const keys = Object.keys(exports).filter((k) => k.startsWith("."));
+  if (keys.length === 0) return false;
+  const want = `./${subpath}`;
+  return keys.some((key) => {
+    if ((exports as Record<string, unknown>)[key] === null) return false;
+    if (key === want) return true;
+    const star = key.indexOf("*");
+    if (star === -1) return key.endsWith("/") && want.startsWith(key);
+    const [head, tail] = [key.slice(0, star), key.slice(star + 1)];
+    return (
+      want.length > head.length + tail.length - 1 && want.startsWith(head) && want.endsWith(tail)
+    );
+  });
+}
+
+const manifests = new Map<string, Record<string, unknown> | null>();
+function manifest(name: string) {
+  if (!manifests.has(name)) {
+    const file = `${root}/node_modules/${name}/package.json`;
+    manifests.set(name, existsSync(file) ? JSON.parse(readFileSync(file, "utf8")) : null);
+  }
+  return manifests.get(name);
+}
+
+for (const path of listFiles(root, staged)) {
+  if (!SCANNED.test(path) || SKIPPED.test(path)) continue;
+  const text = read(path).toString("utf8");
+  const base = path === "package.json" ? root : resolve(root, dirname(path));
+  // A test holds path-like strings as data, so there only import specifiers count.
+  const tokens = TEST.test(path)
+    ? [...text.matchAll(SPECIFIER)].map((m) => m[1]).filter((spec) => spec.startsWith("../"))
+    : [...text.matchAll(UP)].map((m) => m[0]);
+  for (const token of tokens) {
+    const target = resolve(base, token.replace(/[?#].*/, ""));
+    if (target !== root && !target.startsWith(`${root}/`))
+      flag(path, token, "path leaves the repository; take it from the package its owner publishes");
+  }
+  if (!IMPORTING.test(path)) continue;
+  for (const [, raw] of text.matchAll(SPECIFIER)) {
+    const spec = raw.replace(/\?.*/, "");
+    if (/^(?:[./#~]|@\/|[a-z]+:)/.test(spec)) continue;
+    const parts = spec.split("/");
+    const name = spec.startsWith("@") ? parts.slice(0, 2).join("/") : parts[0];
+    const subpath = posix.normalize(parts.slice(spec.startsWith("@") ? 2 : 1).join("/"));
+    if (!subpath || subpath === ".") continue;
+    const pkg = manifest(name);
+    if (pkg && "exports" in pkg && !exported(pkg.exports, subpath))
+      flag(path, spec, `not in the exports of ${name}`);
+  }
+}
+
+const GIT =
+  /^(?:github:|gitlab:|bitbucket:|git\+|git:|git@|https?:\/\/\S+\.git(?:#|$))|^[\w.-]+\/[\w.-]+(?:#|$)/;
+const TAG = /#(?:semver:)?v?\d+\.\d+\.\d+(?:[-+][\w.-]+)?$/;
+if (!staged || listFiles(root, true).includes("package.json")) {
+  const pkg = staged ? JSON.parse(read("package.json").toString("utf8")) : readPackage(root);
+  for (const field of [
+    "dependencies",
+    "devDependencies",
+    "optionalDependencies",
+    "peerDependencies",
+  ])
+    for (const [name, spec] of Object.entries((pkg[field] ?? {}) as Record<string, string>)) {
+      if (/^(?:file|link|portal):/.test(spec))
+        flag("package.json", `${name}@${spec}`, "local path dependency");
+      else if (GIT.test(spec) && !TAG.test(spec))
+        flag("package.json", `${name}@${spec}`, "Git dependency not pinned to a version tag");
+    }
+}
+
+finish("check-coupling", applyAllow(root, "coupling", findings, !staged), started);

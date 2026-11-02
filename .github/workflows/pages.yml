@@ -1,0 +1,53 @@
+# Reusable: builds a repository's static site and publishes it to GitHub Pages. The caller grants
+# `pages: write` and `id-token: write`; only the deploy job, which runs no code of the repository,
+# uses them. The install runs dependencies' lifecycle scripts, so the build job holds no deploy
+# grant and no persisted checkout credentials.
+name: Pages
+on:
+  workflow_call:
+    inputs:
+      build:
+        description: Command that writes the site
+        type: string
+        required: true
+      path:
+        description: Folder the build writes
+        type: string
+        required: true
+      lfs:
+        description: Pull Git LFS objects before the build
+        type: boolean
+        default: false
+permissions:
+  contents: read
+concurrency:
+  group: pages
+  cancel-in-progress: false
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          lfs: ${{ inputs.lfs }}
+      - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
+        with:
+          bun-version-file: package.json
+      - run: bun install --frozen-lockfile
+      - run: ${{ inputs.build }}
+      - uses: actions/upload-pages-artifact@fc324d3547104276b827a68afc52ff2a11cc49c9 # v5.0.0
+        with:
+          path: ${{ inputs.path }}
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      pages: write
+      id-token: write
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - id: deployment
+        uses: actions/deploy-pages@368f82528645a54fb793d4d04e342629a3f51346 # v5.0.1

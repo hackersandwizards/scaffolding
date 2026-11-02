@@ -1,0 +1,59 @@
+{
+  "same": [
+    ".editorconfig",
+    ".npmrc",
+    "bunfig.toml",
+    ".githooks/pre-commit",
+    ".githooks/commit-msg",
+    ".githooks/pre-push",
+    "scripts/repo/only-bun.cjs"
+  ],
+  "present": [
+    "README.md",
+    "LICENSE",
+    "CLAUDE.md",
+    "AGENTS.md",
+    ".gitignore",
+    ".prettierignore",
+    "package.json",
+    "bun.lock",
+    "tsconfig.json",
+    "eslint.config.js",
+    ".prettierrc.json",
+    ".claude/settings.json",
+    ".mcp.json",
+    ".codex/config.toml",
+    "docs/tracking"
+  ],
+  "absent": [
+    "eslint.config.mjs",
+    "eslint.config.cjs",
+    ".eslintrc",
+    ".eslintrc.json",
+    ".eslintrc.js",
+    ".prettierrc",
+    ".prettierrc.js",
+    ".prettierrc.mjs",
+    "prettier.config.js",
+    "prettier.config.mjs",
+    "vitest.config.mts",
+    "package-lock.json",
+    "yarn.lock",
+    "pnpm-lock.yaml"
+  ],
+  "symlinks": {
+    ".agents/skills": "../.claude/skills"
+  },
+  "prettier": {
+    "semi": true,
+    "singleQuote": false,
+    "trailingComma": "all",
+    "printWidth": 100
+  },
+  "package": {
+    "type": "module",
+    "engines.npm": "please-use-bun",
+    "scripts": ["check", "check:staged", "format:check", "lint", "typecheck"]
+  },
+  "hooksPath": ".githooks"
+}

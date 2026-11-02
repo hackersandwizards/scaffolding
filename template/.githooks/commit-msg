@@ -1,0 +1,3 @@
+#!/bin/sh
+# The leak check reads the message, which the pre-commit hook cannot see yet.
+exec bun run --silent check-leaks --message-file "$1"

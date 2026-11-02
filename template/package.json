@@ -1,0 +1,27 @@
+{
+  "name": "{{name}}",
+  "private": true,
+  "license": "SEE LICENSE IN LICENSE",
+  "type": "module",
+  "engines": {
+    "bun": ">=1.3.0",
+    "npm": "please-use-bun"
+  },
+  "packageManager": "{{packageManager}}",
+  "scripts": {
+    "preinstall": "node scripts/repo/only-bun.cjs",
+    "prepare": "[ \"$(git rev-parse --show-toplevel 2>/dev/null)\" = \"$(pwd -P)\" ] && git config core.hooksPath .githooks || true",
+    "check": "bun run format:check && bun run lint && bun run typecheck && check-structure && check-coupling && check-unique-names",
+    "check:staged": "check-staged",
+    "format:check": "bun --bun prettier --check .",
+    "lint": "bun --bun eslint --cache --concurrency=auto .",
+    "typecheck": "bun --bun tsc --noEmit",
+    "fix": "bun --bun eslint --cache --concurrency=auto . --fix && bun --bun prettier --write ."
+  },
+  "devDependencies": {
+    "@hackersandwizards/scaffolding": "github:hackersandwizards/scaffolding#v{{version}}"
+  },
+  "scaffolding": {
+    "allow": []
+  }
+}
