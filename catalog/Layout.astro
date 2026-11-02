@@ -1,0 +1,16 @@
+---
+// The catalog shape on an Astro page: the header the preset names, then render.ts's rail, title,
+// provenance and tile grid. The default slot renders between the provenance line and the first
+// group: the repository's foundations. The nav slot goes into the header's right side.
+import Header from "virtual:scaffolding/catalog-header";
+import { renderCatalog, type CatalogData } from "./render.ts";
+import "./catalog.css";
+
+type Props = Omit<CatalogData, "intro"> & { product: string; href?: string };
+
+const { product, href, ...data } = Astro.props;
+const intro = Astro.slots.has("default") ? await Astro.slots.render("default") : "";
+---
+
+<Header product={product} href={href}><slot name="nav" /></Header>
+<Fragment set:html={renderCatalog({ ...data, intro })} />

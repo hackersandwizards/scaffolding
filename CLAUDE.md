@@ -1,7 +1,8 @@
 # CLAUDE.md
 
 Public package `@hackersandwizards/scaffolding`: the repository skeleton (`template/`,
-`skeleton.json`) and the gate commands in `bin/`. Repositories install it by Git tag and run the
+`skeleton.json`), the gate commands in `bin/`, the shared configs in `config/` and the catalog
+shell with its preset in `catalog/`. Repositories install it by Git tag and run the
 commands through `bun run`. README.md says what each command checks.
 
 This repository is public. No client, deal, invoice, person record, term list or Company OS
@@ -9,8 +10,8 @@ screenshot goes in, and `check-confidential` runs in its own hooks.
 
 ## Checks
 
-`bun run check` is the full gate: format, lint, typecheck, `bun test`, and the package's own
-commands against itself. The pre-commit hook runs `bun run check:staged`.
+`bun run check` is the full gate, `scaffolding check` run on the package itself. The catalog build
+test builds `test/fixture/` with the preset. The pre-commit hook runs `bun run check:staged`.
 
 ## Releases
 

@@ -133,6 +133,32 @@ describe("check-coupling", () => {
     expect(found[0]).toContain("src/new.ts");
   });
 
+  test("CSS from company packages comes only from brand's exports, the shell's only under catalog/", () => {
+    const dir = repo({
+      "package.json": JSON.stringify({ name: "@hackersandwizards/fx" }),
+      "node_modules/@hackersandwizards/brand/package.json": JSON.stringify({
+        exports: { "./tokens.css": "./tokens/tokens.css" },
+      }),
+      "src/ok.css": '@import "@hackersandwizards/brand/tokens.css";\n@import "./own.css";\n',
+      "src/own.css": "a { color: red; }\n",
+      "src/self.ts": 'import "@hackersandwizards/fx/x.css";\n',
+      "src/deep.astro":
+        '<link rel="stylesheet" href="../node_modules/@hackersandwizards/brand/expert/expert.css" />\n',
+      "src/admin.ts": 'import "@hackersandwizards/admin/site.css";\n',
+      "src/shell.ts": 'import "@hackersandwizards/scaffolding/catalog/catalog.css";\n',
+      "catalog/shell.ts": 'import "@hackersandwizards/scaffolding/catalog/catalog.css";\n',
+      "catalog/astro.config.ts": 'export const css = ["@hackersandwizards/documents/doc.css"];\n',
+      "test/a.test.ts": 'const planted = "@hackersandwizards/admin/site.css";\n',
+    });
+    const found = lines(run(dir, "check-coupling").out, "check-coupling");
+    expect(found.sort()).toEqual([
+      "[check-coupling] catalog/astro.config.ts: styles come from brand's exports or from this repository (@hackersandwizards/documents/doc.css)",
+      "[check-coupling] src/admin.ts: styles come from brand's exports or from this repository (@hackersandwizards/admin/site.css)",
+      "[check-coupling] src/deep.astro: not in the exports of @hackersandwizards/brand (@hackersandwizards/brand/expert/expert.css)",
+      "[check-coupling] src/shell.ts: the catalog shell's styles load only under catalog/ (@hackersandwizards/scaffolding/catalog/catalog.css)",
+    ]);
+  });
+
   test("an allow entry needs a reason and must still match", () => {
     const allow = (entries: object[]) =>
       repo({
@@ -202,6 +228,45 @@ describe("scaffold and check-structure", () => {
     expect(out).toContain("eslint.config.mjs: not allowed by the skeleton");
     expect(out).toContain("printWidth must be 100");
     expect(out).toContain("core.hooksPath must be .githooks");
+  });
+
+  test("a repository with a surface carries the catalog; every gate step is a check:<what> script", () => {
+    const other = join(parent, "surface");
+    run(parent, "scaffold", ["surface"]);
+    install(other);
+    write(other, { "bun.lock": "" });
+    sh(other, ["config", "core.hooksPath", ".githooks"]);
+    const pkg = JSON.parse(readFileSync(join(other, "package.json"), "utf8"));
+    delete pkg.scaffolding.skip.catalog;
+    pkg.scaffolding.check = ["brand-colours", ["check:markers", "lint"]];
+    pkg.scripts["check:markers"] = "true";
+    write(other, { "package.json": JSON.stringify(pkg) });
+    const found = lines(run(other, "check-structure").out, "check-structure");
+    expect(found.sort()).toEqual([
+      "[check-structure] catalog/astro.config.ts: the Astro config must use the catalog preset from @hackersandwizards/scaffolding/catalog",
+      "[check-structure] catalog/stories: missing: the catalog's stories live here",
+      "[check-structure] package.json: a step of scaffolding.check is a script named check:<what> (brand-colours)",
+      "[check-structure] package.json: a step of scaffolding.check is a script named check:<what> (lint)",
+      "[check-structure] package.json: script build missing (build)",
+      "[check-structure] package.json: script catalog missing (catalog)",
+      "[check-structure] package.json: script dev missing (dev)",
+    ]);
+    pkg.scaffolding.check = [["check:markers"]];
+    Object.assign(pkg.scripts, { dev: "x", catalog: "x", build: "x" });
+    write(other, {
+      "package.json": JSON.stringify(pkg),
+      "catalog/stories/.gitkeep": "",
+      // A comment naming the preset is not a use of it.
+      "catalog/astro.config.ts": "// @hackersandwizards/scaffolding/catalog\n",
+    });
+    expect(lines(run(other, "check-structure").out, "check-structure")).toEqual([
+      "[check-structure] catalog/astro.config.ts: the Astro config must use the catalog preset from @hackersandwizards/scaffolding/catalog",
+    ]);
+    write(other, {
+      "catalog/astro.config.ts":
+        'import { catalog } from "@hackersandwizards/scaffolding/catalog";\nexport default { integrations: [catalog] };\n',
+    });
+    expect(run(other, "check-structure").code).toBe(0);
   });
 
   test("a repository without package.json is reported, not a crash", () => {
@@ -524,8 +589,15 @@ describe("scaffolding check", () => {
   const gate = (scaffolding: object, scripts: Record<string, string> = {}) =>
     repo({ "package.json": JSON.stringify({ name: "fx", type: "module", scripts, scaffolding }) });
   // Every shared step skipped, so only the runner's own logic is under test.
-  const all = { format: "t", lint: "t", typecheck: "t", structure: "t", coupling: "t" };
-  const skip = { ...all, "unique-names": "t", confidential: "t", test: "t" };
+  const all = {
+    format: "t",
+    lint: "t",
+    styles: "t",
+    typecheck: "t",
+    structure: "t",
+    coupling: "t",
+  };
+  const skip = { ...all, "unique-names": "t", confidential: "t", test: "t", catalog: "t" };
 
   test("runs the repository's steps in order and passes", () => {
     const dir = gate({ skip, check: ["mine", ["true", "true"]] }, { mine: "echo ran-mine" });
@@ -555,6 +627,19 @@ describe("scaffolding check", () => {
     expect(ok.code).toBe(0);
   });
 
+  test("the catalog build is a shared step: bun run build", () => {
+    const { catalog: _, ...noCatalog } = skip;
+    const built = gate({ skip: noCatalog }, { build: "echo ran-build" });
+    const ok = run(built, "scaffolding", ["check"], { CHECK_LOCK: join(built, ".lock") });
+    expect(ok.out).toContain("ok   catalog");
+    expect(ok.out).toContain("ran-build");
+    expect(ok.code).toBe(0);
+    const broken = gate({ skip: noCatalog }, { build: "exit 3" });
+    const r = run(broken, "scaffolding", ["check"], { CHECK_LOCK: join(broken, ".lock") });
+    expect(r.out).toContain("FAIL catalog");
+    expect(r.code).toBe(1);
+  });
+
   test("an unknown key, an unknown skip and a skip without reason go red", () => {
     for (const config of [
       { skip, chek: [] },
@@ -579,6 +664,51 @@ describe("shared eslint config", () => {
     expect(r.status).toBe(1);
     expect(r.stdout).toContain("a.test.ts");
     expect(r.stdout).not.toContain("b.test.ts");
+  });
+});
+
+describe("catalog", () => {
+  test("the preset builds the shell's home into the repository's dist/", () => {
+    const fixture = join(import.meta.dir, "fixture");
+    const dist = join(fixture, "dist");
+    made.push(dist, join(fixture, "catalog", ".astro"), join(fixture, "catalog", "node_modules"));
+    const astro = join(import.meta.dir, "..", "node_modules", ".bin", "astro");
+    const r = spawnSync(astro, ["build", "--root", "catalog"], { cwd: fixture, encoding: "utf8" });
+    expect(r.status).toBe(0);
+    const home = readFileSync(join(dist, "catalog/index.html"), "utf8");
+    expect(home).toContain('<header class="fx-header">Fx</header>');
+    expect(home).toContain("fx catalog/stories · 2 components · 4 states");
+    expect(home.indexOf(">Types <")).toBeLessThan(home.indexOf(">Parts <"));
+    expect(home).toContain('src="/catalog/stories/Types/box-types/one"');
+    expect(readdirSync(join(dist, "catalog/stories/Parts/box-parts"))).toEqual(["one", "two"]);
+  }, 60_000);
+});
+
+describe("shared stylelint config", () => {
+  test("a custom property brand and the repository do not define goes red", () => {
+    const config = join(import.meta.dir, "..", "config", "stylelint.js");
+    const dir = repo({
+      "package.json": JSON.stringify({ name: "fx", type: "module" }),
+      "node_modules/@hackersandwizards/brand/package.json": JSON.stringify({
+        exports: { "./tokens.root.css": "./generated/tokens.root.css" },
+      }),
+      "node_modules/@hackersandwizards/brand/generated/tokens.root.css":
+        ":root { --color-ink: #000; }\n",
+      "src/own.css": ":root { --own-gap: 1rem; }\n",
+      "stylelint.config.js": `import styles from "${config}";\nexport default styles({ importFrom: ["./src/own.css"] });\n`,
+      "src/ok.css": "a { color: var(--color-ink); margin: var(--own-gap); }\n",
+      "src/bad.css": "a { color: var(--color-nope); }\n",
+    });
+    const stylelint = join(import.meta.dir, "..", "node_modules", ".bin", "stylelint");
+    const r = spawnSync(stylelint, ["src/*.css"], { cwd: dir, encoding: "utf8" });
+    expect(r.status).toBe(2);
+    const out = `${r.stdout}${r.stderr}`;
+    expect(out).toContain("src/bad.css");
+    expect(out).toContain("--color-nope");
+    expect(out).not.toContain("src/ok.css");
+    rmSync(join(dir, "node_modules/@hackersandwizards/brand"), { recursive: true });
+    const gone = spawnSync(stylelint, ["src/ok.css"], { cwd: dir, encoding: "utf8" });
+    expect(gone.status).not.toBe(0);
   });
 });
 

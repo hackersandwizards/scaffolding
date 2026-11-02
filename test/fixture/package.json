@@ -1,0 +1,5 @@
+{
+  "name": "@acme/fx",
+  "private": true,
+  "type": "module"
+}

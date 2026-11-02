@@ -3,7 +3,8 @@
 // The full gate, read from the `scaffolding` key of package.json. It first runs
 // `bun install --frozen-lockfile`: a tree a pin-raising merge left behind gets installed, and a
 // lockfile out of step fails under its own name, not a later step's. The shared steps (format, lint,
-// typecheck, structure, coupling, unique names, confidential, tests) run side by side; then the repository's own
+// styles, typecheck, structure, coupling, unique names, confidential, tests, and the catalog build
+// through `bun run build`) run side by side; then the repository's own
 // `check` steps run in order, an inner array side by side. The whole run holds the checkout's
 // check lock. A failing shared step stops the run before the repository's steps.
 //
@@ -11,7 +12,7 @@
 //     "typecheck": "astro check",          // default: tsc --noEmit
 //     "uniqueNames": ["GET", "POST"],      // names the framework dictates
 //     "test": "test:coverage",             // required: the unit tests, or skip.test with a reason
-//     "skip": { "confidential": "private repository" },
+//     "skip": { "confidential": "private repository", "catalog": "no surface" },
 //     "check": ["validate:refs", ["test:coverage", "build"], "brand-colours"]
 //   }
 //
@@ -51,6 +52,8 @@ const bin = (name: string) => `bun ${join(home, "bin", `${name}.ts`)}`;
 const shared: Record<string, string> = {
   format: "bun --bun prettier --check --log-level warn .",
   lint: "bun --bun eslint --cache --concurrency=auto .",
+  // Custom properties only from brand's tokens or the repository's own (the stylelint base).
+  styles: 'bun --bun stylelint "**/*.css" --allow-empty-input --ignore-path .gitignore',
   typecheck: `bun --bun ${config.typecheck ?? "tsc --noEmit"}`,
   structure: bin("check-structure"),
   coupling: bin("check-coupling"),
@@ -58,6 +61,8 @@ const shared: Record<string, string> = {
   confidential: `${bin("check-confidential")} --tree HEAD`,
   // Tests are shared too: a gate without them is a skip someone wrote down, not one that drifted.
   test: script(config.test ?? ""),
+  // The catalog build, so a broken one goes red here rather than on the Pages run.
+  catalog: "bun run --silent build",
 };
 if (!config.test && !config.skip?.test)
   fail("scaffolding.test is missing: name the tests, or skip.test with a reason");

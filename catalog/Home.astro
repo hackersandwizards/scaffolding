@@ -1,0 +1,69 @@
+---
+// The home of every repository's catalog: one tile per story file, grouped by its first folder
+// under catalog/stories, linking its first state and drawing it in the tile. The preset's options
+// arrive through virtual:scaffolding/catalog; a repository with foundations or a header control
+// writes its own home page that renders this one with the default slot (foundations) and the nav
+// slot (such as a theme toggle, since the home hides Astrobook's sidebar), and names it in the
+// preset's `home`. A prop given here wins over the preset's option of the same name.
+import modules from "virtual:astrobook/story-modules.mjs";
+import config from "virtual:astrobook/global-config.mjs";
+import options from "virtual:scaffolding/catalog";
+import Layout from "./Layout.astro";
+
+type StoryModule = { name: string; directory?: string; stories: { id: string }[] };
+
+interface Props {
+  product?: string;
+  href?: string;
+  title?: string;
+  lead?: string;
+  previews?: boolean;
+  previewSize?: [number, number];
+  groupOrder?: string[];
+}
+
+const {
+  product,
+  href,
+  title,
+  lead,
+  previews = true,
+  previewSize,
+  groupOrder = [],
+} = { ...options, ...Astro.props };
+const rank = (g: string) => (groupOrder.includes(g) ? groupOrder.indexOf(g) : groupOrder.length);
+const slash = config.trailingSlash === "always" ? "/" : "";
+const url = (base: string, id: string) => `${base.replace(/\/$/, "")}/${id}${slash}`;
+const groups = new Map<
+  string,
+  { name: string; href: string; pill: string; frame?: string; frameSize?: [number, number] }[]
+>();
+let states = 0;
+for (const m of [...(modules as StoryModule[])].sort((a, b) => a.name.localeCompare(b.name))) {
+  const first = m.stories[0];
+  if (!first) continue;
+  states += m.stories.length;
+  const group = m.directory?.split("/")[0] || "Components";
+  if (!groups.has(group)) groups.set(group, []);
+  groups.get(group)!.push({
+    name: m.name,
+    href: url(config.dashboardBase, first.id),
+    pill: m.stories.length === 1 ? "1 state" : `${m.stories.length} states`,
+    frame: previews ? url(config.storyBase, first.id) : undefined,
+    frameSize: previewSize,
+  });
+}
+const data = {
+  title,
+  lead,
+  provenance: `${options.provenance} · ${modules.length} components · ${states} states`,
+  groups: [...groups]
+    .sort(([a], [b]) => rank(a) - rank(b) || a.localeCompare(b))
+    .map(([name, items]) => ({ name, items })),
+};
+---
+
+<Layout product={product} href={href} {...data}>
+  <slot name="nav" slot="nav" />
+  <slot />
+</Layout>

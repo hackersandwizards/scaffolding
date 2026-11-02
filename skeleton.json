@@ -54,5 +54,16 @@
     "engines.npm": "please-use-bun",
     "scripts": ["check", "check:staged"]
   },
-  "hooksPath": ".githooks"
+  "hooksPath": ".githooks",
+  "catalog": {
+    "scripts": ["dev", "catalog", "build"],
+    "stories": "catalog/stories",
+    "configs": [
+      "catalog/astro.config.ts",
+      "catalog/astro.config.mjs",
+      "astro.config.ts",
+      "astro.config.mjs"
+    ],
+    "preset": "@hackersandwizards/scaffolding/catalog"
+  }
 }

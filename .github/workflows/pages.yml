@@ -1,19 +1,11 @@
-# Reusable: builds a repository's static site and publishes it to GitHub Pages. The caller grants
-# `pages: write` and `id-token: write`; only the deploy job, which runs no code of the repository,
-# uses them. The install runs dependencies' lifecycle scripts, so the build job holds no deploy
+# Reusable: runs the repository's `bun run build` and publishes its dist/ to GitHub Pages. The
+# caller grants `pages: write` and `id-token: write`; only the deploy job, which runs no code of the
+# repository, uses them. The install runs dependencies' lifecycle scripts, so the build job holds no deploy
 # grant and no persisted checkout credentials.
 name: Pages
 on:
   workflow_call:
     inputs:
-      build:
-        description: Command that writes the site
-        type: string
-        required: true
-      path:
-        description: Folder the build writes
-        type: string
-        required: true
       lfs:
         description: Pull Git LFS objects before the build
         type: boolean
@@ -35,10 +27,10 @@ jobs:
         with:
           bun-version-file: package.json
       - run: bun install --frozen-lockfile
-      - run: ${{ inputs.build }}
+      - run: bun run build
       - uses: actions/upload-pages-artifact@fc324d3547104276b827a68afc52ff2a11cc49c9 # v5.0.0
         with:
-          path: ${{ inputs.path }}
+          path: dist
   deploy:
     needs: build
     runs-on: ubuntu-latest

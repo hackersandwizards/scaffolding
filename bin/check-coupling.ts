@@ -4,7 +4,11 @@
 // checkout `../<repo>`), no import reaches into a package past its `exports`, and every Git
 // dependency is pinned to a version tag that node_modules holds: a stale install renders with the
 // old engine while every file reads the new pin (documents once ran brand 0.21.6 against a v0.24.4
-// pin, and its list markers vanished). A full run also reports stale allow entries.
+// pin, and its list markers vanished). CSS origin: in a repository's sources, every stylesheet a
+// company package supplies comes from brand's exports; the catalog shell's styles load only under
+// catalog/, and no other company package's CSS loads anywhere but its own repository. Read are
+// quoted references, so imports, <link href>, @import and a preset's `css` list count, a
+// node_modules path included. A full run also reports stale allow entries.
 import { existsSync, readFileSync } from "node:fs";
 import { dirname, posix, resolve } from "node:path";
 import {
@@ -22,8 +26,12 @@ const staged = process.argv.includes("--staged");
 const root = repoRoot();
 const read = reader(root, staged);
 const findings: Finding[] = [];
-const flag = (path: string, text: string, message: string) =>
-  findings.push({ check: "coupling", path, text, message });
+const seen = new Set<string>();
+const flag = (path: string, text: string, message: string) => {
+  const key = `${path}\0${text}\0${message}`;
+  if (!seen.has(key)) findings.push({ check: "coupling", path, text, message });
+  seen.add(key);
+};
 
 const SCANNED =
   /\.(?:[cm]?[jt]sx?|astro|vue|svelte|css|scss|pcss|html|sh|json|jsonc|toml|ya?ml)$|^\.githooks\//;
@@ -31,6 +39,10 @@ const IMPORTING = /\.(?:[cm]?[jt]sx?|astro|vue|svelte|css|scss|pcss|html)$/;
 const TEST = /(?:^|\/)(?:__tests__|tests?|e2e)\/|\.(?:test|spec)\.[cm]?[jt]sx?$/;
 const SKIPPED = /(?:^|\/)(?:bun\.lock|package-lock\.json)$/;
 const UP = /(?<![\w./-])(?:\.\.\/)+[^\s"'`)\],;]*/g;
+const BRAND = "@hackersandwizards/brand";
+const SHELL = "@hackersandwizards/scaffolding";
+const CSS =
+  /["'`(](?:[^"'`()\s]*\/)?(?:node_modules\/)?(@hackersandwizards\/[\w.-]+)\/([^"'`()\s?#]+\.css)(?:[?#][^"'`()\s]*)?["'`)]/g;
 const SPECIFIER =
   /(?:\bfrom\s*|\bimport\s*\(?\s*|\brequire\s*\(\s*|@(?:import|use|forward|source|plugin|reference|config)\s+(?:url\()?\s*)["'`]([^"'`\n]+)["'`]/g;
 
@@ -61,6 +73,7 @@ function manifest(name: string) {
   return manifests.get(name);
 }
 
+const own = readPackage(root).name;
 for (const path of listFiles(root, staged)) {
   if (!SCANNED.test(path) || SKIPPED.test(path)) continue;
   const text = read(path).toString("utf8");
@@ -75,6 +88,19 @@ for (const path of listFiles(root, staged)) {
       flag(path, token, "path leaves the repository; take it from the package its owner publishes");
   }
   if (!IMPORTING.test(path)) continue;
+  if (!TEST.test(path))
+    for (const [, name, subpath] of text.matchAll(CSS)) {
+      const spec = `${name}/${subpath}`;
+      if (name === own) continue;
+      if (name === BRAND) {
+        const pkg = manifest(name);
+        if (pkg && "exports" in pkg && !exported(pkg.exports, posix.normalize(subpath)))
+          flag(path, spec, `not in the exports of ${name}`);
+      } else if (name === SHELL) {
+        if (!path.startsWith("catalog/"))
+          flag(path, spec, "the catalog shell's styles load only under catalog/");
+      } else flag(path, spec, "styles come from brand's exports or from this repository");
+    }
   for (const [, raw] of text.matchAll(SPECIFIER)) {
     const spec = raw.replace(/\?.*/, "");
     if (/^(?:[./#~]|@\/|[a-z]+:)/.test(spec)) continue;

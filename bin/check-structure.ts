@@ -3,7 +3,10 @@
 // The repository against the skeleton of the pinned scaffolding version: identical files, files
 // that must or must not exist, the `.agents/skills` link, the prettier rules, package.json fields
 // and the hooks path. `--fix` writes what can be written from the template: identical files, the
-// link and the hooks path.
+// link and the hooks path. A repository with a surface carries the catalog: the scripts `dev`,
+// `catalog` and `build`, its stories in catalog/stories and an Astro config using the catalog
+// preset; `scaffolding.skip.catalog` with a reason drops all three. Every step of
+// `scaffolding.check` is a script named `check:<what>`.
 import { spawnSync } from "node:child_process";
 import {
   copyFileSync,
@@ -89,8 +92,21 @@ if (existsSync(at("package.json"))) {
     add("package.json", `engines.npm must be ${skeleton.package["engines.npm"]}`);
   if (pkg.packageManager !== own.packageManager)
     add("package.json", `packageManager must be ${own.packageManager}`, String(pkg.packageManager));
-  for (const script of skeleton.package.scripts as string[])
+  const surface = !String(pkg.scaffolding?.skip?.catalog ?? "").trim();
+  const scripts = [...skeleton.package.scripts, ...(surface ? skeleton.catalog.scripts : [])];
+  for (const script of scripts as string[])
     if (!pkg.scripts?.[script]) add("package.json", `script ${script} missing`, script);
+  for (const step of (pkg.scaffolding?.check ?? []).flat())
+    if (!/^check:[a-z0-9][\w:-]*$/.test(step) || !pkg.scripts?.[step])
+      add("package.json", "a step of scaffolding.check is a script named check:<what>", step);
+  if (surface) {
+    const { stories, configs, preset } = skeleton.catalog;
+    if (!exists(stories)) add(stories, "missing: the catalog's stories live here");
+    const uses = new RegExp(`from\\s*["']${preset.replace(/[/.]/g, "\\$&")}["']`);
+    const found = (configs as string[]).filter(exists);
+    if (!found.some((path) => uses.test(readFileSync(at(path), "utf8"))))
+      add(found[0] ?? configs[0], `the Astro config must use the catalog preset from ${preset}`);
+  }
 }
 
 const hooks = spawnSync("git", ["config", "core.hooksPath"], {

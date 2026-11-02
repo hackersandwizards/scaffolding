@@ -1,22 +1,93 @@
 # scaffolding
 
 How hackers&wizards sets up a code repository, as a package each repository pins by Git tag: the
-skeleton every repository starts from and the commands its gate runs.
+skeleton every repository starts from, the commands its gate runs, the configs it shares and the
+shell of its catalog.
 
 ```sh
-bun add -d github:hackersandwizards/scaffolding#v0.2.0
+bun add -d github:hackersandwizards/scaffolding#v0.3.0
 ```
 
 ## Commands
 
-| Command                         | Runs in                      | Checks                                                                                                                         |
-| ------------------------------- | ---------------------------- | ------------------------------------------------------------------------------------------------------------------------------ |
-| `scaffold <dir>`                | once                         | Creates a repository from `template/` with this version pinned.                                                                |
-| `check-structure [--fix]`       | `bun run check`              | The repository against `skeleton.json`. `--fix` writes the identical files, the `.agents/skills` link and the hooks path.      |
-| `check-coupling [--staged]`     | `bun run check`, pre-commit  | No path leaves the repository, no import past a package's `exports`, every Git dependency pinned to a version tag.             |
-| `check-confidential`            | pre-commit, commit-msg, push | Terms from a hashed list, Company OS screenshots and text in images (OCR, an unread image fails), commits purged from history. |
-| `check-staged`                  | pre-commit                   | gitleaks on the index, then `check-coupling` and `check-confidential`, then prettier and eslint on the staged files.           |
-| `check-unique-names [names...]` | `bun run check`              | Every module-scope function name outside tests is defined once.                                                                |
+| Command                         | Runs in                      | Checks                                                                                                                                                                     |
+| ------------------------------- | ---------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `scaffold <dir>`                | once                         | Creates a repository from `template/` with this version pinned.                                                                                                            |
+| `scaffolding check`             | `bun run check`              | The whole gate, below.                                                                                                                                                     |
+| `check-structure [--fix]`       | `bun run check`              | The repository against `skeleton.json`, the catalog and the gate's script names (below). `--fix` writes the identical files, the `.agents/skills` link and the hooks path. |
+| `check-coupling [--staged]`     | `bun run check`, pre-commit  | No path leaves the repository, no import past a package's `exports`, every Git dependency pinned to a tag `node_modules` holds, and the CSS origin (below).                |
+| `check-lock`                    | `scaffolding check`          | One gate at a time per checkout.                                                                                                                                           |
+| `check-confidential`            | pre-commit, commit-msg, push | Terms from a hashed list, Company OS screenshots and text in images (OCR, an unread image fails), commits purged from history.                                             |
+| `check-staged`                  | pre-commit                   | gitleaks on the index, then `check-coupling` and `check-confidential`, then prettier and eslint on the staged files.                                                       |
+| `check-unique-names [names...]` | `bun run check`              | Every module-scope function name outside tests is defined once.                                                                                                            |
+
+## The gate
+
+`scaffolding check` runs `bun install --frozen-lockfile`, then the shared steps side by side:
+format, lint, styles (stylelint), typecheck, structure, coupling, unique names, confidential, the
+tests and the catalog build (`bun run build`). Then the repository's own steps from
+`scaffolding.check`, in order, an inner array side by side. A shared step drops only with a reason:
+
+```json
+{
+  "scaffolding": {
+    "test": "test:coverage",
+    "typecheck": "astro check",
+    "skip": { "catalog": "no surface" },
+    "check": ["check:refs", ["check:markers", "check:elements"]]
+  }
+}
+```
+
+Every step in `scaffolding.check` is a script named `check:<what>`. `"private": true` skips the
+confidential step.
+
+## Configs
+
+| Export                                         | Use                                                                                    |
+| ---------------------------------------------- | -------------------------------------------------------------------------------------- |
+| `./eslint`, `./eslint/astro`                   | `export default [...base, ...]` in `eslint.config.js`                                  |
+| `./tsconfig/bun.json`, `./tsconfig/astro.json` | `"extends"` in `tsconfig.json`; `include` and `paths` stay in the repository           |
+| `./prettier`                                   | `"prettier": "@hackersandwizards/scaffolding/prettier"` in `package.json`              |
+| `./stylelint`                                  | `export default styles({ importFrom: [...] })` in `stylelint.config.js`                |
+| `./chrome`, `./serve`                          | Chrome for Testing with the shared flags; a gate server on a port the system hands out |
+
+The stylelint base lets a stylesheet read only the custom properties brand's `tokens.root.css`
+(from the repository's installed brand) and the files in `importFrom` define.
+
+## The catalog
+
+Every repository with a surface has a catalog at `/catalog/`: the scripts `dev`, `catalog` and
+`build`, its stories in `catalog/stories/`, and an Astro config using the preset. In a repository
+whose only Astro app is the catalog, that config is `catalog/astro.config.ts` and the build lands in
+`dist/`; in an Astro app it is the app's own config.
+
+```ts
+import { defineConfig } from "astro/config";
+import { catalog } from "@hackersandwizards/scaffolding/catalog";
+
+export default defineConfig({
+  integrations: [
+    catalog({
+      product: "Dokumente",
+      lead: "Every document type of the engine.",
+      css: ["@hackersandwizards/brand/tokens.root.css", "@hackersandwizards/brand/elements.css"],
+      previewSize: [794, 1123],
+      groupOrder: ["Typen", "Komponenten"],
+    }),
+  ],
+});
+```
+
+The shell (`catalog/`: Layout, Home, rail, tiles and `catalog.css`) reads brand's token roles by
+name only, and the repository's `css` supplies them. Options beyond the four above: `title`
+(default "Catalog"), `href`, `previews`, `head`, `header` (default brand's `AppHeader` and
+`header.css`) and `home`, a page of the repository that renders `Home.astro` with its foundations
+in the default slot and a control such as a theme toggle in the `nav` slot.
+
+**CSS origin.** In a repository's sources, a stylesheet from a company package comes only from
+brand's `exports`; the shell's styles load only under `catalog/`; no other company package's CSS
+loads outside its own repository.
 
 ## Exceptions
 
@@ -73,15 +144,13 @@ the pre-push hook refuses a push from an old clone that still carries one of tho
 Checks run locally in the git hooks and in `bun run check`. The `post-merge` and `post-checkout`
 hooks run `bun install --frozen-lockfile` when `bun.lock` or `package.json` changed, and
 `bun run check` starts with the same install. CI only builds and deploys. A
-repository that publishes GitHub Pages calls the reusable workflow:
+repository that publishes GitHub Pages calls the reusable workflow, which runs `bun run build` and
+publishes `dist/`:
 
 ```yaml
 jobs:
   pages:
-    uses: hackersandwizards/scaffolding/.github/workflows/pages.yml@v0.2.0
-    with:
-      build: bun run build
-      path: dist
+    uses: hackersandwizards/scaffolding/.github/workflows/pages.yml@v0.3.0
     permissions:
       contents: read
       pages: write

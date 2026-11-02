@@ -1,0 +1,186 @@
+/* The catalog shell's styles (render.ts writes the markup): a sticky rail with the search and the
+   groups, the title, lead and provenance line, and a card grid per group. Plain CSS in the
+   components layer. It reads brand's token roles by name only (the expert roles where a page sets
+   them, else the light tokens), so the repository's own CSS list, passed to the preset, supplies
+   every value. The class names are the ones brand's catalogue.css used, so pages built on either
+   look the same. */
+
+@layer components {
+  .hw-catalogue {
+    --hw-cat-fg: var(--foreground, var(--color-ink));
+    /* Muted text is the foreground at 70 %, as the expert set dims it: under expert.css
+       --color-muted is the muted fill. */
+    --hw-cat-muted: color-mix(in srgb, var(--hw-cat-fg) 70%, transparent);
+    --hw-cat-line: var(--border, var(--color-border));
+    --hw-cat-accent: var(--accent, var(--color-teal-dark));
+    display: grid;
+    grid-template-columns: 15rem minmax(0, 1fr);
+    gap: 2rem;
+    padding-block: 1.5rem 3rem;
+    color: var(--hw-cat-fg);
+    font-family: var(--font-sans);
+  }
+  .hw-catalogue-rail {
+    position: sticky;
+    top: calc(var(--spacing-app-header, 4rem) + 1.5rem);
+    align-self: start;
+    max-height: calc(100vh - var(--spacing-app-header, 4rem) - 3rem);
+    overflow-y: auto;
+  }
+  .hw-catalogue-search {
+    box-sizing: border-box;
+    width: 100%;
+    min-height: var(--hw-control-height, 2.5rem);
+    margin-bottom: 1rem;
+    padding: 0 0.75rem;
+    border: 1px solid var(--hw-cat-line);
+    border-radius: var(--radius-sm);
+    background: transparent;
+    color: inherit;
+    font: inherit;
+    font-size: var(--text-ui, 0.875rem);
+  }
+  .hw-catalogue-rail ul,
+  .hw-catalogue-grid {
+    margin: 0;
+    padding: 0;
+    list-style: none;
+  }
+  .hw-catalogue-rail a {
+    display: flex;
+    justify-content: space-between;
+    gap: 0.5rem;
+    padding: 0.25rem 0.5rem;
+    border-radius: var(--radius-sm);
+    color: inherit;
+    font-size: var(--text-ui, 0.875rem);
+    text-decoration: none;
+  }
+  .hw-catalogue-rail a:hover {
+    background: color-mix(in srgb, var(--hw-cat-fg) 6%, transparent);
+  }
+  .hw-catalogue-count {
+    color: var(--hw-cat-muted);
+    font-family: var(--font-mono);
+    font-size: var(--text-micro, 0.75rem);
+    font-weight: 400;
+  }
+  /* The tile grid ends a rem further in than the page's container: at its 1rem alone the tiles
+     read as running into the right edge (blind review 2026-11-02). */
+  .hw-catalogue-main {
+    padding-inline-end: 1rem;
+  }
+  .hw-catalogue-main h1 {
+    margin: 0;
+    font-family: var(--font-mono);
+    font-size: var(--text-page, 1.5rem);
+    line-height: 1.25;
+  }
+  .hw-catalogue-lead {
+    max-width: 48rem;
+    margin: 0.5rem 0 0;
+    font-size: var(--text-subheading, 1rem);
+    line-height: 1.5;
+  }
+  .hw-catalogue-provenance {
+    margin: 0.5rem 0 0;
+    color: var(--hw-cat-muted);
+    font-family: var(--font-mono);
+    font-size: var(--text-micro, 0.75rem);
+  }
+  .hw-catalogue-group {
+    margin-top: 2.5rem;
+    scroll-margin-top: calc(var(--spacing-app-header, 4rem) + 1rem);
+  }
+  .hw-catalogue-group h2 {
+    margin: 0 0 1rem;
+    font-family: var(--font-mono);
+    font-size: var(--text-heading, 1.25rem);
+    line-height: 1.3;
+  }
+  .hw-catalogue-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(20rem, 1fr));
+    gap: 1rem;
+  }
+  .hw-catalogue-tile {
+    display: flex;
+    height: 100%;
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 0.375rem;
+    color: inherit;
+    text-decoration: none;
+    transition: border-color 150ms;
+  }
+  .hw-catalogue-tile:hover {
+    border-color: var(--hw-cat-accent);
+  }
+  .hw-catalogue-preview {
+    position: relative;
+    display: block;
+    box-sizing: border-box;
+    width: 100%;
+    height: 13.5rem;
+    margin-bottom: 0.25rem;
+    overflow: hidden;
+    border: 1px solid var(--hw-cat-line);
+    border-radius: var(--radius-sm);
+    background: var(--background, var(--color-bg));
+  }
+  .hw-catalogue-preview iframe {
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: calc(100% / 0.75);
+    height: calc(100% / 0.75);
+    border: 0;
+    transform: scale(0.75);
+    transform-origin: 0 0;
+    pointer-events: none;
+  }
+  .hw-catalogue-preview[data-frame-width] {
+    height: auto;
+  }
+  .hw-catalogue-preview[data-frame-width] iframe {
+    transform: scale(0.2);
+  }
+  .hw-catalogue-preview img {
+    width: 100%;
+    height: 100%;
+    object-fit: contain;
+  }
+  .hw-catalogue-name {
+    font-size: var(--text-ui, 0.875rem);
+    font-weight: 600;
+  }
+  .hw-catalogue-note {
+    color: var(--hw-cat-muted);
+    font-size: var(--text-ui, 0.875rem);
+  }
+  .hw-catalogue [hidden] {
+    display: none;
+  }
+  @media (max-width: 48rem) {
+    .hw-catalogue {
+      grid-template-columns: minmax(0, 1fr);
+    }
+    .hw-catalogue-rail {
+      position: static;
+      max-height: none;
+    }
+    .hw-catalogue-rail nav {
+      display: none;
+    }
+  }
+}
+
+/* On an Astrobook home the catalog is the whole page: Astrobook's own sidebar, which lists the
+   states, shows on each story page instead. Unlayered, since Astrobook's own styles are. */
+[data-astrobook-root][data-active-story=""] #astrobook-sidebar,
+[data-astrobook-root][data-active-story=""] astrobook-sidebar-resize-handle {
+  display: none;
+}
+[data-astrobook-root][data-active-story=""] main {
+  padding: 0;
+}

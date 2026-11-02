@@ -5,3 +5,5 @@ node_modules/
 .env.*
 **/.claude/settings.local.json
 .eslintcache
+test/fixture/dist/
+**/.astro/
