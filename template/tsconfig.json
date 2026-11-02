@@ -1,14 +1,4 @@
 {
-  "compilerOptions": {
-    "target": "esnext",
-    "module": "esnext",
-    "moduleResolution": "bundler",
-    "resolveJsonModule": true,
-    "strict": true,
-    "noEmit": true,
-    "skipLibCheck": true,
-    "erasableSyntaxOnly": true,
-    "types": ["bun"]
-  },
+  "extends": "@hackersandwizards/scaffolding/tsconfig/bun.json",
   "include": ["src/**/*.ts", "scripts/**/*.ts", "test/**/*.ts"]
 }

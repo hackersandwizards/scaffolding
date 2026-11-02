@@ -10,6 +10,7 @@ import {
   mkdirSync,
   readdirSync,
   readFileSync,
+  renameSync,
   symlinkSync,
   writeFileSync,
 } from "node:fs";
@@ -31,6 +32,9 @@ const home = join(import.meta.dir, "..");
 const own = JSON.parse(readFileSync(join(home, "package.json"), "utf8"));
 
 cpSync(join(home, "template"), target, { recursive: true });
+// Stored under another name: as eslint.config.js it would lint this package's own template files
+// with an import of this package that only resolves in a repository that installs it.
+renameSync(join(target, "eslint.config.js.tmpl"), join(target, "eslint.config.js"));
 // A Git dependency installs without symlinks, so the skeleton's links are made here.
 const { symlinks } = JSON.parse(readFileSync(join(home, "skeleton.json"), "utf8"));
 for (const [path, link] of Object.entries<string>(symlinks)) {
@@ -51,8 +55,10 @@ for (const file of ["package.json", "README.md"]) {
 // The toolchain at the versions this scaffolding release checks itself with.
 const pkgPath = join(target, "package.json");
 const pkg = JSON.parse(readFileSync(pkgPath, "utf8"));
+// The eslint plugins come with this package, so only the tools themselves are pinned here.
+const tools = ["@types/bun", "eslint", "prettier", "typescript"];
 pkg.devDependencies = {
-  ...own.devDependencies,
+  ...Object.fromEntries(tools.map((t) => [t, own.devDependencies[t]])),
   "@hackersandwizards/scaffolding": `github:hackersandwizards/scaffolding#v${own.version}`,
 };
 writeFileSync(pkgPath, `${JSON.stringify(pkg, null, 2)}\n`);

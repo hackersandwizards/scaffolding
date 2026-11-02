@@ -454,3 +454,53 @@ describe("check-confidential list source", () => {
     expect(r.code).toBe(1);
   });
 });
+
+describe("scaffolding check", () => {
+  const gate = (scaffolding: object, scripts: Record<string, string> = {}) =>
+    repo({ "package.json": JSON.stringify({ name: "fx", type: "module", scripts, scaffolding }) });
+  // Every shared step skipped, so only the runner's own logic is under test.
+  const all = { format: "t", lint: "t", typecheck: "t", structure: "t", coupling: "t" };
+  const skip = { ...all, "unique-names": "t", confidential: "t" };
+
+  test("runs the repository's steps in order and passes", () => {
+    const dir = gate({ skip, check: ["mine", ["true", "true"]] }, { mine: "echo ran-mine" });
+    const r = run(dir, "scaffolding", ["check"], { CHECK_LOCK: join(dir, ".lock") });
+    expect(r.code).toBe(0);
+    expect(r.out).toContain("ran-mine");
+    expect(r.out).toContain("passed");
+  });
+
+  test("a failing step fails the gate and stops the later ones", () => {
+    const dir = gate({ skip, check: ["false", "echo never-ran"] });
+    const r = run(dir, "scaffolding", ["check"], { CHECK_LOCK: join(dir, ".lock") });
+    expect(r.code).toBe(1);
+    expect(r.out).toContain("FAIL false");
+    expect(r.out).not.toContain("never-ran");
+  });
+
+  test("an unknown key, an unknown skip and a skip without reason go red", () => {
+    for (const config of [
+      { skip, chek: [] },
+      { skip: { ...skip, lnt: "t" } },
+      { skip: { ...skip, lint: " " } },
+    ]) {
+      const dir = gate(config);
+      expect(run(dir, "scaffolding", ["check"], { CHECK_LOCK: join(dir, ".lock") }).code).toBe(1);
+    }
+  });
+});
+
+describe("shared eslint config", () => {
+  test("an empty test body goes red, a real one stays green", () => {
+    const dir = repo({
+      "eslint.config.js": `import base from "${join(import.meta.dir, "..", "config", "eslint.js")}";\nexport default base;\n`,
+      "a.test.ts": 'test("x", () => {});\n',
+      "b.test.ts": 'test("x", () => { expect(1).toBe(1); });\n',
+    });
+    const eslint = join(import.meta.dir, "..", "node_modules", ".bin", "eslint");
+    const r = spawnSync(eslint, ["a.test.ts", "b.test.ts"], { cwd: dir, encoding: "utf8" });
+    expect(r.status).toBe(1);
+    expect(r.stdout).toContain("a.test.ts");
+    expect(r.stdout).not.toContain("b.test.ts");
+  });
+});

@@ -18,8 +18,6 @@
     "package.json",
     "bun.lock",
     "tsconfig.json",
-    "eslint.config.js",
-    ".prettierrc.json",
     ".claude/settings.json",
     ".mcp.json",
     ".codex/config.toml",
@@ -34,7 +32,6 @@
     ".prettierrc",
     ".prettierrc.js",
     ".prettierrc.mjs",
-    "prettier.config.js",
     "prettier.config.mjs",
     "vitest.config.mts",
     "package-lock.json",
@@ -53,7 +50,7 @@
   "package": {
     "type": "module",
     "engines.npm": "please-use-bun",
-    "scripts": ["check", "check:staged", "format:check", "lint", "typecheck"]
+    "scripts": ["check", "check:staged"]
   },
   "hooksPath": ".githooks"
 }
