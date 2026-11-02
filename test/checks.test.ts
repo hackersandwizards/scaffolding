@@ -679,7 +679,7 @@ describe("catalog", () => {
     expect(home).toContain('<header class="fx-header">Fx</header>');
     expect(home).toContain("fx catalog/stories · 2 components · 4 states");
     expect(home.indexOf(">Types <")).toBeLessThan(home.indexOf(">Parts <"));
-    expect(home).toContain('src="/catalog/stories/Types/box-types/one"');
+    expect(home).toContain('src="/catalog/stories/Types/box-types/two"');
     expect(readdirSync(join(dist, "catalog/stories/Parts/box-parts"))).toEqual(["one", "two"]);
   }, 60_000);
 });

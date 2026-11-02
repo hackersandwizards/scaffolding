@@ -9,6 +9,7 @@ export default defineConfig({
       css: ["./fx.css"],
       lead: "Lead.",
       groupOrder: ["Types", "Parts"],
+      previewStates: ["missing", "two"],
       header: { component: "./Header.astro" },
     }),
   ],

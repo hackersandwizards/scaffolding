@@ -5,7 +5,7 @@ skeleton every repository starts from, the commands its gate runs, the configs i
 shell of its catalog.
 
 ```sh
-bun add -d github:hackersandwizards/scaffolding#v0.3.0
+bun add -d github:hackersandwizards/scaffolding#v0.3.1
 ```
 
 ## Commands
@@ -81,7 +81,7 @@ export default defineConfig({
 
 The shell (`catalog/`: Layout, Home, rail, tiles and `catalog.css`) reads brand's token roles by
 name only, and the repository's `css` supplies them. Options beyond the four above: `title`
-(default "Catalog"), `href`, `previews`, `head`, `header` (default brand's `AppHeader` and
+(default "Catalog"), `href`, `previews`, `previewStates` (the story names a tile draws and links first, such as `["light"]`), `head`, `header` (default brand's `AppHeader` and
 `header.css`) and `home`, a page of the repository that renders `Home.astro` with its foundations
 in the default slot and a control such as a theme toggle in the `nav` slot.
 
@@ -150,7 +150,7 @@ publishes `dist/`:
 ```yaml
 jobs:
   pages:
-    uses: hackersandwizards/scaffolding/.github/workflows/pages.yml@v0.3.0
+    uses: hackersandwizards/scaffolding/.github/workflows/pages.yml@v0.3.1
     permissions:
       contents: read
       pages: write

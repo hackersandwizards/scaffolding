@@ -1,4 +1,4 @@
-// catalog({ product, css, lead, previewSize, groupOrder }): the preset every repository's
+// catalog({ product, css, lead, previewSize, groupOrder, previewStates }): the preset every repository's
 // catalog uses. It sets up Astrobook at /catalog over catalog/stories with the repository's CSS
 // list, the shell's home (Home.astro) and the header, and hands the options to the shell's pages.
 // In a repository whose Astro app is the catalog, catalog/astro.config.ts is the config and the
@@ -29,6 +29,10 @@ export type CatalogOptions = {
   previewSize?: [number, number];
   /** Groups shown first, in this order; the rest follow alphabetically. */
   groupOrder?: string[];
+  /** The states a tile draws and links, by story name in order of preference, such as
+   * ["light", "loaded"]: Astrobook lists a file's states alphabetically, so without it a tile
+   * draws "Dark" before "Light". A file with none of them shows its first state. */
+  previewStates?: string[];
   title?: string;
   /** Where the header's lockup links. */
   href?: string;
@@ -109,6 +113,7 @@ export function catalog(options: CatalogOptions): AstroIntegration {
           previews: options.previews ?? true,
           previewSize: options.previewSize,
           groupOrder: options.groupOrder ?? [],
+          previewStates: options.previewStates ?? [],
           provenance,
         };
         params.updateConfig({
