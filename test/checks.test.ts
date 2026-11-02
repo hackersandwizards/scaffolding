@@ -801,8 +801,10 @@ describe("scaffolding check", () => {
         exports: { "./tokens.root.css": "./tokens.root.css" },
       }),
       "node_modules/@hackersandwizards/brand/tokens.root.css": ":root { --color-ink: #000; }\n",
-      "stylelint.config.js": `import styles from "${join(import.meta.dir, "..", "config", "stylelint.js")}";\nexport default styles();\n`,
+      "stylelint.config.js": `import styles from "${join(import.meta.dir, "..", "config", "stylelint.js")}";\nexport default { ...styles(), ignoreFiles: ["nested/**"] };\n`,
       "src/bad.css": "a { color: var(--color-nope); }\n",
+      "nested/.stylelintrc.json": "{}",
+      "nested/Odd.astro": "---\nconst x = 1;\n---\n<p>{x}</p>\n",
       "src/Bad.astro":
         '---\nconst x = "";\n---\n<style set:html={x} />\n<p>a</p>\n<style>\n  p { color: var(--color-astro); }\n</style>\n',
     });
@@ -818,6 +820,7 @@ describe("scaffolding check", () => {
     expect(r.out).toContain(
       'src/Bad.astro: line 7, col 18, error - Unexpected custom property "--color-astro"',
     );
+    expect(r.out).not.toContain("nested/Odd.astro");
     expect(r.out).toContain("FAIL styles");
     expect(r.code).toBe(1);
   });

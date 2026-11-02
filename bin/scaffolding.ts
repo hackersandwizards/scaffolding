@@ -20,6 +20,7 @@
 // A `check` entry naming a package.json script runs as `bun run <name>`, any other as a shell
 // command with node_modules/.bin on PATH.
 import { spawn, spawnSync } from "node:child_process";
+import { existsSync } from "node:fs";
 import { join } from "node:path";
 import { readPackage, repoRoot } from "../lib/repo.ts";
 
@@ -65,9 +66,10 @@ const shared: Record<string, string> = {
   // Custom properties only from brand's tokens or the repository's own (the stylelint base), in
   // stylesheets and in the <style> blocks of Astro components. One
   // line per finding: the default formatter's table threw "Subject parameter value width" in a
-  // phase-2 run with findings, and a plain line format has no table.
-  styles:
-    'bun --bun stylelint "**/*.{css,astro}" --allow-empty-input --ignore-path .gitignore --formatter compact',
+  // phase-2 run with findings, and a plain line format has no table. The repository's own config
+  // governs every file, so a nested repository's config (a submodule's) never takes over its files
+  // and the root config's ignoreFiles holds.
+  styles: `bun --bun stylelint "**/*.{css,astro}"${existsSync(join(root, "stylelint.config.js")) ? " --config stylelint.config.js" : ""} --allow-empty-input --ignore-path .gitignore --formatter compact`,
   typecheck: `bun --bun ${config.typecheck ?? "tsc --noEmit"}`,
   structure: bin("check-structure"),
   coupling: bin("check-coupling"),
