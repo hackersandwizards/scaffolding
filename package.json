@@ -37,7 +37,7 @@
   },
   "scripts": {
     "prepare": "[ \"$(git rev-parse --show-toplevel 2>/dev/null)\" = \"$(pwd -P)\" ] && git config core.hooksPath .githooks || true",
-    "check": "bun run format:check && bun run lint && bun run typecheck && bun test && bun bin/check-structure.ts && bun bin/check-coupling.ts && bun bin/check-unique-names.ts && bun bin/check-confidential.ts --tree HEAD",
+    "check": "bun install --frozen-lockfile && bun run format:check && bun run lint && bun run typecheck && bun test && bun bin/check-structure.ts && bun bin/check-coupling.ts && bun bin/check-unique-names.ts && bun bin/check-confidential.ts --tree HEAD",
     "check:staged": "bun bin/check-staged.ts",
     "format:check": "bun --bun prettier --check .",
     "lint": "bun --bun eslint --cache --concurrency=auto .",
