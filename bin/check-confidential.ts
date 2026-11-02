@@ -55,6 +55,7 @@ const words = (s: string) => s.normalize("NFKC").match(/[\p{L}\p{N}]+/gu) ?? [];
 // A one-word term written in capitals is a name in capitals (an acronym, a brand) and matches only
 // in capitals, so a company called QUUX never flags an ordinary word "quux". Three-letter terms
 // always do.
+const SLUG = /[\p{L}\p{N}]+(?:[-_/.][\p{L}\p{N}]+)+/gu;
 const capitals = (w: string) => /^\p{Lu}[\p{Lu}\p{N}]+$/u.test(w);
 
 if (argv[0] === "build") {
@@ -250,6 +251,12 @@ function scanText(where: string, text: string) {
       if (gram.length > 3 && bad.has(h(gram))) found.add(tokens.slice(i, i + n + 1).join(" "));
     }
   }
+  // A slug or path writes a capitalised name in lower case (quux-workshop, clients/quux/): a
+  // lower-case part of a joined token is checked as the name in capitals.
+  for (const [joined] of text.normalize("NFKC").matchAll(SLUG))
+    for (const part of joined.split(/[-_/.]/))
+      if (part.length > 3 && part === part.toLowerCase() && bad.has(h(`cs:${part.toUpperCase()}`)))
+        found.add(part);
   for (const name of found) report(where, name, "confidential term from the company records");
 }
 

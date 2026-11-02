@@ -278,6 +278,11 @@ describe("check-confidential", () => {
     write(dir, { "a.md": "nothing\nquux, Quux, the bridge and a Bridge stay ordinary words.\n" });
     sh(dir, ["add", "a.md"]);
     expect(run(dir, "check-confidential", ["--staged"], capsEnv).code).toBe(0);
+    write(dir, { "a.md": "nothing\nsee docs/quux-workshop/index.html\n" });
+    sh(dir, ["add", "a.md"]);
+    expect(
+      lines(run(dir, "check-confidential", ["--staged"], capsEnv).out, "check-confidential"),
+    ).toHaveLength(1);
   });
 
   test("only added lines count", () => {
@@ -579,7 +584,7 @@ describe("shared eslint config", () => {
 
 describe("check-staged", () => {
   // A stand-in for admin's bin: red while any item file says "broken".
-  const adminCheck = "#!/bin/sh\n! grep -rl broken docs/tracking/items\n";
+  const adminCheck = '#!/bin/sh\n! grep -rl broken "${1:-.}/docs/tracking/items"\n';
   const pkg = JSON.stringify({
     scaffolding: { private: true },
     devDependencies: { "@hackersandwizards/admin": "github:acme/admin#v1.0.0" },
@@ -593,7 +598,10 @@ describe("check-staged", () => {
     sh(dir, ["add", "docs/tracking/items/a.md"]);
     expect(run(dir, "check-staged").code).toBe(1);
     write(dir, { "docs/tracking/items/a.md": "fine again\n" });
+    expect(run(dir, "check-staged").code).toBe(1);
     sh(dir, ["add", "docs/tracking/items/a.md"]);
+    expect(run(dir, "check-staged").code).toBe(0);
+    write(dir, { "docs/tracking/items/a.md": "broken, unstaged\n" });
     expect(run(dir, "check-staged").code).toBe(0);
   });
 
