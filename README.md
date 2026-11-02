@@ -4,26 +4,34 @@ How hackers&wizards sets up a code repository, as a package each repository pins
 skeleton every repository starts from, the commands its gate runs, the configs it shares and the
 shell of its catalog.
 
+To work on the package itself, see [Developing the package](#developing-the-package).
+
 ```sh
 bun add -d github:hackersandwizards/scaffolding#v0.5.0
 ```
 
+Requirements: bun 1.3 or newer, gitleaks (`brew install gitleaks`), `pdftotext` from poppler, and
+on macOS `swiftc` for the OCR helper, built once per checkout into `node_modules/.cache/scaffolding/`.
+A commit in a repository without `"private": true` also needs a `gh` login in the `trainers` team:
+the confidential-terms check (below) fetches its list with it.
+
 ## Commands
 
-| Command                         | Runs in                      | Checks                                                                                                                                                                               |
-| ------------------------------- | ---------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| `scaffold <dir>`                | once                         | Creates a repository from `template/` with this version pinned, its catalog and admin area (below).                                                                                  |
-| `scaffolding check`             | `bun run check`              | The whole gate, below.                                                                                                                                                               |
-| `check-structure [--fix]`       | `bun run check`              | The repository against `skeleton.json`, the catalog and the gate's script names (below). `--fix` writes the identical and owned files, the `.agents/skills` link and the hooks path. |
-| `check-coupling [--staged]`     | `bun run check`, pre-commit  | No path leaves the repository, no import past a package's `exports`, every Git dependency pinned to a tag `node_modules` holds, and the CSS origin (below).                          |
-| `check-lock`                    | `scaffolding check`          | One gate at a time per checkout.                                                                                                                                                     |
-| `check-confidential`            | pre-commit, commit-msg, push | Terms from a hashed list, Company OS screenshots and text in images (OCR, an unread image fails), commits purged from history.                                                       |
-| `check-staged`                  | pre-commit                   | gitleaks on the index, then `check-coupling` and `check-confidential`, then prettier and eslint on the staged files.                                                                 |
-| `check-unique-names [names...]` | `bun run check`              | Every module-scope function name outside tests is defined once.                                                                                                                      |
+| Command                         | Runs in                      | Checks                                                                                                                                                                                           |
+| ------------------------------- | ---------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `scaffold <dir>`                | once                         | Creates a repository from `template/` with this version pinned, its catalog and admin area (below).                                                                                              |
+| `scaffolding check`             | `bun run check`              | The whole gate, below.                                                                                                                                                                           |
+| `check-structure [--fix]`       | `bun run check`              | The repository against `skeleton.json`, the catalog and the gate's script names (below). `--fix` writes the identical and owned files, the `.agents/skills` link and the hooks path.             |
+| `check-coupling [--staged]`     | `bun run check`, pre-commit  | No path leaves the repository, no import past a package's `exports`, every Git dependency pinned to a tag `node_modules` holds, and the CSS origin (below).                                      |
+| `check-lock`                    | `scaffolding check`          | One gate at a time per checkout.                                                                                                                                                                 |
+| `check-confidential`            | pre-commit, commit-msg, push | Terms from a hashed list, Company OS screenshots and text in images (OCR, an unread image fails), commits purged from history.                                                                   |
+| `check-staged`                  | pre-commit                   | gitleaks on the index, then `check-coupling` and `check-confidential`, then prettier and eslint on the staged files; `validate:skills` when `.claude/` is staged, `admin-check` when an item is. |
+| `check-unique-names [names...]` | `bun run check`              | Every module-scope function name outside tests is defined once.                                                                                                                                  |
 
 ## A new repository
 
-`scaffold <dir> --port <port>` writes the skeleton, the catalog (`catalog/astro.config.ts` on the
+`scaffold <dir> [--port <port>] [--name <package>]` (port 4600 and the folder's name by default)
+writes the skeleton, the catalog (`catalog/astro.config.ts` on the
 preset with `base: "/<name>"` and the port, an example component and story, `stylelint.config.js`,
 the scripts `dev`, `catalog` and `build`, the Pages workflow) and the admin area
 (`docs/tracking/items/goal.md`), and pins brand and admin to the newest tag on their remotes, so an
@@ -95,15 +103,23 @@ The home's tiles are the catalog's one index; Astrobook draws each state, its si
 every page. A state's page carries a bar instead: back to the home, the file's folder and name, the
 theme toggle, a link to the state alone and a link per state, folded into a disclosure above 12.
 
-The shell (`catalog/`: Layout, Home, Head, rail, tiles and `catalog.css`) reads brand's token roles by
-name only, and the repository's `css` supplies them. Options beyond the four above: `title`
-(default "Catalog"), `href` (default the site's root, Astro's `base`), `previews`, `previewStates` (the story names a tile draws and links first, such as `["light"]`), `head` (the repository's own `<head>` component, rendered on every page), `header` (default brand's `AppHeader` and
-`header.css`) and `home`, a page of the repository that renders `Home.astro` with its foundations
-in the default slot and a control such as a theme toggle in the `nav` slot. `copy` lists globs, relative to the
-repository, of files the built pages reach by a relative path rather than through Vite, such as
-brand's stylesheets under `node_modules`: each match lands in the build at the same path, and a
-pattern matching nothing fails the build. With `CI=true`, a copied file that is still a Git LFS
-pointer fails it too.
+The shell (`catalog/`: Layout, Home, Head, `render.ts`, which draws the rail and tiles, and
+`catalog.css`) reads brand's token roles by name only, and the repository's `css` supplies them.
+The options beyond those above:
+
+- `title`: default "Catalog".
+- `href`: where the header's lockup links, default the site's root (Astro's `base`).
+- `previews`: draw each tile's first state; `false` for states that load slowly or may not be
+  framed.
+- `previewStates`: the story names a tile draws and links first, such as `["light"]`.
+- `head`: the repository's own `<head>` component, rendered on every page.
+- `header`: default brand's `AppHeader` and `header.css`.
+- `home`: a page of the repository that renders `Home.astro`, its foundations in the default slot
+  and a control such as a theme toggle in the `nav` slot.
+- `copy`: globs, relative to the repository, of files the built pages reach by a relative path
+  rather than through Vite, such as brand's stylesheets under `node_modules`. Each match lands in
+  the build at the same path. A pattern matching nothing fails the build, and so does, with
+  `CI=true`, a copied file that is still a Git LFS pointer.
 
 A project Pages site, published under `/<repo>/`, sets Astro's `base: "/<repo>"` in its
 `defineConfig`; the catalog's links and the header's default link follow it.
@@ -113,7 +129,10 @@ background server resolves `catalog` from inside `catalog/`, so the command wait
 fails. `ASTRO_DEV_BACKGROUND=1` keeps it in the foreground and changes nothing for a person:
 
 ```json
-{ "dev": "ASTRO_DEV_BACKGROUND=1 bun --bun astro dev --root catalog", "catalog": "bun run dev" }
+{
+  "dev": "ASTRO_DEV_BACKGROUND=1 bun --bun astro dev --root catalog",
+  "catalog": "bun run dev"
+}
 ```
 
 **CSS origin.** In a repository's sources, a stylesheet from a company package comes only from
@@ -190,7 +209,13 @@ jobs:
       id-token: write
 ```
 
-## Host tools
+## Developing the package
 
-bun, gitleaks (`brew install gitleaks`), `pdftotext` from poppler, and on macOS `swiftc` for the
-OCR helper, built once per checkout into `node_modules/.cache/scaffolding/`.
+`bun install`, then `bun run check` runs the gate on the package itself: `scaffolding check`, whose
+catalog test builds `test/fixture/` with the preset. A release bumps `version` in `package.json`
+and pushes the tag `v<version>`; its commit names any changed command, argument or exported path.
+
+## License
+
+[PolyForm Strict 1.0.0](LICENSE): free for noncommercial and personal use, no redistribution or
+derived works. The name hackers&wizards and its logos are not licensed.
