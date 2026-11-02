@@ -681,6 +681,11 @@ describe("catalog", () => {
     expect(home.indexOf(">Types <")).toBeLessThan(home.indexOf(">Parts <"));
     expect(home).toContain('src="/catalog/stories/Types/box-types/two"');
     expect(readdirSync(join(dist, "catalog/stories/Parts/box-parts"))).toEqual(["one", "two"]);
+    // `copy`: each match at its own path, the rest of the folder left out.
+    expect(readdirSync(join(dist, "assets")).sort()).toEqual(["logo.svg", "nested"]);
+    expect(readFileSync(join(dist, "assets/nested/page.css"), "utf8")).toBe(
+      "a {\n  color: red;\n}\n",
+    );
   }, 60_000);
 });
 

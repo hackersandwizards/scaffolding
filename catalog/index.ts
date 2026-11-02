@@ -1,5 +1,5 @@
-// catalog({ product, css, lead, previewSize, groupOrder, previewStates }): the preset every repository's
-// catalog uses. It sets up Astrobook at /catalog over catalog/stories with the repository's CSS
+// catalog({ product, css, lead, previewSize, groupOrder, previewStates, copy }): the preset every
+// repository's catalog uses. It sets up Astrobook at /catalog over catalog/stories with the repository's CSS
 // list, the shell's home (Home.astro) and the header, and hands the options to the shell's pages.
 // In a repository whose Astro app is the catalog, catalog/astro.config.ts is the config and the
 // build lands in the repository's dist/; in an Astro app the stories sit in catalog/stories beside
@@ -10,7 +10,7 @@
 // named as strings the repository resolves; a repository without brand passes its own.
 import astrobook from "astrobook";
 import type { AstroIntegration } from "astro";
-import { existsSync, readFileSync } from "node:fs";
+import { cpSync, existsSync, globSync, readFileSync } from "node:fs";
 import { basename, dirname, join, relative } from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -46,6 +46,10 @@ export type CatalogOptions = {
   /** An Astro component taking `product`, `href` and a default slot, and the CSS it needs;
    * a relative path counts from the Astro root. */
   header?: { component: string; css?: string[] };
+  /** Files the built pages reach by a relative path rather than through Vite, such as brand's
+   * stylesheets and logos under node_modules: globs relative to the repository, each match copied
+   * into the build at the same relative path, symlinks followed. */
+  copy?: string[];
 };
 
 const BRAND_HEADER = {
@@ -82,13 +86,14 @@ const packageOf = (spec: string) =>
 
 export function catalog(options: CatalogOptions): AstroIntegration {
   let inner: AstroIntegration | undefined;
+  let repo = "";
   return {
     name: "@hackersandwizards/scaffolding/catalog",
     hooks: {
       "astro:config:setup": async (params) => {
         const root = fileURLToPath(params.config.root);
         const own = basename(root) === "catalog";
-        const repo = packageDir(root);
+        repo = packageDir(root);
         const stories = join(root, own ? "stories" : "catalog/stories");
         const name = (() => {
           const file = join(repo, "package.json");
@@ -146,6 +151,16 @@ export function catalog(options: CatalogOptions): AstroIntegration {
       },
       "astro:server:start": async (params) => {
         await inner?.hooks["astro:server:start"]?.(params);
+      },
+      "astro:build:done": ({ dir }) => {
+        const out = fileURLToPath(dir);
+        for (const pattern of options.copy ?? []) {
+          const found = globSync(pattern, { cwd: repo });
+          // A pattern matching nothing would leave a page without its stylesheet, silently.
+          if (found.length === 0) throw new Error(`catalog copy: ${pattern} matches nothing`);
+          for (const file of found)
+            cpSync(join(repo, file), join(out, file), { recursive: true, dereference: true });
+        }
       },
     },
   };

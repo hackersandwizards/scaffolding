@@ -5,7 +5,7 @@ skeleton every repository starts from, the commands its gate runs, the configs i
 shell of its catalog.
 
 ```sh
-bun add -d github:hackersandwizards/scaffolding#v0.3.1
+bun add -d github:hackersandwizards/scaffolding#v0.3.2
 ```
 
 ## Commands
@@ -83,7 +83,10 @@ The shell (`catalog/`: Layout, Home, rail, tiles and `catalog.css`) reads brand'
 name only, and the repository's `css` supplies them. Options beyond the four above: `title`
 (default "Catalog"), `href`, `previews`, `previewStates` (the story names a tile draws and links first, such as `["light"]`), `head`, `header` (default brand's `AppHeader` and
 `header.css`) and `home`, a page of the repository that renders `Home.astro` with its foundations
-in the default slot and a control such as a theme toggle in the `nav` slot.
+in the default slot and a control such as a theme toggle in the `nav` slot. `copy` lists globs, relative to the
+repository, of files the built pages reach by a relative path rather than through Vite, such as
+brand's stylesheets under `node_modules`: each match lands in the build at the same path, and a
+pattern matching nothing fails the build.
 
 **CSS origin.** In a repository's sources, a stylesheet from a company package comes only from
 brand's `exports`; the shell's styles load only under `catalog/`; no other company package's CSS
@@ -150,7 +153,7 @@ publishes `dist/`:
 ```yaml
 jobs:
   pages:
-    uses: hackersandwizards/scaffolding/.github/workflows/pages.yml@v0.3.1
+    uses: hackersandwizards/scaffolding/.github/workflows/pages.yml@v0.3.2
     permissions:
       contents: read
       pages: write
