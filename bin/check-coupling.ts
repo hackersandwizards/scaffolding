@@ -6,9 +6,12 @@
 // old engine while every file reads the new pin (documents once ran brand 0.21.6 against a v0.24.4
 // pin, and its list markers vanished). CSS origin: in a repository's sources, every stylesheet a
 // company package supplies comes from brand's exports; the catalog shell's styles load only under
-// catalog/, and no other company package's CSS loads anywhere but its own repository. Read are
-// quoted references, so imports, <link href>, @import and a preset's `css` list count, a
-// node_modules path included. A full run also reports stale allow entries.
+// catalog/; an engine's stylesheet loads where its package.json lists it in `scaffolding.styles`
+// (the stylesheets its components render with, such as slides' slides.css), and no other company
+// package's CSS loads anywhere but its own repository. Read are quoted references, so imports,
+// <link href>, @import and a preset's `css` list count, a node_modules path included: such a path
+// names the file on disk, so it passes where an `exports` entry targets that file.
+// A full run also reports stale allow entries.
 import { existsSync, readFileSync } from "node:fs";
 import { dirname, posix, resolve } from "node:path";
 import {
@@ -42,7 +45,7 @@ const UP = /(?<![\w./-])(?:\.\.\/)+[^\s"'`)\],;]*/g;
 const BRAND = "@hackersandwizards/brand";
 const SHELL = "@hackersandwizards/scaffolding";
 const CSS =
-  /["'`(](?:[^"'`()\s]*\/)?(?:node_modules\/)?(@hackersandwizards\/[\w.-]+)\/([^"'`()\s?#]+\.css)(?:[?#][^"'`()\s]*)?["'`)]/g;
+  /["'`(](?:[^"'`()\s]*?\/)??(node_modules\/)?(@hackersandwizards\/[\w.-]+)\/([^"'`()\s?#]+\.css)(?:[?#][^"'`()\s]*)?["'`)]/g;
 const SPECIFIER =
   /(?:\bfrom\s*|\bimport\s*\(?\s*|\brequire\s*\(\s*|@(?:import|use|forward|source|plugin|reference|config)\s+(?:url\()?\s*)["'`]([^"'`\n]+)["'`]/g;
 
@@ -62,6 +65,14 @@ function exported(exports: unknown, subpath: string): boolean {
       want.length > head.length + tail.length - 1 && want.startsWith(head) && want.endsWith(tail)
     );
   });
+}
+
+// A path into node_modules names the file itself: it passes where an `exports` entry targets it.
+function targeted(exports: unknown, subpath: string): boolean {
+  if (!exports || typeof exports !== "object" || Array.isArray(exports)) return false;
+  return Object.values(exports).some(
+    (target) => typeof target === "string" && posix.normalize(target) === subpath,
+  );
 }
 
 const manifests = new Map<string, Record<string, unknown> | null>();
@@ -89,17 +100,29 @@ for (const path of listFiles(root, staged)) {
   }
   if (!IMPORTING.test(path)) continue;
   if (!TEST.test(path))
-    for (const [, name, subpath] of text.matchAll(CSS)) {
-      const spec = `${name}/${subpath}`;
+    for (const [, disk, name, raw] of text.matchAll(CSS)) {
+      const spec = `${name}/${raw}`;
       if (name === own) continue;
+      const subpath = posix.normalize(raw);
+      const pkg = manifest(name);
+      const published =
+        !pkg ||
+        !("exports" in pkg) ||
+        exported(pkg.exports, subpath) ||
+        (disk !== undefined && targeted(pkg.exports, subpath));
+      const styles = (pkg?.scaffolding as { styles?: string[] } | undefined)?.styles ?? [];
       if (name === BRAND) {
-        const pkg = manifest(name);
-        if (pkg && "exports" in pkg && !exported(pkg.exports, posix.normalize(subpath)))
-          flag(path, spec, `not in the exports of ${name}`);
+        if (!published) flag(path, spec, `not in the exports of ${name}`);
       } else if (name === SHELL) {
         if (!path.startsWith("catalog/"))
           flag(path, spec, "the catalog shell's styles load only under catalog/");
-      } else flag(path, spec, "styles come from brand's exports or from this repository");
+      } else if (!styles.some((s) => posix.normalize(s) === subpath))
+        flag(
+          path,
+          spec,
+          "styles come from brand's exports, an engine's scaffolding.styles or this repository",
+        );
+      else if (!published) flag(path, spec, `not in the exports of ${name}`);
     }
   for (const [, raw] of text.matchAll(SPECIFIER)) {
     const spec = raw.replace(/\?.*/, "");

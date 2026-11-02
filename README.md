@@ -72,8 +72,10 @@ confidential step.
 | `./stylelint`                                  | `export default styles({ importFrom: [...] })` in `stylelint.config.js`                |
 | `./chrome`, `./serve`                          | Chrome for Testing with the shared flags; a gate server on a port the system hands out |
 
-The stylelint base lets a stylesheet read only the custom properties brand's `tokens.root.css`
-(from the repository's installed brand) and the files in `importFrom` define.
+The stylelint base lets a stylesheet, and the `<style>` blocks of an Astro component, read only the
+custom properties brand's `tokens.root.css` (from the repository's installed brand), the files in
+`importFrom` and the same file define. A property a component sets from its markup (a `style`
+attribute) is read with a fallback, `var(--accent, transparent)`.
 
 ## The catalog
 
@@ -136,8 +138,11 @@ fails. `ASTRO_DEV_BACKGROUND=1` keeps it in the foreground and changes nothing f
 ```
 
 **CSS origin.** In a repository's sources, a stylesheet from a company package comes only from
-brand's `exports`; the shell's styles load only under `catalog/`; no other company package's CSS
-loads outside its own repository.
+brand's `exports`; the shell's styles load only under `catalog/`; an engine's stylesheet loads where
+the engine's `package.json` lists it in `scaffolding.styles`, the stylesheets its components render
+with (`"styles": ["./styles/slides.css"]`); no other company package's CSS loads outside its own
+repository. A path into `node_modules` (a Tailwind `@source`) names the file on disk and passes
+where an `exports` entry targets it.
 
 ## Exceptions
 

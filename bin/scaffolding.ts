@@ -13,7 +13,8 @@
 //     "uniqueNames": ["GET", "POST"],      // names the framework dictates
 //     "test": "test:coverage",             // required: the unit tests, or skip.test with a reason
 //     "skip": { "confidential": "private repository", "catalog": "no surface", "admin": "no items" },
-//     "check": ["validate:refs", ["test:coverage", "build"], "brand-colours"]
+//     "check": ["validate:refs", ["test:coverage", "build"], "brand-colours"],
+//     "styles": ["./styles/engine.css"]     // an engine's stylesheets its consumers load (check-coupling)
 //   }
 //
 // A `check` entry naming a package.json script runs as `bun run <name>`, any other as a shell
@@ -22,7 +23,16 @@ import { spawn, spawnSync } from "node:child_process";
 import { join } from "node:path";
 import { readPackage, repoRoot } from "../lib/repo.ts";
 
-const KEYS = new Set(["allow", "private", "typecheck", "uniqueNames", "test", "skip", "check"]);
+const KEYS = new Set([
+  "allow",
+  "private",
+  "typecheck",
+  "uniqueNames",
+  "test",
+  "skip",
+  "check",
+  "styles",
+]);
 
 if (process.argv[2] !== "check") {
   console.error("usage: scaffolding check");
@@ -52,11 +62,12 @@ const bin = (name: string) => `bun ${join(home, "bin", `${name}.ts`)}`;
 const shared: Record<string, string> = {
   format: "bun --bun prettier --check --log-level warn .",
   lint: "bun --bun eslint --cache --concurrency=auto .",
-  // Custom properties only from brand's tokens or the repository's own (the stylelint base). One
+  // Custom properties only from brand's tokens or the repository's own (the stylelint base), in
+  // stylesheets and in the <style> blocks of Astro components. One
   // line per finding: the default formatter's table threw "Subject parameter value width" in a
   // phase-2 run with findings, and a plain line format has no table.
   styles:
-    'bun --bun stylelint "**/*.css" --allow-empty-input --ignore-path .gitignore --formatter compact',
+    'bun --bun stylelint "**/*.{css,astro}" --allow-empty-input --ignore-path .gitignore --formatter compact',
   typecheck: `bun --bun ${config.typecheck ?? "tsc --noEmit"}`,
   structure: bin("check-structure"),
   coupling: bin("check-coupling"),

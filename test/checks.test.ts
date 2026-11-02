@@ -161,12 +161,27 @@ describe("check-coupling", () => {
       "catalog/shell.ts": 'import "@hackersandwizards/scaffolding/catalog/catalog.css";\n',
       "catalog/astro.config.ts": 'export const css = ["@hackersandwizards/documents/doc.css"];\n',
       "test/a.test.ts": 'const planted = "@hackersandwizards/admin/site.css";\n',
+      "src/disk.css": '@source "../node_modules/@hackersandwizards/brand/tokens/tokens.css";\n',
+      "src/named.css": '@import "@hackersandwizards/brand/tokens/tokens.css";\n',
+      "node_modules/@hackersandwizards/slides/package.json": JSON.stringify({
+        exports: {
+          "./styles/slides.css": "./styles/slides.css",
+          "./styles/x.css": "./styles/x.css",
+        },
+        scaffolding: { styles: ["./styles/slides.css"] },
+      }),
+      "src/deck.css": '@import "@hackersandwizards/slides/styles/slides.css";\n',
+      "src/deck-disk.ts":
+        'export const sheet = "./node_modules/@hackersandwizards/slides/styles/slides.css";\n',
+      "src/deck-other.css": '@import "@hackersandwizards/slides/styles/x.css";\n',
     });
     const found = lines(run(dir, "check-coupling").out, "check-coupling");
     expect(found.sort()).toEqual([
-      "[check-coupling] catalog/astro.config.ts: styles come from brand's exports or from this repository (@hackersandwizards/documents/doc.css)",
-      "[check-coupling] src/admin.ts: styles come from brand's exports or from this repository (@hackersandwizards/admin/site.css)",
+      "[check-coupling] catalog/astro.config.ts: styles come from brand's exports, an engine's scaffolding.styles or this repository (@hackersandwizards/documents/doc.css)",
+      "[check-coupling] src/admin.ts: styles come from brand's exports, an engine's scaffolding.styles or this repository (@hackersandwizards/admin/site.css)",
+      "[check-coupling] src/deck-other.css: styles come from brand's exports, an engine's scaffolding.styles or this repository (@hackersandwizards/slides/styles/x.css)",
       "[check-coupling] src/deep.astro: not in the exports of @hackersandwizards/brand (@hackersandwizards/brand/expert/expert.css)",
+      "[check-coupling] src/named.css: not in the exports of @hackersandwizards/brand (@hackersandwizards/brand/tokens/tokens.css)",
       "[check-coupling] src/shell.ts: the catalog shell's styles load only under catalog/ (@hackersandwizards/scaffolding/catalog/catalog.css)",
     ]);
   });
@@ -788,6 +803,8 @@ describe("scaffolding check", () => {
       "node_modules/@hackersandwizards/brand/tokens.root.css": ":root { --color-ink: #000; }\n",
       "stylelint.config.js": `import styles from "${join(import.meta.dir, "..", "config", "stylelint.js")}";\nexport default styles();\n`,
       "src/bad.css": "a { color: var(--color-nope); }\n",
+      "src/Bad.astro":
+        '---\nconst x = "";\n---\n<style set:html={x} />\n<p>a</p>\n<style>\n  p { color: var(--color-astro); }\n</style>\n',
     });
     mkdirSync(join(dir, "node_modules/.bin"));
     symlinkSync(
@@ -797,6 +814,9 @@ describe("scaffolding check", () => {
     const r = run(dir, "scaffolding", ["check"], { CHECK_LOCK: join(dir, ".lock") });
     expect(r.out).toContain(
       'src/bad.css: line 1, col 16, error - Unexpected custom property "--color-nope"',
+    );
+    expect(r.out).toContain(
+      'src/Bad.astro: line 7, col 18, error - Unexpected custom property "--color-astro"',
     );
     expect(r.out).toContain("FAIL styles");
     expect(r.code).toBe(1);
