@@ -26,9 +26,10 @@ prompts) and in any document. Say the least that fully does the job, then stop.
   only exact paths your own run created, never by prefix, and never a scratch file that is the only
   copy of a deliverable. Never quit or restart an app the person runs, Claude Desktop included: an
   edit that needs it closed waits for their quit. Open their desktop apps, such as Word, only after
-  they agree, and run browsers headless while they work. The Mac's Trash is emptied within hours:
-  before moving a folder there, list its untracked and ignored files, and leave it where any holds
-  state or secrets until the person confirms.
+  they agree, and run browsers headless while they work, every Chrome you launch yourself with
+  `--use-mock-keychain --password-store=basic`, or macOS asks them for the keychain password. The
+  Mac's Trash is emptied within hours: before moving a folder there, list its untracked and ignored
+  files, and leave it where any holds state or secrets until the person confirms.
 - No interface, factory or config for a single case, and no scaffolding for later.
 - Change what exists by removal first, then replacement, then addition. Where a removal drops a
   rule you still want, replace it.

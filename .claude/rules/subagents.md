@@ -10,6 +10,8 @@
 - Delegating never widens scope. Name the work in the prompt, and have anything the delegate judges
   to need more come back as a decision for the principal. The prompt cannot enforce this: a
   delegate's tools come from its own definition, never from the caller's.
+- Carry the person's request into the brief in their own words, and mark any framing you add as
+  yours: a delegate answers the question the brief asks.
 - A delegate reviewing credential handling reasons from the source, and the prompt says so: no
   command that reads a keychain, a credential helper or a secret store. A printed value stays in a
   transcript, and only a person can rotate it.

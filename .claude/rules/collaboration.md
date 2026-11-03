@@ -33,7 +33,8 @@ choice to please: agreement carries its reason.
 - A zero from a query, helper or new check proves nothing until a control of the same shape that
   must hit returns non-zero.
 - Name no cause for a defect until a control changing one factor shows it. Until then, say it is
-  not yet explained.
+  not yet explained. A defect not yet explained stays in scope until it is; never mark it
+  optional.
 - A negative needs the surface that enumerates the thing, read whole: a command's help and schema
   for a flag, every table for a question of ownership, a page's markup rather than WebFetch's
   paraphrase. A search across it is not enough.
