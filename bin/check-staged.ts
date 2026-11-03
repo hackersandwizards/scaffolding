@@ -6,7 +6,8 @@
 // on stdin, so those unstaged lines neither pass nor block this commit. A repository defining a
 // `validate:skills` script also runs it whenever the index touches `.claude/`, and one declaring
 // `@hackersandwizards/admin` runs `admin-check` whenever it touches `docs/tracking/items/`, over
-// docs/tracking as staged; the skills validator reads the working tree.
+// docs/tracking as staged; the skills validator reads the working tree. A staged bun.lock or
+// package.json runs `check-licenses` over the installed tree.
 import { spawn, spawnSync } from "node:child_process";
 import { existsSync, mkdtempSync, readFileSync, rmSync } from "node:fs";
 import { availableParallelism, tmpdir } from "node:os";
@@ -54,6 +55,12 @@ const listed = spawnSync("git", ["diff", "--cached", "--name-only", "--diff-filt
 if (listed.status !== 0) refuseCommit("git diff --cached failed");
 const staged = listed.stdout.split("\0").filter(Boolean);
 if (staged.length === 0 && !skills && !items) process.exit(0);
+if (staged.some((path) => path === "bun.lock" || path === "package.json")) {
+  const run = spawnSync(process.execPath, [`${import.meta.dir}/check-licenses.ts`], {
+    stdio: "inherit",
+  });
+  if (run.status !== 0) process.exit(1);
+}
 const unstaged = spawnSync("git", ["diff", "--name-only", "-z"], { encoding: "utf8" });
 if (unstaged.status !== 0) refuseCommit("git diff failed");
 const differs = new Set(unstaged.stdout.split("\0"));

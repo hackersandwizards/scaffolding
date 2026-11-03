@@ -5,6 +5,7 @@ import {
   mkdtempSync,
   readdirSync,
   readFileSync,
+  renameSync,
   rmSync,
   symlinkSync,
   utimesSync,
@@ -743,6 +744,7 @@ describe("scaffolding check", () => {
     ...all,
     "unique-names": "t",
     confidential: "t",
+    licenses: "t",
     test: "t",
     catalog: "t",
     admin: "t",
@@ -1010,6 +1012,149 @@ describe("check-staged", () => {
     const r = run(dir, "check-staged");
     expect(r.code).toBe(1);
     expect(r.out).toContain("admin-check not installed");
+  });
+});
+
+describe("check-unique-names", () => {
+  const code = {
+    "src/a.ts": "export function twice() {}\n",
+    "copy/b.ts": "export function twice() {}\n",
+  };
+  const withAllow = (path: string) =>
+    repo({
+      ...code,
+      "package.json": JSON.stringify({
+        scaffolding: { allow: [{ check: "unique-names", path, reason: "synced copy" }] },
+      }),
+    });
+
+  test("a name defined twice is red unless an allow entry covers one site; a stale entry is red", () => {
+    const red = run(repo({ ...code, "package.json": "{}" }), "check-unique-names");
+    expect(red.code).toBe(1);
+    expect(red.out).toContain("twice is defined 2 times");
+    expect(run(withAllow("copy/*"), "check-unique-names").code).toBe(0);
+    const stale = run(withAllow("elsewhere/*"), "check-unique-names");
+    expect(stale.code).toBe(1);
+    expect(stale.out).toContain("allow entry matches nothing");
+  });
+});
+
+describe("check-licenses", () => {
+  // A repository whose dependencies are local packages, each declaring the given licence field.
+  function installed(licences: Record<string, unknown>, scaffolding: object = {}) {
+    const files: Record<string, string> = {};
+    const dependencies: Record<string, string> = {};
+    for (const [name, licence] of Object.entries(licences)) {
+      const folder = name.replace("/", "+");
+      files[`pkgs/${folder}/package.json`] = JSON.stringify({
+        name,
+        version: "1.0.0",
+        ...(licence === undefined ? {} : (licence as object)),
+      });
+      dependencies[name] = `file:./pkgs/${folder}`;
+    }
+    const dir = repo({
+      ...files,
+      "package.json": JSON.stringify({ name: "fx", dependencies, scaffolding }),
+    });
+    const install = spawnSync(process.execPath, ["install"], { cwd: dir, encoding: "utf8" });
+    expect(install.status).toBe(0);
+    return dir;
+  }
+  const license = (l: string) => ({ license: l });
+
+  test("the report's edge cases: copyleft and unknown red, permissive and OR green, own skipped", () => {
+    const dir = installed({
+      "gpl-3-only": license("GPL-3.0-only"),
+      "agpl-3": license("AGPL-3.0"),
+      "@scope/agpl-later": license("AGPL-3.0-or-later"),
+      "gpl-2-plus": license("GPL-2.0+"),
+      "bare-lgpl": license("LGPL"),
+      "and-lgpl": license("Apache-2.0 AND LGPL-3.0-or-later"),
+      "gpl-with": license("GPL-2.0-only WITH Classpath-exception-2.0"),
+      "or-gpl": license("(MIT OR GPL-3.0-or-later)"),
+      "array-mit-gpl": { licenses: [{ type: "MIT" }, { type: "GPL-2.0" }] },
+      "mpl-2": license("MPL-2.0"),
+      "nested-or": license("(MIT AND (LGPL-2.1-or-later OR BSD-3-Clause))"),
+      "no-field": undefined,
+      "see-license": license("SEE LICENSE IN LICENSE"),
+      "vendor-url": license("https://example.com/terms"),
+      "@hackersandwizards/own": license("SEE LICENSE IN LICENSE"),
+      "@img/sharp-libvips-darwin-arm64": license("LGPL-3.0-or-later"),
+    });
+    const r = run(dir, "check-licenses");
+    expect(r.code).toBe(1);
+    const red = lines(r.out, "check-licenses").map((l) => l.match(/^\S+ @?[^@]+/)?.[0]);
+    expect(red.sort()).toEqual(
+      [
+        "@scope/agpl-later",
+        "agpl-3",
+        "and-lgpl",
+        "bare-lgpl",
+        "gpl-2-plus",
+        "gpl-3-only",
+        "gpl-with",
+        "no-field",
+        "see-license",
+        "vendor-url",
+      ].map((n) => `[check-licenses] ${n}`),
+    );
+    expect(r.out).toContain("bun pm why gpl-3-only");
+    expect(r.out).toContain('"gpl-3-only": { "license": "GPL-3.0-only"');
+  });
+
+  test("a planted GPL dependency is red, a permissive one green", () => {
+    expect(run(installed({ planted: license("GPL-3.0-only") }), "check-licenses").code).toBe(1);
+    expect(run(installed({ planted: license("MIT") }), "check-licenses").code).toBe(0);
+  });
+
+  test("an exception pins the licence string and needs a reason; a stale one is red", () => {
+    const keep = (licenses: object) =>
+      run(
+        installed({ gsap: license("Standard 'no charge' license") }, { licenses }),
+        "check-licenses",
+      );
+    const pinned = { license: "Standard 'no charge' license", reason: "dev only" };
+    expect(keep({ gsap: pinned }).code).toBe(0);
+    expect(keep({ "gs*": pinned }).code).toBe(0);
+    const changed = keep({ gsap: { ...pinned, license: "MIT" } });
+    expect(changed.code).toBe(1);
+    expect(changed.out).toContain('pins "MIT", installed is "Standard');
+    const reasonless = keep({ gsap: { license: pinned.license } });
+    expect(reasonless.code).toBe(1);
+    expect(reasonless.out).toContain("needs a license string and a reason");
+    const stale = keep({ gsap: pinned, "left-pad": { license: "MIT", reason: "gone" } });
+    expect(stale.code).toBe(1);
+    expect(stale.out).toContain('scaffolding.licenses["left-pad"] matches no installed package');
+  });
+
+  test("fails closed: no node_modules, an empty one, a missing lockfile", () => {
+    const dir = installed({ fine: license("MIT") });
+    renameSync(join(dir, "node_modules"), join(dir, "node_modules-away"));
+    const missing = run(dir, "check-licenses");
+    expect(missing.code).toBe(1);
+    expect(missing.out).toContain("run bun install");
+    mkdirSync(join(dir, "node_modules"));
+    const empty = run(dir, "check-licenses");
+    expect(empty.code).toBe(1);
+    expect(empty.out).toContain("run bun install");
+    const bare = repo({ "package.json": JSON.stringify({ name: "fx" }) });
+    expect(run(bare, "check-licenses").code).toBe(1);
+  });
+
+  test("check-staged runs it when bun.lock or package.json is staged", () => {
+    const dir = installed(
+      { planted: license("GPL-3.0-only") },
+      { private: true, allow: [{ check: "coupling", path: "package.json", reason: "fixture" }] },
+    );
+    write(dir, { "notes.txt": "x\n" });
+    sh(dir, ["add", "notes.txt"]);
+    expect(run(dir, "check-staged").out).not.toContain("[check-licenses]");
+    write(dir, { "package.json": readFileSync(join(dir, "package.json"), "utf8") + "\n" });
+    sh(dir, ["add", "package.json"]);
+    const r = run(dir, "check-staged");
+    expect(r.code).toBe(1);
+    expect(r.out).toContain("[check-licenses] planted");
   });
 });
 

@@ -3,8 +3,8 @@
 // The full gate, read from the `scaffolding` key of package.json. It first runs
 // `bun install --frozen-lockfile`: a tree a pin-raising merge left behind gets installed, and a
 // lockfile out of step fails under its own name, not a later step's. The shared steps (format, lint,
-// styles, typecheck, structure, coupling, unique names, confidential, tests, the catalog build
-// through `bun run build`, and admin, the pinned admin's `admin-check`) run side by side; then the repository's own
+// styles, typecheck, structure, coupling, unique names, confidential, licenses, tests, the catalog
+// build through `bun run build`, and admin, the pinned admin's `admin-check`) run side by side; then the repository's own
 // `check` steps run in order, an inner array side by side. The whole run holds the checkout's
 // check lock. A failing shared step stops the run before the repository's steps.
 //
@@ -14,7 +14,8 @@
 //     "test": "test:coverage",             // required: the unit tests, or skip.test with a reason
 //     "skip": { "confidential": "private repository", "catalog": "no surface", "admin": "no items" },
 //     "check": ["validate:refs", ["test:coverage", "build"], "brand-colours"],
-//     "styles": ["./styles/engine.css"]     // an engine's stylesheets its consumers load (check-coupling)
+//     "styles": ["./styles/engine.css"],    // an engine's stylesheets its consumers load (check-coupling)
+//     "licenses": { "elkjs": { "license": "EPL-2.0", "reason": "dev only" } }  // check-licenses
 //   }
 //
 // A `check` entry naming a package.json script runs as `bun run <name>`, any other as a shell
@@ -33,6 +34,7 @@ const KEYS = new Set([
   "skip",
   "check",
   "styles",
+  "licenses",
 ]);
 
 if (process.argv[2] !== "check") {
@@ -75,6 +77,7 @@ const shared: Record<string, string> = {
   coupling: bin("check-coupling"),
   "unique-names": `${bin("check-unique-names")} ${(config.uniqueNames ?? []).join(" ")}`,
   confidential: `${bin("check-confidential")} --tree HEAD`,
+  licenses: bin("check-licenses"),
   // Tests are shared too: a gate without them is a skip someone wrote down, not one that drifted.
   test: script(config.test ?? ""),
   // The catalog build, so a broken one goes red here rather than on the Pages run.

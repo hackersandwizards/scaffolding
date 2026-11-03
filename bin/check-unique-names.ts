@@ -1,11 +1,13 @@
 #!/usr/bin/env bun
 // Every module-scope function name outside tests is defined once, so a grep for its definition
-// finds one site.
+// finds one site. A `scaffolding.allow` entry with `check: "unique-names"` exempts the sites its
+// `path` covers, such as a copy another repository syncs in.
 import { execFileSync } from "node:child_process";
 import { existsSync, readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import ts from "typescript";
+import { applyAllow, repoRoot, type Finding } from "../lib/repo.ts";
 
 // Arguments: the names the repository's framework dictates.
 const frameworkNames = new Set(process.argv.slice(2));
@@ -86,12 +88,29 @@ for (const file of new Set(files)) {
   }
 }
 
-const duplicates = [...sites].filter(([, where]) => where.length > 1);
+const found: Finding[] = [...sites]
+  .filter(([, where]) => where.length > 1)
+  .flatMap(([name, where]) =>
+    where.map((site) => ({
+      check: "unique-names",
+      path: site.slice(0, site.lastIndexOf(":")),
+      text: name,
+      message: site,
+    })),
+  );
+const kept = applyAllow(repoRoot(), "unique-names", found, true);
+const entries = kept.filter((f) => f.path === "package.json");
+const left = new Map<string, string[]>();
+for (const f of kept)
+  if (f.path !== "package.json") left.set(f.text, [...(left.get(f.text) ?? []), f.message]);
+const duplicates = [...left].filter(([, where]) => where.length > 1);
 for (const [name, where] of duplicates)
   console.error(`${name} is defined ${where.length} times: ${where.join(", ")}`);
-if (duplicates.length) {
-  console.error(
-    `\n${duplicates.length} function name(s) defined more than once. Rename one site or share one definition.`,
-  );
+for (const f of entries) console.error(`[unique-names] package.json: ${f.message} (${f.text})`);
+if (duplicates.length || entries.length) {
+  if (duplicates.length)
+    console.error(
+      `\n${duplicates.length} function name(s) defined more than once. Rename one site or share one definition.`,
+    );
   process.exit(1);
 }

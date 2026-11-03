@@ -43,6 +43,7 @@ export type Package = {
     uniqueNames?: string[];
     skip?: Record<string, string>;
     check?: (string | string[])[];
+    licenses?: Record<string, { license?: string; reason?: string }>;
   };
   [field: string]: unknown;
 };

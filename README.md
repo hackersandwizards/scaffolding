@@ -27,6 +27,7 @@ the confidential-terms check (below) fetches its list with it.
 | `check-confidential`            | pre-commit, commit-msg, push | Terms from a hashed list, Company OS screenshots and text in images (OCR, an unread image fails), commits purged from history.                                                                   |
 | `check-staged`                  | pre-commit                   | gitleaks on the index, then `check-coupling` and `check-confidential`, then prettier and eslint on the staged files; `validate:skills` when `.claude/` is staged, `admin-check` when an item is. |
 | `check-unique-names [names...]` | `bun run check`              | Every module-scope function name outside tests is defined once.                                                                                                                                  |
+| `check-licenses`                | `bun run check`, pre-commit  | Every installed package's licence is on the allow list or an exception pins it (below); in pre-commit when `bun.lock` or `package.json` is staged.                                               |
 
 ## A new repository
 
@@ -43,8 +44,8 @@ the hub's sync list, creating it on GitHub and switching Pages on stay steps for
 ## The gate
 
 `scaffolding check` runs `bun install --frozen-lockfile`, then the shared steps side by side:
-format, lint, styles (stylelint), typecheck, structure, coupling, unique names, confidential, the
-tests, the catalog build (`bun run build`) and admin (the item files, with the pinned
+format, lint, styles (stylelint), typecheck, structure, coupling, unique names, confidential,
+licenses, the tests, the catalog build (`bun run build`) and admin (the item files, with the pinned
 `@hackersandwizards/admin`'s `admin-check`; a repository without admin pinned needs `skip.admin`). Then the repository's own steps from
 `scaffolding.check`, in order, an inner array side by side. A shared step drops only with a reason:
 
@@ -164,6 +165,39 @@ A finding a repository keeps goes in its `package.json` with the reason:
 
 `path` takes `*` within a folder and `**` across folders, and `text` narrows an entry to findings
 containing it. An entry without a reason fails, and so does one that no longer matches anything.
+For `check: "unique-names"`, `path` exempts the definition sites it covers, such as a copy another
+repository syncs in.
+
+## Licences
+
+`check-licenses` reads bun's own `bun pm licenses --json`: every package of `bun.lock` installed in
+`node_modules`, Git tags included, offline. Each licence must be on the allow list: MIT, MIT-0, ISC,
+Apache-2.0, BSD-2-Clause, BSD-3-Clause, 0BSD, BlueOak-1.0.0, CC0-1.0, CC-BY-4.0, Python-2.0,
+PSF-2.0, Unlicense, Zlib, WTFPL, OFL-1.1, MPL-2.0. In an SPDX expression an `OR` passes when one
+side does, an `AND` only when every side does, and `WITH` keeps the base licence, so
+`(MIT OR GPL-3.0-or-later)` passes and `Apache-2.0 AND LGPL-3.0-or-later` fails. A licence string
+that is not an expression (`Unknown`, `SEE LICENSE IN LICENSE`, a URL) fails. A bun error, output
+that is not the expected JSON, or no package listed fails with "run bun install".
+
+Shipped exceptions, which may match nothing: `@hackersandwizards/*` (our own packages) and sharp's
+LGPL libvips builds (`@img/sharp-libvips-*`, `@img/sharp-win32-*`, `@img/sharp-wasm32`, each with
+its exact licence string), a shared library loaded on our own machines and conveyed in nothing we
+hand out. A repository keeps any other package with its exact licence string and a reason, a `*`
+at the end matching a name prefix:
+
+```json
+{
+  "scaffolding": {
+    "licenses": {
+      "elkjs": { "license": "EPL-2.0", "reason": "dev only, never conveyed" }
+    }
+  }
+}
+```
+
+An entry without a reason, matching no installed package, or whose licence string no longer
+matches the installed one fails, so a new version under another licence goes red again. A red
+finding names the package, its licence, `bun pm why <name>` and the entry to paste.
 
 ## The confidential-terms check
 

@@ -1,7 +1,7 @@
 {
   "name": "@hackersandwizards/scaffolding",
-  "version": "0.6.1",
-  "description": "Repository skeleton, gate commands, shared configs and the catalog shell: scaffold, scaffolding check, check-structure, check-coupling, check-confidential, check-staged, check-unique-names, check-lock, and the catalog preset.",
+  "version": "0.7.0",
+  "description": "Repository skeleton, gate commands, shared configs and the catalog shell: scaffold, scaffolding check, check-structure, check-coupling, check-confidential, check-staged, check-unique-names, check-lock, check-licenses, and the catalog preset.",
   "keywords": [
     "astro-component"
   ],
@@ -15,7 +15,8 @@
     "check-staged": "bin/check-staged.ts",
     "check-unique-names": "bin/check-unique-names.ts",
     "scaffolding": "bin/scaffolding.ts",
-    "check-lock": "bin/check-lock.ts"
+    "check-lock": "bin/check-lock.ts",
+    "check-licenses": "bin/check-licenses.ts"
   },
   "exports": {
     "./skeleton.json": "./skeleton.json",
@@ -113,6 +114,11 @@
         "check": "coupling",
         "path": "test/checks.test.ts",
         "reason": "planted cases the coupling tests feed to the check"
+      },
+      {
+        "check": "unique-names",
+        "path": ".claude/skills/engineering/*",
+        "reason": "the home hub's sync copies the engineering skill's stand-alone check-lock.ts and check-staged.ts, older forms of this package's bin/, into every repository; the hub owns them"
       }
     ],
     "check": [],
