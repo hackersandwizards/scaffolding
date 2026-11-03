@@ -44,6 +44,7 @@ Prefer these over their classic equivalents.
 - `gh` for GitHub, `glab` for GitLab. Before calling a repository setting one only the person can
   change, read the permission the API returns (`permissions.admin` in `gh api repos/<org>/<repo>`):
   after the person's decision, the change is yours.
+- A push after a directory rename can pack every renamed blob again (git's sparse walk compares only changed paths): 491 objects and 39 MB for 66 new ones, which GitLab let hang. Push it with `git -c pack.useSparse=false push`.
 - `lazygit` for git TUI, `git-filter-repo` for history rewrites
 - Global git aliases from `~/.gitconfig` that add workflow behavior:
   - `git all <args...>` -> run `git <args...>` in every repository under the current tree
