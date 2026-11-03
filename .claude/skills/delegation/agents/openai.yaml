@@ -1,0 +1,4 @@
+interface:
+  display_name: "Delegation"
+  short_description: "Codex model tiers and the handoff of authored copy to Claude"
+  default_prompt: "Use $delegation to pick the model tier for this task."

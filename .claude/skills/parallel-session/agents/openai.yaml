@@ -1,0 +1,4 @@
+interface:
+  display_name: "Parallel session"
+  short_description: "Track parallel work and decisions in repo files"
+  default_prompt: "Use $parallel-session before fanning out a third delegate or leaving a session running."

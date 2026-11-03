@@ -1,0 +1,4 @@
+interface:
+  display_name: "Agent Feedback"
+  short_description: "Author, review, trim or rightsize a skill, rule, agent definition or agent memory, and turn a correction into a lasting improvement of one"
+  default_prompt: "Use $agent-feedback for this task."

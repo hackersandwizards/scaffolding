@@ -1,0 +1,4 @@
+interface:
+  display_name: "Engineering"
+  short_description: "How to approach building and changing software"
+  default_prompt: "Use $engineering before implementing, refactoring, or planning repository work."

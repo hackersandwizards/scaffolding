@@ -1,0 +1,4 @@
+interface:
+  display_name: "Blind review"
+  short_description: "Size and run the blind review a result deserves"
+  default_prompt: "Use $blind-review before handing over a result a person will see."

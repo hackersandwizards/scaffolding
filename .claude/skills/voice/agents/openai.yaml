@@ -1,0 +1,4 @@
+interface:
+  display_name: "Voice"
+  short_description: "h&w voice for prose a human reads, not agent-only text"
+  default_prompt: "Use $voice before drafting any prose a human reads."

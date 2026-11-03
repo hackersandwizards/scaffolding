@@ -1,0 +1,4 @@
+interface:
+  display_name: "Shell Tools"
+  short_description: "Preferred CLI replacements and GNU/BSD portability"
+  default_prompt: "Use $shell-tools to pick the right command-line tool."

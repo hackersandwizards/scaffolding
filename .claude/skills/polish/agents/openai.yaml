@@ -1,0 +1,4 @@
+interface:
+  display_name: "Polish"
+  short_description: "Full-repo quality pass"
+  default_prompt: "Use $polish for this task."

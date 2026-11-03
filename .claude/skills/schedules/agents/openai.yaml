@@ -1,0 +1,4 @@
+interface:
+  display_name: "Schedules"
+  short_description: "Create or change a scheduled task, or decide it should be a gate"
+  default_prompt: "Use $schedules before creating or changing a scheduled task."

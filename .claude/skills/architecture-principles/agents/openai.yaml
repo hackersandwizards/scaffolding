@@ -1,0 +1,4 @@
+interface:
+  display_name: "Architecture Principles"
+  short_description: "What good looks like in client systems: architecture reviews, design red flags, build or buy, why a team is slow"
+  default_prompt: "Use $architecture-principles when reviewing architecture, choosing between designs, or taking a technical position."
