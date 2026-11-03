@@ -51,6 +51,9 @@ Prefer these over their classic equivalents.
 
 **System and shell:**
 - `btop` over `htop`, `watch` for repeated commands
+- Wait on a background job by its PID (`while kill -0 <pid>; do sleep 5; done`) or a sentinel file,
+  never `until ! pgrep -f <pattern>`: the loop's own shell command line contains the pattern, so
+  pgrep always matches it and the wait never ends.
 - `just` as command runner, `parallel` for fan-out
 - `cdxe` to start Codex exec. It is aliased to `codex exec --yolo`: no approvals, no sandbox.
 

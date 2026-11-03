@@ -5,18 +5,16 @@ emails, Slack to clients, speaker outreach, talks.
 
 ## Brand positioning principles
 
-- Authenticity first. "We write code, we scale teams, we know the pain firsthand."
+- The four values and their lines are `values` in `verbal.json`, quoted verbatim.
 - First-person plural authority. Use "we" to ground claims. Name the employers the founders led
   engineering at, as their public bios list them, in client-facing proposals, About copy, conference
   bios and podcast intros; not in internal Slack, code reviews or casual replies.
-- Customer-facing copy writes the company `hackers&wizards`, inside a quoted client statement too.
-  Only a passage whose subject is the spelling itself, such as a trademark, keeps the variant.
+- The company's spelling is `name` in `verbal.json`. Only a passage whose subject is the spelling
+  itself, such as a trademark, keeps the variant.
 - A role a founder holds in person, such as a conference program chair, is his and never h&w's:
   company copy reads "our founder is ...", and h&w's own role is what the company does there. Read
   who holds each role off the record body, never a summary line.
-- Empowerment over dependency. "We enable teams to succeed without us."
-- Excellence enables speed. Quality and velocity are the same thing, never a tax on each other.
-- Humble expertise. "Every situation teaches us something new."
+- Quality and velocity are the same thing, never a tax on each other.
 - Responsibility-focused. Long-term team health and sustainable outcomes over quick wins.
 - Humans before agents. A message introducing people and agents together names the people first
   and gives them the warmth. Introduce an agent as an agent, and never let a joke at its expense
@@ -43,8 +41,8 @@ language. They've seen every consulting deck; surprise them with specifics they 
 
 ## Core positioning: the verbatim set
 
-Primary headline: "Your whole company unstoppable, in flow with agentic engineering." (the claim,
-its results named in the copy under it). Flow is the emotional result.
+Primary headline: the claim, `claim` in `verbal.json` (German and English), its results named in
+the copy under it. Flow is the emotional result.
 The result under the claim is the speed the teams gain reaching the customers, and it is stated as
 an outcome, lead time from idea to first users and the cost of a shipped change, never as output
 such as pull request counts or tool use.
@@ -66,16 +64,15 @@ software systems, and work with agents since the first tools at the end of 2022,
 Claude Code, production software built with agents since mid-2025. A large consultancy has the
 first without the second, and a newcomer the second without the first.
 
-Terms, verbatim: "Agentic Engineering" (primary: the h&w framework unifying AI-assisted
-development, prompt engineering, context engineering, modern software engineering, pragmatic
-programming), "Agentic Product Engineering" (the product-domain extension), "Functional Agentic
+Terms, verbatim: the primary term, its components and its anti-pattern are `terms` in
+`verbal.json`. The primary term is the h&w framework unifying AI-assisted development, prompt
+engineering, context engineering, modern software engineering, pragmatic programming. Also
+"Agentic Product Engineering" (the product-domain extension), "Functional Agentic
 Engineering" (functional programming as the technical paradigm), "AI-Assisted Development",
 "AI-Augmented Development", "Agentic engineering practices", "Structured AI development".
 
-Components of Agentic Engineering, never competitors to it: "Context Engineering" (core
-component), "Modern Software Engineering", "Prompt Engineering", "Pragmatic Programming", "Extreme
-Programming". "Vibe Coding" is the anti-pattern Agentic Engineering replaces: always the problem,
-never the solution.
+The components are parts of Agentic Engineering, never competitors to it, Context Engineering the
+core one. The anti-pattern is always the problem, never the solution.
 
 ## What an offering includes
 

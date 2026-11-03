@@ -1,0 +1,104 @@
+{
+  "source": "hackers&wizards brand package. Change a value here; the ~/.claude hub sync copies this file into every repo's voice skill.",
+  "name": {
+    "company": "hackers&wizards",
+    "legal": "hackers&wizards GmbH",
+    "rule": "Customer-facing copy writes the company hackers&wizards, inside a quoted client statement too."
+  },
+  "claim": {
+    "en": "Your whole company unstoppable, in flow with agentic engineering.",
+    "de": "Euer ganzes Unternehmen unaufhaltsam, im Flow mit Agentic Engineering.",
+    "word": {
+      "en": "flow",
+      "de": "Flow"
+    },
+    "since": "2026-09-19"
+  },
+  "mission": {
+    "en": "We bring every role that builds our clients' products into flow with agentic engineering, as one team.",
+    "de": "Wir bringen jede Rolle, die die Produkte unserer Kunden baut, als ein Team in den Flow mit Agentic Engineering.",
+    "since": "2026-09-19"
+  },
+  "vision": {
+    "en": "A world where the whole organization is in flow, because every role it takes to build its products is tuned to the others. Where agentic engineering is lived, not performed.",
+    "de": null,
+    "since": "2026-09-19"
+  },
+  "position": {
+    "en": "We help CIOs and CTOs whose developers have coding agents and whose releases come no faster. We get the whole company unstoppable, in flow with agentic engineering, so the speed their teams gain reaches their customers, shows in lead time and in the cost of every shipped change, and stays with their own people.",
+    "de": null
+  },
+  "boilerplate": {
+    "en": "hackers&wizards makes whole companies unstoppable, in flow with agentic engineering, so the speed their teams gain reaches their customers.",
+    "de": null
+  },
+  "values": [
+    {
+      "name": "Authenticity",
+      "line": "We write code, we scale teams, we know the pain firsthand"
+    },
+    {
+      "name": "Empowerment",
+      "line": "We enable teams to succeed without us"
+    },
+    {
+      "name": "Excellence",
+      "line": "We prioritize quality because it delivers speed"
+    },
+    {
+      "name": "Humility",
+      "line": "We bring experience, but every situation teaches us something new"
+    }
+  ],
+  "terms": {
+    "primary": "Agentic Engineering",
+    "components": [
+      "Context Engineering",
+      "Modern Software Engineering",
+      "Prompt Engineering",
+      "Pragmatic Programming",
+      "Extreme Programming"
+    ],
+    "antiPattern": "Vibe Coding"
+  },
+  "retired": [
+    {
+      "text": "Your whole company, in tune with agentic engineering.",
+      "lang": "en",
+      "retired": "2026-09-19",
+      "replacedBy": "claim"
+    },
+    {
+      "text": "Faster Delivery. Better Code. Fulfilled Teams.",
+      "lang": "en",
+      "replacedBy": "claim"
+    },
+    {
+      "text": "Schneller liefern. Besserer Code. Erfüllte Teams.",
+      "lang": "de",
+      "replacedBy": "claim"
+    },
+    {
+      "text": "Schneller liefern. Besserer Code. Teams, die aufblühen.",
+      "lang": "de",
+      "replacedBy": "claim"
+    },
+    {
+      "text": "Elevate your team",
+      "lang": "en",
+      "replacedBy": "claim"
+    },
+    {
+      "text": "thrive with AI, not despite it",
+      "lang": "en",
+      "retired": "2026-09-19",
+      "replacedBy": "mission"
+    },
+    {
+      "text": "May your context be rich and your agents aligned.",
+      "lang": "en",
+      "retired": "2026-11-03",
+      "replacedBy": "claim"
+    }
+  ]
+}

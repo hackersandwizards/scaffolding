@@ -74,11 +74,5 @@ Each cites metric, target, and source:
 
 ## About-section voice
 
-h&w bio copy on the website, podcasts and conference programmes:
-
-> *"hackers&wizards makes whole companies unstoppable, in flow with agentic engineering, so the
-> speed their teams gain reaches their customers."*
-
-The mission, approved 2026-09-19: "We bring every role that builds our clients' products into flow
-with agentic engineering, as one team." German: "Wir bringen jede Rolle, die die Produkte unserer
-Kunden baut, als ein Team in den Flow mit Agentic Engineering." It retires "thrive with AI, not despite it".
+h&w bio copy on the website, podcasts and conference programmes is `boilerplate` in `verbal.json`.
+The mission, vision and position are there too, and `retired` lists the lines no copy uses.
