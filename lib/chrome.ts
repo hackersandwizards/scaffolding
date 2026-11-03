@@ -1,8 +1,7 @@
-// The one Chrome every repository's scripts, tests and checks start: the Chrome for Testing build
-// the repository's installed puppeteer-core pins, from puppeteer's cache, so a script launching
-// puppeteer without executablePath starts the same build. Never the user's own Chrome, whose headless instance macOS activates in front
-// of the user's window (shown 2026-10-31). CHROME_BINARY overrides. A caller starting the binary
-// itself passes chromeArgs; puppeteer takes the binary as `executablePath` and NO_KEYCHAIN as args.
+// From puppeteer's own cache, so puppeteer launched without executablePath starts the same build,
+// and never the user's own Chrome, whose headless instance macOS activates in front of the user's
+// window (shown 2026-10-31). A caller starting the binary itself passes chromeArgs; puppeteer takes
+// the binary as `executablePath` and NO_KEYCHAIN as args.
 import { execFile, execFileSync } from "node:child_process";
 import { existsSync, readdirSync } from "node:fs";
 import { createRequire } from "node:module";
@@ -37,8 +36,8 @@ const install = (shell?: boolean) => [
 ];
 
 /** The build puppeteer-core pins, else, without puppeteer-core, the newest build in the cache for
- * this platform. `shell` takes chrome-headless-shell, which
- * printed in 2 s on a Mac where the full app's --print-to-pdf never returned (2026-11-02). */
+ * this platform. `shell` takes chrome-headless-shell, which printed in 2 s on a Mac where the full
+ * app's --print-to-pdf never returned (2026-11-02). */
 export function cachedChrome({ shell }: Options = {}): string | undefined {
   const kind = kindOf(shell);
   const pinned = pinnedBuild(shell);
@@ -64,8 +63,9 @@ export function cachedChrome({ shell }: Options = {}): string | undefined {
     .find((path) => existsSync(path));
 }
 
-/** CHROME_BINARY, else the cached build, else that build (or stable) installed into the cache, blocking; undefined when
- * the install fails, so a test can skip and a command can say how to install. */
+/** CHROME_BINARY, else the cached build, else that build (or stable) installed into the cache,
+ * blocking; undefined when the install fails, so a test can skip and a command can say how to
+ * install. */
 export function chromeBinary(options: Options = {}): string | undefined {
   if (process.env.CHROME_BINARY) return process.env.CHROME_BINARY;
   const found = cachedChrome(options);

@@ -1,13 +1,4 @@
 #!/usr/bin/env bun
-// check-structure [--fix]
-// The repository against the skeleton of the pinned scaffolding version: identical files, owned
-// files (the Pages workflow, identical where present with this version filled in), files that must
-// or must not exist, the `.agents/skills` link, the prettier rules, package.json fields
-// and the hooks path. `--fix` writes what can be written from the template: identical files, the
-// link, the owned files and the hooks path. A repository with a surface carries the catalog: the scripts `dev`,
-// `catalog` and `build`, its stories in catalog/stories and an Astro config using the catalog
-// preset; `scaffolding.skip.catalog` with a reason drops all three. Every step of
-// `scaffolding.check` is a script named `check:<what>`.
 import { spawnSync } from "node:child_process";
 import {
   copyFileSync,
@@ -20,7 +11,7 @@ import {
   writeFileSync,
 } from "node:fs";
 import { dirname, join } from "node:path";
-import { applyAllow, finish, readPackage, repoRoot, type Finding } from "../lib/repo.ts";
+import { applyAllow, finish, git, readPackage, repoRoot, type Finding } from "../lib/repo.ts";
 
 const started = performance.now();
 const fix = process.argv.includes("--fix");
@@ -29,8 +20,13 @@ const home = join(import.meta.dir, "..");
 const skeleton = JSON.parse(readFileSync(join(home, "skeleton.json"), "utf8"));
 const own = JSON.parse(readFileSync(join(home, "package.json"), "utf8"));
 const findings: Finding[] = [];
-const add = (path: string, message: string, text = "") =>
-  findings.push({ check: "structure", path, text, message });
+// Repairs run after applyAllow, so --fix never writes a path an allow entry keeps.
+const repairs = new Map<Finding, () => void>();
+const add = (path: string, message: string, text = "", repair?: () => void) => {
+  const finding: Finding = { check: "structure", path, text, message };
+  findings.push(finding);
+  if (repair) repairs.set(finding, repair);
+};
 const at = (path: string) => join(root, path);
 const exists = (path: string) => {
   try {
@@ -44,18 +40,18 @@ const exists = (path: string) => {
 for (const path of skeleton.same as string[]) {
   const template = join(home, "template", path);
   if (exists(path) && readFileSync(at(path)).equals(readFileSync(template))) continue;
-  if (fix) {
-    mkdirSync(dirname(at(path)), { recursive: true });
-    copyFileSync(template, at(path));
-  } else
-    add(
-      path,
-      exists(path)
-        ? "differs from the skeleton (check-structure --fix)"
-        : "missing (check-structure --fix)",
-    );
+  add(
+    path,
+    exists(path)
+      ? "differs from the skeleton (check-structure --fix)"
+      : "missing (check-structure --fix)",
+    "",
+    () => {
+      mkdirSync(dirname(at(path)), { recursive: true });
+      copyFileSync(template, at(path));
+    },
+  );
 }
-// An owned file is optional, but where present it is the skeleton's, this version filled in.
 for (const path of skeleton.owned as string[]) {
   if (!exists(path)) continue;
   const template = readFileSync(join(home, "surface", path), "utf8").replaceAll(
@@ -63,8 +59,9 @@ for (const path of skeleton.owned as string[]) {
     own.version,
   );
   if (readFileSync(at(path), "utf8") === template) continue;
-  if (fix) writeFileSync(at(path), template);
-  else add(path, "differs from the skeleton (check-structure --fix)");
+  add(path, "differs from the skeleton (check-structure --fix)", "", () =>
+    writeFileSync(at(path), template),
+  );
 }
 for (const path of skeleton.present as string[]) if (!exists(path)) add(path, "missing");
 for (const path of skeleton.absent as string[])
@@ -73,14 +70,20 @@ for (const path of skeleton.absent as string[])
 for (const [path, target] of Object.entries<string>(skeleton.symlinks)) {
   if (exists(path) && lstatSync(at(path)).isSymbolicLink() && readlinkSync(at(path)) === target)
     continue;
-  if (fix && !exists(path)) {
-    mkdirSync(dirname(at(path)), { recursive: true });
-    symlinkSync(target, at(path));
-  } else add(path, `must be a symlink to ${target}`);
+  add(
+    path,
+    `must be a symlink to ${target}`,
+    "",
+    exists(path)
+      ? undefined
+      : () => {
+          mkdirSync(dirname(at(path)), { recursive: true });
+          symlinkSync(target, at(path));
+        },
+  );
 }
 
 // Prettier's own resolution, so the rules count from any config form, the shared one included.
-// The repository's prettier first, else this package's; without either the check fails closed.
 const prettierEntry = join(root, "node_modules/prettier/index.mjs");
 const prettier = await import(existsSync(prettierEntry) ? prettierEntry : "prettier").catch(
   () => undefined,
@@ -126,14 +129,14 @@ const hooks = spawnSync("git", ["config", "core.hooksPath"], {
   cwd: root,
   encoding: "utf8",
 }).stdout.trim();
-if (hooks !== skeleton.hooksPath) {
-  if (fix) spawnSync("git", ["config", "core.hooksPath", skeleton.hooksPath], { cwd: root });
-  else
-    add(
-      ".git/config",
-      `core.hooksPath must be ${skeleton.hooksPath} (bun install runs prepare)`,
-      hooks,
-    );
-}
+if (hooks !== skeleton.hooksPath)
+  add(
+    ".git/config",
+    `core.hooksPath must be ${skeleton.hooksPath} (bun install runs prepare)`,
+    hooks,
+    () => git(["config", "core.hooksPath", skeleton.hooksPath], root),
+  );
 
-finish("check-structure", applyAllow(root, "structure", findings, true), started);
+const left = applyAllow(root, "structure", findings, true);
+if (fix) for (const f of left) repairs.get(f)?.();
+finish("check-structure", fix ? left.filter((f) => !repairs.has(f)) : left, started);

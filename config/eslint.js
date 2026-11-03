@@ -1,6 +1,4 @@
-// The flat config every repository shares. A repository spreads it and appends its own entries:
-// `export default [...base, { ignores: [...] }, ...]`. Its plugins are this package's
-// dependencies, so a repository installs none of them itself.
+// Its plugins are this package's dependencies, so a repository installs none of them itself.
 import js from "@eslint/js";
 import prettier from "eslint-config-prettier/flat";
 import globals from "globals";

@@ -1,6 +1,5 @@
 #!/bin/sh
-# A branch checkout ($3 = 1) that changed bun.lock or package.json installs them, as post-merge
-# does. A new worktree (old HEAD all zeros) fails the diff and installs nothing.
+# $3 = 1 is a branch checkout; a new worktree's all-zero old HEAD fails the diff and installs nothing.
 [ "$3" = 1 ] || exit 0
 git diff --quiet "$1" "$2" -- bun.lock package.json 2>/dev/null
 [ $? -eq 1 ] && bun install --frozen-lockfile </dev/null >/dev/null 2>&1

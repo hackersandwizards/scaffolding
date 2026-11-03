@@ -1,10 +1,6 @@
 ---
-// Astrobook's <head> on every catalog page: the repository's own head (the preset's `head`), and
-// on a state's page a bar in place of Astrobook's sidebar, which is hidden everywhere, since the
-// home's tiles are the one index. The bar: back to the home, the file's folder and name, the
-// theme toggle and a link to the state alone (both lost with the sidebar), and a link per state,
-// folded into a disclosure above FOLD states. It sits in a <template> (allowed in <head>) that a
-// script moves into <main> on load and after each of Astrobook's client-side navigations.
+// The bar sits in a <template>, which <head> allows, and the script moves it into <main> on load
+// and after each of Astrobook's client-side navigations.
 import modules from "virtual:astrobook/story-modules.mjs";
 import config from "virtual:astrobook/global-config.mjs";
 import RepositoryHead from "virtual:scaffolding/catalog-head";

@@ -1,4 +1,3 @@
-// The preset as a repository uses it, for the catalog build test.
 import { defineConfig } from "astro/config";
 import { catalog } from "../../../catalog/index.ts";
 

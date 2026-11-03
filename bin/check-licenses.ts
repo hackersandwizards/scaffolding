@@ -1,20 +1,4 @@
 #!/usr/bin/env bun
-// Every installed package's licence is on the allow list of permissive licences, or an exception
-// pins its exact licence string with a reason. The package list is bun's own `bun pm licenses
-// --json` (every package of bun.lock in node_modules, Git tags included, offline). An SPDX `OR`
-// passes when one side passes, an `AND` only when every side does, `WITH` keeps the base licence;
-// a string that does not parse (`Unknown`, `SEE LICENSE IN …`, a URL) is not allowed. Fail closed:
-// a bun error, output that is not the expected JSON, or zero packages listed is red.
-//
-//   "scaffolding": {
-//     "licenses": {
-//       "elkjs": { "license": "EPL-2.0", "reason": "dev only, never conveyed; decided by …" },
-//       "@acme/*": { "license": "…", "reason": "…" }
-//     }
-//   }
-//
-// A repository's entry without a reason, matching no installed package, or whose licence string no
-// longer matches is red. The defaults below may match nothing.
 import { spawnSync } from "node:child_process";
 import { readPackage, repoRoot } from "../lib/repo.ts";
 
@@ -48,7 +32,6 @@ const DEFAULTS: Record<string, Exception> = {
   "@img/sharp-wasm32": { license: "Apache-2.0 AND LGPL-3.0-or-later AND MIT", reason: LIBVIPS },
 };
 
-/** True when the SPDX expression passes the allow list, false when it fails or does not parse. */
 function licenceAllowed(expression: string): boolean {
   const tokens = expression.match(/\(|\)|[^\s()]+/g) ?? [];
   let at = 0;

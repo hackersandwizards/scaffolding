@@ -59,11 +59,22 @@ const run = (lock: string, args: string[], env: Record<string, string> = {}): Ru
 const heldBy = (lock: string, pid: number): void =>
   writeFileSync(lock, JSON.stringify({ pid, startedAt: Date.now() }));
 
+// A non-blocking open for writing succeeds only once a reader has the FIFO open; a blocking one
+// would hang the whole run, past the test's timeout, when a regression never opens it.
+const openWriter = async (fifo: string): Promise<number> => {
+  for (const end = Date.now() + 5_000; Date.now() < end;) {
+    try {
+      return openSync(fifo, constants.O_WRONLY | constants.O_NONBLOCK);
+    } catch {
+      await new Promise((go) => setTimeout(go, 50));
+    }
+  }
+  throw new Error(`no reader opened ${fifo}`);
+};
+
 describe("check-lock serialises the checks", () => {
-  // The bug it exists for: two full check runs in one checkout corrupt each other's subprocesses.
-  // `spawn`, not `execFileSync` — synchronous children would serialise themselves and the
-  // assertion would hold with no lock at all. Each run flags a breach if it finds another already
-  // inside, which observes mutual exclusion directly and keeps the suite's process count down.
+  // `spawn`, not `execFileSync`: synchronous children would serialise themselves and the assertion
+  // would hold with no lock at all.
   it("never lets two runs overlap", async () => {
     const lock = lockPath();
     const [inside, breach] = [`${lock}.inside`, `${lock}.breach`];
@@ -88,10 +99,8 @@ describe("check-lock serialises the checks", () => {
     expect(existsSync(inside)).toBe(false);
   }, 60_000);
 
-  // The bug: a waiter read the dead holder's lock, then deleted the name without holding it, so it
-  // deleted the fresh lock another waiter wrote in between. A FIFO at the lock path holds the
-  // waiter inside that read until the fresh lock has replaced the name, then hands it the stale
-  // contents.
+  // A FIFO at the lock path holds the waiter inside its read until the fresh lock has replaced the
+  // name, then hands it the stale contents.
   it("never deletes a fresh lock written after it read the stale one", async () => {
     const lock = lockPath();
     execFileSync("mkfifo", [lock]);
@@ -107,7 +116,7 @@ describe("check-lock serialises the checks", () => {
     const status = new Promise<number | null>((done) => child.on("close", done));
 
     // Blocks until the waiter has opened the FIFO to read the holder.
-    const pipe = openSync(lock, "w");
+    const pipe = await openWriter(lock);
     renameSync(fresh, lock);
     writeSync(pipe, JSON.stringify({ pid: 999_999, startedAt: Date.now() }));
     closeSync(pipe);
@@ -144,7 +153,7 @@ describe("check-lock serialises the checks", () => {
     execFileSync("mkfifo", [lock]);
     const first = start(0.5, { CHECK_LOCK_WAIT_MS: "20000" });
     // First read: the stale holder.
-    let pipe = openSync(lock, "w");
+    let pipe = await openWriter(lock);
     writeSync(pipe, stale);
     closeSync(pipe);
     // The first waiter now holds the claim and blocks opening the FIFO for its re-read.
@@ -160,7 +169,7 @@ describe("check-lock serialises the checks", () => {
     const second = start(3, { CHECK_LOCK_WAIT_MS: "20000" });
     // Long enough for the second waiter to clear an aged claim, reclaim and start its run.
     await until(() => existsSync(inside), 6_000);
-    pipe = openSync(fifo, "w");
+    pipe = await openWriter(fifo);
     writeSync(pipe, stale);
     closeSync(pipe);
 
@@ -168,9 +177,8 @@ describe("check-lock serialises the checks", () => {
     expect(existsSync(breach)).toBe(false);
   }, 60_000);
 
-  // The bug: two waiters saw the same dead claim; the faster cleared it and wrote its own, and the
-  // slower then deleted that fresh claim as the dead one and reclaimed beside it. A FIFO at the dead
-  // claim holds the slower waiter inside its read of the owner while the faster takes its claim.
+  // A FIFO at the dead claim holds the slower waiter inside its read of the owner while the faster
+  // takes its claim.
   it("never deletes the claim a live waiter took after a dead one", async () => {
     const lock = lockPath();
     heldBy(lock, 999_999);
@@ -184,19 +192,10 @@ describe("check-lock serialises the checks", () => {
     child.stdout.on("data", (chunk: Buffer) => (stdout += chunk));
     const status = new Promise<number | null>((done) => child.on("close", done));
 
-    // A non-blocking open for writing succeeds only once the waiter has the FIFO open to read.
-    let pipe: number | undefined;
-    for (const end = Date.now() + 5_000; pipe === undefined && Date.now() < end;) {
-      try {
-        pipe = openSync(`${base}.0`, constants.O_WRONLY | constants.O_NONBLOCK);
-      } catch {
-        await new Promise((go) => setTimeout(go, 50));
-      }
-    }
-    expect(pipe).toBeDefined();
+    const pipe = await openWriter(`${base}.0`);
     writeFileSync(`${base}.1`, String(process.pid));
-    writeSync(pipe!, "999998");
-    closeSync(pipe!);
+    writeSync(pipe, "999998");
+    closeSync(pipe);
     // Later polls read a plain dead claim instead of blocking on the FIFO.
     writeFileSync(`${lock}.dead`, "999998");
     renameSync(`${lock}.dead`, `${base}.0`);
@@ -225,7 +224,6 @@ describe("check-lock serialises the checks", () => {
     expect(result.stdout).toContain("failed (killed by SIGKILL)");
   });
 
-  // Running beside a live holder once the wait runs out is the overlap the lock exists to prevent.
   it("fails without running once the wait is exhausted, and leaves the live holder's lock alone", () => {
     const lock = lockPath();
     heldBy(lock, process.pid);
@@ -256,8 +254,6 @@ describe("check-lock serialises the checks", () => {
   }, 30_000);
 });
 
-// A broken lock blocking the gate is worse than the flake it prevents, so a lock with no live
-// holder, or none usable at all, has to end in the checks running.
 describe("check-lock fails open", () => {
   it("reclaims a lock whose holder is gone", () => {
     const lock = lockPath();
@@ -265,21 +261,16 @@ describe("check-lock fails open", () => {
     expect(run(lock, ["echo", "ran"]).stdout).toContain("ran");
   });
 
-  // The bug: a waiter that died between creating its reclaim claim and removing it left the claim
-  // behind, and every later waiter backed off from that claim, waited out the wait and failed.
   it("reclaims a stale lock past a claim its waiter died holding", () => {
     const lock = lockPath();
     heldBy(lock, 999_999);
     const claim = `${lock}.reclaim-${createHash("sha1").update(readFileSync(lock)).digest("hex")}.0`;
     writeFileSync(claim, "999998");
-    const old = new Date(Date.now() - 5 * 60_000);
-    utimesSync(claim, old, old);
     const result = run(lock, ["echo", "ran"], { CHECK_LOCK_WAIT_MS: "6000" });
     expect(result.stdout).toContain("ran");
   }, 30_000);
 
-  // A live waiter holds its claim for microseconds; removing a fresh one reopens the race the claim
-  // closes.
+  // A claim whose owner is alive is a waiter mid-reclaim: removing it reopens the race it closes.
   it("leaves a fresh claim alone", () => {
     const lock = lockPath();
     heldBy(lock, 999_999);

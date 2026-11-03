@@ -29,10 +29,11 @@ export async function serve(
   });
   let exited = false;
   server.on("exit", () => (exited = true));
+  server.on("error", () => (exited = true));
   const stop = () => void server.kill();
   for (const end = Date.now() + timeoutMs; Date.now() < end && !exited;) {
     if (
-      await fetch(url).then(
+      await fetch(url, { signal: AbortSignal.timeout(Math.max(1, end - Date.now())) }).then(
         () => true,
         () => false,
       )

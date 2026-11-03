@@ -1,6 +1,4 @@
 #!/usr/bin/env bun
-// Keeps company data out of a public repository. Holds no term: it reads a salted hash list kept
-// in the private repository TERMS_REPO.
 //   check-confidential --staged               pre-commit: added lines, images and PDFs in the index
 //   check-confidential --message-file <file>  commit-msg: the commit message
 //   check-confidential --commit <rev>         one commit: its added lines, images, PDFs and message
@@ -14,12 +12,6 @@
 //                                             stdin), stamped with its build time, leaving out every
 //                                             term the public text in <file> already carries
 //   check-confidential purged <sha>...        prints .confidential-purged.json for purged commits
-// The list comes from --list <file> or $SCAFFOLDING_CONFIDENTIAL_TERMS, else from a copy at CACHE
-// fetched from TERMS_REPO with the person's own `gh` login and kept for a day. The command writes
-// nothing outside the repository. Fails closed: no list,
-// or one built more than 7 days ago, refuses every check. With CI=true the term step is skipped,
-// so a deploy needs no access. A repository whose package.json sets `scaffolding.private: true` is
-// not checked.
 import { spawnSync } from "node:child_process";
 import { createHash, randomBytes } from "node:crypto";
 import {
@@ -110,7 +102,6 @@ if (argv[0] === "purged") {
 }
 
 const root = repoRoot();
-// Everything this command writes stays in the repository's git-ignored node_modules/.cache.
 const CACHE_DIR = join(root, "node_modules/.cache/scaffolding");
 const CACHE = join(CACHE_DIR, "confidential-terms.json");
 const ATTEMPT = `${CACHE}.attempt`;
@@ -189,8 +180,6 @@ function fetchList(): string | undefined {
   renameSync(`${CACHE}.tmp`, CACHE);
 }
 
-/** The list to scan with, or the reason there is none. A copy older than a day is refetched,
- * at most once an hour; a failed refetch keeps the copy with a warning. */
 function loadList(): { list?: TermList; problem?: string } {
   const file = arg("--list") || process.env.SCAFFOLDING_CONFIDENTIAL_TERMS || undefined;
   let problem: string | undefined;
@@ -263,8 +252,6 @@ function scanText(where: string, text: string) {
 const IMAGE = /\.(?:png|jpe?g|webp|gif|heic|tiff?)$/i;
 const OS_NAV = ["Dashboard", "Deals", "Deliverables", "Assignments", "Invoices"];
 
-/** The Vision OCR helper, compiled once per source version into the repository's git-ignored
- * node_modules/.cache, so it goes with the checkout. */
 function ocrBinary(): string | undefined {
   const source = join(import.meta.dir, "../lib/ocr.swift");
   const digest = createHash("sha256").update(readFileSync(source)).digest("hex").slice(0, 12);
@@ -275,7 +262,6 @@ function ocrBinary(): string | undefined {
   return built.status === 0 ? bin : undefined;
 }
 
-/** Reads every image and PDF; one that cannot be read is refused, since unread is unchecked. */
 function scanBinaries(files: { where: string; data: Buffer }[]) {
   if (!files.length) return;
   // A review page's images may sit under docs/agent-work once read clean. CI reads none, so there
@@ -301,10 +287,10 @@ function scanBinaries(files: { where: string; data: Buffer }[]) {
   if (ocr) {
     const out = spawnSync(ocr, images, { maxBuffer: Infinity });
     for (const block of out.status === 0
-      ? out.stdout.toString().split(/^== /m).filter(Boolean)
+      ? `\n${out.stdout}`.split(`\n== ${scratch}/`).slice(1)
       : []) {
-      const [path, ...lines] = block.split("\n");
-      const file = files[Number(path.slice(scratch.length + 1).split(".")[0])];
+      const [name, ...lines] = block.split("\n");
+      const file = files[Number(name.split(".")[0])];
       if (file) texts.set(file.where, lines.join("\n"));
     }
   }
@@ -325,7 +311,6 @@ function scanBinaries(files: { where: string; data: Buffer }[]) {
   }
 }
 
-/** Added lines per path from a unified diff with no context. */
 function addedLines(diff: string) {
   const added = new Map<string, string[]>();
   let path = "";
@@ -364,7 +349,17 @@ else if (argv.includes("--staged") || commit) {
     ? ["show", "--format=", "--no-renames", commit]
     : ["diff", "--cached", "--no-renames"];
   const diff = git(
-    [...range, "-U0", "--no-color", "--no-ext-diff", "--diff-filter=AM"],
+    [
+      "-c",
+      "core.quotePath=false",
+      ...range,
+      "--src-prefix=a/",
+      "--dst-prefix=b/",
+      "-U0",
+      "--no-color",
+      "--no-ext-diff",
+      "--diff-filter=AM",
+    ],
     root,
   ).toString();
   for (const [path, lines] of addedLines(diff))
@@ -378,13 +373,23 @@ else if (argv.includes("--staged") || commit) {
   if (commit)
     scanText("commit message", git(["log", "-1", "--format=%B", commit], root).toString());
 } else if (tree) {
-  const paths = git(["ls-tree", "-r", "--name-only", "-z", tree], root)
+  const entries = git(["ls-tree", "-r", "-z", tree], root)
     .toString()
     .split("\0")
-    .filter(Boolean);
-  scanText("file names", paths.join("\n"));
-  for (const path of paths) {
-    const data = blob(`${tree}:${path}`);
+    .filter(Boolean)
+    .map((line) => line.match(/^\d+ (\w+) (\w+)\t(.*)$/s)!);
+  scanText("file names", entries.map(([, , , path]) => path).join("\n"));
+  const blobs = entries.filter(([, type]) => type === "blob");
+  // One cat-file for every blob: a `git show` per file cost 6.6 ms each.
+  const batch = git(["cat-file", "--batch"], root, blobs.map(([, , sha]) => sha).join("\n") + "\n");
+  let at = 0;
+  for (const [, , , path] of blobs) {
+    const header = batch.indexOf(10, at);
+    const [, type, length] = batch.subarray(at, header).toString().split(" ");
+    if (type !== "blob") throw new Error(`git cat-file: ${path} not readable (${type})`);
+    const size = Number(length);
+    const data = batch.subarray(header + 1, header + 1 + size);
+    at = header + 2 + size;
     if (isBinary(path)) take(path, data);
     else if (!data.includes(0)) scanText(path, data.toString("utf8"));
   }

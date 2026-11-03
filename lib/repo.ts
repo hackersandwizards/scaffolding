@@ -4,8 +4,8 @@ import { existsSync, readFileSync } from "node:fs";
 export type Finding = { check: string; path: string; text: string; message: string };
 type AllowEntry = { check?: string; path?: string; text?: string; reason?: string };
 
-export function git(args: string[], cwd = process.cwd()): Buffer {
-  const r = spawnSync("git", args, { cwd, maxBuffer: Infinity });
+export function git(args: string[], cwd = process.cwd(), input?: string): Buffer {
+  const r = spawnSync("git", args, { cwd, input, maxBuffer: Infinity });
   if (r.status !== 0) throw new Error(`git ${args.join(" ")}: ${r.stderr}`);
   return r.stdout;
 }
@@ -54,7 +54,6 @@ export function readPackage(root: string): Package {
   return existsSync(file) ? JSON.parse(readFileSync(file, "utf8")) : {};
 }
 
-/** `*` matches within one path segment, `**` across segments. */
 const glob = (pattern: string) =>
   new RegExp(
     `^${pattern

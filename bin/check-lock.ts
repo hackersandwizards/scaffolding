@@ -106,7 +106,6 @@ function dropIfStale(): void {
       return; // cleared by the waiter that reclaimed these contents: the next poll reads afresh
     }
     // create() writes the pid before the name appears, so a claim without one is no live waiter's.
-    // A reused pid reads as live, which ends in the wait timeout, not an overlap.
     if (Number.isInteger(owner) && running(owner)) return;
     slot++;
   }

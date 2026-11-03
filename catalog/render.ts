@@ -1,9 +1,5 @@
-// The catalog shape every h&w repository shares: a left rail with search and the groups with their
-// counts, the title and lead, a provenance line, and a grid of card tiles per group. It renders the
-// markup as a string, so an Astro page (Layout.astro, Home.astro) and a generated static page take
-// the same shape. Free of Node and Astro imports, so a page bundle can carry it. The tiles wear
-// brand's card and pill elements (hw-card, hw-pill) and the page width (hw-container) by class
-// name; the repository's CSS list supplies them.
+// Markup as a string and free of Node and Astro imports, so an Astro page, a page bundle and a
+// generated static page all carry the same shape.
 
 export type CatalogItem = {
   name: string;
@@ -45,8 +41,9 @@ const escapeCatalog = (s: string) =>
   );
 const anchorOf = (s: string) =>
   s
+    .normalize("NFC")
     .toLowerCase()
-    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/[^\p{L}\p{N}]+/gu, "-")
     .replace(/^-|-$/g, "");
 
 const tilePreview = (item: CatalogItem) =>

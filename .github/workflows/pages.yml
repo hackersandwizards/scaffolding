@@ -1,7 +1,6 @@
-# Reusable: runs the repository's `bun run build` and publishes its dist/ to GitHub Pages. The
-# caller grants `pages: write` and `id-token: write`; only the deploy job, which runs no code of the
-# repository, uses them. The install runs dependencies' lifecycle scripts, so the build job holds no deploy
-# grant and no persisted checkout credentials.
+# Only the deploy job, which runs no code of the repository, holds the caller's `pages: write` and
+# `id-token: write`: the install runs dependencies' lifecycle scripts, so the build job gets no
+# deploy grant and no persisted checkout credentials.
 name: Pages
 on:
   workflow_call:

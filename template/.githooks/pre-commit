@@ -1,3 +1,2 @@
 #!/bin/sh
-# Every check a commit runs is the package.json script `check:staged`.
 exec bun run --silent check:staged

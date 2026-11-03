@@ -1,4 +1,3 @@
-// Prints the recognized text of each image path given, one block per file, prefixed "== path".
 // An image that cannot be decoded gets no block, so the caller counts it as not read.
 import AppKit
 import Foundation

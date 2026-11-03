@@ -1,9 +1,5 @@
-/* The catalog shell's styles (render.ts writes the markup): a sticky rail with the search and the
-   groups, the title, lead and provenance line, and a card grid per group. Plain CSS in the
-   components layer. It reads brand's token roles by name only (the expert roles where a page sets
-   them, else the light tokens), so the repository's own CSS list, passed to the preset, supplies
-   every value. The class names are the ones brand's catalogue.css used, so pages built on either
-   look the same. */
+/* Colours read brand's expert role where a page sets it, else the light token; the class names
+   are the ones brand's catalogue.css used, so pages built on either look the same. */
 
 @layer components {
   .hw-catalogue {
@@ -168,6 +164,7 @@
     .hw-catalogue-rail {
       position: static;
       max-height: none;
+      overflow: visible;
     }
     /* The phone keeps the groups as one row of chips under the search (blind review 2026-11-03:
        +0.8 at noise 0.2 over no groups). */
@@ -197,8 +194,7 @@
   }
 }
 
-/* On an Astrobook home the catalog is the whole page (Head.astro hides Astrobook's sidebar on
-   every page). Unlayered, since Astrobook's own styles are. */
+/* Unlayered, since Astrobook's own styles are. */
 [data-astrobook-root][data-active-story=""] main {
   padding: 0;
 }

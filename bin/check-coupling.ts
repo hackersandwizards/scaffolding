@@ -1,17 +1,4 @@
 #!/usr/bin/env bun
-// check-coupling [--staged]
-// The machine-checkable lines of the coupling rule: no path leaves the repository (a sibling
-// checkout `../<repo>`), no import reaches into a package past its `exports`, and every Git
-// dependency is pinned to a version tag that node_modules holds: a stale install renders with the
-// old engine while every file reads the new pin (documents once ran brand 0.21.6 against a v0.24.4
-// pin, and its list markers vanished). CSS origin: in a repository's sources, every stylesheet a
-// company package supplies comes from brand's exports; the catalog shell's styles load only under
-// catalog/; an engine's stylesheet loads where its package.json lists it in `scaffolding.styles`
-// (the stylesheets its components render with, such as slides' slides.css), and no other company
-// package's CSS loads anywhere but its own repository. Read are quoted references, so imports,
-// <link href>, @import and a preset's `css` list count, a node_modules path included: such a path
-// names the file on disk, so it passes where an `exports` entry targets that file.
-// A full run also reports stale allow entries.
 import { existsSync, readFileSync } from "node:fs";
 import { dirname, posix, resolve } from "node:path";
 import {
@@ -67,7 +54,6 @@ function exported(exports: unknown, subpath: string): boolean {
   });
 }
 
-// A path into node_modules names the file itself: it passes where an `exports` entry targets it.
 function targeted(exports: unknown, subpath: string): boolean {
   if (!exports || typeof exports !== "object" || Array.isArray(exports)) return false;
   return Object.values(exports).some(
@@ -153,6 +139,8 @@ if (!staged || listFiles(root, true).includes("package.json")) {
         flag("package.json", `${name}@${spec}`, "local path dependency");
       else if (GIT.test(spec) && !TAG.test(spec))
         flag("package.json", `${name}@${spec}`, "Git dependency not pinned to a version tag");
+      // A stale install renders with the old engine while every file reads the new pin: documents
+      // once ran brand 0.21.6 against a v0.24.4 pin, and its list markers vanished.
       else if (GIT.test(spec) && field !== "peerDependencies") {
         const pinned = TAG.exec(spec)![0].replace(/^#(?:semver:)?v?/, "");
         const installed = (manifest(name)?.version as string | undefined) ?? "nothing";

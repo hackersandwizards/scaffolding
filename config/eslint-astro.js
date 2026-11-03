@@ -1,5 +1,4 @@
-// The shared flat config plus Astro's recommended rules. Needs eslint-plugin-astro in the
-// repository, which an Astro repository has anyway.
+// Needs eslint-plugin-astro in the repository, which an Astro repository has anyway.
 import astro from "eslint-plugin-astro";
 import prettier from "eslint-config-prettier/flat";
 import base from "./eslint.js";

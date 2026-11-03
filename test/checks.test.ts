@@ -321,6 +321,24 @@ describe("scaffold and check-structure", () => {
     write(dir, { ".github/workflows/pages.yml": original });
   });
 
+  test("--fix leaves a file an allow entry keeps", () => {
+    const pkgPath = join(dir, "package.json");
+    const pkgText = readFileSync(pkgPath, "utf8");
+    const original = readFileSync(join(dir, ".github/workflows/pages.yml"), "utf8");
+    const pkg = JSON.parse(pkgText);
+    pkg.scaffolding.allow = [
+      { check: "structure", path: ".github/workflows/pages.yml", reason: "own workflow" },
+    ];
+    write(dir, {
+      "package.json": JSON.stringify(pkg, null, 2),
+      ".github/workflows/pages.yml": "custom\n",
+    });
+    run(dir, "check-structure", ["--fix"]);
+    expect(readFileSync(join(dir, ".github/workflows/pages.yml"), "utf8")).toBe("custom\n");
+    expect(run(dir, "check-structure").code).toBe(0);
+    write(dir, { "package.json": pkgText, ".github/workflows/pages.yml": original });
+  });
+
   test("a drifted file goes red and --fix restores it", () => {
     write(dir, { ".editorconfig": "root = true\n" });
     expect(run(dir, "check-structure").out).toContain(".editorconfig: differs from the skeleton");
@@ -446,6 +464,42 @@ describe("check-confidential", () => {
     expect(run(dir, "check-confidential", ["--staged"], env).code).toBe(0);
   });
 
+  test("the tree audit reads every file, and a staged finding names a non-ASCII path as written", () => {
+    const dir = repo({
+      "package.json": "{}",
+      "a.md": "nothing\n",
+      "b.md": "We met jane q doe.\n",
+      "c/d.md": "Every ZYX team.\n",
+    });
+    const audit = lines(
+      run(dir, "check-confidential", ["--tree", "HEAD"], env).out,
+      "check-confidential",
+    );
+    expect(audit.map((l) => l.replace(/:.*\(/, " (")).sort()).toEqual([
+      "[check-confidential] b.md (jane q doe)",
+      "[check-confidential] c/d.md (ZYX)",
+    ]);
+    write(dir, { "café.md": "We met jane q doe.\n" });
+    sh(dir, ["add", "café.md"]);
+    sh(dir, ["config", "diff.mnemonicPrefix", "true"]);
+    expect(run(dir, "check-confidential", ["--staged"], env).out).toContain(
+      "[check-confidential] café.md:",
+    );
+  });
+
+  test("the tree audit checks a submodule's path and fails on an object it cannot read", () => {
+    const dir = repo({ "package.json": "{}", "a.md": "nothing\n" });
+    const head = sh(dir, ["rev-parse", "HEAD"]).stdout.toString().trim();
+    sh(dir, ["update-index", "--add", "--cacheinfo", `160000,${head},ZYX`]);
+    sh(dir, ["commit", "-qm", "sub"]);
+    expect(run(dir, "check-confidential", ["--tree", "HEAD"], env).out).toContain("(ZYX)");
+    const sha = sh(dir, ["rev-parse", "HEAD:a.md"]).stdout.toString().trim();
+    rmSync(join(dir, ".git/objects", sha.slice(0, 2), sha.slice(2)));
+    const broken = run(dir, "check-confidential", ["--tree", "HEAD"], env);
+    expect(broken.out).toContain("a.md not readable");
+    expect(broken.code).not.toBe(0);
+  });
+
   test("a one-word name in capitals matches only in capitals, a dictionary word included", () => {
     const caps = join(temp(), "caps.txt");
     writeFileSync(caps, "QUUX\nBRIDGE\nWidgetco\n");
@@ -484,10 +538,15 @@ describe("check-confidential", () => {
   test("the commit message is checked", () => {
     const dir = repo({ "package.json": "{}" });
     const msg = join(dir, "MSG");
-    writeFileSync(msg, "fix: for Acme Widgets\n# Jane Q Doe in a comment line is ignored\n");
+    writeFileSync(msg, "fix: for Acme Widgets\n");
     expect(run(dir, "check-confidential", ["--message-file", msg], env).out).toContain(
       "(Acme Widgets)",
     );
+    writeFileSync(
+      msg,
+      "fix\n# ------------------------ >8 ------------------------\n+Acme Widgets\n",
+    );
+    expect(run(dir, "check-confidential", ["--message-file", msg], env).code).toBe(0);
   });
 
   test("an image under docs/agent-work passes once read clean; one that cannot be read goes red", () => {
@@ -619,7 +678,6 @@ describe("check-confidential list source", () => {
     { mode: 0o755 },
   );
 
-  /** A fresh checkout: a gh that grants or denies, and a cached copy of a given age. */
   function machine(opts: {
     gh: "ok" | "deny";
     remote?: string;
@@ -758,6 +816,19 @@ describe("scaffolding check", () => {
     expect(r.out).toContain("passed");
   });
 
+  test("uniqueNames exempt the names they list, $ included", () => {
+    const { "unique-names": _, ...rest } = skip;
+    const dir = gate({ skip: rest, uniqueNames: ["$state"] });
+    write(dir, {
+      "a.ts": "export function $state() {}\n",
+      "b.ts": "export function $state() {}\n",
+    });
+    sh(dir, ["add", "a.ts", "b.ts"]);
+    const r = run(dir, "scaffolding", ["check"], { CHECK_LOCK: join(dir, ".lock") });
+    expect(r.out).toContain("ok   unique-names");
+    expect(r.code).toBe(0);
+  });
+
   test("a failing step fails the gate and stops the later ones", () => {
     const dir = gate({ skip, check: ["false", "echo never-ran"] });
     const r = run(dir, "scaffolding", ["check"], { CHECK_LOCK: join(dir, ".lock") });
@@ -836,7 +907,6 @@ describe("scaffolding check", () => {
       "@hackersandwizards/admin is not pinned: pin it, or skip.admin with a reason",
     );
     const pinned = (verdict: string) => {
-      // A stand-in admin the gate's install links, with its bin.
       const dir = repo({
         "package.json": JSON.stringify({
           name: "fx",
@@ -909,7 +979,6 @@ describe("catalog", () => {
     expect(home.indexOf(">Types <")).toBeLessThan(home.indexOf(">Parts <"));
     expect(home).toContain('src="/catalog/stories/Types/box-types/two"');
     expect(readdirSync(join(dist, "catalog/stories/Parts/box-parts"))).toEqual(["one", "two"]);
-    // A state's page: the repository's head, the sidebar hidden, and the bar in its place.
     const page = (p: string) => readFileSync(join(dist, "catalog", p, "index.html"), "utf8");
     const state = page("dashboard/Parts/box-parts/two");
     const css = readdirSync(join(dist, "_astro"))
@@ -932,7 +1001,6 @@ describe("catalog", () => {
       /href="\/catalog\/dashboard\/Parts\/box-parts\/two" aria-current="page">Two/,
     );
     expect(state).toContain("main.prepend(bar.content.cloneNode(true))");
-    // The state alone and the home carry no bar.
     expect(page("stories/Parts/box-parts/two")).not.toContain('id="hw-catalogue-bar"');
     expect(home).not.toContain('id="hw-catalogue-bar"');
     // `copy`: each match at its own path, the rest of the folder left out.
@@ -952,6 +1020,24 @@ describe("catalog", () => {
       "catalog copy: still Git LFS pointers: assets/nested/lfs.woff2",
     );
   }, 60_000);
+
+  test("group anchors keep non-ASCII letters", async () => {
+    const { renderCatalog } = await import("../catalog/render.ts");
+    const item = { name: "x", href: "/x" };
+    const html = renderCatalog({
+      title: "t",
+      lead: "l",
+      provenance: "p",
+      groups: [
+        { name: "Übersicht", items: [item] },
+        { name: "bersicht", items: [item] },
+        { name: "A\u0308nderung", items: [item] },
+      ],
+    });
+    expect(html).toContain('id="änderung"');
+    expect(html).toContain('id="übersicht"');
+    expect(html).toContain('id="bersicht"');
+  });
 });
 
 describe("shared stylelint config", () => {
@@ -1044,10 +1130,20 @@ describe("check-unique-names", () => {
     expect(stale.code).toBe(1);
     expect(stale.out).toContain("allow entry matches nothing");
   });
+
+  test("a file with a non-ASCII name is read", () => {
+    const dir = repo({
+      "src/a.ts": code["src/a.ts"],
+      "src/ü.ts": code["src/a.ts"],
+      "package.json": "{}",
+    });
+    const r = run(dir, "check-unique-names");
+    expect(r.out).toContain("src/ü.ts:1");
+    expect(r.code).toBe(1);
+  });
 });
 
 describe("check-licenses", () => {
-  // A repository whose dependencies are local packages, each declaring the given licence field.
   function installed(licences: Record<string, unknown>, scaffolding: object = {}) {
     const files: Record<string, string> = {};
     const dependencies: Record<string, string> = {};
@@ -1237,5 +1333,16 @@ describe("serve", () => {
     const started = Date.now();
     await expect(serve([process.execPath, "-e", "process.exit(3)"])).rejects.toThrow("it exited");
     expect(Date.now() - started).toBeLessThan(5_000);
+    await expect(serve(["/nonexistent-polish-bin"])).rejects.toThrow("it exited");
   });
+
+  test("a server that accepts but never answers fails at the timeout", async () => {
+    const { serve } = await import("../lib/serve.ts");
+    const silent = `require("node:net").createServer(() => {}).listen(Number(process.env.PORT), process.env.HOST)`;
+    const started = Date.now();
+    await expect(serve([process.execPath, "-e", silent], { timeoutMs: 500 })).rejects.toThrow(
+      "no answer",
+    );
+    expect(Date.now() - started).toBeLessThan(5_000);
+  }, 10_000);
 });

@@ -1,13 +1,7 @@
 #!/usr/bin/env bun
-// The pre-commit check every repository runs as `bun run check:staged`: the staged secret scan, the
-// staged coupling and confidential-terms checks, then `prettier --check` and `eslint` on the staged files. Check,
-// never write: re-staging a rewritten file would sweep another session's unstaged lines in that
-// file into this commit. A file whose working tree differs from the index is checked from the index
-// on stdin, so those unstaged lines neither pass nor block this commit. A repository defining a
-// `validate:skills` script also runs it whenever the index touches `.claude/`, and one declaring
-// `@hackersandwizards/admin` runs `admin-check` whenever it touches `docs/agent-work/items/`, over
-// docs/agent-work as staged; the skills validator reads the working tree. A staged bun.lock or
-// package.json runs `check-licenses` over the installed tree.
+// Check, never write: re-staging a rewritten file would sweep another session's unstaged lines in
+// that file into this commit. A file whose working tree differs from the index is checked from the
+// index on stdin, so those unstaged lines neither pass nor block this commit.
 import { spawn, spawnSync } from "node:child_process";
 import { existsSync, mkdtempSync, readFileSync, rmSync } from "node:fs";
 import { availableParallelism, tmpdir } from "node:os";

@@ -1,16 +1,10 @@
 #!/usr/bin/env bun
-// Every module-scope function name outside tests is defined once, so a grep for its definition
-// finds one site. A `scaffolding.allow` entry with `check: "unique-names"` exempts the sites its
-// `path` covers, such as a copy another repository syncs in.
-import { execFileSync } from "node:child_process";
-import { existsSync, readFileSync } from "node:fs";
-import { resolve } from "node:path";
+// Every module-scope function name is defined once, so a grep for its definition finds one site.
+import { readFileSync } from "node:fs";
+import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import ts from "typescript";
-import { applyAllow, repoRoot, type Finding } from "../lib/repo.ts";
-
-// Arguments: the names the repository's framework dictates.
-const frameworkNames = new Set(process.argv.slice(2));
+import { applyAllow, listFiles, readPackage, repoRoot, type Finding } from "../lib/repo.ts";
 
 function scriptSource(file: string): string {
   const text = readFileSync(file, "utf8");
@@ -32,38 +26,20 @@ function scriptSource(file: string): string {
 const testFile = /(^|\/)(__tests__|tests?|e2e)\/|\.(test|spec)\.[cm]?[jt]sx?$/;
 
 const sites = new Map<string, string[]>();
-const files = execFileSync(
-  "git",
-  [
-    "ls-files",
-    "--cached",
-    "--others",
-    "--exclude-standard",
-    "*.ts",
-    "*.tsx",
-    "*.mts",
-    "*.cts",
-    "*.js",
-    "*.mjs",
-    "*.cjs",
-    "*.astro",
-  ],
-  { encoding: "utf8" },
-)
-  .split("\n")
-  .filter(
-    (file) =>
-      file &&
-      resolve(file) !== fileURLToPath(import.meta.url) &&
-      !file.endsWith(".d.ts") &&
-      !testFile.test(file) &&
-      existsSync(file),
-  );
+const root = repoRoot();
+const frameworkNames = new Set([readPackage(root).scaffolding?.uniqueNames ?? []].flat());
+const files = listFiles(root, false).filter(
+  (file) =>
+    /\.(?:[cm]?[jt]s|tsx|astro)$/.test(file) &&
+    join(root, file) !== fileURLToPath(import.meta.url) &&
+    !file.endsWith(".d.ts") &&
+    !testFile.test(file),
+);
 if (!files.length) throw new Error("no source files matched, so nothing was checked");
-for (const file of new Set(files)) {
+for (const file of files) {
   const source = ts.createSourceFile(
     file.replace(/\.astro$/, ".ts"),
-    scriptSource(file),
+    scriptSource(join(root, file)),
     ts.ScriptTarget.Latest,
     true,
   );
@@ -98,7 +74,7 @@ const found: Finding[] = [...sites]
       message: site,
     })),
   );
-const kept = applyAllow(repoRoot(), "unique-names", found, true);
+const kept = applyAllow(root, "unique-names", found, true);
 const entries = kept.filter((f) => f.path === "package.json");
 const left = new Map<string, string[]>();
 for (const f of kept)

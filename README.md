@@ -59,13 +59,15 @@ licenses, the tests, the catalog build (`bun run build`) and admin (the item fil
   "scaffolding": {
     "test": "test:coverage",
     "typecheck": "astro check",
+    "uniqueNames": ["GET", "POST"],
     "skip": { "catalog": "no surface" },
     "check": ["check:refs", ["check:markers", "check:elements"]]
   }
 }
 ```
 
-Every step in `scaffolding.check` is a script named `check:<what>`. `"private": true` skips the
+`uniqueNames` lists names the framework dictates, which the unique-names step lets repeat. Every
+step in `scaffolding.check` is a script named `check:<what>`. `"private": true` skips the
 confidential step.
 
 ## Configs
@@ -119,7 +121,8 @@ The options beyond those above:
 - `href`: where the header's lockup links, default the site's root (Astro's `base`).
 - `previews`: draw each tile's first state; `false` for states that load slowly or may not be
   framed.
-- `previewStates`: the story names a tile draws and links first, such as `["light"]`.
+- `previewStates`: the states a tile draws and links first, each the story's export name in kebab
+  case, such as `["light", "loaded-dark"]` for `Light` and `LoadedDark`.
 - `head`: the repository's own `<head>` component, rendered on every page.
 - `header`: default brand's `AppHeader` and `header.css`.
 - `home`: a page of the repository that renders `Home.astro`, its foundations in the default slot

@@ -1,6 +1,5 @@
 # Owned by @hackersandwizards/scaffolding: check-structure compares this file with the skeleton of
-# the pinned version, and `check-structure --fix` writes it. It publishes the catalog build (dist/)
-# to GitHub Pages on every push to main through scaffolding's reusable workflow.
+# the pinned version, and `check-structure --fix` writes it.
 name: Pages
 on:
   push:

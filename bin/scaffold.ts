@@ -1,12 +1,4 @@
 #!/usr/bin/env bun
-// scaffold <dir> [--name <package name>] [--port <port>] [--catalog-in <repo>] [--admin-in <repo>]
-// Creates a repository from the skeleton of this scaffolding version: copies the template, makes
-// the skeleton's symlinks, fills in the name, the bun pin and this version as the scaffolding pin,
-// and runs `git init`. By default the repository also gets its catalog (`surface/`: the Astro
-// config on the catalog preset at --port, an example story, stylelint, the Pages workflow) and its
-// admin area (`admin-area/`: a goal item, which the gate's admin step checks), with brand and admin
-// pinned to their newest tags on the remote. `--catalog-in <repo>` and `--admin-in <repo>` leave
-// either out for a repository whose catalog or admin area lives in <repo>; the gate's skip says so.
 import { spawnSync } from "node:child_process";
 import {
   cpSync,
@@ -54,7 +46,6 @@ const adminIn = option("--admin-in");
 const home = join(import.meta.dir, "..");
 const own = JSON.parse(readFileSync(join(home, "package.json"), "utf8"));
 
-/** The newest `v<semver>` tag of a company repository on its remote; none fails the run. */
 function newestTag(repo: string): string {
   const base = process.env.SCAFFOLDING_GIT_BASE ?? "https://github.com/hackersandwizards/";
   const r = spawnSync("git", ["ls-remote", "--tags", "--refs", `${base}${repo}.git`], {
@@ -108,7 +99,6 @@ for (const file of filled) {
     readFileSync(path, "utf8").replace(/\{\{(\w+)\}\}/g, (_, key) => values[key]),
   );
 }
-// The toolchain at the versions this scaffolding release checks itself with.
 const pkgPath = join(target, "package.json");
 const pkg = JSON.parse(readFileSync(pkgPath, "utf8"));
 const company = (repo: string, tag: string) => [

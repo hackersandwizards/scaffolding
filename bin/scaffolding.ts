@@ -1,25 +1,4 @@
 #!/usr/bin/env bun
-// scaffolding check
-// The full gate, read from the `scaffolding` key of package.json. It first runs
-// `bun install --frozen-lockfile`: a tree a pin-raising merge left behind gets installed, and a
-// lockfile out of step fails under its own name, not a later step's. The shared steps (format, lint,
-// styles, typecheck, structure, coupling, unique names, confidential, licenses, tests, the catalog
-// build through `bun run build`, and admin, the pinned admin's `admin-check`) run side by side; then the repository's own
-// `check` steps run in order, an inner array side by side. The whole run holds the checkout's
-// check lock. A failing shared step stops the run before the repository's steps.
-//
-//   "scaffolding": {
-//     "typecheck": "astro check",          // default: tsc --noEmit
-//     "uniqueNames": ["GET", "POST"],      // names the framework dictates
-//     "test": "test:coverage",             // required: the unit tests, or skip.test with a reason
-//     "skip": { "confidential": "private repository", "catalog": "no surface", "admin": "no items" },
-//     "check": ["validate:refs", ["test:coverage", "build"], "brand-colours"],
-//     "styles": ["./styles/engine.css"],    // an engine's stylesheets its consumers load (check-coupling)
-//     "licenses": { "elkjs": { "license": "EPL-2.0", "reason": "dev only" } }  // check-licenses
-//   }
-//
-// A `check` entry naming a package.json script runs as `bun run <name>`, any other as a shell
-// command with node_modules/.bin on PATH.
 import { spawn, spawnSync } from "node:child_process";
 import { existsSync } from "node:fs";
 import { join } from "node:path";
@@ -65,24 +44,21 @@ const bin = (name: string) => `bun ${join(home, "bin", `${name}.ts`)}`;
 const shared: Record<string, string> = {
   format: "bun --bun prettier --check --log-level warn .",
   lint: "bun --bun eslint --cache --concurrency=auto .",
-  // Custom properties only from brand's tokens or the repository's own (the stylelint base), in
-  // stylesheets and in the <style> blocks of Astro components. One
-  // line per finding: the default formatter's table threw "Subject parameter value width" in a
-  // phase-2 run with findings, and a plain line format has no table. The repository's own config
-  // governs every file, so a nested repository's config (a submodule's) never takes over its files
-  // and the root config's ignoreFiles holds.
+  // One line per finding: the default formatter's table threw "Subject parameter value width" in a
+  // run with findings, and a plain line format has no table. The repository's own config governs
+  // every file, so a nested repository's config (a submodule's) never takes over its files and the
+  // root config's ignoreFiles holds.
   styles: `bun --bun stylelint "**/*.{css,astro}"${existsSync(join(root, "stylelint.config.js")) ? " --config stylelint.config.js" : ""} --allow-empty-input --ignore-path .gitignore --formatter compact`,
   typecheck: `bun --bun ${config.typecheck ?? "tsc --noEmit"}`,
   structure: bin("check-structure"),
   coupling: bin("check-coupling"),
-  "unique-names": `${bin("check-unique-names")} ${(config.uniqueNames ?? []).join(" ")}`,
+  "unique-names": bin("check-unique-names"),
   confidential: `${bin("check-confidential")} --tree HEAD`,
   licenses: bin("check-licenses"),
   // Tests are shared too: a gate without them is a skip someone wrote down, not one that drifted.
   test: script(config.test ?? ""),
   // The catalog build, so a broken one goes red here rather than on the Pages run.
   catalog: "bun run --silent build",
-  // The item files of the admin area, with the pinned admin's own check.
   admin: "admin-check",
 };
 if (!config.test && !config.skip?.test)
@@ -112,8 +88,8 @@ function run(name: string, line: string, buffered: boolean): Promise<Result> {
     let out = "";
     child.stdout?.on("data", (d) => (out += d));
     child.stderr?.on("data", (d) => (out += d));
-    child.on("close", (code, signal) =>
-      done({ name, code: code ?? (signal ? 1 : 0), ms: performance.now() - started, out }),
+    child.on("close", (code) =>
+      done({ name, code: code ?? 1, ms: performance.now() - started, out }),
     );
   });
 }
@@ -131,9 +107,11 @@ async function group(steps: [string, string][]): Promise<boolean> {
 }
 
 const started = performance.now();
+// Install first: a tree a pin-raising merge left behind gets installed, and a lockfile out of step
+// fails under its own name, not a later step's.
 let ok = await group([["install", "bun install --frozen-lockfile"]]);
 if (ok) ok = await group(Object.entries(shared));
-for (const entry of (config.check ?? []) as (string | string[])[]) {
+for (const entry of config.check ?? []) {
   if (!ok) break;
   const steps = (Array.isArray(entry) ? entry : [entry]).map((s): [string, string] => [
     s,

@@ -1,5 +1,4 @@
 #!/bin/sh
-# A merge that changed bun.lock or package.json installs them, so node_modules follows the pins.
 # Quiet, and never fails the merge: the gate's own `bun install --frozen-lockfile` names a failure.
 git diff --quiet ORIG_HEAD HEAD -- bun.lock package.json 2>/dev/null
 [ $? -eq 1 ] && bun install --frozen-lockfile </dev/null >/dev/null 2>&1
