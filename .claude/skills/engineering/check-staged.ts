@@ -82,6 +82,10 @@ async function runStagedTool(bin: string, args: string[], stdin?: Buffer): Promi
   else free--;
   const result = await new Promise<ToolRun>((done) => {
     const child = spawn(bin, args, { stdio: "pipe" });
+    // A child that exits before reading stdin raises EPIPE: caught so it cannot crash the check, and
+    // counted as a failure so an unread file never passes.
+    let unread = false;
+    child.stdin.on("error", () => (unread = true));
     child.stdin.end(stdin);
     let out = "";
     const stdout: Buffer[] = [];
@@ -92,7 +96,7 @@ async function runStagedTool(bin: string, args: string[], stdin?: Buffer): Promi
     );
     child.on("close", (code) => {
       const output = Buffer.concat(stdout);
-      done({ out: `${output}${out}`, code: code ?? 1, stdout: output });
+      done({ out: `${output}${out}`, code: unread ? code || 1 : (code ?? 1), stdout: output });
     });
   });
   const next = waiting.shift();

@@ -32,7 +32,7 @@ handling that prevents data loss, security measures, or accessibility basics.
   a plan. A schedule runs only to notice an absence no commit reveals, such as a new advisory
   against an unchanged lockfile.
 - Start every script and tool through `bun run`: a package.json script where one fits, else the
-  project's own binary (`bun run vitest run <file>`), never `bunx`, `npx` or `node_modules/.bin`.
+  project's own binary (`bun run vitest run <file>`), never `bunx`, `npx` or `node_modules/.bin` for a tool the project installs.
   A hook is one line in `.githooks/` calling a script: `check:staged` runs scaffolding's
   `check-staged` where the repository pins `@hackersandwizards/scaffolding`, else `check-staged.ts`
   from this folder; `lfs:pre-push` runs `git lfs pre-push` where LFS is used and scaffolding's

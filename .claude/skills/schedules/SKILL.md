@@ -10,7 +10,7 @@ description: Create, change, rename or review a scheduled task (the desktop app'
    a person triggers at your request is your run, so say what it will do in the world when you ask
    for the trigger. Check: you can name the absence the schedule notices.
 2. Name a skill for its function and the scheduled task for its job, with the cadence as the last
-   segment (`mail-sweep-hourly`). Create the task without a `title`, so the app shows that name.
+   segment (`mail-sweep-10min`). Create the task without a `title`, so the app shows that name.
    A task's identifier is immutable, so a rename is a delete plus a create, and the new
    registration inherits neither its last-run time nor its tool grants, so set the grants again.
    Diff the old and new `SKILL.md` before deleting the old task, then list the tasks: the old
@@ -42,4 +42,4 @@ description: Create, change, rename or review a scheduled task (the desktop app'
    hand never fires. In the listing,
    `cronExpression` is local time, `lastRunAt` and `nextRunAt` are UTC, and the rendered
    `schedule` string flattens a range (`0 7-20 * * *` reads as one time).
-   Check: the task's `SKILL.md` names no model, mode or grant.
+   Check: the task's `SKILL.md` names no model, mode or grant for its own registration.

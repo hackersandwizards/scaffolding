@@ -27,6 +27,8 @@ irrelevant or the object is the point ("The contract was signed yesterday").
 Replace a vague quantifier with the number, or cut the claim: "Wir verbessern die Performance
 deutlich" -> "Wir senken die Latenz von 800 auf 200 ms". Banned modifiers without numbers:
 `deutlich, signifikant, erheblich, massiv, considerable, substantial, significant, dramatic`.
+The example figure is suspended until a pilot team has a baseline and a second measurement point
+(`brand-voice.md`, Measures and figures).
 
 ## Three or more parties: name each one
 

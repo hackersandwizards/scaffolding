@@ -77,7 +77,7 @@ A new or changed line rests on a person's message or an observed failure, named 
 message. A line with neither is not written.
 
 For a change the person orders, draft the one-sentence target text, read the whole file for the
-line it folds into, and show the wordings before committing; a delegate brief carries that text or
+line it folds into, and show the wordings before committing, or name them in the report on an unattended run; a delegate brief carries that text or
 a length cap and asks for the removal-first diff. A rule the person states for every session goes
 into a hub rule or skill, never memory or one repository's rule. The remedy for an agent behaviour
 is a line in the artifact that owns it, never a hook, a validator or other automated block, and

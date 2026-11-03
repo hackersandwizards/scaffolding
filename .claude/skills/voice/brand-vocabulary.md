@@ -68,6 +68,8 @@ material, such as a legal clause lifted from their template.
 
 ## Performance language: approved patterns
 
+Suspended until a pilot team has a baseline and a second measurement point (`brand-voice.md`,
+Measures and figures).
 Each cites metric, target, and source:
 
 - "~90% of developers already use AI" (DORA 2025)
