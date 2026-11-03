@@ -36,8 +36,8 @@ handling that prevents data loss, security measures, or accessibility basics.
   A hook is one line in `.githooks/` calling a script: `check:staged` runs scaffolding's
   `check-staged` where the repository pins `@hackersandwizards/scaffolding`, else `check-staged.ts`
   from this folder; `lfs:pre-push` runs `git lfs pre-push` where LFS is used and scaffolding's
-  `check-confidential prepush` does not. `scaffolding check` serialises `bun run check` itself, and `only-bun.cjs` is
-  the `preinstall` guard. npm 7 writes
+  `check-confidential prepush` does not. `scaffolding check` serialises `bun run check` itself, and scaffolding's skeleton
+  file `scripts/repo/only-bun.cjs` is the `preinstall` guard. npm 7 writes
   `node_modules` and `package-lock.json` before `preinstall` runs, so `package.json` also sets
   `"engines": {"npm": "please-use-bun"}` and `.npmrc` sets `engine-strict=true`. A package other
   repositories install carries no `preinstall`: a consumer's install-script check rejects it.
