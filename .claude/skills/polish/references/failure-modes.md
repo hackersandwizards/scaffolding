@@ -61,8 +61,8 @@ output.
 
 - Piping it (`check | tail -4 && commit`) makes the pipeline exit status the *last* command's,
   so an `&&` chain proceeds over a red gate. Run the gate on its own line and read its exit code.
-- The pre-commit hook runs only the secret scan, format and lint on staged files. A commit is
-  tested only by the checks you ran.
+- The pre-commit hook runs only the staged checks its repository names. A commit is tested only
+  by the checks you ran.
 - `git diff --cached --name-only` reports a rename by its new path alone, so a check scoped to
   that list never sees the path that went away. A hook building a scope from it needs
   `--no-renames`.
