@@ -1,6 +1,6 @@
 ---
 name: parallel-session
-description: Track parallel work and the person's decisions in repo files (one item file per decision, review, work item or goal under docs/tracking/items/, dated reports) and the admin hub page of what needs the person, so the person can review after being away, and choose between the shared checkout and a worktree per delegate. Use before fanning out a third delegate, before leaving a session running, and for "what is open", "what needs me", "decision list", "Entscheidungsliste", "worktree".
+description: Track parallel work and the person's decisions in repo files (one item file per decision, review, work item or goal under docs/agent-work/items/, dated reports) and the admin hub page of what needs the person, so the person can review after being away, and choose between the shared checkout and a worktree per delegate. Use before fanning out a third delegate, before leaving a session running, and for "what is open", "what needs me", "decision list", "Entscheidungsliste", "worktree".
 ---
 
 # Parallel session
@@ -12,7 +12,7 @@ serves the page across all repos at `http://admin.localhost:4329` from each repo
 
 ## One home per fact
 
-- `docs/tracking/items/<id>.md`: one file per item, YAML frontmatter plus a body starting with
+- `docs/agent-work/items/<id>.md`: one file per item, YAML frontmatter plus a body starting with
   `# <title>`. `kind` is one of:
   - `goal`: the goal in the person's words, the limits, what done means, and a deploy hold.
     Usually `goal.md`, one per repo.
@@ -25,15 +25,15 @@ serves the page across all repos at `http://admin.localhost:4329` from each repo
   - `review`: a request to look at something, with what to look at in the body.
 
   A task, even one phrased as a question ("Who fixes the privacy policy?"), is `work`.
-- `docs/tracking/YYYY-MM-DD-<topic>.md`: one report per topic, what was measured, with evidence.
-  Its images sit in `docs/tracking/YYYY-MM-DD-<topic>/`, JPEG at most 1600 px wide.
-- `docs/tracking/items/<id>/`: the item's images, JPEG at most 1600 px wide, named in its `images`
+- `docs/agent-work/YYYY-MM-DD-<topic>.md`: one report per topic, what was measured, with evidence.
+  Its images sit in `docs/agent-work/YYYY-MM-DD-<topic>/`, JPEG at most 1600 px wide.
+- `docs/agent-work/items/<id>/`: the item's images, JPEG at most 1600 px wide, named in its `images`
   field by file name. The admin renders every review from the item in its own styles: an agent
   writes item data and images, never review HTML. The folder goes with its item.
 
 Work that waits on a decision keeps its `work` item, whose body names the decision's `id` instead
 of repeating the question. The open points for the person's return are the items in
-`docs/tracking/items/`. No second list exists.
+`docs/agent-work/items/`. No second list exists.
 
 ## Item fields
 
@@ -76,7 +76,7 @@ items up.
 
 ## Steps
 
-1. At start, read `docs/tracking/items/` in every repo the work touches. Where no goal item
+1. At start, read `docs/agent-work/items/` in every repo the work touches. Where no goal item
    exists and the work spans sessions or delegates, create `goal.md` with the goal quoted from
    the person's message. A work item outside the session's goal waits for its own session,
    whoever owns it. Check: the goal item quotes the person.
@@ -95,12 +95,12 @@ items up.
 4. A finished work item is deleted in the commit that finishes it. An item the person decided
    takes `status: decided`, `decision` and `by`, then is deleted: in the commit that carries the
    decision out, or, where work remains, replaced by a `work` item naming the `id`.
-   `git log --all -- docs/tracking/items/<id>.md` finds a deleted item.
-5. Before each commit that touches `docs/tracking/items/`, run `bun run admin-check` in the repo.
+   `git log --all -- docs/agent-work/items/<id>.md` finds a deleted item.
+5. Before each commit that touches `docs/agent-work/items/`, run `bun run admin-check` in the repo.
    Check: it prints `ok`.
 6. A report and an item state the current state only. A later batch on the same topic edits that
    report and deletes what it superseded. Earlier rounds and raw reviews go to the scratchpad.
-7. The page reads every repo under `~/dev` with `docs/tracking/items/` or an
+7. The page reads every repo under `~/dev` with `docs/agent-work/items/` or an
    `@hackersandwizards` dependency at its last commit, so the commit is all an item change needs.
    Check: where `curl -s http://admin.localhost:4329/` answers, the page lists the item. A batch
    that changes an asset an item's images show, such as a logo, colour or lockup, re-renders those
