@@ -65,13 +65,13 @@ confidential step.
 
 ## Configs
 
-| Export                                         | Use                                                                                    |
-| ---------------------------------------------- | -------------------------------------------------------------------------------------- |
-| `./eslint`, `./eslint/astro`                   | `export default [...base, ...]` in `eslint.config.js`                                  |
-| `./tsconfig/bun.json`, `./tsconfig/astro.json` | `"extends"` in `tsconfig.json`; `include` and `paths` stay in the repository           |
-| `./prettier`                                   | `"prettier": "@hackersandwizards/scaffolding/prettier"` in `package.json`              |
-| `./stylelint`                                  | `export default styles({ importFrom: [...] })` in `stylelint.config.js`                |
-| `./chrome`, `./serve`                          | Chrome for Testing with the shared flags; a gate server on a port the system hands out |
+| Export                                         | Use                                                                                                                                                                   |
+| ---------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `./eslint`, `./eslint/astro`                   | `export default [...base, ...]` in `eslint.config.js`                                                                                                                 |
+| `./tsconfig/bun.json`, `./tsconfig/astro.json` | `"extends"` in `tsconfig.json`; `include` and `paths` stay in the repository                                                                                          |
+| `./prettier`                                   | `"prettier": "@hackersandwizards/scaffolding/prettier"` in `package.json`                                                                                             |
+| `./stylelint`                                  | `export default styles({ importFrom: [...] })` in `stylelint.config.js`                                                                                               |
+| `./chrome`, `./serve`                          | Chrome for Testing, the build the repository's `puppeteer-core` pins (newest cached without one), with the shared flags; a gate server on a port the system hands out |
 
 The stylelint base lets a stylesheet, and the `<style>` blocks of an Astro component, read only the
 custom properties brand's `tokens.root.css` (from the repository's installed brand), the files in

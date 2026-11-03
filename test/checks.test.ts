@@ -1159,7 +1159,7 @@ describe("check-licenses", () => {
 });
 
 describe("chrome", () => {
-  test("CHROME_BINARY wins, else the newest cached build of this platform, the shell on request", async () => {
+  test("CHROME_BINARY wins, else the build puppeteer-core pins, else the newest cached build of this platform, the shell on request", async () => {
     const { cachedChrome, chromeBinary } = await import("../lib/chrome.ts");
     const cache = temp();
     const platform =
@@ -1173,19 +1173,35 @@ describe("chrome", () => {
       write("/", { [path]: "" });
       return path;
     };
-    plant("chrome", `${platform}-9.0.1`, exe);
+    const pinned = plant("chrome", `${platform}-9.0.1`, exe);
     const newest = plant("chrome", `${platform}-10.0.1`, exe);
     plant("chrome", `other-99.0.0`, exe);
     const shell = plant("chrome-headless-shell", `${platform}-10.0.1`, "chrome-headless-shell");
     const saved = { ...process.env };
+    const cwd = process.cwd();
     process.env.PUPPETEER_CACHE_DIR = cache;
     delete process.env.CHROME_BINARY;
     try {
       expect(cachedChrome()).toBe(newest);
       expect(cachedChrome({ shell: true })).toBe(shell);
+      // A consumer's puppeteer-core decides the build, the shell's absent pin finds nothing.
+      const consumer = temp();
+      write(consumer, {
+        "node_modules/puppeteer-core/package.json": JSON.stringify({
+          name: "puppeteer-core",
+          type: "module",
+          exports: { "./internal/*": "./lib/puppeteer/*" },
+        }),
+        "node_modules/puppeteer-core/lib/puppeteer/revisions.js":
+          "export const PUPPETEER_REVISIONS = { chrome: '9.0.1', 'chrome-headless-shell': '8.0.1' };\n",
+      });
+      process.chdir(consumer);
+      expect(cachedChrome()).toBe(pinned);
+      expect(cachedChrome({ shell: true })).toBeUndefined();
       process.env.CHROME_BINARY = "/opt/own-chrome";
       expect(chromeBinary()).toBe("/opt/own-chrome");
     } finally {
+      process.chdir(cwd);
       process.env = saved;
     }
   });
