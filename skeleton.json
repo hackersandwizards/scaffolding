@@ -24,7 +24,7 @@
     ".claude/settings.json",
     ".mcp.json",
     ".codex/config.toml",
-    "docs/tracking"
+    "docs/agent-work"
   ],
   "absent": [
     "eslint.config.mjs",

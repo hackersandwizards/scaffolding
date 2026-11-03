@@ -79,8 +79,8 @@ cpSync(join(home, "template"), target, { recursive: true });
 if (!catalogIn) cpSync(join(home, "surface"), target, { recursive: true });
 if (!adminIn) {
   cpSync(join(home, "admin-area"), target, { recursive: true });
-  // admin-check allows only items in docs/tracking/items, and the goal item keeps the folder.
-  rmSync(join(target, "docs/tracking/.gitkeep"));
+  // admin-check allows only items in docs/agent-work/items, and the goal item keeps the folder.
+  rmSync(join(target, "docs/agent-work/.gitkeep"));
 }
 // Stored under another name: as eslint.config.js it would lint this package's own template files
 // with an import of this package that only resolves in a repository that installs it; the Astro

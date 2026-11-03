@@ -35,7 +35,7 @@ the confidential-terms check (below) fetches its list with it.
 writes the skeleton, the catalog (`catalog/astro.config.ts` on the
 preset with `base: "/<name>"` and the port, an example component and story, `stylelint.config.js`,
 the scripts `dev`, `catalog` and `build`, the Pages workflow) and the admin area
-(`docs/tracking/items/goal.md`), and pins brand and admin to the newest tag on their remotes, so an
+(`docs/agent-work/items/goal.md`), and pins brand and admin to the newest tag on their remotes, so an
 admin or brand release reaches new repositories without a scaffolding release. A repository whose
 catalog or admin area lives in another repository leaves either out with `--catalog-in <repo>` or
 `--admin-in <repo>`; its `scaffolding.skip` names that repository. Registering the repository in

@@ -260,8 +260,8 @@ describe("scaffold and check-structure", () => {
     expect(readFileSync(join(dir, ".github/workflows/pages.yml"), "utf8")).toContain(
       `uses: hackersandwizards/scaffolding/.github/workflows/pages.yml@v${ownVersion}\n`,
     );
-    expect(readdirSync(join(dir, "docs/tracking/items"))).toEqual(["goal.md"]);
-    expect(readdirSync(join(dir, "docs/tracking"))).toEqual(["items"]);
+    expect(readdirSync(join(dir, "docs/agent-work/items"))).toEqual(["goal.md"]);
+    expect(readdirSync(join(dir, "docs/agent-work"))).toEqual(["items"]);
     expect(readFileSync(join(dir, "tsconfig.json"), "utf8")).toContain('"catalog/**/*.ts"]');
     const prettier = join(import.meta.dir, "..", "node_modules", ".bin", "prettier");
     const formatted = spawnSync(prettier, ["--check", "."], { cwd: dir, encoding: "utf8" });
@@ -296,7 +296,7 @@ describe("scaffold and check-structure", () => {
     const top = readdirSync(minimal);
     for (const path of ["catalog", ".github", "stylelint.config.js"])
       expect(top).not.toContain(path);
-    expect(readdirSync(join(minimal, "docs/tracking"))).toEqual([".gitkeep"]);
+    expect(readdirSync(join(minimal, "docs/agent-work"))).toEqual([".gitkeep"]);
     expect(run(minimal, "check-structure").code).toBe(0);
   });
 
@@ -490,21 +490,21 @@ describe("check-confidential", () => {
     );
   });
 
-  test("an image under docs/tracking passes once read clean; one that cannot be read goes red", () => {
+  test("an image under docs/agent-work passes once read clean; one that cannot be read goes red", () => {
     // A decodable 1x1 PNG: OCR reads it and finds no text.
     const png = Buffer.from(
       "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8DwHwAFBQIAX8jx0gAAAABJRU5ErkJggg==",
       "base64",
     );
     const dir = repo({ "package.json": "{}" });
-    mkdirSync(join(dir, "docs/tracking/review"), { recursive: true });
-    writeFileSync(join(dir, "docs/tracking/review/shot.png"), png);
-    sh(dir, ["add", "docs/tracking/review/shot.png"]);
+    mkdirSync(join(dir, "docs/agent-work/review"), { recursive: true });
+    writeFileSync(join(dir, "docs/agent-work/review/shot.png"), png);
+    sh(dir, ["add", "docs/agent-work/review/shot.png"]);
     expect(run(dir, "check-confidential", ["--staged"], { ...env, CI: "" }).code).toBe(0);
-    write(dir, { "docs/tracking/review/broken.png": "not really a png" });
-    sh(dir, ["add", "docs/tracking/review/broken.png"]);
+    write(dir, { "docs/agent-work/review/broken.png": "not really a png" });
+    sh(dir, ["add", "docs/agent-work/review/broken.png"]);
     const r = run(dir, "check-confidential", ["--staged"], { ...env, CI: "" });
-    expect(r.out).toContain("docs/tracking/review/broken.png: image not read");
+    expect(r.out).toContain("docs/agent-work/review/broken.png: image not read");
     expect(r.code).toBe(1);
   });
 
@@ -713,9 +713,9 @@ describe("check-confidential list source", () => {
     const m = machine({ gh: "deny" });
     expect(m.check({ CI: "true" }).code).toBe(0);
     expect(m.calls()).toBe(0);
-    write(m.dir, { "docs/tracking/shot.png": "x" });
-    sh(m.dir, ["add", "docs/tracking/shot.png"]);
-    expect(m.check({ CI: "true" }).out).toContain("image or PDF in docs/tracking not read");
+    write(m.dir, { "docs/agent-work/shot.png": "x" });
+    sh(m.dir, ["add", "docs/agent-work/shot.png"]);
+    expect(m.check({ CI: "true" }).out).toContain("image or PDF in docs/agent-work not read");
   });
 
   test("a PDF that cannot be read is refused", () => {
@@ -984,34 +984,41 @@ describe("shared stylelint config", () => {
 
 describe("check-staged", () => {
   // A stand-in for admin's bin: red while any item file says "broken".
-  const adminCheck = '#!/bin/sh\n! grep -rl broken "${1:-.}/docs/tracking/items"\n';
+  const adminCheck = '#!/bin/sh\n! grep -rl broken "${1:-.}/docs/agent-work/items"\n';
   const pkg = JSON.stringify({
     scaffolding: { private: true },
     devDependencies: { "@hackersandwizards/admin": "github:acme/admin#v1.0.0" },
   });
 
   test("a staged item file runs admin-check, a broken one goes red", () => {
-    const dir = repo({ "package.json": pkg, "docs/tracking/items/a.md": "fine\n" });
+    const dir = repo({ "package.json": pkg, "docs/agent-work/items/a.md": "fine\n" });
     write(dir, { "node_modules/.bin/admin-check": adminCheck });
     spawnSync("chmod", ["+x", join(dir, "node_modules/.bin/admin-check")]);
-    write(dir, { "docs/tracking/items/a.md": "broken\n" });
-    sh(dir, ["add", "docs/tracking/items/a.md"]);
+    write(dir, { "docs/agent-work/items/a.md": "broken\n" });
+    sh(dir, ["add", "docs/agent-work/items/a.md"]);
     expect(run(dir, "check-staged").code).toBe(1);
-    write(dir, { "docs/tracking/items/a.md": "fine again\n" });
+    write(dir, { "docs/agent-work/items/a.md": "fine again\n" });
     expect(run(dir, "check-staged").code).toBe(1);
-    sh(dir, ["add", "docs/tracking/items/a.md"]);
+    sh(dir, ["add", "docs/agent-work/items/a.md"]);
     expect(run(dir, "check-staged").code).toBe(0);
-    write(dir, { "docs/tracking/items/a.md": "broken, unstaged\n" });
+    write(dir, { "docs/agent-work/items/a.md": "broken, unstaged\n" });
     expect(run(dir, "check-staged").code).toBe(0);
   });
 
   test("a staged item file without admin-check installed is refused", () => {
-    const dir = repo({ "package.json": pkg, "docs/tracking/items/a.md": "fine\n" });
-    write(dir, { "docs/tracking/items/a.md": "changed\n" });
-    sh(dir, ["add", "docs/tracking/items/a.md"]);
+    const dir = repo({ "package.json": pkg, "docs/agent-work/items/a.md": "fine\n" });
+    write(dir, { "docs/agent-work/items/a.md": "changed\n" });
+    sh(dir, ["add", "docs/agent-work/items/a.md"]);
     const r = run(dir, "check-staged");
     expect(r.code).toBe(1);
     expect(r.out).toContain("admin-check not installed");
+  });
+
+  test("a file staged in the old docs/tracking folder runs admin-check too", () => {
+    const dir = repo({ "package.json": pkg });
+    write(dir, { "docs/tracking/items/a.md": "fine\n" });
+    sh(dir, ["add", "docs/tracking/items/a.md"]);
+    expect(run(dir, "check-staged").out).toContain("admin-check not installed");
   });
 });
 

@@ -278,12 +278,12 @@ function ocrBinary(): string | undefined {
 /** Reads every image and PDF; one that cannot be read is refused, since unread is unchecked. */
 function scanBinaries(files: { where: string; data: Buffer }[]) {
   if (!files.length) return;
-  // A review page's images may sit under docs/tracking once read clean. CI reads none, so there
+  // A review page's images may sit under docs/agent-work once read clean. CI reads none, so there
   // they stay refused rather than pass unread.
   if (process.env.CI === "true") {
     for (const { where } of files)
-      if (/(?:^|\/)docs\/tracking\//.test(where))
-        report(where, "", "image or PDF in docs/tracking not read: no OCR in CI");
+      if (/(?:^|\/)docs\/agent-work\//.test(where))
+        report(where, "", "image or PDF in docs/agent-work not read: no OCR in CI");
     return;
   }
   mkdirSync(CACHE_DIR, { recursive: true });

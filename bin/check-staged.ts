@@ -5,8 +5,8 @@
 // file into this commit. A file whose working tree differs from the index is checked from the index
 // on stdin, so those unstaged lines neither pass nor block this commit. A repository defining a
 // `validate:skills` script also runs it whenever the index touches `.claude/`, and one declaring
-// `@hackersandwizards/admin` runs `admin-check` whenever it touches `docs/tracking/items/`, over
-// docs/tracking as staged; the skills validator reads the working tree. A staged bun.lock or
+// `@hackersandwizards/admin` runs `admin-check` whenever it touches `docs/agent-work/items/`, over
+// docs/agent-work as staged; the skills validator reads the working tree. A staged bun.lock or
 // package.json runs `check-licenses` over the installed tree.
 import { spawn, spawnSync } from "node:child_process";
 import { existsSync, mkdtempSync, readFileSync, rmSync } from "node:fs";
@@ -44,7 +44,9 @@ const skills =
 const declared = { ...pkg.dependencies, ...pkg.devDependencies };
 const items =
   Boolean(declared["@hackersandwizards/admin"]) &&
-  spawnSync("git", ["diff", "--cached", "--quiet", "--", "docs/tracking/items"]).status !== 0;
+  // The old folder counts too: an item staged there would otherwise pass unread.
+  spawnSync("git", ["diff", "--cached", "--quiet", "--", "docs/agent-work/items", "docs/tracking"])
+    .status !== 0;
 // Fail closed: an item file that does not parse would reach the commit unread.
 if (items && !existsSync("node_modules/.bin/admin-check"))
   refuseCommit("admin-check not installed: bun install");
@@ -171,14 +173,18 @@ const runs = Object.entries(tools)
 if (skills) runs.push(runStagedTool(process.execPath, ["run", "validate:skills"]));
 if (items) runs.push(checkStagedItems());
 
-// admin-check over the index, not the working tree: docs/tracking as staged, written to a temporary
+// admin-check over the index, not the working tree: docs/agent-work as staged, written to a temporary
 // folder, so another session's unstaged item edit neither blocks nor passes this commit.
 async function checkStagedItems(): Promise<ToolRun> {
   const dir = mkdtempSync(join(tmpdir(), "check-staged-items-"));
   try {
-    const tracked = spawnSync("git", ["ls-files", "-z", "--", "docs/tracking", "GOAL.md"], {
-      encoding: "utf8",
-    });
+    const tracked = spawnSync(
+      "git",
+      ["ls-files", "-z", "--", "docs/agent-work", "docs/tracking", "GOAL.md"],
+      {
+        encoding: "utf8",
+      },
+    );
     const copied = spawnSync("git", ["checkout-index", "-z", "--stdin", `--prefix=${dir}/`], {
       input: tracked.stdout,
     });
