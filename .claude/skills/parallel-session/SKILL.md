@@ -96,7 +96,7 @@ items up.
    takes `status: decided`, `decision` and `by`, then is deleted: in the commit that carries the
    decision out, or, where work remains, replaced by a `work` item naming the `id`.
    `git log --all -- docs/tracking/items/<id>.md` finds a deleted item.
-5. Before each commit that touches `docs/tracking/items/`, run `bunx admin-check` in the repo.
+5. Before each commit that touches `docs/tracking/items/`, run `bun run admin-check` in the repo.
    Check: it prints `ok`.
 6. A report and an item state the current state only. A later batch on the same topic edits that
    report and deletes what it superseded. Earlier rounds and raw reviews go to the scratchpad.
