@@ -17,17 +17,22 @@ the confidential-terms check (below) fetches its list with it.
 
 ## Commands
 
-| Command                         | Runs in                      | Checks                                                                                                                                                                                           |
-| ------------------------------- | ---------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| `scaffold <dir>`                | once                         | Creates a repository from `template/` with this version pinned, its catalog and admin area (below).                                                                                              |
-| `scaffolding check`             | `bun run check`              | The whole gate, below.                                                                                                                                                                           |
-| `check-structure [--fix]`       | `bun run check`              | The repository against `skeleton.json`, the catalog and the gate's script names (below). `--fix` writes the identical and owned files, the `.agents/skills` link and the hooks path.             |
-| `check-coupling [--staged]`     | `bun run check`, pre-commit  | No path leaves the repository, no import past a package's `exports`, every Git dependency pinned to a tag `node_modules` holds, and the CSS origin (below).                                      |
-| `check-lock`                    | `scaffolding check`          | One gate at a time per checkout.                                                                                                                                                                 |
-| `check-confidential`            | pre-commit, commit-msg, push | Terms from a hashed list, Company OS screenshots and text in images (OCR, an unread image fails), commits purged from history.                                                                   |
-| `check-staged`                  | pre-commit                   | gitleaks on the index, then `check-coupling` and `check-confidential`, then prettier and eslint on the staged files; `validate:skills` when `.claude/` is staged, `admin-check` when an item is. |
-| `check-unique-names [names...]` | `bun run check`              | Every module-scope function name outside tests is defined once.                                                                                                                                  |
-| `check-licenses`                | `bun run check`, pre-commit  | Every installed package's licence is on the allow list or an exception pins it (below); in pre-commit when `bun.lock` or `package.json` is staged.                                               |
+| Command                   | Runs in                      | Checks                                                                                                                                                                                           |
+| ------------------------- | ---------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `scaffold <dir>`          | once                         | Creates a repository from `template/` with this version pinned, its catalog and admin area (below).                                                                                              |
+| `scaffolding check`       | `bun run check`              | The whole gate, below.                                                                                                                                                                           |
+| `check-structure [--fix]` | `bun run check`              | The repository against `skeleton.json`, the catalog and the gate's script names (below). `--fix` writes the identical and owned files, the `.agents/skills` link and the hooks path.             |
+| `check-confidential`      | pre-commit, commit-msg, push | Terms from a hashed list, Company OS screenshots and text in images (OCR, an unread image fails), commits purged from history.                                                                   |
+| `check-staged`            | pre-commit                   | gitleaks on the index, then `check-coupling` and `check-confidential`, then prettier and eslint on the staged files; `validate:skills` when `.claude/` is staged, `admin-check` when an item is. |
+
+The gate and `check-staged` also run these files from `bin/` by path; they are steps, not commands:
+
+| Step                    | Runs in                     | Checks                                                                                                                                                      |
+| ----------------------- | --------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `check-coupling.ts`     | `bun run check`, pre-commit | No path leaves the repository, no import past a package's `exports`, every Git dependency pinned to a tag `node_modules` holds, and the CSS origin (below). |
+| `check-lock.ts`         | `scaffolding check`         | One gate at a time per checkout.                                                                                                                            |
+| `check-unique-names.ts` | `bun run check`             | Every module-scope function name outside tests is defined once.                                                                                             |
+| `check-licenses.ts`     | `bun run check`, pre-commit | Every installed package's licence is on the allow list or an exception pins it (below); in pre-commit when `bun.lock` or `package.json` is staged.          |
 
 ## A new repository
 

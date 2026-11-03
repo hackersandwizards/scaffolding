@@ -1,7 +1,7 @@
 {
   "name": "@hackersandwizards/scaffolding",
-  "version": "0.8.0",
-  "description": "Repository skeleton, gate commands, shared configs and the catalog shell: scaffold, scaffolding check, check-structure, check-coupling, check-confidential, check-staged, check-unique-names, check-lock, check-licenses, and the catalog preset.",
+  "version": "0.9.0",
+  "description": "Repository skeleton, gate commands, shared configs and the catalog shell: scaffold, scaffolding check, check-structure, check-confidential, check-staged, and the catalog preset.",
   "keywords": [
     "astro-component"
   ],
@@ -10,17 +10,11 @@
   "bin": {
     "scaffold": "bin/scaffold.ts",
     "check-structure": "bin/check-structure.ts",
-    "check-coupling": "bin/check-coupling.ts",
     "check-confidential": "bin/check-confidential.ts",
     "check-staged": "bin/check-staged.ts",
-    "check-unique-names": "bin/check-unique-names.ts",
-    "scaffolding": "bin/scaffolding.ts",
-    "check-lock": "bin/check-lock.ts",
-    "check-licenses": "bin/check-licenses.ts"
+    "scaffolding": "bin/scaffolding.ts"
   },
   "exports": {
-    "./skeleton.json": "./skeleton.json",
-    "./template/*": "./template/*",
     "./eslint": "./config/eslint.js",
     "./eslint/astro": "./config/eslint-astro.js",
     "./tsconfig/bun.json": "./config/tsconfig.bun.json",
@@ -83,9 +77,6 @@
     "prepare": "[ \"$(git rev-parse --show-toplevel 2>/dev/null)\" = \"$(pwd -P)\" ] && git config core.hooksPath .githooks || true",
     "check": "bun bin/scaffolding.ts check",
     "check:staged": "bun bin/check-staged.ts",
-    "format:check": "bun --bun prettier --check .",
-    "lint": "bun --bun eslint --cache --concurrency=auto .",
-    "typecheck": "bun --bun tsc --noEmit",
     "fix": "bun --bun eslint --cache --concurrency=auto . --fix && bun --bun prettier --write .",
     "check-confidential": "bun bin/check-confidential.ts"
   },
