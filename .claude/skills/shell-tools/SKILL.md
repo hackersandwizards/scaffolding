@@ -11,6 +11,8 @@ description: >-
 Prefer these over their classic equivalents.
 
 **Browser and frontend:**
+- Every Chrome or Chromium you launch yourself takes `--use-mock-keychain --password-store=basic`:
+  without them macOS asks the person for the login keychain password.
 - For rendered-page, frontend, or signed-in UI checks, try in order until one works: in-app Browser, Chrome DevTools MCP, repository automation (e.g. Playwright). Before skipping Chrome DevTools, search deferred tools (`ToolSearch` or equivalent) and check the repository for automation.
 
 **GNU vs BSD:** unprefixed CLI tools are BSD on macOS, GNU on Linux. Write scripts to run on both (POSIX, no flavor-specific flags). GNU builds are `g*` (`gsed`, `gdate`, `gtimeout`).
