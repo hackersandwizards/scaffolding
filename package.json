@@ -109,7 +109,7 @@
       {
         "check": "unique-names",
         "path": ".claude/skills/engineering/*",
-        "reason": "the home hub's sync copies the engineering skill's stand-alone check-lock.ts and check-staged.ts, older forms of this package's bin/, into every repository; the hub owns them"
+        "reason": "the home hub's sync copies the engineering skill's stand-alone check-staged.ts, an older form of this package's bin/check-staged.ts, into every repository; the hub owns it"
       }
     ],
     "check": [],
