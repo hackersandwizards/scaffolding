@@ -2,7 +2,16 @@
 // repository resolves.
 import astrobook from "astrobook";
 import type { AstroIntegration } from "astro";
-import { cpSync, existsSync, globSync, readdirSync, readFileSync, statSync } from "node:fs";
+import {
+  cpSync,
+  createReadStream,
+  existsSync,
+  globSync,
+  readdirSync,
+  readFileSync,
+  statSync,
+  writeFileSync,
+} from "node:fs";
 import { basename, dirname, join, relative } from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -42,9 +51,14 @@ export type CatalogOptions = {
   header?: { component: string; css?: string[] };
   /** Files the built pages reach by a relative path rather than through Vite, such as brand's
    * stylesheets and logos under node_modules: globs relative to the repository, each match copied
-   * into the build at the same relative path, symlinks followed. In CI (`CI=true`) a copied file
-   * that is still a Git LFS pointer fails the build, so a published page never links one. */
+   * into the build at the same relative path, symlinks followed, and served at that path by `dev`.
+   * In CI (`CI=true`) a copied file that is still a Git LFS pointer fails the build, so a published
+   * page never links one. */
   copy?: string[];
+  /** Every story is an Astro component: render each frame on the server only, dropping Astrobook's
+   * `client:load` branch for framework components, which bundles every story module for the
+   * browser, Node imports included. */
+  serverOnly?: boolean;
 };
 
 const BRAND_HEADER = {
@@ -76,6 +90,30 @@ const POINTER = "version https://git-lfs.github.com/spec/";
 const isPointer = (file: string) =>
   readFileSync(file).subarray(0, POINTER.length).toString() === POINTER;
 
+// A stylesheet or font served without its type is refused by the browser.
+const TYPES: Record<string, string> = {
+  css: "text/css",
+  js: "text/javascript",
+  json: "application/json",
+  svg: "image/svg+xml",
+  png: "image/png",
+  jpg: "image/jpeg",
+  webp: "image/webp",
+  ico: "image/x-icon",
+  woff2: "font/woff2",
+  pdf: "application/pdf",
+};
+const mime = (file: string) =>
+  TYPES[file.split(".").pop()!.toLowerCase()] ?? "application/octet-stream";
+
+const decoded = (s: string) => {
+  try {
+    return decodeURIComponent(s);
+  } catch {
+    return "";
+  }
+};
+
 const packageOf = (spec: string) =>
   spec.startsWith(".") || spec.startsWith("/")
     ? undefined
@@ -87,6 +125,7 @@ const packageOf = (spec: string) =>
 export function catalog(options: CatalogOptions): AstroIntegration {
   let inner: AstroIntegration | undefined;
   let repo = "";
+  let base = "";
   return {
     name: "@hackersandwizards/scaffolding/catalog",
     hooks: {
@@ -94,6 +133,7 @@ export function catalog(options: CatalogOptions): AstroIntegration {
         const root = fileURLToPath(params.config.root);
         const own = basename(root) === "catalog";
         repo = packageDir(root);
+        base = params.config.base.replace(/\/$/, "");
         const stories = join(root, own ? "stories" : "catalog/stories");
         const name = (() => {
           const file = join(repo, "package.json");
@@ -111,7 +151,7 @@ export function catalog(options: CatalogOptions): AstroIntegration {
         const spec = (s: string) => JSON.stringify(s.startsWith(".") ? join(root, s) : s);
         const shared = {
           product: options.product,
-          href: options.href ?? `${params.config.base.replace(/\/$/, "")}/`,
+          href: options.href ?? `${base}/`,
           title: options.title ?? "Catalog",
           lead: options.lead,
           previews: options.previews ?? true,
@@ -149,6 +189,32 @@ export function catalog(options: CatalogOptions): AstroIntegration {
           home: options.home ?? join(import.meta.dirname, "Home.astro"),
         });
         await inner.hooks["astro:config:setup"]?.(params);
+        if (options.serverOnly) {
+          // Astrobook writes one route per state into this integration's codegen folder.
+          const dir = fileURLToPath(params.createCodegenDir());
+          for (const file of globSync("**/*.astro", { cwd: dir })) {
+            const path = join(dir, file);
+            writeFileSync(path, readFileSync(path, "utf8").replace(" client:load />", " />"));
+          }
+        }
+      },
+      "astro:server:setup": ({ server }) => {
+        server.middlewares.use((req, res, next) => {
+          const path = decoded(URL.parse(req.url ?? "", "http://x")?.pathname ?? "");
+          const file = path.startsWith(`${base}/`) ? path.slice(base.length + 1) : "";
+          const served = (options.copy ?? [])
+            .flatMap((pattern) => globSync(pattern, { cwd: repo }))
+            .some((match) => file === match || file.startsWith(`${match}/`));
+          const full = join(repo, file);
+          if (
+            !served ||
+            file.split("/").includes("..") ||
+            !statSync(full, { throwIfNoEntry: false })?.isFile()
+          )
+            return next();
+          res.setHeader("Content-Type", mime(file));
+          createReadStream(full).pipe(res);
+        });
       },
       "astro:server:start": async (params) => {
         await inner?.hooks["astro:server:start"]?.(params);

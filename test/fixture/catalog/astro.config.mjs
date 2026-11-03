@@ -12,6 +12,7 @@ export default defineConfig({
       header: { component: "./Header.astro" },
       head: "./Head.astro",
       copy: ["assets/*.svg", "assets/nested"],
+      serverOnly: true,
     }),
   ],
 });

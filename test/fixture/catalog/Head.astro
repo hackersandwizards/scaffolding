@@ -1,1 +1,6 @@
 <meta name="fx-head" content="repository" />
+<script is:inline>
+  // A repository's head attribute and page script, as brand's scale and a page's own script.
+  document.documentElement.dataset.hwScale = "dense";
+  addEventListener("DOMContentLoaded", () => (document.body.dataset.fxRan = location.pathname));
+</script>

@@ -1,6 +1,6 @@
 {
   "name": "@hackersandwizards/scaffolding",
-  "version": "0.9.2",
+  "version": "0.9.3",
   "description": "Repository skeleton, gate commands, shared configs and the catalog shell: scaffold, scaffolding check, check-structure, check-confidential, check-staged, and the catalog preset.",
   "keywords": [
     "astro-component"
@@ -126,6 +126,7 @@
     "eslint-config-prettier": "10.1.8",
     "globals": "17.14.0",
     "postcss-html": "2.0.0",
+    "prettier-plugin-astro": "1.1.2",
     "stylelint-value-no-unknown-custom-properties": "6.1.1",
     "typescript-eslint": "8.72.1"
   },

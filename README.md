@@ -76,7 +76,7 @@ confidential step.
 | ---------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `./eslint`, `./eslint/astro`                   | `export default [...base, ...]` in `eslint.config.js`                                                                                                                 |
 | `./tsconfig/bun.json`, `./tsconfig/astro.json` | `"extends"` in `tsconfig.json`; `include` and `paths` stay in the repository                                                                                          |
-| `./prettier`                                   | `"prettier": "@hackersandwizards/scaffolding/prettier"` in `package.json`                                                                                             |
+| `./prettier`                                   | `"prettier": "@hackersandwizards/scaffolding/prettier"` in `package.json`, `.astro` included; a config adding plugins lists `...base.plugins` first                   |
 | `./stylelint`                                  | `export default styles({ importFrom: [...] })` in `stylelint.config.js`                                                                                               |
 | `./chrome`, `./serve`                          | Chrome for Testing, the build the repository's `puppeteer-core` pins (newest cached without one), with the shared flags; a gate server on a port the system hands out |
 
@@ -112,6 +112,8 @@ export default defineConfig({
 The home's tiles are the catalog's one index; Astrobook draws each state, its sidebar hidden on
 every page. A state's page carries a bar instead: back to the home, the file's folder and name, the
 theme toggle, a link to the state alone and a link per state, folded into a disclosure above 12.
+Every page loads in full rather than through Astrobook's client router, which swapped pages in
+place and so dropped what a repository's `head` sets on `<html>` and left its page scripts unrun.
 
 The shell (`catalog/`: Layout, Home, Head, `render.ts`, which draws the rail and tiles, and
 `catalog.css`) reads brand's token roles by name only, and the repository's `css` supplies them.
@@ -129,8 +131,11 @@ The options beyond those above:
   and a control such as a theme toggle in the `nav` slot.
 - `copy`: globs, relative to the repository, of files the built pages reach by a relative path
   rather than through Vite, such as brand's stylesheets under `node_modules`. Each match lands in
-  the build at the same path. A pattern matching nothing fails the build, and so does, with
-  `CI=true`, a copied file that is still a Git LFS pointer.
+  the build at the same path, and `astro dev` serves it there. A pattern matching nothing fails the
+  build, and so does, with `CI=true`, a copied file that is still a Git LFS pointer.
+- `serverOnly`: every story is an Astro component, so each state renders on the server only;
+  Astrobook's `client:load` branch for framework components, which bundles every story module for
+  the browser, Node imports included, is dropped.
 
 A project Pages site, published under `/<repo>/`, sets Astro's `base: "/<repo>"` in its
 `defineConfig`; the catalog's links and the header's default link follow it.

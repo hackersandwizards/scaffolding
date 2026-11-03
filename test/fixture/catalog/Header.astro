@@ -2,4 +2,7 @@
 const { product, href } = Astro.props;
 ---
 
-<header class="fx-header"><a href={href}>{product}</a><slot /></header>
+<header class="fx-header">
+  <a href={href}>{product}</a>
+  <slot />
+</header>

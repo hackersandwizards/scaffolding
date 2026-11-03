@@ -1003,6 +1003,17 @@ describe("catalog", () => {
     expect(state).toContain("main.prepend(bar.content.cloneNode(true))");
     expect(page("stories/Parts/box-parts/two")).not.toContain('id="hw-catalogue-bar"');
     expect(home).not.toContain('id="hw-catalogue-bar"');
+    // `serverOnly`: no state's route keeps Astrobook's client:load branch.
+    const codegen = join(
+      fixture,
+      "catalog/.astro/integrations/_hackersandwizards_scaffolding_catalog",
+    );
+    const routes = readdirSync(codegen, { recursive: true, encoding: "utf8" }).filter((f) =>
+      f.endsWith(".astro"),
+    );
+    expect(routes.length).toBe(8);
+    for (const f of routes)
+      expect(readFileSync(join(codegen, f), "utf8")).not.toContain("client:load");
     // `copy`: each match at its own path, the rest of the folder left out.
     expect(readdirSync(join(dist, "assets")).sort()).toEqual(["logo.svg", "nested"]);
     expect(readFileSync(join(dist, "assets/nested/page.css"), "utf8")).toBe(
@@ -1021,6 +1032,88 @@ describe("catalog", () => {
     );
   }, 60_000);
 
+  // A repository's head sets attributes on <html> and runs page scripts: Astrobook's client router
+  // swapped pages in place, which dropped both until a reload.
+  test("dev serves `copy`, and a click in the bar loads the next state in full", async () => {
+    const { serve, freePort } = await import("../lib/serve.ts");
+    const { chromeArgs, chromeBinary, INSTALL_HINT } = await import("../lib/chrome.ts");
+    const fixture = join(import.meta.dir, "fixture");
+    made.push(join(fixture, "catalog", ".astro"), join(fixture, "catalog", "node_modules"));
+    const astro = join(import.meta.dir, "..", "node_modules", ".bin", "astro");
+    // ASTRO_DEV_BACKGROUND=1, as the README's dev script: under an agent astro dev otherwise moves
+    // into the background and resolves --root from inside the folder.
+    const server = await serve(
+      [
+        "sh",
+        "-c",
+        `cd '${fixture}' && exec '${astro}' dev --root catalog --host $HOST --port $PORT`,
+      ],
+      { env: { ASTRO_DEV_BACKGROUND: "1" }, timeoutMs: 30_000 },
+    );
+    const chrome = chromeBinary();
+    if (!chrome) throw new Error(INSTALL_HINT);
+    const port = await freePort();
+    const browser = Bun.spawn([chrome, ...chromeArgs(temp()), `--remote-debugging-port=${port}`], {
+      stderr: "ignore",
+    });
+    try {
+      const logo = await fetch(`${server.url}/assets/logo.svg`);
+      expect(logo.status).toBe(200);
+      expect(logo.headers.get("content-type")).toBe("image/svg+xml");
+      const css = await fetch(`${server.url}/assets/nested/page.css`);
+      expect(css.headers.get("content-type")).toBe("text/css");
+      expect(await css.text()).toBe("a {\n  color: red;\n}\n");
+      expect((await fetch(`${server.url}/assets/skip.txt`)).status).toBe(404);
+
+      const start = `${server.url}/catalog/dashboard/Parts/box-parts/two`;
+      let target: { webSocketDebuggerUrl: string } | undefined;
+      for (let i = 0; i < 100 && !target; i++)
+        target = await fetch(`http://127.0.0.1:${port}/json/new?${start}`, { method: "PUT" })
+          .then((r) => r.json())
+          .catch(() => new Promise((r) => setTimeout(r, 100)));
+      const ws = new WebSocket(target!.webSocketDebuggerUrl);
+      await new Promise((r) => ws.addEventListener("open", r, { once: true }));
+      let id = 0;
+      const evaluate = (expression: string) =>
+        new Promise<unknown>((done) => {
+          const call = ++id;
+          const on = (event: MessageEvent) => {
+            const message = JSON.parse(String(event.data));
+            if (message.id !== call) return;
+            ws.removeEventListener("message", on);
+            done(message.result?.result?.value);
+          };
+          ws.addEventListener("message", on);
+          ws.send(JSON.stringify({ id: call, method: "Runtime.evaluate", params: { expression } }));
+        });
+      const until = async (expression: string) => {
+        for (const end = Date.now() + 20_000; Date.now() < end;) {
+          if (await evaluate(expression)) return;
+          await new Promise((r) => setTimeout(r, 100));
+        }
+        throw new Error(`timed out: ${expression}`);
+      };
+      await until(`document.readyState === "complete" && !!document.body.dataset.fxRan`);
+      await evaluate(
+        `document.querySelector('.hw-catalogue-bar a[href$="/box-parts/one"]').click()`,
+      );
+      await until(`location.pathname.endsWith("/one") && document.readyState === "complete"`);
+      await new Promise((r) => setTimeout(r, 500));
+      const after = await evaluate(
+        `JSON.stringify([document.documentElement.dataset.hwScale, document.body.dataset.fxRan, !!document.querySelector("main .hw-catalogue-bar")])`,
+      );
+      expect(JSON.parse(String(after))).toEqual([
+        "dense",
+        "/catalog/dashboard/Parts/box-parts/one",
+        true,
+      ]);
+      ws.close();
+    } finally {
+      browser.kill();
+      server.stop();
+    }
+  }, 90_000);
+
   test("group anchors keep non-ASCII letters", async () => {
     const { renderCatalog } = await import("../catalog/render.ts");
     const item = { name: "x", href: "/x" };
@@ -1037,6 +1130,24 @@ describe("catalog", () => {
     expect(html).toContain('id="änderung"');
     expect(html).toContain('id="übersicht"');
     expect(html).toContain('id="bersicht"');
+  });
+});
+
+describe("shared prettier config", () => {
+  test("an .astro file is formatted, its plugin found from the package, not the repository", () => {
+    const config = join(import.meta.dir, "..", "config", "prettier.js");
+    const dir = temp();
+    write(dir, {
+      "package.json": JSON.stringify({ prettier: config }),
+      "A.astro": '---\nconst a=1\n---\n<div   class="x">{a}</div>\n',
+    });
+    const prettier = join(import.meta.dir, "..", "node_modules", ".bin", "prettier");
+    const r = spawnSync(prettier, ["--check", "--ignore-unknown", "A.astro"], {
+      cwd: dir,
+      encoding: "utf8",
+    });
+    expect(`${r.stdout}${r.stderr}`).toContain("[warn] A.astro");
+    expect(r.status).toBe(1);
   });
 });
 
@@ -1098,6 +1209,26 @@ describe("check-staged", () => {
     const r = run(dir, "check-staged");
     expect(r.code).toBe(1);
     expect(r.out).toContain("admin-check not installed");
+  });
+
+  test("a tool that exits before reading a partly staged file fails the check, never crashes it", () => {
+    const dir = repo({
+      "package.json": JSON.stringify({
+        scaffolding: { private: true },
+        devDependencies: { prettier: "3" },
+      }),
+      "big.txt": "a\n",
+      "node_modules/.bin/prettier": "#!/bin/sh\nexit 0\n",
+    });
+    spawnSync("chmod", ["+x", join(dir, "node_modules/.bin/prettier")]);
+    // Larger than the pipe holds, so the write outlives the tool and raises EPIPE.
+    write(dir, { "big.txt": "staged line\n".repeat(200_000) });
+    sh(dir, ["add", "big.txt"]);
+    write(dir, { "big.txt": "unstaged\n" });
+    const r = run(dir, "check-staged");
+    expect(r.out).not.toContain("EPIPE");
+    expect(r.out).toContain("[check:staged] prettier: big.txt as staged");
+    expect(r.code).toBe(1);
   });
 
   test("a file staged in the old docs/tracking folder runs admin-check too", () => {

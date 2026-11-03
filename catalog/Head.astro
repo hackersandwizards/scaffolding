@@ -1,6 +1,5 @@
 ---
-// The bar sits in a <template>, which <head> allows, and the script moves it into <main> on load
-// and after each of Astrobook's client-side navigations.
+// The bar sits in a <template>, which <head> allows, and the script moves it into <main> on load.
 import modules from "virtual:astrobook/story-modules.mjs";
 import config from "virtual:astrobook/global-config.mjs";
 import RepositoryHead from "virtual:scaffolding/catalog-head";
@@ -104,71 +103,67 @@ const folder = (mod?.directory || "Components").split("/").join(" / ");
     font-weight: 700;
   }
 </style>
-{
-  mod && (
-    <template id="hw-catalogue-bar">
-      <nav class="hw-catalogue-bar" aria-label="Catalog">
-        <a href={`${trim(config.astrobookBase)}/`}>
-          <span aria-hidden="true">←&nbsp;</span>Catalog
-        </a>
-        <span class="hw-catalogue-bar-where">
-          {folder} / <strong>{mod.name}</strong>
-        </span>
-        <span class="hw-catalogue-bar-tools">
-          <button type="button" data-hw-theme aria-pressed="false">
-            Dark theme
-          </button>
-          <a href={`${trim(config.storyBase)}/${id}${slash}`}>Open this state alone</a>
-        </span>
-        {(() => {
-          const list = (
-            <ul aria-label="States">
-              {states.map((s) => (
-                <li>
-                  <a href={`${base}/${s.id}${slash}`} aria-current={s.id === id ? "page" : undefined}>
-                    {s.name}
-                  </a>
-                </li>
-              ))}
-            </ul>
-          );
-          return states.length > FOLD ? (
-            <details>
-              <summary>
-                {states[at]?.name} · {at + 1} of {states.length} states
-              </summary>
-              {list}
-            </details>
-          ) : (
-            list
-          );
-        })()}
-      </nav>
-    </template>
-  )
-}
-<script is:inline>
-  (() => {
-    if (window.hwCatalogueBar) return;
-    window.hwCatalogueBar = true;
-    const theme = () => window.astroThemeToggle;
-    const pressed = () =>
-      document
-        .querySelector("[data-hw-theme]")
-        ?.setAttribute("aria-pressed", String(theme()?.getTheme?.() === "dark"));
-    const place = () => {
-      const bar = document.getElementById("hw-catalogue-bar");
-      const main = document.querySelector("main");
-      if (!bar || !main || main.querySelector(".hw-catalogue-bar")) return;
-      main.prepend(bar.content.cloneNode(true));
-      pressed();
-    };
-    document.addEventListener("DOMContentLoaded", place);
-    document.addEventListener("astro:after-swap", place);
-    document.addEventListener("click", (event) => {
-      if (!event.target.closest?.("[data-hw-theme]")) return;
-      theme()?.setTheme?.(theme().getTheme?.() === "dark" ? "light" : "dark");
-      pressed();
-    });
-  })();
+{mod && (
+  <template id="hw-catalogue-bar">
+    <nav class="hw-catalogue-bar" aria-label="Catalog">
+      <a href={`${trim(config.astrobookBase)}/`}>
+        <span aria-hidden="true">←&nbsp;</span>Catalog
+      </a>
+      <span class="hw-catalogue-bar-where">
+        {folder} / <strong>{mod.name}</strong>
+      </span>
+      <span class="hw-catalogue-bar-tools">
+        <button type="button" data-hw-theme aria-pressed="false">
+          Dark theme
+        </button>
+        <a href={`${trim(config.storyBase)}/${id}${slash}`}>Open this state alone</a>
+      </span>
+      {(() => {
+        const list = (
+          <ul aria-label="States">
+            {states.map((s) => (
+              <li>
+                <a href={`${base}/${s.id}${slash}`} aria-current={s.id === id ? "page" : undefined}>
+                  {s.name}
+                </a>
+              </li>
+            ))}
+          </ul>
+        );
+        return states.length > FOLD ? (
+          <details>
+            <summary>
+              {states[at]?.name} · {at + 1} of {states.length} states
+            </summary>
+            {list}
+          </details>
+        ) : (
+          list
+        );
+      })()}
+    </nav>
+  </template>
+)}
+<script is:inline type="module">
+  // Astrobook's client router swaps pages without loading them, which drops every attribute a
+  // repository's head sets on <html> (data-hw-scale, hw-focus-ring) and leaves its page scripts
+  // unrun. Without this marker the router loads each page in full. A module script runs once the
+  // document is parsed, so the marker exists, and before the router's own module, which follows.
+  document.querySelector('meta[name="astro-view-transitions-enabled"]')?.remove();
+  const theme = () => window.astroThemeToggle;
+  const pressed = () =>
+    document
+      .querySelector("[data-hw-theme]")
+      ?.setAttribute("aria-pressed", String(theme()?.getTheme?.() === "dark"));
+  const bar = document.getElementById("hw-catalogue-bar");
+  const main = document.querySelector("main");
+  if (bar && main) {
+    main.prepend(bar.content.cloneNode(true));
+    pressed();
+  }
+  document.addEventListener("click", (event) => {
+    if (!event.target.closest?.("[data-hw-theme]")) return;
+    theme()?.setTheme?.(theme().getTheme?.() === "dark" ? "light" : "dark");
+    pressed();
+  });
 </script>

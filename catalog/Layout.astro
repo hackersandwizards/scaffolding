@@ -9,5 +9,7 @@ const { product, href, ...data } = Astro.props;
 const intro = Astro.slots.has("default") ? await Astro.slots.render("default") : "";
 ---
 
-<Header product={product} href={href}><slot name="nav" /></Header>
+<Header product={product} href={href}>
+  <slot name="nav" />
+</Header>
 <Fragment set:html={renderCatalog({ ...data, intro })} />
