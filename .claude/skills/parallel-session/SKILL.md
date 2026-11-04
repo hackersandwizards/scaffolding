@@ -7,7 +7,7 @@ description: Track parallel work and the person's decisions in repo files (one i
 
 Goal, work and decision data live in the repo the work belongs to, never here. The tooling is the
 admin engine, `@hackersandwizards/admin`, which each repo pins as a dev dependency: `admin-check`
-checks the item files, and `admin-serve`, started by hand with `bun run start` in the admin checkout,
+checks the item files, and `admin-serve`, started by hand with `bun run dev` in the admin checkout,
 serves the page across all repos at `http://admin.localhost:4329` from each repo's last commit.
 
 ## One home per fact

@@ -110,9 +110,7 @@ only as one of the four KPIs, with its baseline, period, team, source and the cl
 approval. An activity count (pull requests, merges, commits, diffs, lines of code, tokens, AI-tool
 usage, share of AI-assisted work) is never proof of progress, ours or a third party's: it measures
 output. A third-party research finding that is not an activity count may be quoted with its
-source, fetched in the session, and never as h&w's result. Until that first measurement the
-example figures in `intro-framework.md` (Fame), `brand-vocabulary.md` (approved patterns) and
-`prose-style.md` (concrete over abstract) are suspended.
+source, fetched in the session, and never as h&w's result.
 
 The reasoning to give when the reader asks why:
 
