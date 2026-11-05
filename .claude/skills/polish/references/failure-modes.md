@@ -16,7 +16,8 @@ finished, never re-argued on a fresh objection.
   no documentation file already states: one sentence, in the file's prevailing style.
 - Sweep `#`, `<!-- -->` and `/* */` as well as `//`, and the banner blocks that label the section
   below them.
-- Keep public API docstrings, license headers and directive comments.
+- Keep public API docstrings, license headers and directive comments, and any comment a check
+  reads: grep the repository's check scripts and installed scanners for the comment's text first.
 
 ## Instruction prose that justifies instead of instructing
 
