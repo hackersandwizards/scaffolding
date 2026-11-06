@@ -9,8 +9,8 @@ panel intros, *"Stell dich mal kurz vor"* moments. Skip when the host introduced
   engineering, so the speed they gain reaches their customers."*
 - S, Same: the category everyone already understands, said plainly. *"We do consulting and training
   in agentic engineering."*
-- F, Fame: one number plus one success story, result not title, under the numbers rule in
-  `brand-voice.md`, Measures and figures. *"I helped scale [client] from 200M to 1.2B in revenue."* / *"30+ teams
+- F, Fame: one number plus one success story, result not title, under Measures and figures in
+  `brand-voice.md`. *"I helped scale [client] from 200M to 1.2B in revenue."* / *"30+ teams
   ignited, 500+ developers in our community, 70+ practitioners in our network."*
 - A, Aim: what you work on now (Priestley: the next 90 days), told as their benefit. *"I'm curious
   why some teams fly with AI while others crash."* / *"I help teams skip the AI mistakes I've seen a
