@@ -14,6 +14,7 @@ import {
   writeFileSync,
 } from "node:fs";
 import { spawnSync } from "node:child_process";
+import { createRequire } from "node:module";
 import { basename, dirname, join, relative } from "node:path";
 import { fileURLToPath } from "node:url";
 import { catalogPath, storiesDir } from "./path.ts";
@@ -60,11 +61,12 @@ export type CatalogOptions = {
   /** An Astro component taking `product`, `href` and a default slot, and the CSS it needs;
    * a relative path counts from the Astro root. */
   header?: { component: string; css?: string[] };
-  /** Files the built pages reach by a relative path rather than through Vite, such as brand's
-   * stylesheets and logos under node_modules: globs relative to the repository, each match copied
-   * into the build at the same relative path, symlinks followed, and served at that path by `dev`.
-   * In CI (`CI=true`) a copied file that is still a Git LFS pointer fails the build, so a published
-   * page never links one. */
+  /** Files the built pages reach by a relative path rather than through Vite: globs relative to
+   * the repository, each match copied into the build at the same relative path, symlinks followed,
+   * and package paths, such as "@hackersandwizards/brand/logos/avatar-512.png", of a package the
+   * repository declares or of the repository itself, each resolved through the package's exports
+   * and copied to that path. `dev` serves each at its path. In CI (`CI=true`) a copied file that is
+   * still a Git LFS pointer fails the build, so a published page never links one. */
   copy?: string[];
   /** Every story is an Astro component: render each frame on the server only, dropping Astrobook's
    * `client:load` branch for framework components, which bundles every story module for the
@@ -154,12 +156,25 @@ const ROUTER = ["events", "router", "swap-functions", "types"].map(
 export function catalog(options: CatalogOptions): AstroIntegration {
   let inner: AstroIntegration | undefined;
   let repo = "";
+  // The packages a `copy` entry may name by a package path.
+  let packages = new Set<string>();
   let base = "";
   let atRoot = false;
   let mounted = false;
   // Where an old link points, as dev serves it now: without the Pages base, and without /catalog
   // where the catalog moved to the root; undefined for a current path.
   let moved = (_: string): string | undefined => undefined;
+  /** A `copy` entry as [path in the build, file or folder it copies]: a package path once, resolved
+   * through the package's exports, a glob once per match. */
+  const copied = (pattern: string): [string, string][] => {
+    const name = pattern
+      .split("/")
+      .slice(0, pattern.startsWith("@") ? 2 : 1)
+      .join("/");
+    return packages.has(name)
+      ? [[pattern, createRequire(join(repo, "package.json")).resolve(pattern)]]
+      : globSync(pattern, { cwd: repo }).map((file) => [file, join(repo, file)]);
+  };
   return {
     name: "@hackersandwizards/scaffolding/catalog",
     hooks: {
@@ -216,6 +231,10 @@ export function catalog(options: CatalogOptions): AstroIntegration {
         const pkgFile = join(repo, "package.json");
         const pkg = existsSync(pkgFile) ? JSON.parse(readFileSync(pkgFile, "utf8")) : {};
         const name = String(pkg.name ?? basename(repo)).replace(/^@[^/]+\//, "");
+        packages = new Set([
+          pkg.name,
+          ...Object.keys({ ...pkg.dependencies, ...pkg.devDependencies }),
+        ]);
         const versions = [...new Set(options.css.map(packageOf).filter((p) => p !== undefined))]
           .map((p) => `${p} v${installed(p, root) ?? "?"}`)
           .join(" · ");
@@ -300,12 +319,12 @@ export function catalog(options: CatalogOptions): AstroIntegration {
             return res.end();
           }
           const file = path.startsWith(`${base}/`) ? path.slice(base.length + 1) : "";
-          const served = (options.copy ?? [])
-            .flatMap((pattern) => globSync(pattern, { cwd: repo }))
-            .some((match) => file === match || file.startsWith(`${match}/`));
-          const full = join(repo, file);
+          const match = (options.copy ?? [])
+            .flatMap(copied)
+            .find(([at]) => file === at || file.startsWith(`${at}/`));
+          const full = match && join(match[1], file.slice(match[0].length));
           if (
-            !served ||
+            !full ||
             file.split("/").includes("..") ||
             !statSync(full, { throwIfNoEntry: false })?.isFile()
           )
@@ -335,11 +354,11 @@ export function catalog(options: CatalogOptions): AstroIntegration {
           }
         const pointers: string[] = [];
         for (const pattern of options.copy ?? []) {
-          const found = globSync(pattern, { cwd: repo });
+          const found = copied(pattern);
           if (found.length === 0) throw new Error(`catalog copy: ${pattern} matches nothing`);
-          for (const file of found) {
+          for (const [file, source] of found) {
             const target = join(out, file);
-            cpSync(join(repo, file), target, { recursive: true, dereference: true });
+            cpSync(source, target, { recursive: true, dereference: true });
             const copied = statSync(target).isDirectory()
               ? readdirSync(target, { recursive: true, encoding: "utf8" }).map((f) => join(file, f))
               : [file];

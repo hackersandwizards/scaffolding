@@ -1,6 +1,7 @@
 #!/usr/bin/env bun
 import { spawnSync } from "node:child_process";
 import {
+  chmodSync,
   copyFileSync,
   existsSync,
   lstatSync,
@@ -11,7 +12,7 @@ import {
   symlinkSync,
   writeFileSync,
 } from "node:fs";
-import { basename, dirname, join } from "node:path";
+import { basename, dirname, join, posix } from "node:path";
 import {
   applyAllow,
   finish,
@@ -132,6 +133,21 @@ if (existsSync(at("package.json"))) {
   for (const step of (pkg.scaffolding?.check ?? []).flat())
     if (!/^check:[a-z0-9][\w:-]*$/.test(step) || !pkg.scripts?.[step])
       add("package.json", "a step of scaffolding.check is a script named check:<what>", step);
+  // bun marks a `bin` file executable only as it installs the package, so one stored 100644 is not
+  // executable in the checkout, in a copy or behind a link.
+  const bins = new Set(
+    (typeof pkg.bin === "string" ? [pkg.bin] : Object.values(pkg.bin ?? {})).map((p) =>
+      posix.normalize(String(p)),
+    ),
+  );
+  for (const entry of git(["ls-files", "-s", "-z"], root).toString().split("\0")) {
+    const [, mode, path] = /^(\d+) \S+ \d\t(.*)$/s.exec(entry) ?? [];
+    if (bins.has(path) && mode !== "100755")
+      add(path, "a bin file is stored executable (check-structure --fix)", mode, () => {
+        chmodSync(at(path), 0o755);
+        git(["update-index", "--chmod=+x", "--", path], root);
+      });
+  }
   if (surface) {
     // An Astro app in any folder, rooted at its config's folder.
     const { configs, preset } = skeleton.catalog;

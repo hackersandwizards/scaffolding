@@ -19,23 +19,25 @@ package's commands from `node_modules`, so each checkout, a new worktree include
 
 ## Commands
 
-| Command                   | Runs in                      | Checks                                                                                                                                                                                           |
-| ------------------------- | ---------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| `scaffold <dir>`          | once                         | Creates a repository from `template/` with this version pinned, its catalog and admin area (below).                                                                                              |
-| `scaffolding check`       | `bun run check`              | The whole gate, below.                                                                                                                                                                           |
-| `check-structure [--fix]` | `bun run check`              | The repository against `skeleton.json`, the catalog and the gate's script names (below). `--fix` writes the identical and owned files, the `.agents/skills` link and the hooks path.             |
-| `check-confidential`      | pre-commit, commit-msg, push | Terms from a hashed list, Company OS screenshots and text in images (OCR, an unread image fails), commits purged from history.                                                                   |
-| `check-staged`            | pre-commit                   | gitleaks on the index, then `check-coupling` and `check-confidential`, then prettier and eslint on the staged files; `validate:skills` when `.claude/` is staged, `admin-check` when an item is. |
+| Command                   | Runs in                      | Checks                                                                                                                                                                                                                                                                                      |
+| ------------------------- | ---------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `scaffold <dir>`          | once                         | Creates a repository from `template/` with this version pinned, its catalog and admin area (below).                                                                                                                                                                                         |
+| `scaffolding check`       | `bun run check`              | The whole gate, below.                                                                                                                                                                                                                                                                      |
+| `check-structure [--fix]` | `bun run check`              | The repository against `skeleton.json`, the catalog, the gate's script names (below) and every `bin` file stored executable (100755), since bun marks one only as it installs. `--fix` writes the identical and owned files, the `.agents/skills` link, the hooks path and the `bin` modes. |
+| `check-confidential`      | pre-commit, commit-msg, push | Terms from a hashed list, Company OS screenshots and text in images (OCR, an unread image fails), commits purged from history.                                                                                                                                                              |
+| `check-staged`            | pre-commit                   | gitleaks on the index, then `check-coupling` and `check-confidential`, then prettier and eslint on the staged files; `validate:skills` when `.claude/` is staged, `admin-check` when an item is.                                                                                            |
 
-The gate and `check-staged` also run these files from `bin/` by path; they are steps, not commands:
+The gate and `check-staged` also run these files from `bin/` by path; they are steps, not commands,
+so an install leaves them not executable. A `node_modules/.bin` link to one is left from an install
+before v0.9.0, which bun keeps: delete it.
 
-| Step                    | Runs in                     | Checks                                                                                                                                                                                                   |
-| ----------------------- | --------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `check-coupling.ts`     | `bun run check`, pre-commit | No path leaves the repository, no import past a package's `exports`, every Git dependency pinned to a tag `node_modules` holds, no disk path into a company package in code, and the CSS origin (below). |
-| `check-lock.ts`         | `scaffolding check`         | One gate at a time per checkout.                                                                                                                                                                         |
-| `check-unique-names.ts` | `bun run check`             | Every module-scope function name outside tests is defined once.                                                                                                                                          |
-| `check-spaces.ts`       | `bun run check`             | No line break in an `.astro` template where text meets an inline tag (below).                                                                                                                            |
-| `check-licenses.ts`     | `bun run check`, pre-commit | Every installed package's licence is on the allow list or an exception pins it (below); in pre-commit when `bun.lock` or `package.json` is staged.                                                       |
+| Step                    | Runs in                     | Checks                                                                                                                                                                                                       |
+| ----------------------- | --------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `check-coupling.ts`     | `bun run check`, pre-commit | No path leaves the repository, no import past a package's `exports`, every Git dependency pinned to a tag `node_modules` holds, no disk path into a company package outside CSS, and the CSS origin (below). |
+| `check-lock.ts`         | `scaffolding check`         | One gate at a time per checkout.                                                                                                                                                                             |
+| `check-unique-names.ts` | `bun run check`             | Every module-scope function name outside tests is defined once.                                                                                                                                              |
+| `check-spaces.ts`       | `bun run check`             | No line break in an `.astro` template where text meets an inline tag (below).                                                                                                                                |
+| `check-licenses.ts`     | `bun run check`, pre-commit | Every installed package's licence is on the allow list or an exception pins it (below); in pre-commit when `bun.lock` or `package.json` is staged.                                                           |
 
 ## A new repository
 
@@ -180,9 +182,12 @@ The options beyond those above:
   paragraph of the slot, of a wrapper element in it, or of a `details` or `section` in that
   wrapper. A paragraph deeper down, in the slot's own grid or tile, keeps its width. How long the slot's text runs is the repository's: each line it adds
   pushes the first tiles down.
-- `copy`: globs, relative to the repository, of files the built pages reach by a relative path
-  rather than through Vite, such as brand's stylesheets under `node_modules`. Each match lands in
-  the build at the same path, and `astro dev` serves it there. A pattern matching nothing fails the
+- `copy`: files the built pages reach by a relative path rather than through Vite. A glob, relative
+  to the repository, lands each match in the build at the same path. A package path of a package
+  the repository declares, or of its own, such as `@hackersandwizards/brand/logos/avatar-512.png`,
+  names one file through the package's `exports` and lands it at that path, so a page under the
+  base `/mail` names it as `/mail/@hackersandwizards/brand/logos/avatar-512.png` or by the relative
+  path there. `astro dev` serves each at its path. A pattern matching nothing fails the
   build, and so does, with `CI=true`, a copied file that is still a Git LFS pointer.
 - `serverOnly`: every story is an Astro component, so each state renders on the server only;
   Astrobook's `client:load` branch for framework components, which bundles every story module for
@@ -232,12 +237,15 @@ with (`"styles": ["./styles/slides.css"]`); no other company package's CSS loads
 repository. A path into `node_modules` (a Tailwind `@source`) names the file on disk and passes
 where an `exports` entry targets it.
 
-**Installed paths.** Code (`.js`, `.ts` and their variants, `.astro`, `.vue`, `.svelte`, tests
-included) names no `node_modules/@hackersandwizards/...` path, joined or as path segments: it takes
-a file through `import.meta.resolve("@hackersandwizards/brand/logos/mark.svg")`, which the package's
-`exports` answer (its folder through its `./package.json`), and a command from `node_modules/.bin`.
-Comments, a path after a Tailwind `@source`, `.css` paths (the CSS origin above) and the
-repository's own package are not checked. A script whose job is to read what is installed, or a test
+**Installed paths.** Code, markup and data (every checked file but stylesheets: `.js`, `.ts` and
+their variants, `.astro`, `.vue`, `.svelte`, `.html`, `.json`, `.yaml`, `.toml`, `.sh`, the hooks
+and `package.json` with its scripts, tests included) name no `node_modules/@hackersandwizards/...`
+path, joined or as path segments: code takes a file through
+`import.meta.resolve("@hackersandwizards/brand/logos/mark.svg")`, which the package's `exports`
+answer (its folder through its `./package.json`), and a command from `node_modules/.bin`; a catalog
+page or its data names a file the preset's `copy` serves by its package path. Comments,
+`package.json`'s `scaffolding` field, a path after a Tailwind `@source`, `.css` paths (the CSS
+origin above) and the repository's own package are not checked. A script whose job is to read what is installed, or a test
 whose strings are data, keeps its path with an exception (below) narrowed by `text`.
 
 ## Exceptions

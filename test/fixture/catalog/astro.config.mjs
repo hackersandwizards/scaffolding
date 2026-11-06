@@ -13,7 +13,7 @@ export default defineConfig({
       storyScale: "screen",
       header: { component: "./Header.astro" },
       head: "./Head.astro",
-      copy: ["assets/*.svg", "assets/nested"],
+      copy: ["assets/*.svg", "assets/nested", "@acme/fx/logos/logo.svg"],
       serverOnly: true,
       admin: true,
     }),

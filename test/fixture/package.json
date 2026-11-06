@@ -1,5 +1,8 @@
 {
   "name": "@acme/fx",
   "private": true,
-  "type": "module"
+  "type": "module",
+  "exports": {
+    "./logos/*": "./assets/*"
+  }
 }

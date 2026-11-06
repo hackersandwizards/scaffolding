@@ -194,6 +194,7 @@ describe("check-coupling", () => {
     const dir = repo({
       "package.json": JSON.stringify({
         name: "@hackersandwizards/fx",
+        scripts: { postinstall: "cp node_modules/@hackersandwizards/brand/logos/w.svg public/" },
         scaffolding: {
           allow: [
             {
@@ -229,10 +230,24 @@ describe("check-coupling", () => {
       "tools/fonts.py": 'BRAND = "node_modules/@hackersandwizards/brand/tokens/fonts"\n',
       "scripts/installed.ts": 'const dir = "node_modules/@hackersandwizards/";\n',
       "src/scope.ts": 'export const at = (n: string) => "node_modules/@hackersandwizards/" + n;\n',
+      "og/template.html":
+        '<!-- node_modules/@hackersandwizards/brand -->\n<link rel="stylesheet" href="../node_modules/@hackersandwizards/brand/tokens/fonts.css" />\n<style>@font-face { src: url("../node_modules/@hackersandwizards/brand/tokens/fonts/inter.woff2"); }</style>\n<img src="../node_modules/@hackersandwizards/brand/logos/lockup.svg" />\n',
+      "mails/brief.json":
+        '{ "src": "../node_modules/@hackersandwizards/brand/logos/avatar.png", "url": "https://x.dev/a" }\n',
+      "mails/served.json": '{ "src": "../@hackersandwizards/brand/logos/avatar.png" }\n',
+      "scripts/fonts.sh":
+        "# node_modules/@hackersandwizards/brand\ncp node_modules/@hackersandwizards/brand/tokens/fonts/x.woff2 out/ # copy\n",
+      ".github/workflows/ci.yml": "# node_modules/@hackersandwizards/brand\non: push\n",
+      "docs/notes.md": "node_modules/@hackersandwizards/brand/logos\n",
     });
     const why =
-      "hard-coded path into an installed package: import.meta.resolve it through the package's exports (its ./package.json for the folder), run its command from node_modules/.bin, or name the exception in scaffolding.allow";
+      "hard-coded path into an installed package: import.meta.resolve it through the package's exports (its ./package.json for the folder), run its command from node_modules/.bin, serve a catalog asset by its package path in the preset's copy, or name the exception in scaffolding.allow";
     expect(lines(run(dir, "check-coupling").out, "check-coupling").sort()).toEqual([
+      `[check-coupling] mails/brief.json: ${why} (node_modules/@hackersandwizards/brand/logos/avatar.png)`,
+      `[check-coupling] og/template.html: ${why} (node_modules/@hackersandwizards/brand/logos/lockup.svg)`,
+      `[check-coupling] og/template.html: ${why} (node_modules/@hackersandwizards/brand/tokens/fonts/inter.woff2)`,
+      `[check-coupling] package.json: ${why} (node_modules/@hackersandwizards/brand/logos/w.svg)`,
+      `[check-coupling] scripts/fonts.sh: ${why} (node_modules/@hackersandwizards/brand/tokens/fonts/x.woff2)`,
       `[check-coupling] src/Page.astro: ${why} (node_modules/@hackersandwizards/brand/logos/mark.svg)`,
       `[check-coupling] src/after-source.ts: ${why} (node_modules/@hackersandwizards/brand/x.svg)`,
       `[check-coupling] src/logos.ts: ${why} (node_modules/@hackersandwizards/brand/clients/)`,
@@ -284,6 +299,27 @@ function remotes(tags: string[]) {
 process.env.SCAFFOLDING_GIT_BASE = remotes(["v0.9.0", "v0.10.0", "v0.2.0", "latest"]);
 const ownVersion = JSON.parse(readFileSync(join(import.meta.dir, "..", "package.json"), "utf8"))
   .version as string;
+
+test("check-structure: a bin file is stored executable, and --fix makes it so", () => {
+  const dir = repo({
+    "package.json": JSON.stringify({ bin: { x: "./bin/x.ts", y: "bin/y.ts" } }),
+    "bin/x.ts": "#!/usr/bin/env bun\n",
+    "bin/y.ts": "#!/usr/bin/env bun\n",
+    "bin/z.ts": "export {};\n",
+  });
+  chmodSync(join(dir, "bin/y.ts"), 0o755);
+  sh(dir, ["update-index", "--chmod=+x", "bin/y.ts"]);
+  const binLines = (args: string[] = []) =>
+    lines(run(dir, "check-structure", args).out, "check-structure").filter((l) =>
+      l.includes("bin file"),
+    );
+  expect(binLines()).toEqual([
+    "[check-structure] bin/x.ts: a bin file is stored executable (check-structure --fix) (100644)",
+  ]);
+  binLines(["--fix"]);
+  expect(binLines()).toEqual([]);
+  expect(sh(dir, ["ls-files", "-s", "bin/x.ts"]).stdout.toString()).toStartWith("100755");
+});
 
 describe("scaffold and check-structure", () => {
   const parent = temp();
@@ -1253,6 +1289,10 @@ describe("catalog", () => {
     expect(readFileSync(join(dist, "assets/nested/page.css"), "utf8")).toBe(
       "a {\n  color: red;\n}\n",
     );
+    // A package path lands at that path, resolved through the package's exports.
+    expect(readFileSync(join(dist, "@acme/fx/logos/logo.svg"), "utf8")).toBe(
+      readFileSync(join(fixture, "assets/logo.svg"), "utf8"),
+    );
     // A project Pages site sets Astro's base: the links and the header's default follow it.
     expect(build(["--base", "/fx"]).status).toBe(0);
     const based = readFileSync(join(dist, "index.html"), "utf8");
@@ -1338,6 +1378,9 @@ describe("catalog", () => {
     try {
       const logo = await fetch(`${server.url}/assets/logo.svg`);
       expect(logo.status).toBe(200);
+      const served = await fetch(`${server.url}/@acme/fx/logos/logo.svg`);
+      expect(served.status).toBe(200);
+      expect(served.headers.get("content-type")).toBe("image/svg+xml");
       expect(logo.headers.get("content-type")).toBe("image/svg+xml");
       const css = await fetch(`${server.url}/assets/nested/page.css`);
       expect(css.headers.get("content-type")).toBe("text/css");
