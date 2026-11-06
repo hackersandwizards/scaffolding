@@ -74,7 +74,7 @@ const catalogTile = (item: CatalogItem, group: string) =>
 // empty; draws each sized frame whole at its tile's width, and centres every other frame's content
 // on the content's own ground, shrunk where it is taller than the tile and measured afresh each
 // time, so a refit never shrinks it again, as Storybook's "centered"
-// layout does (blind review 2026-11-06). Delegated on the document, so it holds across Astro's
+// layout does. Delegated on the document, so it holds across Astro's
 // client router swaps and runs once.
 const SCRIPT = `<script>(()=>{
 const fit=(p)=>{const f=p.firstElementChild;if(!(f instanceof HTMLIFrameElement))return;

@@ -1,6 +1,6 @@
 // A server a gate step starts for itself, on a port the system hands out, so two steps or two
-// sessions never meet on one fixed port: two trainer-hub checks defaulting to 4398 redded each
-// other on 2026-11-02, and a server left over from an earlier run answered for the new build.
+// sessions never meet on one fixed port: two checks defaulting to one port redded each other,
+// and a server left over from an earlier run answered for the new build.
 import { spawn } from "node:child_process";
 import { createServer } from "node:net";
 

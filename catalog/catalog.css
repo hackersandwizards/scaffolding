@@ -61,8 +61,7 @@
     background: color-mix(in srgb, var(--hw-cat-fg) 6%, transparent);
   }
   /* Wide, the rail lists every element by name under its group's label, as a component library's
-     sidebar does (blind review 2026-11-06, 2 personas x Claude and Codex: overall 8.4 of 10 over
-     5.8 for groups alone and 7.6 for names indented under bold groups, noise 0). */
+     sidebar does. */
   .hw-catalogue-rail .hw-catalogue-names {
     margin: 0 0 1rem;
   }
@@ -85,7 +84,7 @@
     font-weight: 400;
   }
   /* The tile grid ends a rem further in than the page's container: at its 1rem alone the tiles
-     read as running into the right edge (blind review 2026-11-02). */
+     read as running into the right edge. */
   .hw-catalogue-main {
     padding-inline-end: 1rem;
   }
@@ -99,8 +98,7 @@
      wrapper the home's slot puts there, or of a details or section in that wrapper. A paragraph
      deeper down sits in a repository's own grid or tile and keeps its width. At no specificity,
      so a class in this layer or unlayered wins. The provenance line reads in the sans at the UI
-     size (blind review 2026-11-06, 2 personas x Claude and Codex: 8.4 of 10 over 8.2 for mono at
-     13px, 7.6 for mono at 11px and 6.8 for the slot at full width, noise 1.0). */
+     size. */
   :where(
     .hw-catalogue-main > p,
     .hw-catalogue-main > :not(section) > p,
@@ -202,8 +200,7 @@
       max-height: none;
       overflow: visible;
     }
-    /* The phone keeps the groups as one row of chips under the search (blind review 2026-11-03:
-       +0.8 at noise 0.2 over no groups). */
+    /* The phone keeps the groups as one row of chips under the search. */
     .hw-catalogue-search {
       margin-bottom: 0.5rem;
     }

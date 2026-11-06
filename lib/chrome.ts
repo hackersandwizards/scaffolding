@@ -1,6 +1,6 @@
 // From puppeteer's own cache, so puppeteer launched without executablePath starts the same build,
 // and never the user's own Chrome, whose headless instance macOS activates in front of the user's
-// window (shown 2026-10-31). A caller starting the binary itself passes chromeArgs; puppeteer takes
+// window. A caller starting the binary itself passes chromeArgs; puppeteer takes
 // the binary as `executablePath` and NO_KEYCHAIN as args.
 import { execFile, execFileSync } from "node:child_process";
 import { existsSync, readdirSync } from "node:fs";
@@ -37,7 +37,7 @@ const install = (shell?: boolean) => [
 
 /** The build puppeteer-core pins, else, without puppeteer-core, the newest build in the cache for
  * this platform. `shell` takes chrome-headless-shell, which printed in 2 s on a Mac where the full
- * app's --print-to-pdf never returned (2026-11-02). */
+ * app's --print-to-pdf never returned. */
 export function cachedChrome({ shell }: Options = {}): string | undefined {
   const kind = kindOf(shell);
   const pinned = pinnedBuild(shell);
@@ -123,7 +123,7 @@ export const NO_KEYCHAIN = ["--use-mock-keychain", "--password-store=basic"];
 
 /** Headless, in its own profile, so it never attaches to or locks a Chrome the user has open.
  * Without the GPU, so a Mac paints like a CI runner that has none: with it, gradients and blur
- * differed by up to 8 of 255 per channel (Chrome for Testing 156, 2026-11-06). */
+ * differed by up to 8 of 255 per channel (Chrome for Testing 156). */
 export const chromeArgs = (profile: string) => [
   "--headless=new",
   "--disable-gpu",
