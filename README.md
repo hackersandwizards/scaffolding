@@ -315,11 +315,12 @@ hook, and its `pre-push` starts bun only to refuse the commits a `.confidential-
 `check-confidential purged <sha>...` writes `.confidential-purged.json`: after a history rewrite,
 the pre-push hook refuses a push from an old clone that still carries one of those commits.
 
-Both `pre-push` hooks then hand every push to `git lfs pre-push`, which reads the pushed commits
-and uploads nothing where they carry no pointer, so a branch bringing LFS files the checked-out tree
-lacks still sends its objects. Without git-lfs on `PATH` a hook refuses the push only where the
-repository keeps an LFS store (`lfs/objects` in its Git directory, or `lfs.storage` set): objects to
-upload can sit nowhere else, and a store points at a git-lfs that a client's narrower `PATH` hides.
+Both `pre-push` hooks then hand the refs to `git lfs pre-push` where the repository keeps an LFS
+store (`lfs/objects` in its Git directory, `lfs.storage`, or a `.lfsconfig`), since objects to
+upload can sit nowhere else. Git LFS reads the pushed commits itself, so a branch bringing LFS files
+the checked-out tree lacks still sends its objects. A repository without a store never starts
+git-lfs, which would otherwise verify locks against the remote on every push. Where a store exists
+and git-lfs is not on `PATH`, as under a client's narrower `PATH`, the push is refused.
 
 ## Pipelines
 

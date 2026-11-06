@@ -2,9 +2,12 @@
 # A private repository runs no confidential check, so this hook starts bun only to refuse purged
 # commits, and otherwise hands the refs to Git LFS.
 [ -f .confidential-purged.json ] && exec bun run --silent check-confidential prepush "$@"
-# Git LFS reads the pushed commits itself and uploads nothing where they carry no pointer.
-git lfs version >/dev/null 2>&1 && exec git lfs pre-push "$@"
-# Without git-lfs, objects to upload can only sit in a local store: refuse only where one exists.
-[ -d "$(git rev-parse --git-common-dir)/lfs/objects" ] || [ -n "$(git config lfs.storage)" ] || exit 0
-echo "pre-push: this repository stores Git LFS objects and git-lfs is not on PATH" >&2
-exit 1
+# Objects to upload sit only in a local LFS store. Without one, git-lfs is not started: it would
+# verify locks against the remote on every push.
+common=$(git rev-parse --git-common-dir) || exit 1
+[ -d "$common/lfs/objects" ] || [ -f .lfsconfig ] || [ -n "$(git config lfs.storage)" ] || exit 0
+if ! git lfs version >/dev/null 2>&1; then
+  echo "pre-push: this repository stores Git LFS objects and git-lfs is not on PATH" >&2
+  exit 1
+fi
+exec git lfs pre-push "$@"

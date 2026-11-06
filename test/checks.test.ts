@@ -694,10 +694,10 @@ describe("check-confidential", () => {
     expect(push(clean).status).toBe(0);
   });
 
-  test("both pre-push hooks hand every push to Git LFS, and without it refuse only where a store exists", () => {
+  test("both pre-push hooks hand the refs to Git LFS only where a local LFS store exists", () => {
     const stub = temp();
     const log = join(stub, "log");
-    const lfs = '#!/bin/sh\n[ "$1" = version ] || echo "$*" >> "$LFS_LOG"\n';
+    const lfs = '#!/bin/sh\n[ "$1" = version ] && exit 0\necho "$*" >> "$LFS_LOG"\nexit 3\n';
     writeFileSync(join(stub, "git-lfs"), lfs, { mode: 0o755 });
     // A PATH holding git alone, so the machine's own git-lfs stays out of reach.
     const bare = temp();
@@ -715,16 +715,22 @@ describe("check-confidential", () => {
             input: "",
           }).status,
       );
-    // No .gitattributes in the tree: Git LFS still decides, from the pushed commits.
-    expect(pushes(repo({ "package.json": "{}" }), `${stub}:${bare}`)).toEqual([0, 0]);
-    expect(readFileSync(log, "utf8")).toBe("pre-push origin x\n".repeat(2));
+    const logged = () => (existsSync(log) ? readFileSync(log, "utf8") : "");
+    // No store: git-lfs is never started, installed or not.
     const plain = repo({ "package.json": "{}" });
+    expect(pushes(plain, `${stub}:${bare}`)).toEqual([0, 0]);
     expect(pushes(plain, bare)).toEqual([0, 0]);
-    mkdirSync(join(plain, ".git/lfs/objects"), { recursive: true });
-    expect(pushes(plain, bare)).toEqual([1, 1]);
+    expect(logged()).toBe("");
+    // A store: git-lfs decides and its status is the hook's; without git-lfs the push is refused.
+    const stored = repo({ "package.json": "{}" });
+    mkdirSync(join(stored, ".git/lfs/objects"), { recursive: true });
+    expect(pushes(stored, `${stub}:${bare}`)).toEqual([3, 3]);
+    expect(logged()).toBe("pre-push origin x\n".repeat(2));
+    expect(pushes(stored, bare)).toEqual([1, 1]);
     const moved = repo({ "package.json": "{}" });
     sh(moved, ["config", "lfs.storage", "/elsewhere"]);
     expect(pushes(moved, bare)).toEqual([1, 1]);
+    expect(pushes(repo({ "package.json": "{}", ".lfsconfig": "" }), bare)).toEqual([1, 1]);
   });
 });
 

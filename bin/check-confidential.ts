@@ -5,7 +5,7 @@
 //   check-confidential --tree <rev>           every file of a tree, for an audit
 //   check-confidential prepush                pre-push: refuses commits listed in
 //                                             .confidential-purged.json, then hands the refs to
-//                                             `git lfs pre-push`
+//                                             `git lfs pre-push` where an LFS store exists
 //   check-confidential fetch                  fetches the list now, for a cloud setup script
 //   check-confidential build <terms|-> [--public <file>]
 //                                             prints a hashed list from one term per line (- reads
@@ -24,7 +24,7 @@ import {
   statSync,
   writeFileSync,
 } from "node:fs";
-import { join } from "node:path";
+import { join, resolve } from "node:path";
 import { applyAllow, finish, git, readPackage, repoRoot, type Finding } from "../lib/repo.ts";
 
 const TERMS_REPO = "hackersandwizards/confidential-terms";
@@ -130,20 +130,23 @@ if (argv[0] === "prepush") {
     }
   }
   if (findings.length) finish("check-confidential", findings, started);
-  // Git LFS reads the pushed commits itself and uploads nothing where they carry no pointer.
-  if (spawnSync("git", ["lfs", "version"], { cwd: root }).status === 0) {
-    const lfs = spawnSync("git", ["lfs", "pre-push", ...argv.slice(1)], {
-      cwd: root,
-      input,
-      stdio: ["pipe", "inherit", "inherit"],
-    });
-    process.exit(lfs.status ?? 1);
-  }
-  // Without git-lfs, objects to upload can only sit in a local store: refuse only where one exists.
-  const common = git(["rev-parse", "--path-format=absolute", "--git-common-dir"], root);
+  // Objects to upload sit only in a local LFS store. Without one, git-lfs is not started: it would
+  // verify locks against the remote on every push.
+  const common = resolve(root, git(["rev-parse", "--git-common-dir"], root).toString().trim());
   const storage = spawnSync("git", ["config", "lfs.storage"], { cwd: root }).stdout.toString();
-  if (existsSync(join(common.toString().trim(), "lfs/objects")) || storage.trim())
-    report("push", "", "this repository stores Git LFS objects and git-lfs is not on PATH");
+  const store = [join(common, "lfs/objects"), join(root, ".lfsconfig")].some((p) => existsSync(p));
+  if (store || storage.trim()) {
+    if (spawnSync("git", ["lfs", "version"], { cwd: root }).status !== 0)
+      report("push", "", "this repository stores Git LFS objects and git-lfs is not on PATH");
+    else {
+      const lfs = spawnSync("git", ["lfs", "pre-push", ...argv.slice(1)], {
+        cwd: root,
+        input,
+        stdio: ["pipe", "inherit", "inherit"],
+      });
+      process.exit(lfs.status ?? 1);
+    }
+  }
   finish("check-confidential", findings, started);
 }
 
