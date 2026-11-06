@@ -49,15 +49,14 @@ const exists = (path: string) => {
 
 // A private repository runs no confidential check, so it keeps no hook that only starts bun for it.
 const pkg = readPackage(root);
-const privateHooks =
-  pkg.scaffolding?.private === true ? skeleton.private : { absent: [], same: [] };
-for (const path of privateHooks.absent as string[])
+const privateAbsent: string[] = pkg.scaffolding?.private === true ? skeleton.private.absent : [];
+for (const path of privateAbsent)
   if (exists(path))
     add(path, "not kept in a private repository (check-structure --fix)", "", () =>
       rmSync(at(path)),
     );
-for (const path of (skeleton.same as string[]).filter((p) => !privateHooks.absent.includes(p))) {
-  const template = join(home, privateHooks.same.includes(path) ? "private" : "template", path);
+for (const path of (skeleton.same as string[]).filter((p) => !privateAbsent.includes(p))) {
+  const template = join(home, "template", path);
   if (exists(path) && readFileSync(at(path)).equals(readFileSync(template))) continue;
   add(
     path,

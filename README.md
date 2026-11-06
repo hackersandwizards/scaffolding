@@ -308,19 +308,20 @@ checkout fetches on its own.
   with its build time. It leaves out every term the public text in `<file>` already carries, and
   refuses to build without `/usr/share/dict/words`.
 
-A repository with `"scaffolding": { "private": true }` skips the check. It keeps no `commit-msg`
-hook, and its `pre-push` starts bun only to refuse the commits a `.confidential-purged.json` lists.
-`check-structure --fix` removes the one and writes the other.
+A repository with `"scaffolding": { "private": true }` skips the check and keeps no `commit-msg`
+hook, which `check-structure --fix` removes.
 
 `check-confidential purged <sha>...` writes `.confidential-purged.json`: after a history rewrite,
 the pre-push hook refuses a push from an old clone that still carries one of those commits.
 
-Both `pre-push` hooks then hand the refs to `git lfs pre-push` where the repository keeps an LFS
-store (`lfs/objects` in its Git directory, `lfs.storage`, or a `.lfsconfig`), since objects to
-upload can sit nowhere else. Git LFS reads the pushed commits itself, so a branch bringing LFS files
-the checked-out tree lacks still sends its objects. A repository without a store never starts
-git-lfs, which would otherwise verify locks against the remote on every push. Where a store exists
-and git-lfs is not on `PATH`, as under a client's narrower `PATH`, the push is refused.
+The pre-push hook then hands the refs to `git lfs pre-push` where the push may carry LFS content:
+the repository keeps an LFS store (`lfs/objects` in its Git directory, or `lfs.storage`), or a
+pushed commit changes a path whose `filter` attribute is `lfs`, read from that commit's tree and
+`.git/info/attributes`. Git LFS reads the pushed commits itself, so a branch bringing LFS files the
+checked-out tree lacks still sends its objects. Any other push never starts git-lfs, which would
+otherwise verify locks against the remote on every push. Where LFS content may be pushed and git-lfs
+is not on `PATH`, as under a client's narrower `PATH`, the push is refused, so a file committed
+without the LFS filter never reaches the remote as a raw blob unnoticed.
 
 ## Pipelines
 

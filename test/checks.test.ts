@@ -418,7 +418,7 @@ describe("scaffold and check-structure", () => {
     expect(run(other, "check-structure").code).toBe(0);
   });
 
-  test("a private repository keeps no hook that only starts bun", () => {
+  test("a private repository keeps no commit-msg hook", () => {
     const other = join(parent, "private");
     run(parent, "scaffold", ["private", "--catalog-in", "x", "--admin-in", "x"]);
     install(other);
@@ -429,16 +429,10 @@ describe("scaffold and check-structure", () => {
     write(other, { "package.json": JSON.stringify(pkg) });
     expect(lines(run(other, "check-structure").out, "check-structure").sort()).toEqual([
       "[check-structure] .githooks/commit-msg: not kept in a private repository (check-structure --fix)",
-      "[check-structure] .githooks/pre-push: differs from the skeleton (check-structure --fix)",
     ]);
     run(other, "check-structure", ["--fix"]);
     expect(run(other, "check-structure").code).toBe(0);
     expect(existsSync(join(other, ".githooks/commit-msg"))).toBe(false);
-    const push = spawnSync(join(other, ".githooks/pre-push"), ["origin", "x"], {
-      cwd: other,
-      env: { PATH: "/usr/bin:/bin" },
-    });
-    expect(push.status).toBe(0);
   });
 
   test("a repository without package.json is reported, not a crash", () => {
@@ -694,7 +688,7 @@ describe("check-confidential", () => {
     expect(push(clean).status).toBe(0);
   });
 
-  test("both pre-push hooks hand the refs to Git LFS only where a local LFS store exists", () => {
+  test("prepush hands the refs to Git LFS only where the push may carry LFS content", () => {
     const stub = temp();
     const log = join(stub, "log");
     const lfs = '#!/bin/sh\n[ "$1" = version ] && exit 0\necho "$*" >> "$LFS_LOG"\nexit 3\n';
@@ -702,35 +696,60 @@ describe("check-confidential", () => {
     // A PATH holding git alone, so the machine's own git-lfs stays out of reach.
     const bare = temp();
     symlinkSync(Bun.which("git")!, join(bare, "git"));
-    const hooks = [
-      [process.execPath, bin("check-confidential"), "prepush"],
-      ["/bin/sh", join(import.meta.dir, "..", "private", ".githooks", "pre-push")],
-    ];
-    const pushes = (dir: string, PATH: string) =>
-      hooks.map(
-        ([cmd, ...args]) =>
-          spawnSync(cmd!, [...args, "origin", "x"], {
-            cwd: dir,
-            env: { ...process.env, PATH, LFS_LOG: log, GIT_EXEC_PATH: bare },
-            input: "",
-          }).status,
-      );
+    const push = (dir: string, PATH: string) => {
+      const head = sh(dir, ["rev-parse", "HEAD"]).stdout.toString().trim();
+      return spawnSync(process.execPath, [bin("check-confidential"), "prepush", "origin", "x"], {
+        cwd: dir,
+        env: {
+          ...process.env,
+          PATH,
+          LFS_LOG: log,
+          GIT_EXEC_PATH: bare,
+        },
+        input: `refs/heads/main ${head} refs/heads/main ${"0".repeat(40)}\n`,
+      }).status;
+    };
     const logged = () => (existsSync(log) ? readFileSync(log, "utf8") : "");
-    // No store: git-lfs is never started, installed or not.
-    const plain = repo({ "package.json": "{}" });
-    expect(pushes(plain, `${stub}:${bare}`)).toEqual([0, 0]);
-    expect(pushes(plain, bare)).toEqual([0, 0]);
+    const both = (dir: string) => [push(dir, `${stub}:${bare}`), push(dir, bare)];
+    // Nothing of LFS: git-lfs is never started, installed or not; a .lfsconfig holds no objects.
+    expect(both(repo({ "package.json": "{}" }))).toEqual([0, 0]);
+    expect(both(repo({ "package.json": "{}", ".lfsconfig": "" }))).toEqual([0, 0]);
     expect(logged()).toBe("");
     // A store: git-lfs decides and its status is the hook's; without git-lfs the push is refused.
     const stored = repo({ "package.json": "{}" });
     mkdirSync(join(stored, ".git/lfs/objects"), { recursive: true });
-    expect(pushes(stored, `${stub}:${bare}`)).toEqual([3, 3]);
-    expect(logged()).toBe("pre-push origin x\n".repeat(2));
-    expect(pushes(stored, bare)).toEqual([1, 1]);
+    expect(both(stored)).toEqual([3, 1]);
     const moved = repo({ "package.json": "{}" });
     sh(moved, ["config", "lfs.storage", "/elsewhere"]);
-    expect(pushes(moved, bare)).toEqual([1, 1]);
-    expect(pushes(repo({ "package.json": "{}", ".lfsconfig": "" }), bare)).toEqual([1, 1]);
+    expect(both(moved)).toEqual([3, 1]);
+    // No store, but a pushed commit changes a path under filter=lfs, committed raw where git-lfs
+    // was never installed.
+    const raw = repo(
+      { "package.json": "{}", ".gitattributes": "*.bin filter=lfs\n", "a.bin": "x" },
+      false,
+    );
+    const noLfs = { ...process.env, GIT_CONFIG_GLOBAL: "/dev/null", GIT_CONFIG_NOSYSTEM: "1" };
+    const rawGit = (args: string[]) =>
+      spawnSync("git", ["-c", "user.email=t@t", "-c", "user.name=t", ...args], {
+        cwd: raw,
+        env: noLfs,
+      });
+    rawGit(["add", "-A"]);
+    rawGit(["commit", "-qm", "raw"]);
+    expect(existsSync(join(raw, ".git/lfs"))).toBe(false);
+    expect(both(raw)).toEqual([3, 1]);
+    // The same path committed before the push, already on a remote: nothing to carry.
+    write(raw, { "b.md": "b\n" });
+    rawGit(["add", "b.md"]);
+    rawGit(["commit", "-qm", "b"]);
+    expect(existsSync(join(raw, ".git/lfs"))).toBe(false);
+    sh(raw, ["update-ref", "refs/remotes/origin/main", "HEAD~1"]);
+    expect(both(raw)).toEqual([0, 0]);
+    // .git/info/attributes counts as well.
+    const info = repo({ "package.json": "{}", "a.bin": "x" });
+    write(info, { ".git/info/attributes": "*.bin filter=lfs\n" });
+    expect(both(info)).toEqual([3, 1]);
+    expect(logged()).toBe("pre-push origin x\n".repeat(4));
   });
 });
 

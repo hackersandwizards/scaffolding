@@ -5,7 +5,7 @@
 //   check-confidential --tree <rev>           every file of a tree, for an audit
 //   check-confidential prepush                pre-push: refuses commits listed in
 //                                             .confidential-purged.json, then hands the refs to
-//                                             `git lfs pre-push` where an LFS store exists
+//                                             `git lfs pre-push` where the push may carry LFS content
 //   check-confidential fetch                  fetches the list now, for a cloud setup script
 //   check-confidential build <terms|-> [--public <file>]
 //                                             prints a hashed list from one term per line (- reads
@@ -111,33 +111,50 @@ const report = (path: string, text: string, message: string) =>
 
 if (argv[0] === "prepush") {
   const input = readFileSync(0);
+  const fresh = input
+    .toString()
+    .split("\n")
+    .map((line) => line.split(" ")[1])
+    .filter((local) => local && !/^0+$/.test(local))
+    .flatMap((local) => git(["rev-list", local, "--not", "--remotes"], root).toString().split("\n"))
+    .filter(Boolean);
   const file = join(root, ".confidential-purged.json");
   if (existsSync(file)) {
     const purged = JSON.parse(readFileSync(file, "utf8"));
     const bad = new Set<string>(purged.hashes);
     const h = hasher(purged.salt);
-    for (const line of input.toString().split("\n").filter(Boolean)) {
-      const local = line.split(" ")[1];
-      if (/^0+$/.test(local)) continue;
-      const fresh = git(["rev-list", local, "--not", "--remotes"], root).toString().split("\n");
-      for (const c of fresh.filter(Boolean))
-        if (bad.has(h(c)))
-          report(
-            "push",
-            c,
-            "commit purged from this repository's history: clone again and carry your own work over by hand",
-          );
-    }
+    for (const c of fresh)
+      if (bad.has(h(c)))
+        report(
+          "push",
+          c,
+          "commit purged from this repository's history: clone again and carry your own work over by hand",
+        );
   }
   if (findings.length) finish("check-confidential", findings, started);
-  // Objects to upload sit only in a local LFS store. Without one, git-lfs is not started: it would
-  // verify locks against the remote on every push.
+  // git-lfs starts only where a push may carry LFS content: a local LFS store holds objects, or a
+  // pushed commit changes a path whose `filter` attribute is lfs (read from that commit's tree and
+  // .git/info/attributes). Elsewhere it would only verify locks against the remote on every push.
   const common = resolve(root, git(["rev-parse", "--git-common-dir"], root).toString().trim());
   const storage = spawnSync("git", ["config", "lfs.storage"], { cwd: root }).stdout.toString();
-  const store = [join(common, "lfs/objects"), join(root, ".lfsconfig")].some((p) => existsSync(p));
-  if (store || storage.trim()) {
+  const lfsPath = (c: string) => {
+    const paths = git(
+      ["diff-tree", "-m", "-r", "--root", "--name-only", "--no-commit-id", "-z", c],
+      root,
+    );
+    const attrs = git(
+      ["check-attr", `--source=${c}`, "-z", "--stdin", "filter"],
+      root,
+      paths.toString(),
+    );
+    return attrs
+      .toString()
+      .split("\0")
+      .some((v, i) => i % 3 === 2 && v === "lfs");
+  };
+  if (existsSync(join(common, "lfs/objects")) || storage.trim() || fresh.some(lfsPath)) {
     if (spawnSync("git", ["lfs", "version"], { cwd: root }).status !== 0)
-      report("push", "", "this repository stores Git LFS objects and git-lfs is not on PATH");
+      report("push", "", "this push may carry Git LFS content and git-lfs is not on PATH");
     else {
       const lfs = spawnSync("git", ["lfs", "pre-push", ...argv.slice(1)], {
         cwd: root,

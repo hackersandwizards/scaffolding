@@ -57,8 +57,7 @@
   },
   "hooksPath": ".githooks",
   "private": {
-    "absent": [".githooks/commit-msg"],
-    "same": [".githooks/pre-push"]
+    "absent": [".githooks/commit-msg"]
   },
   "catalog": {
     "scripts": ["dev", "catalog", "build"],
