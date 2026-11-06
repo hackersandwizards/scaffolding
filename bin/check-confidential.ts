@@ -142,13 +142,9 @@ if (argv[0] === "prepush") {
   // Without git-lfs, objects to upload can only sit in a local store: refuse only where one exists.
   const common = git(["rev-parse", "--path-format=absolute", "--git-common-dir"], root);
   const storage = spawnSync("git", ["config", "lfs.storage"], { cwd: root }).stdout.toString();
-  if (existsSync(join(common.toString().trim(), "lfs/objects")) || storage.trim()) {
-    console.error(
-      "[check-confidential] this repository stores Git LFS objects and git-lfs is not on PATH",
-    );
-    process.exit(1);
-  }
-  process.exit(0);
+  if (existsSync(join(common.toString().trim(), "lfs/objects")) || storage.trim())
+    report("push", "", "this repository stores Git LFS objects and git-lfs is not on PATH");
+  finish("check-confidential", findings, started);
 }
 
 type TermList = { built?: string; salt: string; maxTokens: number; hashes: string[] };
