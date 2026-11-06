@@ -3,13 +3,24 @@ import Header from "virtual:scaffolding/catalog-header";
 import { renderCatalog, type CatalogData } from "./render.ts";
 import "./catalog.css";
 
-type Props = Omit<CatalogData, "intro"> & { product: string; href?: string };
+type Props = Omit<CatalogData, "intro"> & { product: string; href?: string; admin?: string };
 
-const { product, href, ...data } = Astro.props;
+const { product, href, admin, ...data } = Astro.props;
 const intro = Astro.slots.has("default") ? await Astro.slots.render("default") : "";
 ---
 
 <Header product={product} href={href}>
-  <slot name="nav" />
+  {/* One group at the bar's right, the link first: the header spreads its children apart. A div,
+  so the repository's own nav items keep their landmark. */}
+  {admin ? (
+    <div class="hw-header-nav">
+      <a class="hw-header-link" href={admin}>
+        <span aria-hidden="true">←&nbsp;</span>Admin hub
+      </a>
+      <slot name="nav" />
+    </div>
+  ) : (
+    <slot name="nav" />
+  )}
 </Header>
 <Fragment set:html={renderCatalog({ ...data, intro })} />

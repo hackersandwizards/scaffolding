@@ -53,6 +53,7 @@ const shared: Record<string, string> = {
   structure: bin("check-structure"),
   coupling: bin("check-coupling"),
   "unique-names": bin("check-unique-names"),
+  spaces: bin("check-spaces"),
   confidential: `${bin("check-confidential")} --tree HEAD`,
   licenses: bin("check-licenses"),
   // Tests are shared too: a gate without them is a skip someone wrote down, not one that drifted.

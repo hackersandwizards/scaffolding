@@ -13,6 +13,7 @@ export default defineConfig({
       head: "./Head.astro",
       copy: ["assets/*.svg", "assets/nested"],
       serverOnly: true,
+      admin: true,
     }),
   ],
 });

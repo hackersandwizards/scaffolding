@@ -13,6 +13,7 @@ import {
   statSync,
   writeFileSync,
 } from "node:fs";
+import { spawnSync } from "node:child_process";
 import { basename, dirname, join, relative } from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -39,6 +40,9 @@ export type CatalogOptions = {
   title?: string;
   /** Where the header's lockup links; default the site's root, Astro's `base`. */
   href?: string;
+  /** Under `astro dev`, a header link to the repository's page in the local admin hub,
+   * http://admin.localhost:4329/<repo>/dashboard, the repo named as the hub names it. */
+  admin?: boolean;
   /** Draw each tile's first state; off for states that load slowly or may not be framed. */
   previews?: boolean;
   /** The repository's <head> component, relative to the Astro root, rendered on every page inside
@@ -76,6 +80,17 @@ function packageDir(from: string): string {
     if (existsSync(join(dir, "package.json"))) return dir;
     if (dirname(dir) === dir) return from;
   }
+}
+
+/** The repository's name as the admin hub keys it: its checkout's folder, a worktree's main
+ * checkout (the worktree's own folder names a branch), else the package folder outside Git. */
+function checkout(dir: string): string {
+  const [top, common] = spawnSync(
+    "git",
+    ["rev-parse", "--path-format=absolute", "--show-toplevel", "--git-common-dir"],
+    { cwd: dir, encoding: "utf8" },
+  ).stdout.split("\n");
+  return basename(common?.endsWith("/.git") ? dirname(common) : top || dir);
 }
 
 /** The installed version of a package, read from the nearest node_modules holding it. */
@@ -178,11 +193,9 @@ export function catalog(options: CatalogOptions): AstroIntegration {
           return now === path ? undefined : now.replace(/^\/+/, "/");
         };
         const stories = join(root, own ? "stories" : "catalog/stories");
-        const name = (() => {
-          const file = join(repo, "package.json");
-          const pkg = existsSync(file) ? JSON.parse(readFileSync(file, "utf8")) : {};
-          return String(pkg.name ?? basename(repo)).replace(/^@[^/]+\//, "");
-        })();
+        const pkgFile = join(repo, "package.json");
+        const pkg = existsSync(pkgFile) ? JSON.parse(readFileSync(pkgFile, "utf8")) : {};
+        const name = String(pkg.name ?? basename(repo)).replace(/^@[^/]+\//, "");
         const versions = [...new Set(options.css.map(packageOf).filter((p) => p !== undefined))]
           .map((p) => `${p} v${installed(p, root) ?? "?"}`)
           .join(" · ");
@@ -202,6 +215,11 @@ export function catalog(options: CatalogOptions): AstroIntegration {
           groupOrder: options.groupOrder ?? [],
           previewStates: options.previewStates ?? [],
           provenance,
+          // The hub serves only on this machine, so a published page carries no link to it.
+          admin:
+            dev && options.admin
+              ? `http://admin.localhost:4329/${encodeURIComponent(pkg.admin?.name ?? checkout(repo))}/dashboard`
+              : undefined,
         };
         params.updateConfig({
           ...(own && { outDir: new URL("../dist/", params.config.root) }),

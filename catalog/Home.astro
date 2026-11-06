@@ -9,6 +9,7 @@ type StoryModule = { name: string; directory?: string; stories: { id: string }[]
 interface Props {
   product?: string;
   href?: string;
+  admin?: string;
   title?: string;
   lead?: string;
   previews?: boolean;
@@ -20,6 +21,7 @@ interface Props {
 const {
   product,
   href,
+  admin,
   title,
   lead,
   previews = true,
@@ -62,7 +64,7 @@ const data = {
 };
 ---
 
-<Layout product={product} href={href} {...data}>
+<Layout product={product} href={href} admin={admin} {...data}>
   <slot name="nav" slot="nav" />
   <slot />
 </Layout>

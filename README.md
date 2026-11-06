@@ -7,7 +7,7 @@ shell of its catalog.
 To work on the package itself, see [Developing the package](#developing-the-package).
 
 ```sh
-bun add -d github:hackersandwizards/scaffolding#v2.0.1
+bun add -d github:hackersandwizards/scaffolding#v2.1.0
 ```
 
 Requirements: bun 1.3 or newer, gitleaks (`brew install gitleaks`), `pdftotext` from poppler, and
@@ -32,6 +32,7 @@ The gate and `check-staged` also run these files from `bin/` by path; they are s
 | `check-coupling.ts`     | `bun run check`, pre-commit | No path leaves the repository, no import past a package's `exports`, every Git dependency pinned to a tag `node_modules` holds, and the CSS origin (below). |
 | `check-lock.ts`         | `scaffolding check`         | One gate at a time per checkout.                                                                                                                            |
 | `check-unique-names.ts` | `bun run check`             | Every module-scope function name outside tests is defined once.                                                                                             |
+| `check-spaces.ts`       | `bun run check`             | No line break in an `.astro` template where text meets an inline tag (below).                                                                               |
 | `check-licenses.ts`     | `bun run check`, pre-commit | Every installed package's licence is on the allow list or an exception pins it (below); in pre-commit when `bun.lock` or `package.json` is staged.          |
 
 ## A new repository
@@ -49,7 +50,7 @@ the hub's sync list, creating it on GitHub and switching Pages on stay steps for
 ## The gate
 
 `scaffolding check` runs `bun install --frozen-lockfile`, then the shared steps side by side:
-format, lint, styles (stylelint), typecheck, structure, coupling, unique names, confidential,
+format, lint, styles (stylelint), typecheck, structure, coupling, unique names, spaces, confidential,
 licenses, the tests, the catalog build (`bun run build`) and admin (the item files, with the pinned
 `@hackersandwizards/admin`'s `admin-check`; a repository without admin pinned needs `skip.admin`). Then the repository's own steps from
 `scaffolding.check`, in order, an inner array side by side. A shared step drops only with a reason:
@@ -65,6 +66,16 @@ licenses, the tests, the catalog build (`bun run build`) and admin (the item fil
   }
 }
 ```
+
+**Spaces.** Astro's default `compressHTML` drops a line break where text meets an inline tag
+(`a`, `code`, `span`, `strong`, `em`, `kbd`): "drawn by" on one line and `<code>brand</code>` on
+the next render as "drawn bybrand". Turned off instead, it keeps every break the formatter writes,
+so a wrapped link carries a space inside its underline and a bare break before punctuation shows as
+a space. The template keeps compression on, and the step flags a line ending in text whose next line
+starts with an inline tag, and an inline closing tag whose next line starts with a word; the fix is
+the `{" "}` prettier itself writes, or joining the lines. A break no space belongs in, such as an
+icon in a flex row, gets an allow entry with `text`; a repository with `compressHTML: false` skips
+the step with that reason.
 
 `uniqueNames` lists names the framework dictates, which the unique-names step lets repeat. Every
 step in `scaffolding.check` is a script named `check:<what>`. `"private": true` skips the
@@ -132,6 +143,9 @@ The options beyond those above:
 
 - `title`: default "Catalog".
 - `href`: where the header's lockup links, default the site's root (Astro's `base`).
+- `admin`: under `astro dev`, a header link to the repository's page in the local admin hub,
+  `http://admin.localhost:4329/<repo>/dashboard`, `<repo>` named as the hub names it (`admin.name`
+  in `package.json`, else the checkout's folder). A built page carries none.
 - `previews`: draw each tile's first state; `false` for states that load slowly or may not be
   framed.
 - `previewStates`: the states a tile draws and links first, each the story's export name in kebab
@@ -271,7 +285,7 @@ publishes `dist/`. The caller, `.github/workflows/pages.yml`, is owned: where it
 ```yaml
 jobs:
   pages:
-    uses: hackersandwizards/scaffolding/.github/workflows/pages.yml@v2.0.1
+    uses: hackersandwizards/scaffolding/.github/workflows/pages.yml@v2.1.0
     permissions:
       contents: read
       pages: write

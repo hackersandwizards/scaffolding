@@ -977,6 +977,8 @@ describe("catalog", () => {
     const home = readFileSync(join(dist, "index.html"), "utf8");
     expect(home).toContain('<header class="fx-header"><a href="/">Fx</a></header>');
     expect(home).toContain("fx catalog/stories · 3 components · 17 states");
+    // The admin hub serves only on this machine: a built page carries no link to it.
+    expect(home).not.toContain("admin.localhost");
     expect(home.indexOf(">Types <")).toBeLessThan(home.indexOf(">Parts <"));
     expect(home).toContain('src="/stories/Types/box-types/two"');
     expect(readdirSync(join(dist, "stories/Parts/box-parts"))).toEqual(["one", "two"]);
@@ -1110,6 +1112,11 @@ describe("catalog", () => {
       expect(css.headers.get("content-type")).toBe("text/css");
       expect(await css.text()).toBe("a {\n  color: red;\n}\n");
       expect((await fetch(`${server.url}/assets/skip.txt`)).status).toBe(404);
+      // `admin`: in dev the header links the repository's page in the local hub; the fixture's
+      // repository is this checkout.
+      expect(await (await fetch(`${server.url}/`)).text()).toMatch(
+        /<a class="hw-header-link" href="http:\/\/admin\.localhost:4329\/scaffolding\/dashboard"[^>]*><span aria-hidden="true"[^>]*>←&nbsp;<\/span>Admin hub<\/a>/,
+      );
 
       // Dev serves at the root: the old /catalog/ path and the Pages base forward there.
       for (const [old, to] of [
@@ -1332,6 +1339,82 @@ describe("check-unique-names", () => {
     const r = run(dir, "check-unique-names");
     expect(r.out).toContain("src/ü.ts:1");
     expect(r.code).toBe(1);
+  });
+});
+
+describe("check-spaces", () => {
+  const page = [
+    "---",
+    "const a = 1",
+    "<code>in frontmatter</code>",
+    "---",
+    "<p>",
+    "  drawn by",
+    "  <code>brand</code>'s <code>elements.css</code> at the dense scale.",
+    "  <code>x</code> in",
+    "  <strong>check</strong>",
+    "  holds each, and",
+    '  <a href="/x">a link</a>.',
+    '  Wanted{" "}',
+    "  <em>space</em>",
+    "  {list.map((i) => (",
+    "    <span>{i}</span>",
+    "  ))}",
+    "  {cond && (",
+    "    <span>y</span>",
+    "  )}",
+    "  <!-- a comment",
+    "  <kbd>k</kbd> -->",
+    "  (",
+    "  <code>z</code>",
+    "</p>",
+    "<script>",
+    "  const s = 1",
+    "  <span>",
+    "</script>",
+    '<script type="application/ld+json" set:html={JSON.stringify(x => y)} />',
+    "<p>",
+    "  then",
+    "  <a",
+    '    href="/x">x</a>',
+    "</p>",
+    "<pre>",
+    "run the",
+    "<code>check</code>",
+    "</pre>",
+    "",
+  ].join("\n");
+
+  test("finds text meeting an inline tag across a line break, and nothing else", () => {
+    const r = run(repo({ "src/A.astro": page, "package.json": "{}" }), "check-spaces");
+    expect(r.code).toBe(1);
+    expect(
+      lines(r.out, "spaces").map((l) => l.match(/line (\d+):.*?meets <(\w+)>/)!.slice(1)),
+    ).toEqual([
+      ["6", "code"],
+      ["7", "code"],
+      ["8", "strong"],
+      ["9", "strong"],
+      ["10", "a"],
+      ["31", "a"],
+    ]);
+    const empty = run(
+      repo({ "src/B.astro": "---\n---\n<code>x</code>\n", "package.json": "{}" }),
+      "check-spaces",
+    );
+    expect(empty.code).toBe(0);
+  });
+
+  test("an allow entry keeps a flex case; a stale one is red", () => {
+    const allowed = (text: string) =>
+      repo({
+        "src/A.astro": "<h2>\n  <span></span>\n  Running\n</h2>\n",
+        "package.json": JSON.stringify({
+          scaffolding: { allow: [{ check: "spaces", path: "src/*.astro", text, reason: "flex" }] },
+        }),
+      });
+    expect(run(allowed("<span></span>"), "check-spaces").code).toBe(0);
+    expect(run(allowed("nothing"), "check-spaces").out).toContain("allow entry matches nothing");
   });
 });
 
