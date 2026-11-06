@@ -322,14 +322,13 @@ in its Git directory, or under `lfs.storage`). It is also the case where a commi
 being pushed to changes a path whose `filter` attribute is `lfs` or that is `lockable`
 (`.git/info/attributes` included). Git LFS reads the pushed commits itself, so a branch bringing LFS
 files the checked-out tree lacks still sends its objects. A commit counts as new until that remote's
-own tracking refs hold it, so a push to a second remote still sends objects only `origin` has.
-Any other push never starts git-lfs, which would otherwise verify locks against the remote on every
-push. A `.lfsconfig` alone starts nothing: git-lfs checks
-locks only on the files a push changes. Where git-lfs should run and is not on `PATH`, as under a
-client's narrower `PATH`, the push is refused. So a file committed raw under an LFS path on a machine
-without git-lfs is caught there. Where git-lfs runs, it decides as it does without this hook. The
-attributes are read from each pushed branch's tip, by a Git older than 2.40 from the checked-out
-tree.
+own tracking refs or the tips git reports for it hold it, so a push to a second remote still sends
+objects only `origin` has. Any other push never starts git-lfs, which would otherwise verify locks
+against the remote on every push. A `.lfsconfig` alone starts nothing: git-lfs checks locks only on
+the files a push changes. Where git-lfs should run and is not on `PATH`, as under a client's
+narrower `PATH`, the push is refused. So a file committed raw under an LFS path on a machine without
+git-lfs is caught there. Where git-lfs runs, it decides as it does without this hook. The attributes
+are read from each pushed branch's tip, by a Git older than 2.40 from the checked-out tree.
 
 ## Pipelines
 

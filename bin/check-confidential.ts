@@ -113,20 +113,22 @@ const report = (path: string, text: string, message: string) =>
 
 if (argv[0] === "prepush") {
   const input = readFileSync(0);
-  const locals = input
+  const lines = input
     .toString()
     .split("\n")
-    .map((line) => line.split(" ")[1])
-    .filter((local) => local && !/^0+$/.test(local));
+    .map((line) => line.split(" "));
+  const sha = (i: number) => lines.map((l) => l[i]).filter((s) => s && !/^0+$/.test(s));
+  const locals = sha(1);
   // New to the remote pushed to: a commit another remote already holds may still be missing there.
-  const fresh = (local: string) => [local, "--not", `--remotes=${argv[1]}`];
+  // Its tips from the input cover a push to a URL, which has no tracking refs.
+  const notOnRemote = ["--ignore-missing", "--not", `--remotes=${argv[1]}`, ...sha(3)];
   const file = join(root, ".confidential-purged.json");
   if (existsSync(file)) {
     const purged = JSON.parse(readFileSync(file, "utf8"));
     const bad = new Set<string>(purged.hashes);
     const h = hasher(purged.salt);
     const commits = locals.flatMap((local) =>
-      git(["rev-list", ...fresh(local)], root)
+      git(["rev-list", local, ...notOnRemote], root)
         .toString()
         .split("\n")
         .filter(Boolean),
@@ -143,12 +145,14 @@ if (argv[0] === "prepush") {
   // git-lfs stays off unless the push may carry LFS objects or touch a lockable file: it would
   // verify locks against the remote on every push.
   const common = resolve(root, git(["rev-parse", "--git-common-dir"], root).toString().trim());
-  const storage = spawnSync("git", ["config", "lfs.storage"], { cwd: root }).stdout.toString();
+  const storage = spawnSync("git", ["config", "--type=path", "lfs.storage"], {
+    cwd: root,
+  }).stdout.toString();
   // An empty objects folder holds nothing to upload.
   const holdsFile = (dir: string): boolean =>
     existsSync(dir) &&
     readdirSync(dir, { withFileTypes: true }).some(
-      (e) => e.isFile() || (e.isDirectory() && holdsFile(join(dir, e.name))),
+      (e) => e.isFile() || e.isSymbolicLink() || (e.isDirectory() && holdsFile(join(dir, e.name))),
     );
   const stores = [
     join(common, "lfs/objects"),
@@ -156,7 +160,7 @@ if (argv[0] === "prepush") {
   ];
   const lfsPath = (local: string) => {
     // latin1 keeps a path's bytes as they are, whatever its encoding.
-    const changed = git(["log", "--format=", "--name-only", "-z", ...fresh(local)], root)
+    const changed = git(["log", "--format=", "--name-only", "-z", local, ...notOnRemote], root)
       .toString("latin1")
       .split("\0")
       .filter(Boolean);

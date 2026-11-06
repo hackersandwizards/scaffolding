@@ -700,7 +700,7 @@ describe("check-confidential", () => {
     // A PATH holding git alone, so the machine's own git-lfs stays out of reach.
     const bare = temp();
     symlinkSync(Bun.which("git")!, join(bare, "git"));
-    const push = (dir: string, PATH: string, remote = "origin") => {
+    const push = (dir: string, PATH: string, remote = "origin", old = "0".repeat(40)) => {
       const head = sh(dir, ["rev-parse", "HEAD"]).stdout.toString().trim();
       return spawnSync(process.execPath, [bin("check-confidential"), "prepush", remote, "x"], {
         cwd: dir,
@@ -710,13 +710,13 @@ describe("check-confidential", () => {
           LFS_LOG: log,
           GIT_EXEC_PATH: bare,
         },
-        input: `refs/heads/main ${head} refs/heads/main ${"0".repeat(40)}\n`,
+        input: `refs/heads/main ${head} refs/heads/main ${old}\n`,
       }).status;
     };
     const logged = () => (existsSync(log) ? readFileSync(log, "utf8") : "");
-    const both = (dir: string, remote?: string) => [
-      push(dir, `${stub}:${bare}`, remote),
-      push(dir, bare, remote),
+    const both = (dir: string, remote?: string, old?: string) => [
+      push(dir, `${stub}:${bare}`, remote, old),
+      push(dir, bare, remote, old),
     ];
     // Nothing of LFS: git-lfs is never started, installed or not; a .lfsconfig and an empty store
     // hold no objects.
@@ -760,6 +760,9 @@ describe("check-confidential", () => {
     expect(both(raw)).toEqual([0, 0]);
     // A second remote lacks what origin holds, so the path is new there.
     expect(both(raw, "backup")).toEqual([3, 1]);
+    // A push to a URL has no tracking refs: the remote's tip from the input counts instead.
+    const before = sh(raw, ["rev-parse", "HEAD~1"]).stdout.toString().trim();
+    expect(both(raw, "/elsewhere.git", before)).toEqual([0, 0]);
     // .git/info/attributes counts as well.
     const info = repo({ "package.json": "{}", "a.bin": "x" });
     write(info, { ".git/info/attributes": "*.bin filter=lfs\n" });
