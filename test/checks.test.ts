@@ -1934,6 +1934,30 @@ describe("check-history", () => {
     ]);
   });
 
+  test("takes a one-digit month only before a year, a bracket or a comma", () => {
+    const r = run(
+      shipped({
+        "src/a.ts": "// the last line (the panel 1.1.)\n",
+        "src/b.ts": "// as written, 5.3.2026\n",
+        "src/c.ts": "// the panel 1.1., the rest\n",
+        "src/clean.ts": [
+          "// a gain of only 4.7.",
+          "// a gain of only 4.7. The rest stays.",
+          "// (since 2.11.3.)",
+          "// 1.2.3, 2.11.3 and 1.5.3.2",
+          "// 1.1.20261",
+          "",
+        ].join("\n"),
+      }),
+      "check-history",
+    );
+    expect(lines(r.out, "history").map((l) => l.replace(/ \(.*/, ""))).toEqual([
+      "[history] src/a.ts: date",
+      "[history] src/b.ts: date",
+      "[history] src/c.ts: date",
+    ]);
+  });
+
   test("a block comment opens neither inside a string nor inside url()", () => {
     const end = "const b = 'x'; // */\n";
     const r = run(

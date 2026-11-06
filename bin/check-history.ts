@@ -48,10 +48,11 @@ const HISTORY: [string, RegExp][] = [
       "g",
     ),
   ],
-  // A German date's month has two digits, so a decimal closing a sentence ("only 4.7.") is none.
+  // A one-digit month needs a year, a closing bracket or a comma after it, so a decimal closing a
+  // sentence ("only 4.7.") is none, and a date starts no later than a version's first part.
   [
     "date",
-    /\b20\d\d-\d\d-\d\d\b|\b(?:0?[1-9]|[12]\d|3[01])\.(?:0[1-9]|1[0-2])\.(?:20\d\d)?(?!\w)/g,
+    /\b20\d\d-\d\d-\d\d\b|(?<![\w.])(?:0?[1-9]|[12]\d|3[01])\.(?:(?:0[1-9]|1[0-2])\.(?:20\d\d)?|[1-9]\.(?:20\d\d|(?=[),])))(?!\w)/g,
   ],
   ["person", /\b(?:Benedikt|Stefan|Stemmildt|Munz)\b/g],
 ];
@@ -100,11 +101,15 @@ const controls = [
   ["// pushed every column's text down (7.00 in the same panel).", "review score"],
   ["Claude and Codex: 7.75 of 10 against 5.75 for both gaps).", "review score"],
   ["overall 8.4 vs 7.9", "review score"],
+  ["(blind review 1.1.)", "date"],
+  ["5.3.2026", "date"],
 ];
 const found: Finding[] = [];
 for (const [line, kind, file] of controls)
   if (!kinds(file ? readComments(file, line).join() : line).includes(kind))
     found.push({ check: "history", path: import.meta.path, text: line, message: `misses ${kind}` });
+if (kinds("only 4.7.").includes("date"))
+  found.push({ check: "history", path: import.meta.path, text: "only 4.7.", message: "hits date" });
 
 // A repository declaring no files, exports or bin ships nothing another repository reads.
 const pkg = readPackage(root);
