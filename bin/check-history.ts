@@ -12,7 +12,7 @@ const root = repoRoot();
 const itemsDir = join(root, "docs/agent-work/items");
 // The repository's own item ids, such as a slug without a prefix the generic pattern misses.
 const items = existsSync(itemsDir)
-  ? readdirSync(itemsDir).flatMap((f) => f.match(/^(.+-.+)\.md$/)?.[1] ?? [])
+  ? readdirSync(itemsDir).flatMap((f) => f.match(/^([a-z0-9]+(?:-[a-z0-9]+)+)\.md$/)?.[1] ?? [])
   : [];
 const HISTORY: [string, RegExp][] = [
   ["decision id", /\b(?:os\s+decision|decisions?\s+[a-z0-9]+(?:-[a-z0-9]+)+)/i],
@@ -27,13 +27,7 @@ const HISTORY: [string, RegExp][] = [
   ["date", /\b20\d\d-\d\d-\d\d\b|\b(?:0?[1-9]|[12]\d|3[01])\.(?:0[1-9]|1[0-2])\.(?:20\d\d)?(?!\w)/],
   ["person", /\b(?:Benedikt|Stefan|Stemmildt|Munz)\b/],
 ];
-if (items.length)
-  HISTORY.push([
-    "item id",
-    new RegExp(
-      `\\b(?:${items.map((id) => id.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")).join("|")})\\b`,
-    ),
-  ]);
+if (items.length) HISTORY.push(["item id", new RegExp(`\\b(?:${items.join("|")})\\b`)]);
 const kinds = (text: string) => HISTORY.filter(([, re]) => re.test(text)).map(([kind]) => kind);
 
 // Verbatim from comments that shipped in company packages: a pattern that stops hitting its line
