@@ -1060,7 +1060,7 @@ describe("catalog", () => {
     // No page of its own at pages/index: the catalog is the site's home.
     const home = readFileSync(join(dist, "index.html"), "utf8");
     expect(home).toContain('<header class="fx-header"><a href="/">Fx</a></header>');
-    expect(home).toContain("fx catalog/stories · 3 components · 23 states");
+    expect(home).toContain("fx catalog/stories · 3 components · 24 states");
     // The admin hub serves only on this machine: a built page carries no link to it.
     expect(home).not.toContain("admin.localhost");
     expect(home.indexOf(">Types <")).toBeLessThan(home.indexOf(">Parts <"));
@@ -1122,19 +1122,22 @@ describe("catalog", () => {
     const many = barOf(page("dashboard/Parts/many-parts/block-image"));
     expect(many).not.toContain("<ul");
     expect(many).toContain(
-      '<optgroup label="Block"><option value="/dashboard/Parts/many-parts/block-code">Block Code</option><option value="/dashboard/Parts/many-parts/block-image" selected>Block Image</option>',
+      '<optgroup label="Block"><option value="/dashboard/Parts/many-parts/block-code">Block code</option><option value="/dashboard/Parts/many-parts/block-image" selected>Block image</option>',
     );
     expect(many).toContain(
-      '<optgroup label="Theme"><option value="/dashboard/Parts/many-parts/accent-theme">Accent Theme</option>',
+      '<optgroup label="Theme"><option value="/dashboard/Parts/many-parts/accent-theme">Accent theme</option>',
     );
     expect(many).toContain(
-      '</optgroup><option value="/dashboard/Parts/many-parts/angebot-ohne-preise">Angebot Ohne Preise</option>',
+      '</optgroup><option value="/dashboard/Parts/many-parts/angebot-ohne-preise">Angebot ohne Preise</option>',
     );
-    // A state reads as its export name in words, each in its author's case, the first capitalised.
-    expect(many).toMatch(/many-parts\/density-on-pdf">Density On PDF</);
+    // A camelCase state reads in sentence case, an acronym kept; a name with underscores keeps its
+    // author's case. Either way the first word is capitalised.
+    expect(many).toMatch(/many-parts\/density-on-pdf">Density on PDF</);
     expect(many).toMatch(/">Folie 35 Eine Woche zum</);
     expect(many).toMatch(/">In German</);
-    expect(many).toMatch(/">Primary On Night</);
+    // So a German noun after the first word needs an underscore name.
+    expect(many).toMatch(/">Mit impressum</);
+    expect(many).toMatch(/">Primary on night</);
     // A plural acronym and a listed name with inner capitals stay whole.
     expect(many).toMatch(/many-parts\/two-pd-fs">Two PDFs</);
     expect(many).toMatch(/many-parts\/loading-git-hub">Loading GitHub</);
@@ -1149,7 +1152,7 @@ describe("catalog", () => {
     const routes = readdirSync(codegen, { recursive: true, encoding: "utf8" }).filter((f) =>
       f.endsWith(".astro"),
     );
-    expect(routes.length).toBe(46);
+    expect(routes.length).toBe(48);
     for (const f of routes)
       expect(readFileSync(join(codegen, f), "utf8")).not.toContain("client:load");
     // `copy`: each match at its own path, the rest of the folder left out.
