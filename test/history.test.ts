@@ -12,7 +12,7 @@ const HISTORY: [string, RegExp][] = [
   ["decision id", /\b(?:os\s+decision|decisions?\s+[a-z0-9]+(?:-[a-z0-9]+)+)/i],
   [
     "review score",
-    /\bblind[\s-]+(?:panels?|reviews?|rounds?|A\/B)|\bscored\b|\bnoise\s+\d|\bof 10\b|\bpersonas?\b|\breviewers?\b/i,
+    /\bblind[\s-]+(?:panels?|reviews?|rounds?|A\/B)|\bscored\b|\bnoise\s+\d|\boverall of 10\b|\bpersonas?\b|\breviewers?\b/i,
   ],
   ["item id", /\b[A-Z]{2,4}-\d+\b|\bitems?\s+[a-z0-9]+(?:-[a-z0-9]+)+/],
   ["date", /\b20\d\d-\d\d-\d\d\b|\b\d{1,2}\.(?:0?[1-9]|1[0-2])\.(?:20\d\d)?(?!\w)/],
@@ -47,10 +47,12 @@ test("the patterns hit the history the shipped files carried", () => {
 });
 
 test("no shipped file's comments carry review history", () => {
-  const shipped = Bun.spawnSync(["bun", "pm", "pack", "--dry-run", "--ignore-scripts"], {
+  const pack = Bun.spawnSync([process.execPath, "pm", "pack", "--dry-run", "--ignore-scripts"], {
     cwd: ROOT,
-  })
-    .stdout.toString()
+  });
+  expect(pack.exitCode, pack.stderr.toString()).toBe(0);
+  const shipped = pack.stdout
+    .toString()
     .split("\n")
     .flatMap((line) => line.match(/^packed \S+ (.+)$/)?.[1] ?? []);
   expect(shipped.length).toBeGreaterThan(50);

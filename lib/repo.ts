@@ -1,11 +1,13 @@
 import { spawnSync } from "node:child_process";
 import { existsSync, readFileSync } from "node:fs";
 
-/** A file's comments, by its kind: `#` lines for shell, Python, YAML, TOML and Git hooks, else
- * block, HTML and `//` comments, a `//` in a URL or a string's start excepted. Group 1 is the
- * character before a comment that a replacement keeps. */
+/** A file's comments, by its kind: `#` lines for shell, Python, YAML, TOML, Git hooks and the
+ * editor and Prettier ignore files, else block, HTML and `//` comments, a `//` in a URL or a
+ * string's start excepted. Group 1 is the character before a comment that a replacement keeps. */
 export const commentSyntax = (path: string) =>
-  /\.(?:sh|py|ya?ml|toml)$|(?:^|\/)\.githooks\//.test(path)
+  /\.(?:sh|py|ya?ml|toml)$|(?:^|\/)(?:\.githooks\/[^/.]+|\.editorconfig|\.prettierignore)$/.test(
+    path,
+  )
     ? /(^|\s)#.*/gm
     : /(^|[\s{])\/\*[\s\S]*?\*\/|<!--[\s\S]*?-->|(?<![:"'`\\])\/\/.*/gm;
 
