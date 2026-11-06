@@ -42,10 +42,15 @@
     padding: 0;
     list-style: none;
   }
+  /* At least 24 px high, WCAG 2.2's minimum target size, which Lighthouse's target-size audits:
+     a name at the UI size measured 21 to 23 px. */
   .hw-catalogue-rail a {
     display: flex;
     justify-content: space-between;
+    box-sizing: border-box;
+    align-items: center;
     gap: 0.5rem;
+    min-height: 1.5rem;
     padding: 0.25rem 0.5rem;
     border-radius: var(--hw-corner-sm, var(--radius-sm));
     color: inherit;

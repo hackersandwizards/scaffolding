@@ -31,13 +31,13 @@ The gate and `check-staged` also run these files from `bin/` by path; they are s
 so an install leaves them not executable. A `node_modules/.bin` link to one is left from an install
 before v0.9.0, which bun keeps: delete it.
 
-| Step                    | Runs in                     | Checks                                                                                                                                                                                                       |
-| ----------------------- | --------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| `check-coupling.ts`     | `bun run check`, pre-commit | No path leaves the repository, no import past a package's `exports`, every Git dependency pinned to a tag `node_modules` holds, no disk path into a company package outside CSS, and the CSS origin (below). |
-| `check-lock.ts`         | `scaffolding check`         | One gate at a time per checkout.                                                                                                                                                                             |
-| `check-unique-names.ts` | `bun run check`             | Every module-scope function name outside tests is defined once.                                                                                                                                              |
-| `check-spaces.ts`       | `bun run check`             | No line break in an `.astro` template where text meets an inline tag (below).                                                                                                                                |
-| `check-licenses.ts`     | `bun run check`, pre-commit | Every installed package's licence is on the allow list or an exception pins it (below); in pre-commit when `bun.lock` or `package.json` is staged.                                                           |
+| Step                    | Runs in                     | Checks                                                                                                                                                                                                                |
+| ----------------------- | --------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `check-coupling.ts`     | `bun run check`, pre-commit | No path leaves the repository, no import past a package's `exports`, every Git dependency pinned to a tag `node_modules` holds, no disk path into a company package outside a stylesheet, and the CSS origin (below). |
+| `check-lock.ts`         | `scaffolding check`         | One gate at a time per checkout.                                                                                                                                                                                      |
+| `check-unique-names.ts` | `bun run check`             | Every module-scope function name outside tests is defined once.                                                                                                                                                       |
+| `check-spaces.ts`       | `bun run check`             | No line break in an `.astro` template where text meets an inline tag (below).                                                                                                                                         |
+| `check-licenses.ts`     | `bun run check`, pre-commit | Every installed package's licence is on the allow list or an exception pins it (below); in pre-commit when `bun.lock` or `package.json` is staged.                                                                    |
 
 ## A new repository
 
@@ -208,7 +208,8 @@ this rule as a pure function, for a reader such as the admin hub: `pages` are th
 `srcDir/pages`, and it returns the catalog's path, `/` or `/catalog/` after the base, which `dev`
 drops. The preset calls it too.
 
-Every catalog page carries `<meta name="robots" content="noindex">`. Every page but a state alone
+Every catalog page carries `<meta name="robots" content="noindex">` and the `lead` as its
+`<meta name="description">`, so a repository's head adds neither. Every page but a state alone
 carries `data-hw-night`, so brand's `night.css` turns it under the theme toggle while a tile's
 preview keeps its own theme. The shell's own card and pill on the home carry `data-hw-shell`, for a
 check of the repository's elements to skip.
@@ -235,17 +236,17 @@ fails. `ASTRO_DEV_BACKGROUND=1` keeps it in the foreground and changes nothing f
 brand's `exports`; the shell's styles load only under `catalog/`; an engine's stylesheet loads where
 the engine's `package.json` lists it in `scaffolding.styles`, the stylesheets its components render
 with (`"styles": ["./styles/slides.css"]`); no other company package's CSS loads outside its own
-repository. A path into `node_modules` (a Tailwind `@source`) names the file on disk and passes
-where an `exports` entry targets it.
+repository. In a stylesheet, a path into `node_modules` names the file on disk and passes where an
+`exports` entry targets it, a font or image under a `/*` export included.
 
 **Installed paths.** Code, markup and data (every file `check-coupling` reads but stylesheets,
-`package.json` with its scripts and tests included) name no `node_modules/@hackersandwizards/...`
+Python, `package.json` with its scripts and tests included) name no `node_modules/@hackersandwizards/...`
 path, joined or as path segments: code takes a file through
 `import.meta.resolve("@hackersandwizards/brand/logos/mark.svg")`, which the package's `exports`
 answer (its folder through its `./package.json`), and a command from `node_modules/.bin`; a catalog
-page or its data names a file the preset's `copy` serves by its package path. Comments,
-`package.json`'s `scaffolding` field, a path after a Tailwind `@source`, `.css` paths (the CSS
-origin above) and the repository's own package are not checked. A script whose job is to read what is installed, or a test
+page or its data names a file the preset's `copy` serves by its package path. Comments, a
+Python docstring, `package.json`'s `scaffolding` field, a path after a Tailwind `@source` and the
+repository's own package are not checked; a `.css` path counts like any other. A script whose job is to read what is installed, or a test
 whose strings are data, keeps its path with an exception (below) narrowed by `text`.
 
 ## Exceptions

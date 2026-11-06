@@ -76,6 +76,9 @@ const acme = {
   }),
 };
 
+const installed =
+  "hard-coded path into an installed package: import.meta.resolve it through the package's exports (its ./package.json for the folder), run its command from node_modules/.bin, serve a catalog asset by its package path in the preset's copy, or name the exception in scaffolding.allow";
+
 describe("check-coupling", () => {
   const fx = repo({
     "package.json": JSON.stringify(fixturePackage, null, 2),
@@ -153,8 +156,10 @@ describe("check-coupling", () => {
     const dir = repo({
       "package.json": JSON.stringify({ name: "@hackersandwizards/fx" }),
       "node_modules/@hackersandwizards/brand/package.json": JSON.stringify({
-        exports: { "./tokens.css": "./tokens/tokens.css" },
+        exports: { "./tokens.css": "./tokens/tokens.css", "./fonts/*": "./tokens/fonts/*" },
       }),
+      "src/fonts.css":
+        '@font-face { src: url("../node_modules/@hackersandwizards/brand/tokens/fonts/inter.woff2"); }\n@font-face { src: url(../node_modules/@hackersandwizards/brand/fonts/inter.woff2); }\n@import "../node_modules/@hackersandwizards/brand/tokens.css";\n',
       "src/ok.css": '@import "@hackersandwizards/brand/tokens.css";\n@import "./own.css";\n',
       "src/own.css": "a { color: red; }\n",
       "src/self.ts": 'import "@hackersandwizards/fx/x.css";\n',
@@ -183,8 +188,11 @@ describe("check-coupling", () => {
     expect(found.sort()).toEqual([
       "[check-coupling] catalog/astro.config.ts: styles come from brand's exports, an engine's scaffolding.styles or this repository (@hackersandwizards/documents/doc.css)",
       "[check-coupling] src/admin.ts: styles come from brand's exports, an engine's scaffolding.styles or this repository (@hackersandwizards/admin/site.css)",
+      `[check-coupling] src/deck-disk.ts: ${installed} (node_modules/@hackersandwizards/slides/styles/slides.css)`,
       "[check-coupling] src/deck-other.css: styles come from brand's exports, an engine's scaffolding.styles or this repository (@hackersandwizards/slides/styles/x.css)",
-      "[check-coupling] src/deep.astro: not in the exports of @hackersandwizards/brand (@hackersandwizards/brand/expert/expert.css)",
+      `[check-coupling] src/deep.astro: ${installed} (node_modules/@hackersandwizards/brand/expert/expert.css)`,
+      "[check-coupling] src/fonts.css: a stylesheet names a disk path only to a file @hackersandwizards/brand exports (node_modules/@hackersandwizards/brand/fonts/inter.woff2)",
+      "[check-coupling] src/fonts.css: not in the exports of @hackersandwizards/brand (@hackersandwizards/brand/tokens.css)",
       "[check-coupling] src/named.css: not in the exports of @hackersandwizards/brand (@hackersandwizards/brand/tokens/tokens.css)",
       "[check-coupling] src/shell.ts: the catalog shell's styles load only under catalog/ (@hackersandwizards/scaffolding/catalog/catalog.css)",
     ]);
@@ -227,7 +235,8 @@ describe("check-coupling", () => {
         'export const css = `@source "../node_modules/@hackersandwizards/brand/elements";`;\n',
       "src/self.ts": 'export const own = "node_modules/@hackersandwizards/fx/x.svg";\n',
       "src/styles.css": '@source "../node_modules/@hackersandwizards/brand/elements";\n',
-      "tools/fonts.py": 'BRAND = "node_modules/@hackersandwizards/brand/tokens/fonts"\n',
+      "tools/fonts.py":
+        "# node_modules/@hackersandwizards/brand\ndef f():\n    \"\"\"Reads node_modules/@hackersandwizards/brand.\"\"\"\nBRAND = 'node_modules/@hackersandwizards/brand/tokens/fonts'\nLOGOS = ROOT / 'node_modules' / '@hackersandwizards' / 'brand' / 'logos'\n",
       "scripts/installed.ts": 'const dir = "node_modules/@hackersandwizards/";\n',
       "src/scope.ts": 'export const at = (n: string) => "node_modules/@hackersandwizards/" + n;\n',
       "og/template.html":
@@ -240,11 +249,11 @@ describe("check-coupling", () => {
       ".github/workflows/ci.yml": "# node_modules/@hackersandwizards/brand\non: push\n",
       "docs/notes.md": "node_modules/@hackersandwizards/brand/logos\n",
     });
-    const why =
-      "hard-coded path into an installed package: import.meta.resolve it through the package's exports (its ./package.json for the folder), run its command from node_modules/.bin, serve a catalog asset by its package path in the preset's copy, or name the exception in scaffolding.allow";
+    const why = installed;
     expect(lines(run(dir, "check-coupling").out, "check-coupling").sort()).toEqual([
       `[check-coupling] mails/brief.json: ${why} (node_modules/@hackersandwizards/brand/logos/avatar.png)`,
       `[check-coupling] og/template.html: ${why} (node_modules/@hackersandwizards/brand/logos/lockup.svg)`,
+      `[check-coupling] og/template.html: ${why} (node_modules/@hackersandwizards/brand/tokens/fonts.css)`,
       `[check-coupling] og/template.html: ${why} (node_modules/@hackersandwizards/brand/tokens/fonts/inter.woff2)`,
       `[check-coupling] package.json: ${why} (node_modules/@hackersandwizards/brand/logos/w.svg)`,
       `[check-coupling] scripts/fonts.sh: ${why} (node_modules/@hackersandwizards/brand/tokens/fonts/x.woff2)`,
@@ -256,6 +265,8 @@ describe("check-coupling", () => {
       `[check-coupling] src/scope.ts: ${why} (node_modules/@hackersandwizards/)`,
       `[check-coupling] src/segments.ts: ${why} (node_modules", "@hackersandwizards)`,
       `[check-coupling] test/story.test.ts: ${why} (node_modules/@hackersandwizards/slides)`,
+      `[check-coupling] tools/fonts.py: ${why} (node_modules' / '@hackersandwizards)`,
+      `[check-coupling] tools/fonts.py: ${why} (node_modules/@hackersandwizards/brand/tokens/fonts)`,
     ]);
   });
 
@@ -1220,6 +1231,8 @@ describe("catalog", () => {
     expect(root(page("stories/Parts/box-parts/two"))).toBe('{"hwScale":"screen"}');
     for (const p of ["", "dashboard/Parts/box-parts/two", "stories/Parts/box-parts/two", "catalog"])
       expect(page(p)).toContain('<meta name="robots" content="noindex">');
+    for (const p of ["", "dashboard/Parts/box-parts/two", "stories/Parts/box-parts/two"])
+      expect(page(p)).toContain('<meta name="description" content="Lead.">');
     // Every page of the catalog's former place forwards to its page at the root.
     expect(page("catalog/dashboard/Parts/box-parts/two")).toContain(
       'http-equiv="refresh" content="0; url=/dashboard/Parts/box-parts/two/"',
