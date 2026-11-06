@@ -138,14 +138,10 @@ hidden on every page. A state's page carries a bar instead: back to the home, th
 theme toggle, a link to the state alone, and the states: previous and next, with the left and right
 arrow keys too, the position ("10 of 38"), and between them a link per state, or above 12 states a
 menu grouped by a word three or more state names share (`BlockImage` under Block, `AccentTheme`
-under Theme). In a blind panel of three personas, each scored by Claude and Codex, this bar scored
-8.2 of 10 for 38 states, as did a list beside the canvas, and the earlier row of 38 chips 5.0 (noise
-1.0); the tie went to the bar, which keeps the canvas at full width. A camelCase state reads in
+under Theme). The bar, rather than a list beside the canvas, keeps the canvas at full width. A camelCase state reads in
 sentence case, `PrimaryOnNight` as "Primary on night", and keeps whole an acronym, a plural acronym
 (`TwoPDFs` as "Two PDFs") and a few names with inner capitals (GitHub, GitLab, LinkedIn, YouTube,
-JavaScript, TypeScript, OpenAI): in a blind panel of two personas, each scored by Claude and Codex,
-sentence case scored 8.25 to 9.0 of 10, the export name 6.0 to 7.0 and Title Case 6.5 to 7.5 (one
-run each, noise not measured). A name with underscores marks its words and keeps each in its
+JavaScript, TypeScript, OpenAI), which reads better than the export name or Title Case. A name with underscores marks its words and keeps each in its
 author's case, the first capitalised: `Angebot_ohne_Preise` reads "Angebot ohne Preise", where
 `AngebotOhnePreise` would read "Angebot ohne preise". So a German or proper-noun word after the
 first goes in an underscore name. Every page loads in full rather than through Astrobook's client
@@ -217,7 +213,7 @@ check of the repository's elements to skip.
 `astro dev` starts quietly: Vite's start-up scan reads the stories and the components they import,
 Astro adds the components under `srcDir`, and the preset pre-bundles the client router Astrobook's layout
 loads, so no dependency is found only when the first page loads. Slides' catalog, 240 pages without
-an `optimizeDeps` list of its own, found none late (06.11.2026).
+an `optimizeDeps` list of its own, found none late.
 Vite still says "Re-optimizing dependencies because lockfile has changed" once after each change to
 `bun.lock`; a dependency the scan cannot reach goes into the repository's `optimizeDeps.include`.
 

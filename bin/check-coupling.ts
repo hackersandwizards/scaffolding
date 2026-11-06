@@ -3,6 +3,7 @@ import { existsSync, readFileSync } from "node:fs";
 import { dirname, posix, resolve } from "node:path";
 import {
   applyAllow,
+  commentSyntax,
   finish,
   listFiles,
   readPackage,
@@ -27,7 +28,6 @@ const SCANNED =
   /\.(?:[cm]?[jt]sx?|astro|vue|svelte|css|scss|pcss|html|sh|py|json|jsonc|toml|ya?ml)$|^\.githooks\//;
 const IMPORTING = /\.(?:[cm]?[jt]sx?|astro|vue|svelte|css|scss|pcss|html)$/;
 const STYLES = /\.(?:css|scss|pcss)$/;
-const HASHED = /\.(?:sh|py|ya?ml|toml)$|^\.githooks\//;
 const TEST = /(?:^|\/)(?:__tests__|tests?|e2e)\/|\.(?:test|spec)\.[cm]?[jt]sx?$/;
 const SKIPPED = /(?:^|\/)(?:bun\.lock|package-lock\.json)$/;
 const UP = /(?<![\w./-])(?:\.\.\/)+[^\s"'`)\],;]*/g;
@@ -37,8 +37,6 @@ const CSS =
   /["'`(](?:[^"'`()\s]*?\/)??(node_modules\/)?(@hackersandwizards\/[\w.-]+)\/([^"'`()\s?#]+\.css)(?:[?#][^"'`()\s]*)?["'`)]/g;
 const INSTALLED =
   /node_modules[\s"'`,/\\)+]{1,8}(@hackersandwizards(?:\/[\w.-]*)?)(\/[^\s"'`)\]},;$?#]*)?/g;
-const COMMENT = /(^|[\s{])\/\*[\s\S]*?\*\/|<!--[\s\S]*?-->|(?<![:"'`\\])\/\/.*/gm;
-const HASH = /(^|\s)#.*/gm;
 // A docstring opens the file or the block a line ending in ":" starts.
 const DOCSTRING = /(^\s*|:[ \t]*\n\s*)(?:"""[\s\S]*?"""|'''[\s\S]*?''')/g;
 const SPECIFIER =
@@ -120,7 +118,7 @@ for (const path of listFiles(root, staged)) {
   // without using it.
   if (text.includes("@hackersandwizards"))
     for (const line of (path.endsWith(".py") ? text.replace(DOCSTRING, "$1") : text)
-      .replace(HASHED.test(path) ? HASH : COMMENT, "$1")
+      .replace(commentSyntax(path), "$1")
       .split("\n"))
       for (const m of line.matchAll(INSTALLED)) {
         if (m[1] === own || line.slice(0, m.index).includes("@source")) continue;

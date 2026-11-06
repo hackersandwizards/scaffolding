@@ -1,6 +1,7 @@
 import { expect, test } from "bun:test";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
+import { commentSyntax } from "../lib/repo.ts";
 
 // What the package ships is public wherever a consumer serves or bundles it, such as the catalog
 // shell's CSS on a Pages site: a comment in it states how to use the code and why, never the
@@ -19,22 +20,8 @@ const HISTORY: [string, RegExp][] = [
 ];
 const findHistory = (text: string) =>
   HISTORY.filter(([, re]) => re.test(text)).map(([kind]) => kind);
-// Block, HTML and line comments, and outside Markdown a line from `#` on; a `//` inside a URL is
-// no comment.
-const comments = (source: string, file = "") =>
-  (
-    source.match(
-      file.endsWith(".md")
-        ? /\/\*[\s\S]*?\*\/|<!--[\s\S]*?-->|(?<![:"'`\w])\/\/.*/g
-        : /\/\*[\s\S]*?\*\/|<!--[\s\S]*?-->|(?<![:"'`\w])\/\/.*|^\s*#.*/gm,
-    ) ?? []
-  ).join("\n");
-
-const shipped = Bun.spawnSync(["bun", "pm", "pack", "--dry-run"], { cwd: ROOT })
-  .stdout.toString()
-  .split("\n")
-  .flatMap((line) => line.match(/^packed \S+ (.+)$/)?.[1] ?? [])
-  .filter((f) => f !== "LICENSE");
+const comments = (source: string, path: string) =>
+  (source.match(commentSyntax(path)) ?? []).join("\n");
 
 test("the patterns hit the history the shipped files carried", () => {
   // Verbatim from the comments that shipped up to v2.10.0.
@@ -53,12 +40,19 @@ test("the patterns hit the history the shipped files carried", () => {
     ["which Benedikt found too slim to see", "person"],
   ])
     expect(findHistory(line)).toContain(kind);
-  expect(comments("a { b: c } /* one */ // two\nx = 'https://x.y'")).toBe("/* one */\n// two");
-  expect(comments("# hook 2026-11-02\nrun", "pre-commit")).toBe("# hook 2026-11-02");
-  expect(comments("# Heading\ntext", "README.md")).toBe("");
+  expect(comments("a { b: c } /* one */\n#id { x: 'https://x.y' } // two", "a.css")).toBe(
+    " /* one */\n// two",
+  );
+  expect(comments("# hook\nrun", "template/.githooks/pre-commit")).toBe("# hook");
 });
 
 test("no shipped file's comments carry review history", () => {
+  const shipped = Bun.spawnSync(["bun", "pm", "pack", "--dry-run", "--ignore-scripts"], {
+    cwd: ROOT,
+  })
+    .stdout.toString()
+    .split("\n")
+    .flatMap((line) => line.match(/^packed \S+ (.+)$/)?.[1] ?? []);
   expect(shipped.length).toBeGreaterThan(50);
   const hits = shipped
     .map((file) => ({
