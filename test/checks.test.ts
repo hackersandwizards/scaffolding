@@ -271,6 +271,18 @@ describe("check-coupling", () => {
     ]);
   });
 
+  test("a comment touching the code is no path, and a glob in a string hides none", () => {
+    const dir = repo({
+      "package.json": JSON.stringify({ name: "fx" }),
+      "src/a.css": "a{b:c;}/* node_modules/@hackersandwizards/brand/x.woff2 */\n",
+      "src/b.ts":
+        'const g = "src/*.ts";\nconst p = "node_modules/@hackersandwizards/brand/x.svg"; // */\n',
+    });
+    expect(lines(run(dir, "check-coupling").out, "check-coupling")).toEqual([
+      `[check-coupling] src/b.ts: ${installed} (node_modules/@hackersandwizards/brand/x.svg)`,
+    ]);
+  });
+
   test("an allow entry needs a reason and must still match", () => {
     const allow = (entries: object[]) =>
       repo({
@@ -1792,6 +1804,39 @@ describe("check-history", () => {
     const noVersion = surface({ name: "fx", files: ["a.ts"] });
     expect(noVersion.code).toBe(1);
     expect(noVersion.out).toContain("bun pm pack listed no files");
+  });
+
+  test("reads a block comment touching what precedes it, and a capitalised item", () => {
+    const r = run(
+      shipped({
+        "src/a.css": "a{b:c;}/* (Benedikt, 01.11.) */\n",
+        "src/b.css": 'a{content:"x"}/* OS-1 */\n',
+        "src/c.css": "a{b:red/* ok *//* blind panel */}\n",
+        "src/d.ts": "// Item new-claim-flow\n",
+      }),
+      "check-history",
+    );
+    expect(lines(r.out, "history").map((l) => l.replace(/ \(.*/, ""))).toEqual([
+      "[history] src/a.css: date",
+      "[history] src/a.css: person",
+      "[history] src/b.css: item id",
+      "[history] src/c.css: review score",
+      "[history] src/d.ts: item id",
+    ]);
+  });
+
+  test("a block comment opens neither inside a string nor inside url()", () => {
+    const end = "const b = 'x'; // */\n";
+    const r = run(
+      shipped({
+        "src/a.ts": `const a = ["src/*.ts", 'lib/*', \`x/*\`];\nconst d = 'OS-1 2026-11-01';\n${end}`,
+        "src/b.css": "a{b:url(/*.png)}\nc{d:url(x/*.png)}\ne{content:'OS-1'}\nf{g:h} /* */\n",
+        "src/c.ts": "const a = /\\/*x/;\nconst d = 'OS-1';\n" + end,
+      }),
+      "check-history",
+    );
+    expect(lines(r.out, "history")).toEqual([]);
+    expect(r.code).toBe(0);
   });
 
   test("an allow entry keeps a case; a stale one is red", () => {

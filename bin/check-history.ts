@@ -32,7 +32,7 @@ const HISTORY: [string, RegExp][] = [
   [
     "item id",
     new RegExp(
-      String.raw`\b[A-Z]{2,4}-\d+\b|\bitems?\s+[a-z0-9]+(?:-[a-z0-9]+)+` +
+      String.raw`\b[A-Z]{2,4}-\d+\b|\b[Ii]tems?\s+[a-z0-9]+(?:-[a-z0-9]+)+` +
         (items.length ? String.raw`|(?<![\w-])(?:${items.join("|")})(?![\w-])` : ""),
       "g",
     ),
@@ -46,8 +46,9 @@ const HISTORY: [string, RegExp][] = [
 ];
 const kinds = (text: string) => HISTORY.filter(([, re]) => text.match(re)).map(([kind]) => kind);
 
-// Verbatim from comments that shipped in company packages: a pattern that stops hitting its line
-// fails the step rather than letting every file pass.
+// Verbatim from comments that shipped in company packages, the last ones planted: a pattern that
+// stops hitting its line fails the step rather than letting every file pass. A line with a path
+// must first come out of that file as a comment.
 const controls = [
   ["sidebar does (blind review 2026-11-06, 2 personas x Claude and Codex: overall 8.4", "date"],
   ["+0.8 at noise 0.2 over no groups). */", "review score"],
@@ -60,10 +61,12 @@ const controls = [
   ["(Benedikt, 01.11.: the total sat indented", "person"],
   ["the notes where enough lines fit. Blind A/B, 28.10.2026: five of six", "date"],
   ...(items.length ? [[`see ${items[0]} for the rest`, "item id"]] : []),
+  ["a{b:c;}/* (Benedikt, 01.11.) */", "date", "a.css"],
+  ["Item new-claim", "item id"],
 ];
 const found: Finding[] = [];
-for (const [line, kind] of controls)
-  if (!kinds(line).includes(kind))
+for (const [line, kind, file] of controls)
+  if (!kinds(file ? (line.match(commentSyntax(file))?.join() ?? "") : line).includes(kind))
     found.push({ check: "history", path: import.meta.path, text: line, message: `misses ${kind}` });
 
 // A repository declaring no files, exports or bin ships nothing another repository reads.
