@@ -1,6 +1,7 @@
 import { afterAll, describe, expect, test } from "bun:test";
 import { spawnSync } from "node:child_process";
 import {
+  chmodSync,
   existsSync,
   mkdirSync,
   mkdtempSync,
@@ -1726,6 +1727,39 @@ describe("chrome", () => {
       expect(chromeBinary()).toBe("/opt/own-chrome");
     } finally {
       process.chdir(cwd);
+      process.env = saved;
+    }
+  });
+
+  test("on an empty cache, concurrent calls share one install, a found path is kept, a failed install runs again", async () => {
+    const { chromeBinaryAsync } = await import("../lib/chrome.ts");
+    const dir = temp();
+    const chrome = join(dir, "chrome");
+    const log = join(dir, "installs.log");
+    const flag = join(dir, "install-fails");
+    // Stands in for @puppeteer/browsers: logs each run, fails while the flag file exists.
+    write(dir, {
+      chrome: "",
+      "bin/bunx": `#!/bin/sh\necho run >> "${log}"\nsleep 0.3\n[ -e "${flag}" ] && exit 1\necho "${chrome}"\n`,
+      "install-fails": "",
+    });
+    chmodSync(join(dir, "bin/bunx"), 0o755);
+    const runs = () => readFileSync(log, "utf-8").split("\n").filter(Boolean).length;
+    const saved = { ...process.env };
+    process.env.PATH = `${join(dir, "bin")}:${process.env.PATH}`;
+    process.env.PUPPETEER_CACHE_DIR = join(dir, "empty-cache");
+    delete process.env.CHROME_BINARY;
+    try {
+      expect(await chromeBinaryAsync()).toBeUndefined();
+      rmSync(flag);
+      expect(await Promise.all([chromeBinaryAsync(), chromeBinaryAsync()])).toEqual([
+        chrome,
+        chrome,
+      ]);
+      expect(runs()).toBe(2);
+      expect(await chromeBinaryAsync()).toBe(chrome);
+      expect(runs()).toBe(2);
+    } finally {
       process.env = saved;
     }
   });
