@@ -26,6 +26,7 @@ const flag = (path: string, text: string, message: string) => {
 const SCANNED =
   /\.(?:[cm]?[jt]sx?|astro|vue|svelte|css|scss|pcss|html|sh|json|jsonc|toml|ya?ml)$|^\.githooks\//;
 const IMPORTING = /\.(?:[cm]?[jt]sx?|astro|vue|svelte|css|scss|pcss|html)$/;
+const CODE = /\.(?:[cm]?[jt]sx?|astro|vue|svelte)$/;
 const TEST = /(?:^|\/)(?:__tests__|tests?|e2e)\/|\.(?:test|spec)\.[cm]?[jt]sx?$/;
 const SKIPPED = /(?:^|\/)(?:bun\.lock|package-lock\.json)$/;
 const UP = /(?<![\w./-])(?:\.\.\/)+[^\s"'`)\],;]*/g;
@@ -33,6 +34,7 @@ const BRAND = "@hackersandwizards/brand";
 const SHELL = "@hackersandwizards/scaffolding";
 const CSS =
   /["'`(](?:[^"'`()\s]*?\/)??(node_modules\/)?(@hackersandwizards\/[\w.-]+)\/([^"'`()\s?#]+\.css)(?:[?#][^"'`()\s]*)?["'`)]/g;
+const INSTALLED = /node_modules\/(@hackersandwizards\/[\w.-]*)(\/[^\s"'`)\]},;$?#]*)?/g;
 const SPECIFIER =
   /(?:\bfrom\s*|\bimport\s*\(?\s*|\brequire\s*\(\s*|@(?:import|use|forward|source|plugin|reference|config)\s+(?:url\()?\s*)["'`]([^"'`\n]+)["'`]/g;
 
@@ -109,6 +111,19 @@ for (const path of listFiles(root, staged)) {
           "styles come from brand's exports, an engine's scaffolding.styles or this repository",
         );
       else if (!published) flag(path, spec, `not in the exports of ${name}`);
+    }
+  // Code reaches an installed company package through its exports or its bin, never by a disk path.
+  // A comment or a Tailwind @source line names the path without using it; CSS has its own rule.
+  if (CODE.test(path))
+    for (const line of text.split("\n")) {
+      if (/^\s*(?:\/\/|\/?\*)/.test(line) || line.includes("@source")) continue;
+      for (const [token, name, rest = ""] of line.matchAll(INSTALLED))
+        if (name !== own && !rest.endsWith(".css"))
+          flag(
+            path,
+            token,
+            "hard-coded path into an installed package: import.meta.resolve it through the package's exports, or run its command from node_modules/.bin",
+          );
     }
   for (const [, raw] of text.matchAll(SPECIFIER)) {
     const spec = raw.replace(/\?.*/, "");

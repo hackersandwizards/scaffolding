@@ -29,13 +29,13 @@ package's commands from `node_modules`, so each checkout, a new worktree include
 
 The gate and `check-staged` also run these files from `bin/` by path; they are steps, not commands:
 
-| Step                    | Runs in                     | Checks                                                                                                                                                      |
-| ----------------------- | --------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `check-coupling.ts`     | `bun run check`, pre-commit | No path leaves the repository, no import past a package's `exports`, every Git dependency pinned to a tag `node_modules` holds, and the CSS origin (below). |
-| `check-lock.ts`         | `scaffolding check`         | One gate at a time per checkout.                                                                                                                            |
-| `check-unique-names.ts` | `bun run check`             | Every module-scope function name outside tests is defined once.                                                                                             |
-| `check-spaces.ts`       | `bun run check`             | No line break in an `.astro` template where text meets an inline tag (below).                                                                               |
-| `check-licenses.ts`     | `bun run check`, pre-commit | Every installed package's licence is on the allow list or an exception pins it (below); in pre-commit when `bun.lock` or `package.json` is staged.          |
+| Step                    | Runs in                     | Checks                                                                                                                                                                                                   |
+| ----------------------- | --------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `check-coupling.ts`     | `bun run check`, pre-commit | No path leaves the repository, no import past a package's `exports`, every Git dependency pinned to a tag `node_modules` holds, no disk path into a company package in code, and the CSS origin (below). |
+| `check-lock.ts`         | `scaffolding check`         | One gate at a time per checkout.                                                                                                                                                                         |
+| `check-unique-names.ts` | `bun run check`             | Every module-scope function name outside tests is defined once.                                                                                                                                          |
+| `check-spaces.ts`       | `bun run check`             | No line break in an `.astro` template where text meets an inline tag (below).                                                                                                                            |
+| `check-licenses.ts`     | `bun run check`, pre-commit | Every installed package's licence is on the allow list or an exception pins it (below); in pre-commit when `bun.lock` or `package.json` is staged.                                                       |
 
 ## A new repository
 
@@ -231,6 +231,14 @@ the engine's `package.json` lists it in `scaffolding.styles`, the stylesheets it
 with (`"styles": ["./styles/slides.css"]`); no other company package's CSS loads outside its own
 repository. A path into `node_modules` (a Tailwind `@source`) names the file on disk and passes
 where an `exports` entry targets it.
+
+**Installed paths.** Code (`.js`, `.ts` and their variants, `.astro`, `.vue`, `.svelte`, tests
+included) names no `node_modules/@hackersandwizards/...` path: it takes a file through
+`import.meta.resolve("@hackersandwizards/brand/logos/mark.svg")`, which the package's `exports`
+answer, and a command from `node_modules/.bin`. Comments, lines naming a Tailwind `@source`, `.css`
+paths (the CSS origin above) and the repository's own package are not checked. A script whose job is
+to read what is installed, or a test whose strings are data, keeps its path with an exception
+(below) narrowed by `text`.
 
 ## Exceptions
 
