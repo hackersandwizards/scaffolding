@@ -30,7 +30,7 @@ export type CatalogOptions = {
   lead: string;
   /** The tile preview's viewport in CSS px, drawn whole and scaled to the tile, such as
    * [1440, 810] for a slide, or one per group, such as { Pages: [1440, 900] }; without one the
-   * first state draws at three quarters. */
+   * first state draws at three quarters, centred. */
   previewSize?: [number, number] | Record<string, [number, number]>;
   /** brand's data-hw-scale on <html> of every page that draws a story (a state's page and the
    * state alone), such as "screen"; without it such a page keeps what the repository's head sets,

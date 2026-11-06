@@ -8,7 +8,7 @@ export type CatalogItem = {
   note?: string;
   /** A short count or kind in a neutral pill, such as "3 states". */
   pill?: string;
-  /** A page drawn in the tile at three quarters, loaded when the tile scrolls into view. */
+  /** A page drawn in the tile at three quarters, centred, loaded when the tile scrolls into view. */
   frame?: string;
   /** The frame's viewport in CSS px, such as [1440, 810] for a slide: drawn whole, scaled to the
    * tile's width, instead of at three quarters in a fixed height. */
@@ -70,10 +70,32 @@ const catalogTile = (item: CatalogItem, group: string) =>
     item.note ? `<span class="hw-catalogue-note">${escapeCatalog(item.note)}</span>` : ""
   }${item.pill ? `<span class="hw-pill" data-tone="neutral" data-hw-shell>${escapeCatalog(item.pill)}</span>` : ""}</a></li>`;
 
-// Filters the tiles by every word in the search field and hides a group left empty, and scales each
-// sized frame to its tile's width; delegated on the document, so it holds across Astro's client
-// router swaps and runs once.
-const SCRIPT = `<script>(()=>{const fit=()=>{for(const p of document.querySelectorAll(".hw-catalogue-preview[data-frame-width]"))p.firstElementChild.style.transform="scale("+p.clientWidth/p.dataset.frameWidth+")";};fit();if(window.hwCatalogue)return;window.hwCatalogue=1;addEventListener("resize",fit);document.addEventListener("astro:page-load",fit);document.addEventListener("input",(e)=>{const f=e.target;if(!(f instanceof HTMLInputElement)||!f.matches(".hw-catalogue-search"))return;const q=f.value.trim().toLowerCase().split(/\\s+/);const root=f.closest(".hw-catalogue");for(const g of root.querySelectorAll(".hw-catalogue-group")){let n=0;for(const t of g.querySelectorAll(".hw-catalogue-tile")){const hit=q.every((w)=>t.dataset.search.includes(w));t.parentElement.hidden=!hit;if(hit)n++;}g.hidden=n===0;const link=root.querySelector('.hw-catalogue-rail a[href="#'+g.id+'"]');if(link)link.parentElement.hidden=n===0;}});})();</script>`;
+// Filters the tiles and the rail's names by every word in the search field and hides a group left
+// empty; draws each sized frame whole at its tile's width, and centres every other frame's content
+// on the content's own ground, shrunk where it is taller than the tile and measured afresh each
+// time, so a refit never shrinks it again, as Storybook's "centered"
+// layout does (blind review 2026-11-06). Delegated on the document, so it holds across Astro's
+// client router swaps and runs once.
+const SCRIPT = `<script>(()=>{
+const fit=(p)=>{const f=p.firstElementChild;if(!(f instanceof HTMLIFrameElement))return;
+if(p.dataset.frameWidth){f.style.transform="scale("+p.clientWidth/p.dataset.frameWidth+")";return;}
+const d=f.contentDocument,m=d&&(d.querySelector("main")||d.body);if(!m||!m.firstElementChild)return;f.style.height=f.style.transform="";
+const c=m.childElementCount===1?m.firstElementChild:m,r=c.getBoundingClientRect();if(!r.height)return;
+const s=Math.min(0.75,(p.clientHeight-16)/r.height,p.clientWidth/r.width);
+if(r.bottom>f.clientHeight)f.style.height=r.bottom+"px";
+f.style.transform="translate("+((p.clientWidth-r.width*s)/2-r.left*s)+"px,"+((p.clientHeight-r.height*s)/2-r.top*s)+"px) scale("+s+")";
+const ground=[c,m,d.body,d.documentElement].map((e)=>d.defaultView.getComputedStyle(e).backgroundColor).find((b)=>!/^(transparent|rgba\\(.*, 0\\))$/.test(b));
+if(ground)p.style.background=ground;};
+const all=()=>document.querySelectorAll(".hw-catalogue-preview").forEach(fit);all();
+if(window.hwCatalogue)return;window.hwCatalogue=1;
+let frame=0;addEventListener("resize",()=>{cancelAnimationFrame(frame);frame=requestAnimationFrame(all);});document.addEventListener("astro:page-load",all);
+document.addEventListener("load",(e)=>{const p=e.target.parentElement;if(e.target instanceof HTMLIFrameElement&&p&&p.matches(".hw-catalogue-preview")){fit(p);e.target.contentDocument?.fonts?.ready.then(()=>fit(p));}},true);
+document.addEventListener("input",(e)=>{const f=e.target;if(!(f instanceof HTMLInputElement)||!f.matches(".hw-catalogue-search"))return;
+const q=f.value.trim().toLowerCase().split(/\\s+/);const root=f.closest(".hw-catalogue");
+for(const g of root.querySelectorAll(".hw-catalogue-group")){let n=0;const link=root.querySelector('.hw-catalogue-rail a[href="#'+g.id+'"]'),names=link?.nextElementSibling?.children??[];
+g.querySelectorAll(".hw-catalogue-tile").forEach((t,i)=>{const hit=q.every((w)=>t.dataset.search.includes(w));t.parentElement.hidden=!hit;if(names[i])names[i].hidden=!hit;if(hit)n++;});
+g.hidden=n===0;if(link)link.parentElement.hidden=n===0;}});
+})();</script>`;
 
 export function renderCatalog(data: CatalogData): string {
   const { search = "Search", groups: groupsLabel = "Groups" } = data.labels ?? {};
@@ -81,7 +103,7 @@ export function renderCatalog(data: CatalogData): string {
   const rail = groups
     .map(
       (g) =>
-        `<li><a href="#${anchorOf(g.name)}"><span>${escapeCatalog(g.name)}</span><span class="hw-catalogue-count">${g.items.length}</span></a></li>`,
+        `<li><a href="#${anchorOf(g.name)}"><span>${escapeCatalog(g.name)}</span><span class="hw-catalogue-count">${g.items.length}</span></a><ul class="hw-catalogue-names">${g.items.map((i) => `<li><a href="${escapeCatalog(i.href)}">${escapeCatalog(i.name)}</a></li>`).join("")}</ul></li>`,
     )
     .join("");
   const sections = groups

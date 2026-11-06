@@ -1020,6 +1020,10 @@ describe("catalog", () => {
     // The admin hub serves only on this machine: a built page carries no link to it.
     expect(home).not.toContain("admin.localhost");
     expect(home.indexOf(">Types <")).toBeLessThan(home.indexOf(">Parts <"));
+    // The rail names every element under its group, linked to the state its tile draws.
+    expect(home).toMatch(
+      /<ul class="hw-catalogue-names"><li><a href="\/dashboard\/Parts\/box-parts\/two">BoxParts<\/a>/,
+    );
     expect(home).toContain('src="/stories/Types/box-types/two"');
     expect(readdirSync(join(dist, "stories/Parts/box-parts"))).toEqual(["one", "two"]);
     // `previewSize` per group: a Types tile draws its frame whole at 1440 x 900, a Parts tile at

@@ -127,8 +127,9 @@ at `/catalog/`. A `redirects` entry for `/` fails the build where the catalog is
 that moved to the root still answers every page of its former `/catalog/` path, a forwarding page in
 the build and a redirect in dev.
 
-The home's tiles are the catalog's one index; Astrobook draws each state, its sidebar hidden on
-every page. A state's page carries a bar instead: back to the home, the file's folder and name, the
+The home is the catalog's one index: its rail names every file under its group's label (on a phone
+the groups alone, as chips) and its tiles draw each file; Astrobook draws each state, its sidebar
+hidden on every page. A state's page carries a bar instead: back to the home, the file's folder and name, the
 theme toggle, a link to the state alone, and the states: previous and next, with the left and right
 arrow keys too, the position ("10 of 38"), and between them a link per state, or above 12 states a
 menu grouped by a word three or more state names share (`BlockImage` under Block, `AccentTheme`
@@ -140,11 +141,14 @@ repository's `head` sets on `<html>` and left its page scripts unrun.
 
 The shell (`catalog/`: Layout, Home, Head, `render.ts`, which draws the rail and tiles, and
 `catalog.css`) reads brand's token roles by name only, and the repository's `css` supplies them.
+Its shapes follow brand's rule: the brand corner for a preview and a worded button, the small corner
+for the search field, a rail row and the state menu, round for the state chips and the arrows.
 The options beyond those above:
 
 - `previewSize`: the tile preview's viewport in CSS px, drawn whole and scaled to the tile, for
   every group (`[794, 1123]`) or per group (`{ Pages: [1440, 900] }`); a tile without one draws its
-  state at three quarters.
+  state at three quarters, centred on the state's own ground and shrunk where it is taller than the
+  tile.
 - `storyScale`: brand's `data-hw-scale` on every page that draws a story, a state's page and the
   state alone, such as `"screen"`; without it such a page keeps what the repository's `head` sets,
   else brand's default. The home is always `"dense"`.

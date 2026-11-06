@@ -30,7 +30,7 @@
     margin-bottom: 1rem;
     padding: 0 0.75rem;
     border: 1px solid var(--hw-cat-line);
-    border-radius: var(--radius-sm);
+    border-radius: var(--hw-corner-sm, var(--radius-sm));
     background: transparent;
     color: inherit;
     font: inherit;
@@ -47,13 +47,31 @@
     justify-content: space-between;
     gap: 0.5rem;
     padding: 0.25rem 0.5rem;
-    border-radius: var(--radius-sm);
+    border-radius: var(--hw-corner-sm, var(--radius-sm));
     color: inherit;
     font-size: var(--text-ui, 0.875rem);
     text-decoration: none;
   }
   .hw-catalogue-rail a:hover {
     background: color-mix(in srgb, var(--hw-cat-fg) 6%, transparent);
+  }
+  /* Wide, the rail lists every element by name under its group's label, as a component library's
+     sidebar does (blind review 2026-11-06, 2 personas x Claude and Codex: overall 8.4 of 10 over
+     5.8 for groups alone and 7.6 for names indented under bold groups, noise 0). */
+  .hw-catalogue-rail .hw-catalogue-names {
+    margin: 0 0 1rem;
+  }
+  @media (width > 48rem) {
+    .hw-catalogue-rail > nav > ul > li > a {
+      color: var(--hw-cat-muted);
+      font-family: var(--font-mono);
+      font-size: var(--text-micro, 0.75rem);
+      letter-spacing: 0.06em;
+      text-transform: uppercase;
+    }
+    .hw-catalogue-rail > nav > ul > li > a .hw-catalogue-count {
+      display: none;
+    }
   }
   .hw-catalogue-count {
     color: var(--hw-cat-muted);
@@ -117,11 +135,13 @@
     display: block;
     box-sizing: border-box;
     width: 100%;
-    height: 13.5rem;
+    /* A small element fills more of a short frame; the script centres it and shrinks a taller one. */
+    height: 10rem;
     margin-bottom: 0.25rem;
     overflow: hidden;
     border: 1px solid var(--hw-cat-line);
-    border-radius: var(--radius-sm);
+    /* A picture holds content: the brand corner, at the medium's size. */
+    border-radius: var(--hw-card-corner, var(--radius-brand));
     background: var(--background, var(--color-bg));
   }
   .hw-catalogue-preview iframe {
@@ -181,6 +201,9 @@
     }
     .hw-catalogue-rail li {
       flex: none;
+    }
+    .hw-catalogue-rail .hw-catalogue-names {
+      display: none;
     }
     .hw-catalogue-rail a {
       align-items: center;

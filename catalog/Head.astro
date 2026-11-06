@@ -92,12 +92,23 @@ const root = {
     gap: 0.5rem 1rem;
     margin-inline-start: auto;
   }
+  /* brand's shapes: a worded button the brand corner, a field the small corner, an arrow alone
+     round. */
   .hw-catalogue-bar :is(button, select, [rel]) {
     padding: 0 0.625rem;
     border: 1px solid color-mix(in srgb, currentColor 25%, transparent);
-    border-radius: 0.375rem;
+    border-radius: var(--hw-card-corner, var(--radius-brand));
     background: transparent;
     cursor: pointer;
+  }
+  .hw-catalogue-bar select[data-hw-states] {
+    border-radius: var(--hw-corner-sm, var(--radius-sm));
+  }
+  .hw-catalogue-bar [rel] {
+    justify-content: center;
+    min-width: 1.75rem;
+    padding: 0;
+    border-radius: var(--radius-pill, 999px);
   }
   .hw-catalogue-bar button[aria-pressed="true"] {
     background: color-mix(in srgb, currentColor 12%, transparent);
@@ -127,7 +138,7 @@ const root = {
   .hw-catalogue-states li a {
     padding: 0 0.625rem;
     border: 1px solid color-mix(in srgb, currentColor 20%, transparent);
-    border-radius: 999px;
+    border-radius: var(--radius-pill, 999px);
   }
   .hw-catalogue-states li a[aria-current] {
     border-color: currentColor;
