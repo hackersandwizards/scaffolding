@@ -11,6 +11,6 @@ export const VisualBars = { args: { label: "visual bars" } };
 export const VisualCards = { args: { label: "visual cards" } };
 export const VisualFlow = { args: { label: "visual flow" } };
 export const CenteredLayout = { args: { label: "centered layout" } };
-export const Density = { args: { label: "density" } };
+export const DensityOnPDF = { args: { label: "density on pdf" } };
 export const Specimen = { args: { label: "specimen" } };
 export const Specimen2 = { args: { label: "specimen 2" } };

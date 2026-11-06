@@ -1078,14 +1078,16 @@ describe("catalog", () => {
     const many = barOf(page("dashboard/Parts/many-parts/block-image"));
     expect(many).not.toContain("<ul");
     expect(many).toContain(
-      '<optgroup label="Block"><option value="/dashboard/Parts/many-parts/block-code">Block Code</option><option value="/dashboard/Parts/many-parts/block-image" selected>Block Image</option>',
+      '<optgroup label="Block"><option value="/dashboard/Parts/many-parts/block-code">Block code</option><option value="/dashboard/Parts/many-parts/block-image" selected>Block image</option>',
     );
     expect(many).toContain(
-      '<optgroup label="Theme"><option value="/dashboard/Parts/many-parts/accent-theme">Accent Theme</option>',
+      '<optgroup label="Theme"><option value="/dashboard/Parts/many-parts/accent-theme">Accent theme</option>',
     );
     expect(many).toContain(
-      '</optgroup><option value="/dashboard/Parts/many-parts/centered-layout">Centered Layout</option>',
+      '</optgroup><option value="/dashboard/Parts/many-parts/centered-layout">Centered layout</option>',
     );
+    // A state reads in sentence case, an acronym kept.
+    expect(many).toMatch(/many-parts\/density-on-pdf">Density on PDF</);
     expect(state).toContain("main.prepend(bar.content.cloneNode(true))");
     expect(page("stories/Parts/box-parts/two")).not.toContain('id="hw-catalogue-bar"');
     expect(home).not.toContain('id="hw-catalogue-bar"');
@@ -1158,6 +1160,13 @@ describe("catalog", () => {
     const { chromeArgs, chromeBinary, INSTALL_HINT } = await import("../lib/chrome.ts");
     const fixture = join(import.meta.dir, "fixture");
     made.push(join(fixture, "catalog", ".astro"), join(fixture, "catalog", "node_modules"));
+    // Modules at paths a forward would take, as a site whose Astro root holds catalog/ serves its
+    // catalog/Head.astro and catalog/stories/ under the base /catalog.
+    for (const dir of ["fx", "catalog/stories"]) {
+      mkdirSync(join(fixture, "catalog", dir), { recursive: true });
+      writeFileSync(join(fixture, "catalog", dir, "mod.css"), "a {\n  color: red;\n}\n");
+    }
+    made.push(join(fixture, "catalog", "fx"), join(fixture, "catalog", "catalog"));
     const astro = join(import.meta.dir, "..", "node_modules", ".bin", "astro");
     // ASTRO_DEV_BACKGROUND=1, as the README's dev script: under an agent astro dev otherwise moves
     // into the background and resolves --root from inside the folder.
@@ -1199,6 +1208,9 @@ describe("catalog", () => {
         const r = await fetch(`${server.url}${old}`, { redirect: "manual" });
         expect([r.status, r.headers.get("location")]).toEqual([301, to]);
       }
+      // A file under the root is a module, not a page: it stays where it is.
+      for (const path of ["/fx/mod.css", "/catalog/stories/mod.css"])
+        expect((await fetch(`${server.url}${path}`, { redirect: "manual" })).status).toBe(200);
       // A page of the site's own under /catalog/ is not one of the catalog's former pages.
       expect((await fetch(`${server.url}/catalog/print/`, { redirect: "manual" })).status).not.toBe(
         301,

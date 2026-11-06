@@ -7,7 +7,7 @@ shell of its catalog.
 To work on the package itself, see [Developing the package](#developing-the-package).
 
 ```sh
-bun add -d github:hackersandwizards/scaffolding#v2.3.0
+bun add -d github:hackersandwizards/scaffolding#v2.5.0
 ```
 
 Requirements: bun 1.3 or newer, gitleaks (`brew install gitleaks`), `pdftotext` from poppler, and
@@ -135,7 +135,10 @@ arrow keys too, the position ("10 of 38"), and between them a link per state, or
 menu grouped by a word three or more state names share (`BlockImage` under Block, `AccentTheme`
 under Theme). In a blind panel of three personas, each scored by Claude and Codex, this bar scored
 8.2 of 10 for 38 states, as did a list beside the canvas, and the earlier row of 38 chips 5.0 (noise
-1.0); the tie went to the bar, which keeps the canvas at full width. Every page loads in full
+1.0); the tie went to the bar, which keeps the canvas at full width. A state reads in sentence case,
+`PrimaryOnNight` as "Primary on night", an acronym kept: in a blind panel of two personas, each
+scored by Claude and Codex, sentence case scored 8.25 to 9.0 of 10, the export name 6.0 to 7.0 and
+Title Case 6.5 to 7.5 (one run each, noise not measured). Every page loads in full
 rather than through Astrobook's client router, which swapped pages in place and so dropped what a
 repository's `head` sets on `<html>` and left its page scripts unrun.
 
@@ -175,7 +178,9 @@ The options beyond those above:
 
 A project Pages site, published under `/<repo>/`, sets Astro's `base: "/<repo>"` in its
 `defineConfig`; the catalog's links and the header's default link follow it in the build. `astro
-dev` serves at the root and redirects a path under the base there. A base ending in `/catalog`
+dev` serves at the root and redirects a page under the base there, so a site sets the base for dev
+and build alike. A file Vite serves, a module under the Astro root such as `/catalog/Head.astro`
+or a file in `public/`, stays where it is. A base ending in `/catalog`
 mounts the catalog under a host with a home of its own, such as a Worker's site: the build leaves
 out `public/`, which the host serves, and writes no forwarding pages.
 

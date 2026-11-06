@@ -17,10 +17,12 @@ const mod = id
   ? (modules as StoryModule[]).find((m) => m.stories.some((s) => s.id === id))
   : undefined;
 const folder = (mod?.directory || "Components").split("/").join(" / ");
-const all = (mod?.stories ?? []).map((s) => ({
-  ...s,
-  words: s.name.match(/\p{Lu}+(?!\p{Ll})|\p{Lu}?\p{Ll}+|\p{N}+/gu) ?? [s.name],
-}));
+// A state reads in sentence case, "PrimaryOnNight" as "Primary on night", an acronym kept.
+const all = (mod?.stories ?? []).map((s) => {
+  const words = s.name.match(/\p{Lu}+(?!\p{Ll})|\p{Lu}?\p{Ll}+|\p{N}+/gu) ?? [s.name];
+  const label = words.map((w) => (/^\p{Lu}+$/u.test(w) ? w : w.toLowerCase())).join(" ");
+  return { ...s, words, label: label[0].toUpperCase() + label.slice(1) };
+});
 type State = (typeof all)[number];
 // Above FOLD states a menu groups them by a word three or more names share, the first word before
 // the last: "BlockImage" under "Block", "AccentTheme" under "Theme"; the rest come last.
@@ -185,7 +187,7 @@ const root = {
               {[...groups, ["", rest] as const].map(([group, list]) => {
                 const options = list.map((s) => (
                   <option value={href(s)} selected={s.id === id}>
-                    {s.words.join(" ")}
+                    {s.label}
                   </option>
                 ));
                 return group ? <optgroup label={group}>{options}</optgroup> : options;
@@ -196,7 +198,7 @@ const root = {
               {states.map((s) => (
                 <li>
                   <a href={href(s)} aria-current={s.id === id ? "page" : undefined}>
-                    {s.name}
+                    {s.label}
                   </a>
                 </li>
               ))}

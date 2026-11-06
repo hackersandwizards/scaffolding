@@ -174,6 +174,7 @@ export function catalog(options: CatalogOptions): AstroIntegration {
           ? { ...inParams, config: inParams.updateConfig({ base: "/" }) }
           : inParams;
         const root = fileURLToPath(params.config.root);
+        const publicDir = fileURLToPath(params.config.publicDir);
         const own = basename(root) === "catalog";
         repo = packageDir(root);
         base = params.config.base.replace(/\/$/, "");
@@ -196,8 +197,19 @@ export function catalog(options: CatalogOptions): AstroIntegration {
             atRoot && /^\/catalog(\/(dashboard|stories)(\/|$)|\/?$)/.test(unbased)
               ? strip(unbased, "/catalog")
               : unbased;
+          // A file Vite serves, a module under the root such as catalog/Head.astro or a public
+          // file, is not a page.
+          const file = decoded(path);
+          if (
+            now === path ||
+            (!file.split("/").includes("..") &&
+              [root, publicDir].some((dir) =>
+                statSync(join(dir, file), { throwIfNoEntry: false })?.isFile(),
+              ))
+          )
+            return undefined;
           // "//host" in a Location header leaves the site.
-          return now === path ? undefined : now.replace(/^\/+/, "/");
+          return now.replace(/^\/+/, "/");
         };
         const stories = storiesDir(root);
         const pkgFile = join(repo, "package.json");
