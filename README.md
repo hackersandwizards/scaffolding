@@ -86,13 +86,14 @@ the step with that reason.
 in a shipped file says how to use the code and why, and the history behind it goes to the commit
 message. The step reads the comments of every text file `bun pm pack` lists, without their marks
 and with consecutive comment lines joined, so an id or a score wrapped across a line break counts.
-It flags review scores and panels, a comparison of two scores (`7.94 against 7.29`, `8.4 vs 7.9`,
-never a version), dates, decision ids, item ids (the generic `AB-1` form and the repository's own
+It flags review scores and panels, a comparison of two scores (`7.94 against 7.29`, `8.4 vs 7.9`;
+a three-part version or a number after a capitalised name such as `Python 3.11` is none), dates, decision ids, item ids (the generic `AB-1` form and the repository's own
 `docs/agent-work/items/` names), paths to review notes and the founders' names. It first checks each
 pattern against a line that shipped once, so a pattern that stops matching turns the step red. A
 repository whose `package.json` declares no `files`, `exports` or `bin` ships nothing, and passes;
 one that does needs a `version` for `bun pm pack`. A
-date that is an example of a format gets an allow entry with `text`.
+date that is an example of a format, or a comparison of plain decimals such as `1.5 against 1.25`,
+gets an allow entry with `text`, which reads the comment without its marks.
 
 `uniqueNames` lists names the framework dictates, which the unique-names step lets repeat. Every
 step in `scaffolding.check` is a script named `check:<what>`. `"private": true` skips the

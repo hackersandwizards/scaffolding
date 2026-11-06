@@ -21,16 +21,22 @@ const itemsDir = join(root, "docs/agent-work/items");
 const items = existsSync(itemsDir)
   ? readdirSync(itemsDir).flatMap((f) => f.match(/^([a-z0-9]+(?:-[a-z0-9]+)+)\.md$/)?.[1] ?? [])
   : [];
+const SCORE = String.raw`(?:10\.00?|\d\.\d\d?)`;
 const HISTORY: [string, RegExp][] = [
   ["decision id", /\b(?:os\s+decision|decisions?\s+[a-z0-9]+(?:-[a-z0-9]+)+)/gi],
   [
     "review score",
     /\bblind[\s-]+(?:panels?|reviews?|rounds?|runs?|A\/B)|\bscored\b|\bnoise\s+\d|\boverall of 10\b|\bpersonas?\b|\breviewers?\b/gi,
   ],
-  // A score runs to 10 and has two parts, so a version such as 2.11.1 or v1.2, or 18.2, is none.
+  // A score has two parts and runs to 10. A three-part version, v1.2, HTTP/1.1 and a number after
+  // a capitalised name such as Python 3.11 are none.
   [
     "review score",
-    /(?<![\w.])(?:10|\d)\.\d\d?\s+(?:(?:against|vs\.?|versus)\s+(?:10|\d)\.\d\d?(?!\w|\.\d)|of\s+10\b|in\s+the\s+same\s+panel\b)/gi,
+    new RegExp(
+      String.raw`(?<![\w./])(?<!\b[A-Z]\w*\s)${SCORE}\s+` +
+        String.raw`(?:(?:against|vs\.?)\s+${SCORE}(?!\w|\.\d)|of\s+10\b|in\s+the\s+same\s+panel\b)`,
+      "g",
+    ),
   ],
   // A review note, not the item folder the admin layout names.
   ["review pointer", /\bdocs\/agent-work\/(?!items\b)\S/g],
@@ -51,24 +57,22 @@ const HISTORY: [string, RegExp][] = [
 ];
 const kinds = (text: string) => HISTORY.filter(([, re]) => text.match(re)).map(([kind]) => kind);
 
-/** A file's comments without their marks, one string for lines only a line break separates, so an
- * id or a score wrapped across two lines reads whole. */
+/** A file's comments without their marks, one string per paragraph, so an id or a score wrapped
+ * across two lines reads whole. Comments only a line break separates are one comment. */
 function readComments(path: string, text: string): string[] {
   const read: string[] = [];
   let end = 0;
   for (const m of text.matchAll(commentSyntax(path))) {
     const mark = m.index + m[0].search(/\/[/*]|<!--|#/);
-    const body = text
-      .slice(mark, m.index + m[0].length)
-      .replace(/^\s*(?:\/\/+|\/\*+|<!--|\*+\/?|-->|#+)|(?:\*+\/|-->)\s*$/gm, "")
-      .replace(/\s+/g, " ")
-      .trim();
-    if (read.length && /^[ \t]*\r?\n?[ \t]*$/.test(text.slice(end, mark)))
-      read[read.length - 1] += ` ${body}`;
-    else read.push(body);
+    const gap = text.slice(end, mark);
     end = m.index + m[0].length;
+    const body = text
+      .slice(mark, end)
+      .replace(/^[ \t]*(?:\/\/+|\/\*+|<!--|\*+\/?|-->|#+)|(?:\*+\/|-->)[ \t]*$/gm, "");
+    if (read.length && /^[ \t]*\r?\n?[ \t]*$/.test(gap)) read[read.length - 1] += `\n${body}`;
+    else read.push(body);
   }
-  return read;
+  return read.flatMap((c) => c.split(/\n\s*\n/)).map((c) => c.replace(/\s+/g, " ").trim());
 }
 
 // Verbatim from comments that shipped in company packages, the last ones planted: a pattern that
@@ -95,6 +99,7 @@ const controls = [
   ],
   ["// pushed every column's text down (7.00 in the same panel).", "review score"],
   ["Claude and Codex: 7.75 of 10 against 5.75 for both gaps).", "review score"],
+  ["overall 8.4 vs 7.9", "review score"],
 ];
 const found: Finding[] = [];
 for (const [line, kind, file] of controls)
