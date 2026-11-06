@@ -7,7 +7,7 @@ shell of its catalog.
 To work on the package itself, see [Developing the package](#developing-the-package).
 
 ```sh
-bun add -d github:hackersandwizards/scaffolding#v2.6.2
+bun add -d github:hackersandwizards/scaffolding#v2.7.1
 ```
 
 Requirements: bun 1.3 or newer, gitleaks (`brew install gitleaks`), `pdftotext` from poppler, and
@@ -173,9 +173,10 @@ The options beyond those above:
 - `head`: the repository's own `<head>` component, rendered on every page.
 - `header`: default brand's `AppHeader` and `header.css`.
 - `home`: a page of the repository that renders `Home.astro`, its foundations in the default slot
-  and a control such as a theme toggle in the `nav` slot. Every paragraph above the tiles, the
-  slot's own included, takes the lead's measure (48rem) and leading (1.5), unless a class of the
-  repository's sets its own. How long the slot's text runs is the repository's: each line it adds
+  and a control such as a theme toggle in the `nav` slot. The running text above the tiles takes
+  the lead's measure (48rem) and leading (1.5), unless a class of the repository's sets its own: a
+  paragraph of the slot, of a wrapper element in it, or of a `details` or `section` in that
+  wrapper. A paragraph deeper down, in the slot's own grid or tile, keeps its width. How long the slot's text runs is the repository's: each line it adds
   pushes the first tiles down.
 - `copy`: globs, relative to the repository, of files the built pages reach by a relative path
   rather than through Vite, such as brand's stylesheets under `node_modules`. Each match lands in
@@ -308,13 +309,17 @@ checkout fetches on its own.
   refuses to build without `/usr/share/dict/words`.
 
 A repository with `"scaffolding": { "private": true }` skips the check. It keeps no `commit-msg`
-hook, and its `pre-push` hands the refs to Git LFS where a `.gitattributes` in any folder tracks a
-file with it or that search fails, and starts bun only to refuse the
-commits a `.confidential-purged.json` lists. `check-structure --fix` removes the one and writes the
-other.
+hook, and its `pre-push` starts bun only to refuse the commits a `.confidential-purged.json` lists.
+`check-structure --fix` removes the one and writes the other.
 
 `check-confidential purged <sha>...` writes `.confidential-purged.json`: after a history rewrite,
 the pre-push hook refuses a push from an old clone that still carries one of those commits.
+
+Both `pre-push` hooks then hand every push to `git lfs pre-push`, which reads the pushed commits
+and uploads nothing where they carry no pointer, so a branch bringing LFS files the checked-out tree
+lacks still sends its objects. Without git-lfs on `PATH` a hook refuses the push only where the
+repository keeps an LFS store (`lfs/objects` in its Git directory, or `lfs.storage` set): objects to
+upload can sit nowhere else, and a store points at a git-lfs that a client's narrower `PATH` hides.
 
 ## Pipelines
 

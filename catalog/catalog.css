@@ -90,12 +90,17 @@
     font-size: var(--text-page, 1.5rem);
     line-height: 1.25;
   }
-  /* Every paragraph above the tiles, a repository's own in the home's slot included, at one
-     measure and leading; at no specificity, so a class in this layer or unlayered wins. The provenance
-     line reads in the sans at the UI size (blind review 2026-11-06, 2 personas x Claude and Codex:
-     8.4 of 10 over 8.2 for mono at 13px, 7.6 for mono at 11px and 6.8 for the slot at full width,
-     noise 1.0). */
-  :where(.hw-catalogue-main > p, .hw-catalogue-main > :not(section) p) {
+  /* The running text above the tiles at one measure and leading: a paragraph of the main, of a
+     wrapper the home's slot puts there, or of a details or section in that wrapper. A paragraph
+     deeper down sits in a repository's own grid or tile and keeps its width. At no specificity,
+     so a class in this layer or unlayered wins. The provenance line reads in the sans at the UI
+     size (blind review 2026-11-06, 2 personas x Claude and Codex: 8.4 of 10 over 8.2 for mono at
+     13px, 7.6 for mono at 11px and 6.8 for the slot at full width, noise 1.0). */
+  :where(
+    .hw-catalogue-main > p,
+    .hw-catalogue-main > :not(section) > p,
+    .hw-catalogue-main > :not(section) > :is(details, section) > p
+  ) {
     max-width: 48rem;
     line-height: 1.5;
   }

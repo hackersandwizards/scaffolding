@@ -694,48 +694,37 @@ describe("check-confidential", () => {
     expect(push(clean).status).toBe(0);
   });
 
-  test("both pre-push hooks hand the refs to Git LFS where a folder's .gitattributes tracks a file", () => {
+  test("both pre-push hooks hand every push to Git LFS, and without it refuse only where a store exists", () => {
     const stub = temp();
     const log = join(stub, "log");
-    writeFileSync(join(stub, "git-lfs"), '#!/bin/sh\necho "$*" >> "$LFS_LOG"\n', { mode: 0o755 });
-    const env = { ...process.env, PATH: `${stub}:${process.env.PATH}`, LFS_LOG: log };
+    const lfs = '#!/bin/sh\n[ "$1" = version ] || echo "$*" >> "$LFS_LOG"\n';
+    writeFileSync(join(stub, "git-lfs"), lfs, { mode: 0o755 });
+    // A PATH holding git alone, so the machine's own git-lfs stays out of reach.
+    const bare = temp();
+    symlinkSync(Bun.which("git")!, join(bare, "git"));
     const hooks = [
       [process.execPath, bin("check-confidential"), "prepush"],
-      ["sh", join(import.meta.dir, "..", "private", ".githooks", "pre-push")],
+      ["/bin/sh", join(import.meta.dir, "..", "private", ".githooks", "pre-push")],
     ];
-    const pushes = (dir: string, extra: Record<string, string> = {}) => {
-      for (const [cmd, ...args] of hooks)
-        expect(
+    const pushes = (dir: string, PATH: string) =>
+      hooks.map(
+        ([cmd, ...args]) =>
           spawnSync(cmd!, [...args, "origin", "x"], {
             cwd: dir,
-            env: { ...env, ...extra },
+            env: { ...process.env, PATH, LFS_LOG: log, GIT_EXEC_PATH: bare },
             input: "",
           }).status,
-        ).toBe(0);
-      return existsSync(log) ? readFileSync(log, "utf8") : "";
-    };
-    const plain = { "package.json": "{}", "sub/a.bin": "a\n" };
-    expect(pushes(repo(plain))).toBe("");
-    const lfs = {
-      "package.json": "{}",
-      "sub/.gitattributes": "*.bin filter=lfs\n",
-      "sub/a.bin": "a\n",
-    };
-    expect(pushes(repo(lfs))).toBe("pre-push origin x\n".repeat(2));
-    const root = { "package.json": "{}", ".gitattributes": "*.bin filter=lfs\n", "a.bin": "a\n" };
-    expect(pushes(repo(root))).toBe("pre-push origin x\n".repeat(4));
-    // Fail safe: an inherited GIT_LITERAL_PATHSPECS and a failing git grep hand the refs over too.
-    expect(pushes(repo(lfs), { GIT_LITERAL_PATHSPECS: "1" })).toBe("pre-push origin x\n".repeat(6));
-    const broken = temp();
-    const git = Bun.which("git")!;
-    writeFileSync(
-      join(broken, "git"),
-      `#!/bin/sh\n[ "$2" = grep ] && exit 128\nexec ${git} "$@"\n`,
-      { mode: 0o755 },
-    );
-    expect(pushes(repo(plain), { PATH: `${broken}:${env.PATH}` })).toBe(
-      "pre-push origin x\n".repeat(8),
-    );
+      );
+    // No .gitattributes in the tree: Git LFS still decides, from the pushed commits.
+    expect(pushes(repo({ "package.json": "{}" }), `${stub}:${bare}`)).toEqual([0, 0]);
+    expect(readFileSync(log, "utf8")).toBe("pre-push origin x\n".repeat(2));
+    const plain = repo({ "package.json": "{}" });
+    expect(pushes(plain, bare)).toEqual([0, 0]);
+    mkdirSync(join(plain, ".git/lfs/objects"), { recursive: true });
+    expect(pushes(plain, bare)).toEqual([1, 1]);
+    const moved = repo({ "package.json": "{}" });
+    sh(moved, ["config", "lfs.storage", "/elsewhere"]);
+    expect(pushes(moved, bare)).toEqual([1, 1]);
   });
 });
 

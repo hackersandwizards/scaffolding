@@ -5,7 +5,7 @@
 //   check-confidential --tree <rev>           every file of a tree, for an audit
 //   check-confidential prepush                pre-push: refuses commits listed in
 //                                             .confidential-purged.json, then hands the refs to
-//                                             `git lfs pre-push` where LFS is used
+//                                             `git lfs pre-push`
 //   check-confidential fetch                  fetches the list now, for a cloud setup script
 //   check-confidential build <terms|-> [--public <file>]
 //                                             prints a hashed list from one term per line (- reads
@@ -130,22 +130,23 @@ if (argv[0] === "prepush") {
     }
   }
   if (findings.length) finish("check-confidential", findings, started);
-  // A .gitattributes in any folder counts, an inherited GIT_LITERAL_PATHSPECS aside. Only a clean
-  // "no match" skips Git LFS: an error hands the refs over too.
-  const grep = [
-    "--no-literal-pathspecs",
-    "grep",
-    "-q",
-    "filter=lfs",
-    "--",
-    ":(glob)**/.gitattributes",
-  ];
-  if (spawnSync("git", grep, { cwd: root }).status !== 1) {
+  // Git LFS reads the pushed commits itself and uploads nothing where they carry no pointer.
+  if (spawnSync("git", ["lfs", "version"], { cwd: root }).status === 0) {
     const lfs = spawnSync("git", ["lfs", "pre-push", ...argv.slice(1)], {
+      cwd: root,
       input,
       stdio: ["pipe", "inherit", "inherit"],
     });
     process.exit(lfs.status ?? 1);
+  }
+  // Without git-lfs, objects to upload can only sit in a local store: refuse only where one exists.
+  const common = git(["rev-parse", "--path-format=absolute", "--git-common-dir"], root);
+  const storage = spawnSync("git", ["config", "lfs.storage"], { cwd: root }).stdout.toString();
+  if (existsSync(join(common.toString().trim(), "lfs/objects")) || storage.trim()) {
+    console.error(
+      "[check-confidential] this repository stores Git LFS objects and git-lfs is not on PATH",
+    );
+    process.exit(1);
   }
   process.exit(0);
 }
