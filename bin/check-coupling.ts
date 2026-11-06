@@ -36,12 +36,20 @@ const SHELL = "@hackersandwizards/scaffolding";
 const CSS =
   /["'`(](?:[^"'`()\s]*?\/)??(node_modules\/)?(@hackersandwizards\/[\w.-]+)\/([^"'`()\s?#]+\.css)(?:[?#][^"'`()\s]*)?["'`)]/g;
 const INSTALLED =
-  /node_modules(?:\/|["'`]\s*[,/]\s*["'`])(@hackersandwizards(?:\/[\w.-]*)?)(\/[^\s"'`)\]},;$?#]*)?/g;
+  /node_modules[\s"'`,/\\)+]{1,8}(@hackersandwizards(?:\/[\w.-]*)?)(\/[^\s"'`)\]},;$?#]*)?/g;
 const COMMENT = /(^|[\s{])\/\*[\s\S]*?\*\/|<!--[\s\S]*?-->|(?<![:"'`\\])\/\/.*/gm;
 const HASH = /(^|\s)#.*/gm;
 const DOCSTRING = /^(\s*)(?:"""[\s\S]*?"""|'''[\s\S]*?''')/gm;
 const SPECIFIER =
   /(?:\bfrom\s*|\bimport\s*\(?\s*|\brequire\s*\(\s*|@(?:import|use|forward|source|plugin|reference|config)\s+(?:url\()?\s*)["'`]([^"'`\n]+)["'`]/g;
+
+/** Whether an exports key or target, with one `*` at most that crosses folders, matches a path. */
+function matches(pattern: string, path: string): boolean {
+  const [head, tail] = pattern.split("*");
+  return tail === undefined
+    ? head === path
+    : path.length >= head.length + tail.length && path.startsWith(head) && path.endsWith(tail);
+}
 
 function exported(exports: unknown, subpath: string): boolean {
   if (typeof exports === "string" || Array.isArray(exports)) return false;
@@ -51,28 +59,16 @@ function exported(exports: unknown, subpath: string): boolean {
   const want = `./${subpath}`;
   return keys.some((key) => {
     if ((exports as Record<string, unknown>)[key] === null) return false;
-    if (key === want) return true;
-    const star = key.indexOf("*");
-    if (star === -1) return key.endsWith("/") && want.startsWith(key);
-    const [head, tail] = [key.slice(0, star), key.slice(star + 1)];
-    return (
-      want.length > head.length + tail.length - 1 && want.startsWith(head) && want.endsWith(tail)
-    );
+    return matches(key, want) || (!key.includes("*") && key.endsWith("/") && want.startsWith(key));
   });
 }
 
 /** Whether a file of the package, named by its path on disk, is the target of an export. */
 function targeted(exports: unknown, subpath: string): boolean {
   if (!exports || typeof exports !== "object" || Array.isArray(exports)) return false;
-  return Object.values(exports).some((target) => {
-    if (typeof target !== "string") return false;
-    const [head, tail] = posix.normalize(target).split("*");
-    return tail === undefined
-      ? head === subpath
-      : subpath.length >= head.length + tail.length &&
-          subpath.startsWith(head) &&
-          subpath.endsWith(tail);
-  });
+  return Object.values(exports).some(
+    (target) => typeof target === "string" && matches(posix.normalize(target), subpath),
+  );
 }
 
 const manifests = new Map<string, Record<string, unknown> | null>();
@@ -82,6 +78,13 @@ function manifest(name: string) {
     manifests.set(name, existsSync(file) ? JSON.parse(readFileSync(file, "utf8")) : null);
   }
   return manifests.get(name);
+}
+
+/** Whether a company package publishes a file, named by an export or, on disk, as an export's
+ * target; a package not installed or without exports is not judged. */
+function publishes(name: string, subpath: string, disk: boolean): boolean {
+  const pkg = manifest(name);
+  return !pkg || !("exports" in pkg) || (disk ? targeted : exported)(pkg.exports, subpath);
 }
 
 const own = readPackage(root).name;
@@ -114,18 +117,15 @@ for (const path of listFiles(root, staged)) {
   // by a disk path; a stylesheet may name one, but only to a file an export maps (a stylesheet's .css
   // path is the CSS rule's). A comment, a docstring or a Tailwind @source names the path
   // without using it.
-  const prose = path.endsWith(".py") ? text.replace(DOCSTRING, "$1") : text;
   if (text.includes("@hackersandwizards"))
-    for (const line of prose.replace(HASHED.test(path) ? HASH : COMMENT, "$1").split("\n"))
+    for (const line of (path.endsWith(".py") ? text.replace(DOCSTRING, "$1") : text)
+      .replace(HASHED.test(path) ? HASH : COMMENT, "$1")
+      .split("\n"))
       for (const m of line.matchAll(INSTALLED)) {
         if (m[1] === own || line.slice(0, m.index).includes("@source")) continue;
         if (STYLES.test(path)) {
-          const pkg = manifest(m[1]);
-          if (
-            !m[2]?.endsWith(".css") &&
-            !(pkg && !("exports" in pkg)) &&
-            !(pkg && m[2] && targeted(pkg.exports, posix.normalize(m[2].slice(1))))
-          )
+          const file = m[2] && posix.normalize(m[2].slice(1));
+          if (!file?.endsWith(".css") && !(file && publishes(m[1], file, true)))
             flag(path, m[0], `a stylesheet names a disk path only to a file ${m[1]} exports`);
         } else
           flag(
@@ -138,14 +138,12 @@ for (const path of listFiles(root, staged)) {
   if (!TEST.test(path))
     for (const [, disk, name, raw] of text.matchAll(CSS)) {
       const spec = `${name}/${raw}`;
-      // Outside a stylesheet a disk path is the installed-path rule's.
+      // Outside a stylesheet a disk path is the installed-path rule's, which leaves a stylesheet's
+      // .css paths, a Tailwind @source included, to this rule.
       if (name === own || (disk !== undefined && !STYLES.test(path))) continue;
       const subpath = posix.normalize(raw);
       const pkg = manifest(name);
-      const published =
-        !pkg ||
-        !("exports" in pkg) ||
-        (disk === undefined ? exported(pkg.exports, subpath) : targeted(pkg.exports, subpath));
+      const published = publishes(name, subpath, disk !== undefined);
       const styles = (pkg?.scaffolding as { styles?: string[] } | undefined)?.styles ?? [];
       if (name === BRAND) {
         if (!published) flag(path, spec, `not in the exports of ${name}`);

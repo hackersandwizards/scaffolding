@@ -239,8 +239,8 @@ with (`"styles": ["./styles/slides.css"]`); no other company package's CSS loads
 repository. In a stylesheet, a path into `node_modules` names the file on disk and passes where an
 `exports` entry targets it, a font or image under a `/*` export included.
 
-**Installed paths.** Code, markup and data (every file `check-coupling` reads but stylesheets,
-Python, `package.json` with its scripts and tests included) name no `node_modules/@hackersandwizards/...`
+**Installed paths.** Code, markup and data (every file `check-coupling` reads but stylesheets, Python
+included, `package.json` with its scripts and tests included) name no `node_modules/@hackersandwizards/...`
 path, joined or as path segments: code takes a file through
 `import.meta.resolve("@hackersandwizards/brand/logos/mark.svg")`, which the package's `exports`
 answer (its folder through its `./package.json`), and a command from `node_modules/.bin`; a catalog

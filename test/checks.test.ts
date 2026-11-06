@@ -236,7 +236,7 @@ describe("check-coupling", () => {
       "src/self.ts": 'export const own = "node_modules/@hackersandwizards/fx/x.svg";\n',
       "src/styles.css": '@source "../node_modules/@hackersandwizards/brand/elements";\n',
       "tools/fonts.py":
-        "# node_modules/@hackersandwizards/brand\ndef f():\n    \"\"\"Reads node_modules/@hackersandwizards/brand.\"\"\"\nBRAND = 'node_modules/@hackersandwizards/brand/tokens/fonts'\nLOGOS = ROOT / 'node_modules' / '@hackersandwizards' / 'brand' / 'logos'\n",
+        "# node_modules/@hackersandwizards/brand\ndef f():\n    \"\"\"Reads node_modules/@hackersandwizards/brand.\"\"\"\nBRAND = 'node_modules/@hackersandwizards/brand/tokens/fonts'\nLOGOS = ROOT / 'node_modules' / '@hackersandwizards' / 'brand' / 'logos'\nMARKS = Path(\"node_modules\") / \"@hackersandwizards\"\n",
       "scripts/installed.ts": 'const dir = "node_modules/@hackersandwizards/";\n',
       "src/scope.ts": 'export const at = (n: string) => "node_modules/@hackersandwizards/" + n;\n',
       "og/template.html":
@@ -249,24 +249,24 @@ describe("check-coupling", () => {
       ".github/workflows/ci.yml": "# node_modules/@hackersandwizards/brand\non: push\n",
       "docs/notes.md": "node_modules/@hackersandwizards/brand/logos\n",
     });
-    const why = installed;
     expect(lines(run(dir, "check-coupling").out, "check-coupling").sort()).toEqual([
-      `[check-coupling] mails/brief.json: ${why} (node_modules/@hackersandwizards/brand/logos/avatar.png)`,
-      `[check-coupling] og/template.html: ${why} (node_modules/@hackersandwizards/brand/logos/lockup.svg)`,
-      `[check-coupling] og/template.html: ${why} (node_modules/@hackersandwizards/brand/tokens/fonts.css)`,
-      `[check-coupling] og/template.html: ${why} (node_modules/@hackersandwizards/brand/tokens/fonts/inter.woff2)`,
-      `[check-coupling] package.json: ${why} (node_modules/@hackersandwizards/brand/logos/w.svg)`,
-      `[check-coupling] scripts/fonts.sh: ${why} (node_modules/@hackersandwizards/brand/tokens/fonts/x.woff2)`,
-      `[check-coupling] src/Page.astro: ${why} (node_modules/@hackersandwizards/brand/logos/mark.svg)`,
-      `[check-coupling] src/after-source.ts: ${why} (node_modules/@hackersandwizards/brand/x.svg)`,
-      `[check-coupling] src/logos.ts: ${why} (node_modules/@hackersandwizards/brand/clients/)`,
-      `[check-coupling] src/regex.ts: ${why} (node_modules/@hackersandwizards/brand/c/)`,
-      `[check-coupling] src/root.ts: ${why} (node_modules/@hackersandwizards/brand)`,
-      `[check-coupling] src/scope.ts: ${why} (node_modules/@hackersandwizards/)`,
-      `[check-coupling] src/segments.ts: ${why} (node_modules", "@hackersandwizards)`,
-      `[check-coupling] test/story.test.ts: ${why} (node_modules/@hackersandwizards/slides)`,
-      `[check-coupling] tools/fonts.py: ${why} (node_modules' / '@hackersandwizards)`,
-      `[check-coupling] tools/fonts.py: ${why} (node_modules/@hackersandwizards/brand/tokens/fonts)`,
+      `[check-coupling] mails/brief.json: ${installed} (node_modules/@hackersandwizards/brand/logos/avatar.png)`,
+      `[check-coupling] og/template.html: ${installed} (node_modules/@hackersandwizards/brand/logos/lockup.svg)`,
+      `[check-coupling] og/template.html: ${installed} (node_modules/@hackersandwizards/brand/tokens/fonts.css)`,
+      `[check-coupling] og/template.html: ${installed} (node_modules/@hackersandwizards/brand/tokens/fonts/inter.woff2)`,
+      `[check-coupling] package.json: ${installed} (node_modules/@hackersandwizards/brand/logos/w.svg)`,
+      `[check-coupling] scripts/fonts.sh: ${installed} (node_modules/@hackersandwizards/brand/tokens/fonts/x.woff2)`,
+      `[check-coupling] src/Page.astro: ${installed} (node_modules/@hackersandwizards/brand/logos/mark.svg)`,
+      `[check-coupling] src/after-source.ts: ${installed} (node_modules/@hackersandwizards/brand/x.svg)`,
+      `[check-coupling] src/logos.ts: ${installed} (node_modules/@hackersandwizards/brand/clients/)`,
+      `[check-coupling] src/regex.ts: ${installed} (node_modules/@hackersandwizards/brand/c/)`,
+      `[check-coupling] src/root.ts: ${installed} (node_modules/@hackersandwizards/brand)`,
+      `[check-coupling] src/scope.ts: ${installed} (node_modules/@hackersandwizards/)`,
+      `[check-coupling] src/segments.ts: ${installed} (node_modules", "@hackersandwizards)`,
+      `[check-coupling] test/story.test.ts: ${installed} (node_modules/@hackersandwizards/slides)`,
+      `[check-coupling] tools/fonts.py: ${installed} (node_modules") / "@hackersandwizards)`,
+      `[check-coupling] tools/fonts.py: ${installed} (node_modules' / '@hackersandwizards)`,
+      `[check-coupling] tools/fonts.py: ${installed} (node_modules/@hackersandwizards/brand/tokens/fonts)`,
     ]);
   });
 
