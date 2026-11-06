@@ -973,13 +973,19 @@ describe("catalog", () => {
       });
     const r = build();
     expect(r.status).toBe(0);
-    const home = readFileSync(join(dist, "catalog/index.html"), "utf8");
+    // No page of its own at pages/index: the catalog is the site's home.
+    const home = readFileSync(join(dist, "index.html"), "utf8");
     expect(home).toContain('<header class="fx-header"><a href="/">Fx</a></header>');
-    expect(home).toContain("fx catalog/stories · 2 components · 4 states");
+    expect(home).toContain("fx catalog/stories · 3 components · 17 states");
     expect(home.indexOf(">Types <")).toBeLessThan(home.indexOf(">Parts <"));
-    expect(home).toContain('src="/catalog/stories/Types/box-types/two"');
-    expect(readdirSync(join(dist, "catalog/stories/Parts/box-parts"))).toEqual(["one", "two"]);
-    const page = (p: string) => readFileSync(join(dist, "catalog", p, "index.html"), "utf8");
+    expect(home).toContain('src="/stories/Types/box-types/two"');
+    expect(readdirSync(join(dist, "stories/Parts/box-parts"))).toEqual(["one", "two"]);
+    const page = (p: string) => readFileSync(join(dist, p, "index.html"), "utf8");
+    // Every page of the catalog's former place forwards to its page at the root.
+    expect(page("catalog/dashboard/Parts/box-parts/two")).toContain(
+      'http-equiv="refresh" content="0; url=/dashboard/Parts/box-parts/two/"',
+    );
+    expect(page("catalog")).toContain('content="0; url=/"');
     const state = page("dashboard/Parts/box-parts/two");
     const css = readdirSync(join(dist, "_astro"))
       .filter((f) => f.endsWith(".css"))
@@ -989,16 +995,31 @@ describe("catalog", () => {
     expect(`${state}${css}`).toMatch(
       /#astrobook-sidebar,\s*astrobook-sidebar-resize-handle\s*\{\s*display:\s*none\s*!important/,
     );
-    const bar = state.match(/<template id="hw-catalogue-bar">([\s\S]*?)<\/template>/)?.[1] ?? "";
+    const barOf = (html: string) =>
+      html.match(/<template id="hw-catalogue-bar">([\s\S]*?)<\/template>/)?.[1] ?? "";
+    const bar = barOf(state);
     expect(bar).toContain('<nav class="hw-catalogue-bar" aria-label="Catalog">');
-    expect(bar).toContain('href="/catalog/"');
+    expect(bar).toContain('<a href="/"><span aria-hidden="true">');
     expect(bar).toMatch(/Parts \/ <strong>BoxParts<\/strong>/);
     expect(bar).toContain('<button type="button" data-hw-theme aria-pressed="false">');
-    expect(bar).toContain('href="/catalog/stories/Parts/box-parts/two">Open this state alone</a>');
+    expect(bar).toContain('href="/stories/Parts/box-parts/two">Open this state alone</a>');
     expect(bar).toContain('<ul aria-label="States">');
-    expect(bar).toMatch(/href="\/catalog\/dashboard\/Parts\/box-parts\/one">One/);
-    expect(bar).toMatch(
-      /href="\/catalog\/dashboard\/Parts\/box-parts\/two" aria-current="page">Two/,
+    expect(bar).toMatch(/href="\/dashboard\/Parts\/box-parts\/one">One/);
+    expect(bar).toMatch(/href="\/dashboard\/Parts\/box-parts\/two" aria-current="page">Two/);
+    expect(bar).toContain('<a rel="prev" href="/dashboard/Parts/box-parts/one"');
+    expect(bar).toContain('<a rel="next" aria-disabled="true"');
+    expect(bar).toContain("2 of 2");
+    // Above 12 states a menu replaces the chips, grouped by a word three names share.
+    const many = barOf(page("dashboard/Parts/many-parts/block-image"));
+    expect(many).not.toContain("<ul");
+    expect(many).toContain(
+      '<optgroup label="Block"><option value="/dashboard/Parts/many-parts/block-code">Block Code</option><option value="/dashboard/Parts/many-parts/block-image" selected>Block Image</option>',
+    );
+    expect(many).toContain(
+      '<optgroup label="Theme"><option value="/dashboard/Parts/many-parts/accent-theme">Accent Theme</option>',
+    );
+    expect(many).toContain(
+      '</optgroup><option value="/dashboard/Parts/many-parts/centered-layout">Centered Layout</option>',
     );
     expect(state).toContain("main.prepend(bar.content.cloneNode(true))");
     expect(page("stories/Parts/box-parts/two")).not.toContain('id="hw-catalogue-bar"');
@@ -1011,7 +1032,7 @@ describe("catalog", () => {
     const routes = readdirSync(codegen, { recursive: true, encoding: "utf8" }).filter((f) =>
       f.endsWith(".astro"),
     );
-    expect(routes.length).toBe(8);
+    expect(routes.length).toBe(34);
     for (const f of routes)
       expect(readFileSync(join(codegen, f), "utf8")).not.toContain("client:load");
     // `copy`: each match at its own path, the rest of the folder left out.
@@ -1021,9 +1042,34 @@ describe("catalog", () => {
     );
     // A project Pages site sets Astro's base: the links and the header's default follow it.
     expect(build(["--base", "/fx"]).status).toBe(0);
-    const based = readFileSync(join(dist, "catalog/index.html"), "utf8");
+    const based = readFileSync(join(dist, "index.html"), "utf8");
     expect(based).toContain('<header class="fx-header"><a href="/fx/">Fx</a></header>');
-    expect(based).toContain('src="/fx/catalog/stories/Types/box-types/two"');
+    expect(based).toContain('src="/fx/stories/Types/box-types/two"');
+    expect(page("catalog/stories/Types/box-types/two")).toContain(
+      'url=/fx/stories/Types/box-types/two/"',
+    );
+    // A redirect from "/" would take the catalog's place: the build fails and says why.
+    const redirecting = join(fixture, "catalog", "redirecting.config.mjs");
+    made.push(redirecting);
+    writeFileSync(
+      redirecting,
+      'import config from "./astro.config.mjs";\nexport default { ...config, redirects: { "/": "/x/" } };\n',
+    );
+    const refused = build(["--config", "redirecting.config.mjs"]);
+    expect(refused.status).not.toBe(0);
+    expect(`${refused.stdout}${refused.stderr}`).toContain("`redirects` leaves out");
+    rmSync(redirecting);
+    // A site with a home page of its own keeps the catalog at /catalog/.
+    const src = join(fixture, "catalog", "src");
+    const pages = join(src, "pages");
+    made.push(src);
+    mkdirSync(pages, { recursive: true });
+    writeFileSync(join(pages, "index.astro"), "<p>site home</p>\n");
+    expect(build().status).toBe(0);
+    expect(page("").includes("site home")).toBe(true);
+    expect(page("catalog")).toContain("fx catalog/stories");
+    expect(page("catalog/dashboard/Parts/box-parts/two")).toContain('href="/catalog/"');
+    rmSync(src, { recursive: true });
     // In CI a copied file still a Git LFS pointer fails the build; locally it passes.
     const ci = build([], { CI: "true" });
     expect(ci.status).not.toBe(0);
@@ -1046,7 +1092,7 @@ describe("catalog", () => {
       [
         "sh",
         "-c",
-        `cd '${fixture}' && exec '${astro}' dev --root catalog --host $HOST --port $PORT`,
+        `cd '${fixture}' && exec '${astro}' dev --root catalog --base /fx --host $HOST --port $PORT`,
       ],
       { env: { ASTRO_DEV_BACKGROUND: "1" }, timeoutMs: 30_000 },
     );
@@ -1065,7 +1111,17 @@ describe("catalog", () => {
       expect(await css.text()).toBe("a {\n  color: red;\n}\n");
       expect((await fetch(`${server.url}/assets/skip.txt`)).status).toBe(404);
 
-      const start = `${server.url}/catalog/dashboard/Parts/box-parts/two`;
+      // Dev serves at the root: the old /catalog/ path and the Pages base forward there.
+      for (const [old, to] of [
+        ["/catalog/dashboard/Parts/box-parts/two?x", "/dashboard/Parts/box-parts/two?x"],
+        ["/fx/catalog/", "/"],
+        ["/catalog/%E2%82%AC", "/%E2%82%AC"],
+        ["/catalog//evil.example/x", "/evil.example/x"],
+      ]) {
+        const r = await fetch(`${server.url}${old}`, { redirect: "manual" });
+        expect([r.status, r.headers.get("location")]).toEqual([301, to]);
+      }
+      const start = `${server.url}/dashboard/Parts/box-parts/two`;
       let target: { webSocketDebuggerUrl: string } | undefined;
       for (let i = 0; i < 100 && !target; i++)
         target = await fetch(`http://127.0.0.1:${port}/json/new?${start}`, { method: "PUT" })
@@ -1102,11 +1158,12 @@ describe("catalog", () => {
       const after = await evaluate(
         `JSON.stringify([document.documentElement.dataset.hwScale, document.body.dataset.fxRan, !!document.querySelector("main .hw-catalogue-bar")])`,
       );
-      expect(JSON.parse(String(after))).toEqual([
-        "dense",
-        "/catalog/dashboard/Parts/box-parts/one",
-        true,
-      ]);
+      expect(JSON.parse(String(after))).toEqual(["dense", "/dashboard/Parts/box-parts/one", true]);
+      // The right arrow key steps to the next state.
+      await evaluate(
+        `document.dispatchEvent(new KeyboardEvent("keydown", { key: "ArrowRight", bubbles: true }))`,
+      );
+      await until(`location.pathname.endsWith("/two") && document.readyState === "complete"`);
       ws.close();
     } finally {
       browser.kill();

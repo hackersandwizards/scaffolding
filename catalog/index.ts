@@ -7,6 +7,7 @@ import {
   createReadStream,
   existsSync,
   globSync,
+  mkdirSync,
   readdirSync,
   readFileSync,
   statSync,
@@ -122,18 +123,54 @@ const packageOf = (spec: string) =>
         .slice(0, spec.startsWith("@") ? 2 : 1)
         .join("/");
 
+// Astrobook's layout loads Astro's client router; found only when the first page loads, these
+// modules made Vite optimise again and print it after every start whose lockfile had changed.
+const ROUTER = ["events", "router", "swap-functions", "types"].map(
+  (m) => `astro/virtual-modules/transitions-${m}.js`,
+);
+
 export function catalog(options: CatalogOptions): AstroIntegration {
   let inner: AstroIntegration | undefined;
   let repo = "";
   let base = "";
+  let atRoot = false;
+  // Where an old link points, as dev serves it now: without the Pages base, and without /catalog
+  // where the catalog moved to the root; undefined for a current path.
+  let moved = (_: string): string | undefined => undefined;
   return {
     name: "@hackersandwizards/scaffolding/catalog",
     hooks: {
-      "astro:config:setup": async (params) => {
+      "astro:config:setup": async (inParams) => {
+        // `base` exists for the Pages host only (https://<owner>.github.io/<repo>/): dev serves at
+        // the root.
+        const dev = inParams.command === "dev";
+        const pagesBase = inParams.config.base.replace(/\/$/, "");
+        const params = dev
+          ? { ...inParams, config: inParams.updateConfig({ base: "/" }) }
+          : inParams;
         const root = fileURLToPath(params.config.root);
         const own = basename(root) === "catalog";
         repo = packageDir(root);
         base = params.config.base.replace(/\/$/, "");
+        // The catalog is the site's home unless the site has one of its own: an index page or folder,
+        // or a catch-all route, which Astrobook's static "/" would shadow.
+        const pages = join(fileURLToPath(params.config.srcDir), "pages");
+        atRoot = !(
+          existsSync(pages) && readdirSync(pages).some((f) => /^(index(\.|$)|\[\.\.\.)/.test(f))
+        );
+        if (atRoot && params.config.redirects["/"])
+          throw new Error(
+            'catalog: the catalog is the site\'s home, so `redirects` leaves out "/"; its former /catalog/ pages forward by themselves',
+          );
+        const strip = (p: string, prefix: string) =>
+          prefix && (p === prefix || p.startsWith(`${prefix}/`))
+            ? p.slice(prefix.length) || "/"
+            : p;
+        moved = (path) => {
+          const now = strip(strip(path, dev ? pagesBase : ""), atRoot ? "/catalog" : "");
+          // "//host" in a Location header leaves the site.
+          return now === path ? undefined : now.replace(/^\/+/, "/");
+        };
         const stories = join(root, own ? "stories" : "catalog/stories");
         const name = (() => {
           const file = join(repo, "package.json");
@@ -163,6 +200,10 @@ export function catalog(options: CatalogOptions): AstroIntegration {
         params.updateConfig({
           ...(own && { outDir: new URL("../dist/", params.config.root) }),
           vite: {
+            optimizeDeps: {
+              entries: [`${relative(root, stories)}/**/*.stories.*`],
+              include: ROUTER,
+            },
             plugins: [
               {
                 name: "scaffolding-catalog",
@@ -182,7 +223,7 @@ export function catalog(options: CatalogOptions): AstroIntegration {
         });
         inner = astrobook({
           directory: relative(root, stories),
-          subpath: "/catalog",
+          subpath: atRoot ? "" : "/catalog",
           title: `${options.product} catalog`,
           css: options.css,
           head: join(import.meta.dirname, "Head.astro"),
@@ -200,7 +241,13 @@ export function catalog(options: CatalogOptions): AstroIntegration {
       },
       "astro:server:setup": ({ server }) => {
         server.middlewares.use((req, res, next) => {
-          const path = decoded(URL.parse(req.url ?? "", "http://x")?.pathname ?? "");
+          const url = URL.parse(req.url ?? "", "http://x");
+          const to = moved(url?.pathname ?? "");
+          const path = decoded(url?.pathname ?? "");
+          if (to) {
+            res.writeHead(301, { Location: `${to}${url!.search}` });
+            return res.end();
+          }
           const file = path.startsWith(`${base}/`) ? path.slice(base.length + 1) : "";
           const served = (options.copy ?? [])
             .flatMap((pattern) => globSync(pattern, { cwd: repo }))
@@ -221,6 +268,20 @@ export function catalog(options: CatalogOptions): AstroIntegration {
       },
       "astro:build:done": ({ dir }) => {
         const out = fileURLToPath(dir);
+        // The catalog lived under /catalog/ until v2.0.0: each of its published pages forwards.
+        if (atRoot)
+          for (const page of globSync(["index.html", "{dashboard,stories}/**/index.html"], {
+            cwd: out,
+          })) {
+            const to = encodeURI(`${base}/${dirname(page) === "." ? "" : `${dirname(page)}/`}`);
+            const stub = join(out, "catalog", page);
+            if (existsSync(stub)) continue;
+            mkdirSync(dirname(stub), { recursive: true });
+            writeFileSync(
+              stub,
+              `<!doctype html><meta charset="utf-8"><title>Moved</title><link rel="canonical" href="${to}"><meta http-equiv="refresh" content="0; url=${to}"><script>location.replace(${JSON.stringify(to)}+location.search+location.hash)</script><a href="${to}">${to}</a>\n`,
+            );
+          }
         const pointers: string[] = [];
         for (const pattern of options.copy ?? []) {
           const found = globSync(pattern, { cwd: repo });
