@@ -17,14 +17,15 @@ const mod = id
   ? (modules as StoryModule[]).find((m) => m.stories.some((s) => s.id === id))
   : undefined;
 const folder = (mod?.directory || "Components").split("/").join(" / ");
-// A state reads in sentence case, "PrimaryOnNight" as "Primary on night", an acronym kept, a plural
-// one ("PDFs") and a name with inner capitals from the list ("GitHub") whole.
+// A state reads as its export name split into words, each in the case its author wrote, the first
+// capitalised: no rule can lowercase a word without lowercasing a German noun or a proper name too.
+// A plural acronym ("PDFs") and a name with inner capitals from the list ("GitHub") stay whole.
 const WORD =
   /(?:GitHub|GitLab|LinkedIn|YouTube|JavaScript|TypeScript|OpenAI)(?!\p{Ll})|\p{Lu}{2,}s(?!\p{Ll})|\p{Lu}+(?!\p{Ll})|\p{Lu}?\p{Ll}+|\p{N}+/gu;
 const all = (mod?.stories ?? []).map((s) => {
-  const words = s.name.match(WORD) ?? [s.name];
-  const label = words.map((w) => (/^\p{Lu}?\p{Ll}+$/u.test(w) ? w.toLowerCase() : w)).join(" ");
-  return { ...s, words, label: label[0].toUpperCase() + label.slice(1) };
+  const [first, ...rest] = s.name.match(WORD) ?? [s.name];
+  const words = [first[0].toUpperCase() + first.slice(1), ...rest];
+  return { ...s, words, label: words.join(" ") };
 });
 type State = (typeof all)[number];
 // Above FOLD states a menu groups them by a word three or more names share, the first word before

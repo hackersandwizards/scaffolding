@@ -2,6 +2,8 @@
 # A private repository runs no confidential check, so this hook starts bun only to refuse purged
 # commits, and otherwise hands the refs to Git LFS where used.
 [ -f .confidential-purged.json ] && exec bun run --silent check-confidential prepush "$@"
-# A .gitattributes in any folder counts.
-git grep -q filter=lfs -- ":(glob)**/.gitattributes" || exit 0
+# A .gitattributes in any folder counts, an inherited GIT_LITERAL_PATHSPECS aside. Only a clean "no
+# match" skips Git LFS: an error hands the refs over too.
+git --no-literal-pathspecs grep -q filter=lfs -- ":(glob)**/.gitattributes"
+[ $? -eq 1 ] && exit 0
 exec git lfs pre-push "$@"

@@ -7,7 +7,7 @@ shell of its catalog.
 To work on the package itself, see [Developing the package](#developing-the-package).
 
 ```sh
-bun add -d github:hackersandwizards/scaffolding#v2.6.0
+bun add -d github:hackersandwizards/scaffolding#v2.6.1
 ```
 
 Requirements: bun 1.3 or newer, gitleaks (`brew install gitleaks`), `pdftotext` from poppler, and
@@ -136,12 +136,15 @@ arrow keys too, the position ("10 of 38"), and between them a link per state, or
 menu grouped by a word three or more state names share (`BlockImage` under Block, `AccentTheme`
 under Theme). In a blind panel of three personas, each scored by Claude and Codex, this bar scored
 8.2 of 10 for 38 states, as did a list beside the canvas, and the earlier row of 38 chips 5.0 (noise
-1.0); the tie went to the bar, which keeps the canvas at full width. A state reads in sentence case,
-`PrimaryOnNight` as "Primary on night", an acronym kept, and whole a plural acronym (`TwoPDFs` as
-"Two PDFs") and a few names with inner capitals (GitHub, GitLab, LinkedIn, YouTube, JavaScript,
-TypeScript, OpenAI): in a blind panel of two personas, each
-scored by Claude and Codex, sentence case scored 8.25 to 9.0 of 10, the export name 6.0 to 7.0 and
-Title Case 6.5 to 7.5 (one run each, noise not measured). Every page loads in full
+1.0); the tie went to the bar, which keeps the canvas at full width. A state reads as its export
+name split into words, each in the case its author wrote and the first capitalised:
+`Folie35_Eine_Woche_zum` as "Folie 35 Eine Woche zum", `PrimaryOnNight` as "Primary On Night",
+whole a plural acronym (`TwoPDFs` as "Two PDFs") and a few names with inner capitals (GitHub,
+GitLab, LinkedIn, YouTube, JavaScript, TypeScript, OpenAI). Sentence case scored higher on English
+names in a blind panel of two personas, each scored by Claude and Codex (8.25 to 9.0 of 10, Title
+Case 6.5 to 7.5, one run each, noise not measured), but lowercasing a word lowercases German nouns
+and proper names too ("Mit impressum", "In german"), so the shell changes no word's case after the
+first. Every page loads in full
 rather than through Astrobook's client router, which swapped pages in place and so dropped what a
 repository's `head` sets on `<html>` and left its page scripts unrun.
 
@@ -184,9 +187,10 @@ The options beyond those above:
 
 A project Pages site, published under `/<repo>/`, sets Astro's `base: "/<repo>"` in its
 `defineConfig`; the catalog's links and the header's default link follow it in the build. `astro
-dev` serves at the root and redirects a page under the base there, so a site sets the base for dev
-and build alike. A file Vite serves, a module under the Astro root such as `/catalog/Head.astro`
-or a file in `public/`, stays where it is. A base ending in `/catalog`
+dev` leaves the base out: it serves as if the base were `/` and redirects a page under the base
+there, so only the build serves under the base, and a config sets it without a branch for dev. A
+file Vite serves, a module under the Astro root such as `/catalog/Head.astro` or a file in
+`public/`, stays where it is. A base ending in `/catalog`
 mounts the catalog under a host with a home of its own, such as a Worker's site: the build leaves
 out `public/`, which the host serves, and writes no forwarding pages.
 
@@ -305,7 +309,7 @@ checkout fetches on its own.
 
 A repository with `"scaffolding": { "private": true }` skips the check. It keeps no `commit-msg`
 hook, and its `pre-push` hands the refs to Git LFS where a `.gitattributes` in any folder tracks a
-file with it and starts bun only to refuse the
+file with it or that search fails, and starts bun only to refuse the
 commits a `.confidential-purged.json` lists. `check-structure --fix` removes the one and writes the
 other.
 

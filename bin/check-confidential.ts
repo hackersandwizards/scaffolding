@@ -130,11 +130,17 @@ if (argv[0] === "prepush") {
     }
   }
   if (findings.length) finish("check-confidential", findings, started);
-  // A .gitattributes in any folder counts.
-  if (
-    spawnSync("git", ["grep", "-q", "filter=lfs", "--", ":(glob)**/.gitattributes"], { cwd: root })
-      .status === 0
-  ) {
+  // A .gitattributes in any folder counts, an inherited GIT_LITERAL_PATHSPECS aside. Only a clean
+  // "no match" skips Git LFS: an error hands the refs over too.
+  const grep = [
+    "--no-literal-pathspecs",
+    "grep",
+    "-q",
+    "filter=lfs",
+    "--",
+    ":(glob)**/.gitattributes",
+  ];
+  if (spawnSync("git", grep, { cwd: root }).status !== 1) {
     const lfs = spawnSync("git", ["lfs", "pre-push", ...argv.slice(1)], {
       input,
       stdio: ["pipe", "inherit", "inherit"],

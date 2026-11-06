@@ -16,3 +16,7 @@ export const Specimen = { args: { label: "specimen" } };
 export const Specimen2 = { args: { label: "specimen 2" } };
 export const LoadingGitHub = { args: { label: "loading github" } };
 export const TwoPDFs = { args: { label: "two pdfs" } };
+export const Folie35_Eine_Woche_zum = { args: { label: "folie 35" } };
+export const AngebotOhnePreise = { args: { label: "angebot ohne preise" } };
+export const In_German = { args: { label: "in german" } };
+export const primaryOnNight = { args: { label: "primary on night" } };

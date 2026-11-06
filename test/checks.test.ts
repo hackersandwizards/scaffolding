@@ -702,14 +702,19 @@ describe("check-confidential", () => {
       [process.execPath, bin("check-confidential"), "prepush"],
       ["sh", join(import.meta.dir, "..", "private", ".githooks", "pre-push")],
     ];
-    const pushes = (dir: string) => {
+    const pushes = (dir: string, extra: Record<string, string> = {}) => {
       for (const [cmd, ...args] of hooks)
-        expect(spawnSync(cmd!, [...args, "origin", "x"], { cwd: dir, env, input: "" }).status).toBe(
-          0,
-        );
+        expect(
+          spawnSync(cmd!, [...args, "origin", "x"], {
+            cwd: dir,
+            env: { ...env, ...extra },
+            input: "",
+          }).status,
+        ).toBe(0);
       return existsSync(log) ? readFileSync(log, "utf8") : "";
     };
-    expect(pushes(repo({ "package.json": "{}", "sub/a.bin": "a\n" }))).toBe("");
+    const plain = { "package.json": "{}", "sub/a.bin": "a\n" };
+    expect(pushes(repo(plain))).toBe("");
     const lfs = {
       "package.json": "{}",
       "sub/.gitattributes": "*.bin filter=lfs\n",
@@ -718,6 +723,18 @@ describe("check-confidential", () => {
     expect(pushes(repo(lfs))).toBe("pre-push origin x\n".repeat(2));
     const root = { "package.json": "{}", ".gitattributes": "*.bin filter=lfs\n", "a.bin": "a\n" };
     expect(pushes(repo(root))).toBe("pre-push origin x\n".repeat(4));
+    // Fail safe: an inherited GIT_LITERAL_PATHSPECS and a failing git grep hand the refs over too.
+    expect(pushes(repo(lfs), { GIT_LITERAL_PATHSPECS: "1" })).toBe("pre-push origin x\n".repeat(6));
+    const broken = temp();
+    const git = Bun.which("git")!;
+    writeFileSync(
+      join(broken, "git"),
+      `#!/bin/sh\n[ "$2" = grep ] && exit 128\nexec ${git} "$@"\n`,
+      { mode: 0o755 },
+    );
+    expect(pushes(repo(plain), { PATH: `${broken}:${env.PATH}` })).toBe(
+      "pre-push origin x\n".repeat(8),
+    );
   });
 });
 
@@ -1043,7 +1060,7 @@ describe("catalog", () => {
     // No page of its own at pages/index: the catalog is the site's home.
     const home = readFileSync(join(dist, "index.html"), "utf8");
     expect(home).toContain('<header class="fx-header"><a href="/">Fx</a></header>');
-    expect(home).toContain("fx catalog/stories · 3 components · 19 states");
+    expect(home).toContain("fx catalog/stories · 3 components · 23 states");
     // The admin hub serves only on this machine: a built page carries no link to it.
     expect(home).not.toContain("admin.localhost");
     expect(home.indexOf(">Types <")).toBeLessThan(home.indexOf(">Parts <"));
@@ -1105,16 +1122,19 @@ describe("catalog", () => {
     const many = barOf(page("dashboard/Parts/many-parts/block-image"));
     expect(many).not.toContain("<ul");
     expect(many).toContain(
-      '<optgroup label="Block"><option value="/dashboard/Parts/many-parts/block-code">Block code</option><option value="/dashboard/Parts/many-parts/block-image" selected>Block image</option>',
+      '<optgroup label="Block"><option value="/dashboard/Parts/many-parts/block-code">Block Code</option><option value="/dashboard/Parts/many-parts/block-image" selected>Block Image</option>',
     );
     expect(many).toContain(
-      '<optgroup label="Theme"><option value="/dashboard/Parts/many-parts/accent-theme">Accent theme</option>',
+      '<optgroup label="Theme"><option value="/dashboard/Parts/many-parts/accent-theme">Accent Theme</option>',
     );
     expect(many).toContain(
-      '</optgroup><option value="/dashboard/Parts/many-parts/centered-layout">Centered layout</option>',
+      '</optgroup><option value="/dashboard/Parts/many-parts/angebot-ohne-preise">Angebot Ohne Preise</option>',
     );
-    // A state reads in sentence case, an acronym kept.
-    expect(many).toMatch(/many-parts\/density-on-pdf">Density on PDF</);
+    // A state reads as its export name in words, each in its author's case, the first capitalised.
+    expect(many).toMatch(/many-parts\/density-on-pdf">Density On PDF</);
+    expect(many).toMatch(/">Folie 35 Eine Woche zum</);
+    expect(many).toMatch(/">In German</);
+    expect(many).toMatch(/">Primary On Night</);
     // A plural acronym and a listed name with inner capitals stay whole.
     expect(many).toMatch(/many-parts\/two-pd-fs">Two PDFs</);
     expect(many).toMatch(/many-parts\/loading-git-hub">Loading GitHub</);
@@ -1129,7 +1149,7 @@ describe("catalog", () => {
     const routes = readdirSync(codegen, { recursive: true, encoding: "utf8" }).filter((f) =>
       f.endsWith(".astro"),
     );
-    expect(routes.length).toBe(38);
+    expect(routes.length).toBe(46);
     for (const f of routes)
       expect(readFileSync(join(codegen, f), "utf8")).not.toContain("client:load");
     // `copy`: each match at its own path, the rest of the folder left out.
