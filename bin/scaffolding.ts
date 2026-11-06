@@ -55,6 +55,7 @@ const shared: Record<string, string> = {
   "unique-names": bin("check-unique-names"),
   spaces: bin("check-spaces"),
   confidential: `${bin("check-confidential")} --tree HEAD`,
+  history: bin("check-history"),
   licenses: bin("check-licenses"),
   // Tests are shared too: a gate without them is a skip someone wrote down, not one that drifted.
   test: script(config.test ?? ""),
@@ -68,7 +69,11 @@ const declared = { ...(pkg.dependencies as object), ...(pkg.devDependencies as o
 if (!("@hackersandwizards/admin" in declared) && !config.skip?.admin)
   fail("@hackersandwizards/admin is not pinned: pin it, or skip.admin with a reason");
 const skip: Record<string, string> = { ...config.skip };
-if (config.private) skip.confidential ??= "scaffolding.private";
+// A private repository's shipped files reach only company readers.
+if (config.private) {
+  skip.confidential ??= "scaffolding.private";
+  skip.history ??= "scaffolding.private";
+}
 for (const [step, reason] of Object.entries(skip)) {
   if (!(step in shared)) fail(`scaffolding.skip names no shared step: ${step}`);
   if (!String(reason).trim()) fail(`scaffolding.skip.${step} has no reason`);

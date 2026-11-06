@@ -7,7 +7,7 @@ shell of its catalog.
 To work on the package itself, see [Developing the package](#developing-the-package).
 
 ```sh
-bun add -d github:hackersandwizards/scaffolding#v2.10.0
+bun add -d github:hackersandwizards/scaffolding#v2.11.0
 ```
 
 Requirements: bun 1.3 or newer, gitleaks (`brew install gitleaks`), `pdftotext` from poppler, and
@@ -38,6 +38,7 @@ before v0.9.0, which bun keeps: delete it.
 | `check-unique-names.ts` | `bun run check`             | Every module-scope function name outside tests is defined once.                                                                                                                                                       |
 | `check-spaces.ts`       | `bun run check`             | No line break in an `.astro` template where text meets an inline tag (below).                                                                                                                                         |
 | `check-licenses.ts`     | `bun run check`, pre-commit | Every installed package's licence is on the allow list or an exception pins it (below); in pre-commit when `bun.lock` or `package.json` is staged.                                                                    |
+| `check-history.ts`      | `bun run check`             | No comment in a file the package ships (`bun pm pack`) names a review score, a date, a decision or item id, a review note or a founder (below).                                                                       |
 
 ## A new repository
 
@@ -55,7 +56,7 @@ the hub's sync list, creating it on GitHub and switching Pages on stay steps for
 
 `scaffolding check` runs `bun install --frozen-lockfile`, then the shared steps side by side:
 format, lint, styles (stylelint), typecheck, structure, coupling, unique names, spaces, confidential,
-licenses, the tests, the catalog build (`bun run build`) and admin (the item files, with the pinned
+history, licenses, the tests, the catalog build (`bun run build`) and admin (the item files, with the pinned
 `@hackersandwizards/admin`'s `admin-check`; a repository without admin pinned needs `skip.admin`). Then the repository's own steps from
 `scaffolding.check`, in order, an inner array side by side. A shared step drops only with a reason:
 
@@ -81,9 +82,17 @@ the `{" "}` prettier itself writes, or joining the lines. A break no space belon
 icon in a flex row, gets an allow entry with `text`; a repository with `compressHTML: false` skips
 the step with that reason.
 
+**History.** What a package ships is public wherever a consumer serves or bundles it, so a comment
+in a shipped file says how to use the code and why, and the history behind it goes to the commit
+message. The step reads the comments of every text file `bun pm pack` lists and flags review
+scores and panels, dates, decision ids, item ids (the generic `AB-1` form and the repository's own
+`docs/agent-work/items/` names), paths to review notes and the founders' names. It first checks each
+pattern against a line that shipped once, so a pattern that stops matching turns the step red. A
+date that is an example of a format gets an allow entry with `text`.
+
 `uniqueNames` lists names the framework dictates, which the unique-names step lets repeat. Every
 step in `scaffolding.check` is a script named `check:<what>`. `"private": true` skips the
-confidential step.
+confidential and history steps.
 
 ## Configs
 

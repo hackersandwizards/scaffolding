@@ -1021,6 +1021,7 @@ describe("scaffolding check", () => {
     "unique-names": "t",
     confidential: "t",
     licenses: "t",
+    history: "t",
     test: "t",
     catalog: "t",
     admin: "t",
@@ -1729,6 +1730,54 @@ describe("check-spaces", () => {
       });
     expect(run(allowed("<span></span>"), "check-spaces").code).toBe(0);
     expect(run(allowed("nothing"), "check-spaces").out).toContain("allow entry matches nothing");
+  });
+});
+
+describe("check-history", () => {
+  const shipped = (files: Record<string, string>, scaffolding: object = {}) =>
+    repo({
+      "package.json": JSON.stringify({
+        name: "fx",
+        version: "1.0.0",
+        files: ["src", ".githooks"],
+        scaffolding,
+      }),
+      ...files,
+    });
+
+  test("flags history in the comments of shipped files only", () => {
+    const r = run(
+      shipped({
+        "src/a.css":
+          "a { b: c } /* blind panel 2026-11-01 */\n#id { x: 'https://x.y/2026-11-01' }\n",
+        "src/b.ts": "const a = 'Benedikt'; // see new-claim for the rest\n",
+        "src/c.html": "<!-- OS-1 -->\n",
+        ".githooks/pre-commit": "# decision label-system, 06.11.\nrun\n",
+        "src/clean.ts": "// how to use it, why it is so\nconst at = '2026-11-01';\n",
+        "docs/agent-work/items/new-claim.md": "x\n",
+        "other/d.css": "/* blind panel 2026-11-01 */\n",
+      }),
+      "check-history",
+    );
+    expect(r.code).toBe(1);
+    expect(lines(r.out, "history").map((l) => l.replace(/ \(.*/, ""))).toEqual([
+      "[history] .githooks/pre-commit: decision id",
+      "[history] .githooks/pre-commit: date",
+      "[history] src/a.css: review score",
+      "[history] src/a.css: date",
+      "[history] src/b.ts: item id",
+      "[history] src/c.html: item id",
+    ]);
+  });
+
+  test("an allow entry keeps a case; a stale one is red", () => {
+    const allowed = (text: string) =>
+      shipped(
+        { "src/a.ts": "/** A date as a reader writes it, 31.10.2026. */\n" },
+        { allow: [{ check: "history", path: "src/a.ts", text, reason: "format example" }] },
+      );
+    expect(run(allowed("31.10.2026"), "check-history").code).toBe(0);
+    expect(run(allowed("nothing"), "check-history").out).toContain("allow entry matches nothing");
   });
 });
 
