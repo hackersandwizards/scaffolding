@@ -1813,6 +1813,8 @@ describe("check-history", () => {
         "src/b.css": 'a{content:"x"}/* OS-1 */\n',
         "src/c.css": "a{b:red/* ok *//* blind panel */}\n",
         "src/d.ts": "// Item new-claim-flow\n",
+        "src/e.css": 'a{content:"\\""}/* /* don\'t *//* OS-2 */\n',
+        "src/f.html": "<style>/* OS-3 */</style>\n",
       }),
       "check-history",
     );
@@ -1822,6 +1824,8 @@ describe("check-history", () => {
       "[history] src/b.css: item id",
       "[history] src/c.css: review score",
       "[history] src/d.ts: item id",
+      "[history] src/e.css: item id",
+      "[history] src/f.html: item id",
     ]);
   });
 
@@ -1832,6 +1836,10 @@ describe("check-history", () => {
         "src/a.ts": `const a = ["src/*.ts", 'lib/*', \`x/*\`];\nconst d = 'OS-1 2026-11-01';\n${end}`,
         "src/b.css": "a{b:url(/*.png)}\nc{d:url(x/*.png)}\ne{content:'OS-1'}\nf{g:h} /* */\n",
         "src/c.ts": "const a = /\\/*x/;\nconst d = 'OS-1';\n" + end,
+        "src/d.ts": `const a = /[/*]/;\nconst d = 'OS-1';\n${end}`,
+        "src/e.ts": `const a = \`\n  src/*.ts\n\`;\nconst d = 'OS-1';\n${end}`,
+        "src/f.css": "a{b:URL(/*.png)}\ne{content:'OS-1'}\nf{g:h} /* */\n",
+        "src/g.md": "Reads docs/*.md, OS-1 and\n**/*.ts\n",
       }),
       "check-history",
     );

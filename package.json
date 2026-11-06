@@ -107,6 +107,12 @@
         "reason": "planted cases the coupling tests feed to the check"
       },
       {
+        "check": "history",
+        "path": "bin/check-history.ts",
+        "text": "(Benedikt, 01.11.)",
+        "reason": "the step's own control line, a string the comment syntax reads as a comment"
+      },
+      {
         "check": "unique-names",
         "path": ".claude/skills/engineering/*",
         "reason": "the home hub's sync copies the engineering skill's stand-alone check-staged.ts, an older form of this package's bin/check-staged.ts, into every repository; the hub owns it"

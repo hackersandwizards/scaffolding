@@ -3,16 +3,16 @@ import { existsSync, readFileSync } from "node:fs";
 
 /** A file's comments, by its kind: `#` lines for shell, Python, YAML, TOML, Git hooks and the
  * editor and Prettier ignore files, else block, HTML and `//` comments, a `//` in a URL or a
- * string's start excepted. A block comment may touch the code before it, unless a quote opened on
- * its line is still open, a `\` escapes it or it sits in `url()`: a glob such as "src/*.ts" would
- * otherwise read on to the next closing mark. Group 1 is the character before a comment that a
- * replacement keeps. */
+ * string's start excepted. A block comment opens only after a character that ends code or another
+ * comment, or after a word when a space follows the mark: a regular expression cannot tell a string
+ * from code, and a glob such as "src/*.ts" would read on to the next closing mark. Group 1 is the character before
+ * a comment that a replacement keeps. */
 export const commentSyntax = (path: string) =>
   /\.(?:sh|py|ya?ml|toml)$|(?:^|\/)(?:\.githooks\/[^/.]+|\.editorconfig|\.prettierignore)$/.test(
     path,
   )
     ? /(^|\s)#.*/gm
-    : /(?:(^|[\s{])|(?=\/\*)(?<=^(?:[^"'`\n]|"[^"\n]*"|'[^'\n]*'|`[^`\n]*`)*)(?<!\\|\burl\([^)\n]*))\/\*[\s\S]*?\*\/|<!--[\s\S]*?-->|(?<![:"'`\\])\/\/.*/gm;
+    : /(^|[\s{};,)>]|\b(?=\/\*\s)|(?<=\*\/))\/\*[\s\S]*?\*\/|<!--[\s\S]*?-->|(?<![:"'`\\])\/\/.*/gm;
 
 export type Finding = { check: string; path: string; text: string; message: string };
 type AllowEntry = { check?: string; path?: string; text?: string; reason?: string };
