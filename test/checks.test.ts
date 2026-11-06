@@ -348,17 +348,22 @@ test("check-structure: a bin file is stored executable, and --fix makes it so", 
 
 test("every bin target and every file in bin/ is stored executable", () => {
   const root = join(import.meta.dir, "..");
-  const mode = (path: string) =>
-    sh(root, ["ls-files", "-s", "--", path]).stdout.toString().split(" ")[0];
+  const stored = new Map(
+    sh(root, ["ls-files", "-s", "--", "bin", "README.md"])
+      .stdout.toString()
+      .trim()
+      .split("\n")
+      .map((line) => {
+        const [entry, path] = line.split("\t");
+        return [path, entry.split(" ")[0]];
+      }),
+  );
   // Control: the same read of a file stored plain has to answer 100644.
-  expect(mode("README.md")).toBe("100644");
+  expect(stored.get("README.md")).toBe("100644");
+  stored.delete("README.md");
   const { bin } = JSON.parse(readFileSync(join(root, "package.json"), "utf8"));
-  const stored = [
-    ...Object.values<string>(bin),
-    ...readdirSync(join(root, "bin")).map((f) => `bin/${f}`),
-  ];
-  expect(stored.length).toBeGreaterThan(Object.keys(bin).length);
-  expect(stored.filter((path) => mode(path) !== "100755")).toEqual([]);
+  expect(Object.values<string>(bin).filter((path) => !stored.has(path))).toEqual([]);
+  expect([...stored].filter(([, mode]) => mode !== "100755")).toEqual([]);
 });
 
 describe("scaffold and check-structure", () => {

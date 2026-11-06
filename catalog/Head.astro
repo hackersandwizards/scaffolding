@@ -118,6 +118,7 @@ const root = {
     border-radius: var(--hw-corner-sm, var(--radius-sm));
   }
   .hw-catalogue-bar .hw-catalogue-step {
+    box-sizing: border-box;
     justify-content: center;
     min-width: 1.75rem;
     padding: 0;
@@ -239,16 +240,50 @@ const root = {
 <script is:inline>
   // A module script runs after the parse, by which time a page can have painted, and the bar then
   // pushes the story down by its own height: a layout shift. An observer's callback runs before
-  // the next paint.
+  // the next paint. The listeners sit here too, so a bar on screen already answers.
   (() => {
+    const theme = () => window.astroThemeToggle;
+    const pressed = () =>
+      document
+        .querySelector("[data-hw-theme]")
+        ?.setAttribute("aria-pressed", String(theme()?.getTheme?.() === "dark"));
     const bar = document.getElementById("hw-catalogue-bar");
-    if (!bar) return;
-    new MutationObserver((_, observer) => {
-      const main = document.querySelector("main");
-      if (!main) return;
-      observer.disconnect();
-      main.prepend(bar.content.cloneNode(true));
-    }).observe(document, { childList: true, subtree: true });
+    if (bar)
+      new MutationObserver((_, observer) => {
+        const main = document.querySelector("main");
+        if (!main) return;
+        observer.disconnect();
+        main.prepend(bar.content.cloneNode(true));
+        pressed();
+      }).observe(document, { childList: true, subtree: true });
+    document.addEventListener("click", (event) => {
+      if (!event.target.closest?.("[data-hw-theme]")) return;
+      theme()?.setTheme?.(theme().getTheme?.() === "dark" ? "light" : "dark");
+      pressed();
+    });
+    document.addEventListener("change", (event) => {
+      if (event.target.matches?.("[data-hw-states]")) location.href = event.target.value;
+    });
+    // The arrow keys step through the states unless a field or the story has the focus.
+    document.addEventListener("keydown", (event) => {
+      if (
+        event.defaultPrevented ||
+        event.altKey ||
+        event.ctrlKey ||
+        event.metaKey ||
+        event.shiftKey
+      )
+        return;
+      const on = event.target.closest?.bind(event.target);
+      if (
+        on?.("input, select, textarea, [contenteditable]") ||
+        (on?.("main") && !on(".hw-catalogue-bar"))
+      )
+        return;
+      const rel = { ArrowLeft: "prev", ArrowRight: "next" }[event.key];
+      const link = rel && document.querySelector(`.hw-catalogue-bar a[rel="${rel}"]`);
+      if (link) location.href = link.href;
+    });
   })();
 </script>
 <script is:inline type="module">
@@ -257,32 +292,4 @@ const root = {
   // unrun. Without this marker the router loads each page in full. A module script runs once the
   // document is parsed, so the marker exists, and before the router's own module, which follows.
   document.querySelector('meta[name="astro-view-transitions-enabled"]')?.remove();
-  const theme = () => window.astroThemeToggle;
-  const pressed = () =>
-    document
-      .querySelector("[data-hw-theme]")
-      ?.setAttribute("aria-pressed", String(theme()?.getTheme?.() === "dark"));
-  pressed();
-  document.addEventListener("click", (event) => {
-    if (!event.target.closest?.("[data-hw-theme]")) return;
-    theme()?.setTheme?.(theme().getTheme?.() === "dark" ? "light" : "dark");
-    pressed();
-  });
-  document.addEventListener("change", (event) => {
-    if (event.target.matches?.("[data-hw-states]")) location.href = event.target.value;
-  });
-  // The arrow keys step through the states unless a field or the story has the focus.
-  document.addEventListener("keydown", (event) => {
-    if (event.defaultPrevented || event.altKey || event.ctrlKey || event.metaKey || event.shiftKey)
-      return;
-    const on = event.target.closest?.bind(event.target);
-    if (
-      on?.("input, select, textarea, [contenteditable]") ||
-      (on?.("main") && !on(".hw-catalogue-bar"))
-    )
-      return;
-    const rel = { ArrowLeft: "prev", ArrowRight: "next" }[event.key];
-    const link = rel && document.querySelector(`.hw-catalogue-bar a[rel="${rel}"][href]`);
-    if (link) location.href = link.href;
-  });
 </script>
