@@ -212,7 +212,16 @@ describe("check-coupling", () => {
         'const engine = join(ROOT, "node_modules/@hackersandwizards/slides");\n',
       "src/Page.astro": '<img src="../node_modules/@hackersandwizards/brand/logos/mark.svg" />\n',
       "src/bin.ts": 'export const server = "node_modules/.bin/mcp-fathom-server";\n',
-      "src/comment.ts": "// read from node_modules/@hackersandwizards/brand, never copied\n",
+      "src/comment.ts":
+        "// node_modules/@hackersandwizards/brand\nconst a = 1; // node_modules/@hackersandwizards/brand\n/*\n  node_modules/@hackersandwizards/brand\n*/\nconst url = 'https://x.dev/a';\n",
+      "src/Comment.astro":
+        "<!-- node_modules/@hackersandwizards/brand -->\n{/* node_modules/@hackersandwizards/brand */}\n",
+      "src/after-source.ts":
+        'export const q = "node_modules/@hackersandwizards/brand/x.svg"; // @source\n',
+      "src/regex.ts":
+        'export const f = (p: string) => p.replace(/^\\/c\\//, "node_modules/@hackersandwizards/brand/c/");\n',
+      "src/segments.ts":
+        'export const dir = join(root, "node_modules", "@hackersandwizards", "brand");\n',
       "src/tailwind.ts":
         'export const css = `@source "../node_modules/@hackersandwizards/brand/elements";`;\n',
       "src/self.ts": 'export const own = "node_modules/@hackersandwizards/fx/x.svg";\n',
@@ -222,12 +231,15 @@ describe("check-coupling", () => {
       "src/scope.ts": 'export const at = (n: string) => "node_modules/@hackersandwizards/" + n;\n',
     });
     const why =
-      "hard-coded path into an installed package: import.meta.resolve it through the package's exports, or run its command from node_modules/.bin";
+      "hard-coded path into an installed package: import.meta.resolve it through the package's exports (its ./package.json for the folder), run its command from node_modules/.bin, or name the exception in scaffolding.allow";
     expect(lines(run(dir, "check-coupling").out, "check-coupling").sort()).toEqual([
       `[check-coupling] src/Page.astro: ${why} (node_modules/@hackersandwizards/brand/logos/mark.svg)`,
+      `[check-coupling] src/after-source.ts: ${why} (node_modules/@hackersandwizards/brand/x.svg)`,
       `[check-coupling] src/logos.ts: ${why} (node_modules/@hackersandwizards/brand/clients/)`,
+      `[check-coupling] src/regex.ts: ${why} (node_modules/@hackersandwizards/brand/c/)`,
       `[check-coupling] src/root.ts: ${why} (node_modules/@hackersandwizards/brand)`,
       `[check-coupling] src/scope.ts: ${why} (node_modules/@hackersandwizards/)`,
+      `[check-coupling] src/segments.ts: ${why} (node_modules", "@hackersandwizards)`,
       `[check-coupling] test/story.test.ts: ${why} (node_modules/@hackersandwizards/slides)`,
     ]);
   });

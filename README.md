@@ -233,12 +233,12 @@ repository. A path into `node_modules` (a Tailwind `@source`) names the file on 
 where an `exports` entry targets it.
 
 **Installed paths.** Code (`.js`, `.ts` and their variants, `.astro`, `.vue`, `.svelte`, tests
-included) names no `node_modules/@hackersandwizards/...` path: it takes a file through
-`import.meta.resolve("@hackersandwizards/brand/logos/mark.svg")`, which the package's `exports`
-answer, and a command from `node_modules/.bin`. Comments, lines naming a Tailwind `@source`, `.css`
-paths (the CSS origin above) and the repository's own package are not checked. A script whose job is
-to read what is installed, or a test whose strings are data, keeps its path with an exception
-(below) narrowed by `text`.
+included) names no `node_modules/@hackersandwizards/...` path, joined or as path segments: it takes
+a file through `import.meta.resolve("@hackersandwizards/brand/logos/mark.svg")`, which the package's
+`exports` answer (its folder through its `./package.json`), and a command from `node_modules/.bin`.
+Comments, a path after a Tailwind `@source`, `.css` paths (the CSS origin above) and the
+repository's own package are not checked. A script whose job is to read what is installed, or a test
+whose strings are data, keeps its path with an exception (below) narrowed by `text`.
 
 ## Exceptions
 

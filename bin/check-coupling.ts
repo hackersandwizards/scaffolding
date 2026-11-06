@@ -34,7 +34,9 @@ const BRAND = "@hackersandwizards/brand";
 const SHELL = "@hackersandwizards/scaffolding";
 const CSS =
   /["'`(](?:[^"'`()\s]*?\/)??(node_modules\/)?(@hackersandwizards\/[\w.-]+)\/([^"'`()\s?#]+\.css)(?:[?#][^"'`()\s]*)?["'`)]/g;
-const INSTALLED = /node_modules\/(@hackersandwizards\/[\w.-]*)(\/[^\s"'`)\]},;$?#]*)?/g;
+const INSTALLED =
+  /node_modules(?:\/|["'`]\s*,\s*["'`])(@hackersandwizards(?:\/[\w.-]*)?)(\/[^\s"'`)\]},;$?#]*)?/g;
+const COMMENT = /(^|[\s{])\/\*[\s\S]*?\*\/|<!--[\s\S]*?-->|(?<![:"'`\\])\/\/.*/gm;
 const SPECIFIER =
   /(?:\bfrom\s*|\bimport\s*\(?\s*|\brequire\s*\(\s*|@(?:import|use|forward|source|plugin|reference|config)\s+(?:url\()?\s*)["'`]([^"'`\n]+)["'`]/g;
 
@@ -113,18 +115,16 @@ for (const path of listFiles(root, staged)) {
       else if (!published) flag(path, spec, `not in the exports of ${name}`);
     }
   // Code reaches an installed company package through its exports or its bin, never by a disk path.
-  // A comment or a Tailwind @source line names the path without using it; CSS has its own rule.
-  if (CODE.test(path))
-    for (const line of text.split("\n")) {
-      if (/^\s*(?:\/\/|\/?\*)/.test(line) || line.includes("@source")) continue;
-      for (const [token, name, rest = ""] of line.matchAll(INSTALLED))
-        if (name !== own && !rest.endsWith(".css"))
+  // A comment or a Tailwind @source names the path without using it; CSS has its own rule.
+  if (CODE.test(path) && text.includes("@hackersandwizards"))
+    for (const line of text.replace(COMMENT, "$1").split("\n"))
+      for (const m of line.matchAll(INSTALLED))
+        if (m[1] !== own && !m[2]?.endsWith(".css") && !line.slice(0, m.index).includes("@source"))
           flag(
             path,
-            token,
-            "hard-coded path into an installed package: import.meta.resolve it through the package's exports, or run its command from node_modules/.bin",
+            m[0],
+            "hard-coded path into an installed package: import.meta.resolve it through the package's exports (its ./package.json for the folder), run its command from node_modules/.bin, or name the exception in scaffolding.allow",
           );
-    }
   for (const [, raw] of text.matchAll(SPECIFIER)) {
     const spec = raw.replace(/\?.*/, "");
     if (/^(?:[./#~]|@\/|[a-z]+:)/.test(spec)) continue;
