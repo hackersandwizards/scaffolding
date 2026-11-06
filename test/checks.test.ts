@@ -1115,12 +1115,16 @@ describe("catalog", () => {
       for (const [old, to] of [
         ["/catalog/dashboard/Parts/box-parts/two?x", "/dashboard/Parts/box-parts/two?x"],
         ["/fx/catalog/", "/"],
-        ["/catalog/%E2%82%AC", "/%E2%82%AC"],
-        ["/catalog//evil.example/x", "/evil.example/x"],
+        ["/catalog/stories/%E2%82%AC", "/stories/%E2%82%AC"],
+        ["/fx//evil.example/x", "/evil.example/x"],
       ]) {
         const r = await fetch(`${server.url}${old}`, { redirect: "manual" });
         expect([r.status, r.headers.get("location")]).toEqual([301, to]);
       }
+      // A page of the site's own under /catalog/ is not one of the catalog's former pages.
+      expect((await fetch(`${server.url}/catalog/print/`, { redirect: "manual" })).status).not.toBe(
+        301,
+      );
       const start = `${server.url}/dashboard/Parts/box-parts/two`;
       let target: { webSocketDebuggerUrl: string } | undefined;
       for (let i = 0; i < 100 && !target; i++)

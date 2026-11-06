@@ -167,7 +167,13 @@ export function catalog(options: CatalogOptions): AstroIntegration {
             ? p.slice(prefix.length) || "/"
             : p;
         moved = (path) => {
-          const now = strip(strip(path, dev ? pagesBase : ""), atRoot ? "/catalog" : "");
+          const unbased = strip(path, dev ? pagesBase : "");
+          // Only the catalog's own former pages move, as in the build: a site's page under
+          // /catalog/ stays.
+          const now =
+            atRoot && /^\/catalog(\/(dashboard|stories)(\/|$)|\/?$)/.test(unbased)
+              ? strip(unbased, "/catalog")
+              : unbased;
           // "//host" in a Location header leaves the site.
           return now === path ? undefined : now.replace(/^\/+/, "/");
         };

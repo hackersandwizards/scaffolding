@@ -7,7 +7,7 @@ shell of its catalog.
 To work on the package itself, see [Developing the package](#developing-the-package).
 
 ```sh
-bun add -d github:hackersandwizards/scaffolding#v2.0.0
+bun add -d github:hackersandwizards/scaffolding#v2.0.1
 ```
 
 Requirements: bun 1.3 or newer, gitleaks (`brew install gitleaks`), `pdftotext` from poppler, and
@@ -271,7 +271,7 @@ publishes `dist/`. The caller, `.github/workflows/pages.yml`, is owned: where it
 ```yaml
 jobs:
   pages:
-    uses: hackersandwizards/scaffolding/.github/workflows/pages.yml@v2.0.0
+    uses: hackersandwizards/scaffolding/.github/workflows/pages.yml@v2.0.1
     permissions:
       contents: read
       pages: write
