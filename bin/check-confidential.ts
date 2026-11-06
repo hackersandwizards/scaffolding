@@ -6,6 +6,7 @@
 //   check-confidential prepush                pre-push: refuses commits listed in
 //                                             .confidential-purged.json, then hands the refs to
 //                                             `git lfs pre-push` where the push may carry LFS content
+//                                             or touch a lockable file
 //   check-confidential fetch                  fetches the list now, for a cloud setup script
 //   check-confidential build <terms|-> [--public <file>]
 //                                             prints a hashed list from one term per line (- reads
@@ -18,6 +19,7 @@ import {
   existsSync,
   mkdirSync,
   mkdtempSync,
+  readdirSync,
   readFileSync,
   renameSync,
   rmSync,
@@ -116,15 +118,20 @@ if (argv[0] === "prepush") {
     .split("\n")
     .map((line) => line.split(" ")[1])
     .filter((local) => local && !/^0+$/.test(local));
+  // New to the remote pushed to: a commit another remote already holds may still be missing there.
+  const fresh = (local: string) => [local, "--not", `--remotes=${argv[1]}`];
   const file = join(root, ".confidential-purged.json");
   if (existsSync(file)) {
     const purged = JSON.parse(readFileSync(file, "utf8"));
     const bad = new Set<string>(purged.hashes);
     const h = hasher(purged.salt);
-    const fresh = locals.flatMap((local) =>
-      git(["rev-list", local, "--not", "--remotes"], root).toString().split("\n").filter(Boolean),
+    const commits = locals.flatMap((local) =>
+      git(["rev-list", ...fresh(local)], root)
+        .toString()
+        .split("\n")
+        .filter(Boolean),
     );
-    for (const c of fresh)
+    for (const c of commits)
       if (bad.has(h(c)))
         report(
           "push",
@@ -133,23 +140,30 @@ if (argv[0] === "prepush") {
         );
   }
   if (findings.length) finish("check-confidential", findings, started);
-  // Without a store or an lfs-filtered path in the push git-lfs stays off: it would verify locks
-  // against the remote on every push.
+  // git-lfs stays off unless the push may carry LFS objects or touch a lockable file: it would
+  // verify locks against the remote on every push.
   const common = resolve(root, git(["rev-parse", "--git-common-dir"], root).toString().trim());
   const storage = spawnSync("git", ["config", "lfs.storage"], { cwd: root }).stdout.toString();
+  // An empty objects folder holds nothing to upload.
+  const holdsFile = (dir: string): boolean =>
+    existsSync(dir) &&
+    readdirSync(dir, { withFileTypes: true }).some(
+      (e) => e.isFile() || (e.isDirectory() && holdsFile(join(dir, e.name))),
+    );
+  const stores = [
+    join(common, "lfs/objects"),
+    ...(storage.trim() ? [resolve(common, storage.trim(), "objects")] : []),
+  ];
   const lfsPath = (local: string) => {
     // latin1 keeps a path's bytes as they are, whatever its encoding.
-    const changed = git(
-      ["log", "--format=", "--name-only", "-z", local, "--not", "--remotes"],
-      root,
-    )
+    const changed = git(["log", "--format=", "--name-only", "-z", ...fresh(local)], root)
       .toString("latin1")
       .split("\0")
       .filter(Boolean);
     if (!changed.length) return false;
     const paths = Buffer.from(`${[...new Set(changed)].join("\0")}\0`, "latin1");
     const attrs = (source: string[]) =>
-      spawnSync("git", ["check-attr", ...source, "-z", "--stdin", "filter"], {
+      spawnSync("git", ["check-attr", ...source, "-z", "--stdin", "filter", "lockable"], {
         cwd: root,
         input: paths,
       });
@@ -157,14 +171,19 @@ if (argv[0] === "prepush") {
     let r = attrs([`--source=${local}`]);
     if (r.status !== 0) r = attrs([]);
     if (r.status !== 0) throw new Error(`git check-attr: ${r.stderr}`);
-    return r.stdout
-      .toString("latin1")
-      .split("\0")
-      .some((v, i) => i % 3 === 2 && v === "lfs");
+    // git-lfs also refuses a change to a file someone else locked, LFS-tracked or not.
+    const out = r.stdout.toString("latin1").split("\0");
+    return out.some(
+      (v, i) => i % 3 === 2 && ["filter=lfs", "lockable=set"].includes(`${out[i - 1]}=${v}`),
+    );
   };
-  if (existsSync(join(common, "lfs/objects")) || storage.trim() || locals.some(lfsPath)) {
+  if (stores.some(holdsFile) || locals.some(lfsPath)) {
     if (spawnSync("git", ["lfs", "version"], { cwd: root }).status !== 0)
-      report("push", "", "this push may carry Git LFS content and git-lfs is not on PATH");
+      report(
+        "push",
+        "",
+        "this push may carry Git LFS content or touch a lockable file, and git-lfs is not on PATH",
+      );
     else {
       const lfs = spawnSync("git", ["lfs", "pre-push", ...argv.slice(1)], {
         cwd: root,

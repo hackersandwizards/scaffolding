@@ -675,8 +675,8 @@ describe("check-confidential", () => {
     write(dir, {
       ".confidential-purged.json": run(dir, "check-confidential", ["purged", purged]).out,
     });
-    const push = (sha: string) =>
-      spawnSync(process.execPath, [bin("check-confidential"), "prepush", "origin", remote], {
+    const push = (sha: string, name = "origin") =>
+      spawnSync(process.execPath, [bin("check-confidential"), "prepush", name, remote], {
         cwd: dir,
         input: `refs/heads/main ${sha} refs/heads/main ${"0".repeat(40)}\n`,
         encoding: "utf8",
@@ -686,6 +686,10 @@ describe("check-confidential", () => {
     expect(refused.stderr).toContain("purged from this repository's history");
     const clean = sh(dir, ["rev-parse", "HEAD~1"]).stdout.toString().trim();
     expect(push(clean).status).toBe(0);
+    // Already on origin, the commit still counts as new to a second remote.
+    sh(dir, ["update-ref", "refs/remotes/origin/main", purged]);
+    expect(push(purged).status).toBe(0);
+    expect(push(purged, "backup").status).toBe(1);
   });
 
   test("prepush hands the refs to Git LFS only where the push may carry LFS content", () => {
@@ -696,9 +700,9 @@ describe("check-confidential", () => {
     // A PATH holding git alone, so the machine's own git-lfs stays out of reach.
     const bare = temp();
     symlinkSync(Bun.which("git")!, join(bare, "git"));
-    const push = (dir: string, PATH: string) => {
+    const push = (dir: string, PATH: string, remote = "origin") => {
       const head = sh(dir, ["rev-parse", "HEAD"]).stdout.toString().trim();
-      return spawnSync(process.execPath, [bin("check-confidential"), "prepush", "origin", "x"], {
+      return spawnSync(process.execPath, [bin("check-confidential"), "prepush", remote, "x"], {
         cwd: dir,
         env: {
           ...process.env,
@@ -710,17 +714,27 @@ describe("check-confidential", () => {
       }).status;
     };
     const logged = () => (existsSync(log) ? readFileSync(log, "utf8") : "");
-    const both = (dir: string) => [push(dir, `${stub}:${bare}`), push(dir, bare)];
-    // Nothing of LFS: git-lfs is never started, installed or not; a .lfsconfig holds no objects.
+    const both = (dir: string, remote?: string) => [
+      push(dir, `${stub}:${bare}`, remote),
+      push(dir, bare, remote),
+    ];
+    // Nothing of LFS: git-lfs is never started, installed or not; a .lfsconfig and an empty store
+    // hold no objects.
     expect(both(repo({ "package.json": "{}" }))).toEqual([0, 0]);
     expect(both(repo({ "package.json": "{}", ".lfsconfig": "" }))).toEqual([0, 0]);
-    expect(logged()).toBe("");
-    // A store: git-lfs decides and its status is the hook's; without git-lfs the push is refused.
     const stored = repo({ "package.json": "{}" });
-    mkdirSync(join(stored, ".git/lfs/objects"), { recursive: true });
-    expect(both(stored)).toEqual([3, 1]);
+    mkdirSync(join(stored, ".git/lfs/objects/ab/cd"), { recursive: true });
+    expect(both(stored)).toEqual([0, 0]);
     const moved = repo({ "package.json": "{}" });
-    sh(moved, ["config", "lfs.storage", "/elsewhere"]);
+    const elsewhere = temp();
+    sh(moved, ["config", "lfs.storage", elsewhere]);
+    expect(both(moved)).toEqual([0, 0]);
+    expect(logged()).toBe("");
+    // A store holding an object: git-lfs decides and its status is the hook's; without git-lfs the
+    // push is refused.
+    write(stored, { ".git/lfs/objects/ab/cd/abcd": "x" });
+    expect(both(stored)).toEqual([3, 1]);
+    write(elsewhere, { "objects/ab/cd/abcd": "x" });
     expect(both(moved)).toEqual([3, 1]);
     // No store, but a pushed commit changes a path under filter=lfs, committed raw where git-lfs
     // was never installed.
@@ -744,11 +758,19 @@ describe("check-confidential", () => {
     rawGit(["commit", "-qm", "b"]);
     sh(raw, ["update-ref", "refs/remotes/origin/main", "HEAD~1"]);
     expect(both(raw)).toEqual([0, 0]);
+    // A second remote lacks what origin holds, so the path is new there.
+    expect(both(raw, "backup")).toEqual([3, 1]);
     // .git/info/attributes counts as well.
     const info = repo({ "package.json": "{}", "a.bin": "x" });
     write(info, { ".git/info/attributes": "*.bin filter=lfs\n" });
     expect(both(info)).toEqual([3, 1]);
-    expect(logged()).toBe("pre-push origin x\n".repeat(4));
+    // A lockable path: git-lfs refuses a change to a file someone else locked, LFS or not.
+    expect(
+      both(repo({ "package.json": "{}", ".gitattributes": "*.psd lockable\n", "a.psd": "x" })),
+    ).toEqual([3, 1]);
+    expect(logged()).toBe(
+      "pre-push origin x\n".repeat(3) + "pre-push backup x\n" + "pre-push origin x\n".repeat(2),
+    );
   });
 });
 

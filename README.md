@@ -7,13 +7,15 @@ shell of its catalog.
 To work on the package itself, see [Developing the package](#developing-the-package).
 
 ```sh
-bun add -d github:hackersandwizards/scaffolding#v2.7.1
+bun add -d github:hackersandwizards/scaffolding#v2.7.4
 ```
 
 Requirements: bun 1.3 or newer, gitleaks (`brew install gitleaks`), `pdftotext` from poppler, and
 on macOS `swiftc` for the OCR helper, built once per checkout into `node_modules/.cache/scaffolding/`.
 A commit in a repository without `"private": true` also needs a `gh` login in the `trainers` team:
-the confidential-terms check (below) fetches its list with it.
+the confidential-terms check (below) fetches its list with it. The commit and push hooks run the
+package's commands from `node_modules`, so each checkout, a new worktree included, needs
+`bun install` first. Without it the hook stops and says so.
 
 ## Commands
 
@@ -314,16 +316,20 @@ hook, which `check-structure --fix` removes.
 `check-confidential purged <sha>...` writes `.confidential-purged.json`: after a history rewrite,
 the pre-push hook refuses a push from an old clone that still carries one of those commits.
 
-The pre-push hook then hands the refs to `git lfs pre-push` where the push may carry LFS content:
-the repository keeps an LFS store (`lfs/objects` in its Git directory, or `lfs.storage`), or a
-pushed commit changes a path whose `filter` attribute is `lfs` (`.git/info/attributes` included).
-Git LFS reads the pushed commits itself, so a branch bringing LFS files the checked-out tree lacks
-still sends its objects. Any other push never starts git-lfs, which would otherwise verify locks
-against the remote on every push. Where LFS content may be pushed and git-lfs is not on `PATH`, as
-under a client's narrower `PATH`, the push is refused, so a file committed raw under an LFS path on
-a machine without git-lfs is caught there. Where git-lfs runs, it decides as it does without this
-hook. The attributes are read from each pushed branch's tip, by a Git older than 2.40 from the
-checked-out tree.
+The pre-push hook then hands the refs to `git lfs pre-push` where the push may carry LFS objects or
+touch a lockable file. That is the case where the repository's LFS store holds a file (`lfs/objects`
+in its Git directory, or under `lfs.storage`). It is also the case where a commit new to the remote
+being pushed to changes a path whose `filter` attribute is `lfs` or that is `lockable`
+(`.git/info/attributes` included). Git LFS reads the pushed commits itself, so a branch bringing LFS
+files the checked-out tree lacks still sends its objects. A commit counts as new until that remote's
+own tracking refs hold it, so a push to a second remote still sends objects only `origin` has.
+Any other push never starts git-lfs, which would otherwise verify locks against the remote on every
+push. A `.lfsconfig` alone starts nothing: git-lfs checks
+locks only on the files a push changes. Where git-lfs should run and is not on `PATH`, as under a
+client's narrower `PATH`, the push is refused. So a file committed raw under an LFS path on a machine
+without git-lfs is caught there. Where git-lfs runs, it decides as it does without this hook. The
+attributes are read from each pushed branch's tip, by a Git older than 2.40 from the checked-out
+tree.
 
 ## Pipelines
 

@@ -1,3 +1,5 @@
 #!/bin/sh
-# check-confidential prepush also hands the refs to Git LFS where the push may carry LFS content.
+# check-confidential prepush refuses commits purged from history (.confidential-purged.json),
+# then hands the refs to Git LFS where the push may carry LFS objects or touch a lockable file.
+[ -d node_modules ] || { echo "$(basename "$0"): no node_modules in this checkout: run bun install, then try again" >&2; exit 1; }
 exec bun run --silent check-confidential prepush "$@"
