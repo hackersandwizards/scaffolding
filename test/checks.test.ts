@@ -346,6 +346,21 @@ test("check-structure: a bin file is stored executable, and --fix makes it so", 
   expect(sh(dir, ["ls-files", "-s", "bin/x.ts"]).stdout.toString()).toStartWith("100755");
 });
 
+test("every bin target and every file in bin/ is stored executable", () => {
+  const root = join(import.meta.dir, "..");
+  const mode = (path: string) =>
+    sh(root, ["ls-files", "-s", "--", path]).stdout.toString().split(" ")[0];
+  // Control: the same read of a file stored plain has to answer 100644.
+  expect(mode("README.md")).toBe("100644");
+  const { bin } = JSON.parse(readFileSync(join(root, "package.json"), "utf8"));
+  const stored = [
+    ...Object.values<string>(bin),
+    ...readdirSync(join(root, "bin")).map((f) => `bin/${f}`),
+  ];
+  expect(stored.length).toBeGreaterThan(Object.keys(bin).length);
+  expect(stored.filter((path) => mode(path) !== "100755")).toEqual([]);
+});
+
 describe("scaffold and check-structure", () => {
   const parent = temp();
   const dir = join(parent, "demo");
@@ -1272,8 +1287,21 @@ describe("catalog", () => {
     expect(bar).toContain('<ul aria-label="States">');
     expect(bar).toMatch(/href="\/dashboard\/Parts\/box-parts\/one">One/);
     expect(bar).toMatch(/href="\/dashboard\/Parts\/box-parts\/two" aria-current="page">Two/);
-    expect(bar).toContain('<a rel="prev" href="/dashboard/Parts/box-parts/one"');
-    expect(bar).toContain('<a rel="next" aria-disabled="true"');
+    expect(bar).toContain(
+      '<a class="hw-catalogue-step" rel="prev" href="/dashboard/Parts/box-parts/one"',
+    );
+    // A step with nowhere to go is no anchor: Lighthouse's crawlable-anchors fails one without href.
+    expect(bar).toContain(
+      '<button class="hw-catalogue-step" type="button" disabled aria-label="Next state">',
+    );
+    const first = barOf(page("dashboard/Parts/box-parts/one"));
+    expect(first).toContain(
+      '<button class="hw-catalogue-step" type="button" disabled aria-label="Previous state">',
+    );
+    expect(first).toContain(
+      '<a class="hw-catalogue-step" rel="next" href="/dashboard/Parts/box-parts/two"',
+    );
+    expect(`${bar}${first}`).not.toMatch(/<a(?![^>]*href)[^>]*>/);
     expect(bar).toContain("2 of 2");
     // Above 12 states a menu replaces the chips, grouped by a word three names share.
     const many = barOf(page("dashboard/Parts/many-parts/block-image"));
@@ -1484,13 +1512,15 @@ describe("catalog", () => {
       await until(`location.pathname.endsWith("/one") && document.readyState === "complete"`);
       await new Promise((r) => setTimeout(r, 500));
       const after = await evaluate(
-        `JSON.stringify([document.documentElement.dataset.fxHead, document.documentElement.dataset.hwScale, document.body.dataset.fxRan, !!document.querySelector("main .hw-catalogue-bar")])`,
+        `JSON.stringify([document.documentElement.dataset.fxHead, document.documentElement.dataset.hwScale, document.body.dataset.fxRan, !!document.querySelector("main .hw-catalogue-bar"), document.body.dataset.fxBar])`,
       );
       expect(JSON.parse(String(after))).toEqual([
         "repository",
         "screen",
         "/dashboard/Parts/box-parts/one",
         true,
+        // The story's own inline script found the bar: it stood above the story from the start.
+        "above",
       ]);
       // The right arrow key steps to the next state.
       await evaluate(

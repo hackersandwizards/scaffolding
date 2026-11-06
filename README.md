@@ -28,8 +28,9 @@ package's commands from `node_modules`, so each checkout, a new worktree include
 | `check-staged`            | pre-commit                   | gitleaks on the index, then `check-coupling` and `check-confidential`, then prettier and eslint on the staged files; `validate:skills` when `.claude/` is staged, `admin-check` when an item is.                                                   |
 
 The gate and `check-staged` also run these files from `bin/` by path; they are steps, not commands,
-so an install leaves them not executable. A `node_modules/.bin` link to one is left from an install
-before v0.9.0, which bun keeps: delete it.
+so a new install links none of them into `node_modules/.bin`. A link to one is left from an install
+before v0.9.0, which bun keeps: it still runs, since every file in `bin/` is stored executable, and
+deleting it changes nothing for the gate.
 
 | Step                    | Runs in                     | Checks                                                                                                                                                                                                                |
 | ----------------------- | --------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |

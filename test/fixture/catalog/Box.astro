@@ -3,3 +3,7 @@ const { label } = Astro.props;
 ---
 
 <div class="box">{label}</div>
+<script is:inline>
+  // Runs as the parser reaches the story, so it sees what the first paint can draw.
+  if (document.querySelector("main .hw-catalogue-bar")) document.body.dataset.fxBar = "above";
+</script>

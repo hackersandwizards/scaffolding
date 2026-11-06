@@ -1,5 +1,6 @@
 ---
-// The bar sits in a <template>, which <head> allows, and the script moves it into <main> on load.
+// The bar sits in a <template>, which <head> allows, and the script moves it into <main> as the
+// parser creates that.
 import modules from "virtual:astrobook/story-modules.mjs";
 import config from "virtual:astrobook/global-config.mjs";
 import RepositoryHead from "virtual:scaffolding/catalog-head";
@@ -106,7 +107,7 @@ const root = {
   }
   /* brand's shapes: a worded button the brand corner, a field the small corner, an arrow alone
      round. */
-  .hw-catalogue-bar :is(button, select, [rel]) {
+  .hw-catalogue-bar :is(button, select, .hw-catalogue-step) {
     padding: 0 0.625rem;
     border: 1px solid color-mix(in srgb, currentColor 25%, transparent);
     border-radius: var(--hw-card-corner, var(--radius-brand));
@@ -116,7 +117,7 @@ const root = {
   .hw-catalogue-bar select[data-hw-states] {
     border-radius: var(--hw-corner-sm, var(--radius-sm));
   }
-  .hw-catalogue-bar [rel] {
+  .hw-catalogue-bar .hw-catalogue-step {
     justify-content: center;
     min-width: 1.75rem;
     padding: 0;
@@ -125,7 +126,7 @@ const root = {
   .hw-catalogue-bar button[aria-pressed="true"] {
     background: color-mix(in srgb, currentColor 12%, transparent);
   }
-  .hw-catalogue-bar [rel]:not([href]) {
+  .hw-catalogue-bar .hw-catalogue-step:disabled {
     opacity: 0.35;
     cursor: default;
   }
@@ -186,14 +187,15 @@ const root = {
       </span>
       {states.length > 1 && (
         <div class="hw-catalogue-states">
-          <a
-            rel="prev"
-            href={prev && href(prev)}
-            aria-disabled={prev ? undefined : "true"}
-            aria-label="Previous state"
-          >
-            ‹
-          </a>
+          {prev ? (
+            <a class="hw-catalogue-step" rel="prev" href={href(prev)} aria-label="Previous state">
+              ‹
+            </a>
+          ) : (
+            <button class="hw-catalogue-step" type="button" disabled aria-label="Previous state">
+              ‹
+            </button>
+          )}
           {menu ? (
             <select data-hw-states aria-label="State">
               {[...groups, ["", rest] as const].map(([group, list]) => {
@@ -216,14 +218,15 @@ const root = {
               ))}
             </ul>
           )}
-          <a
-            rel="next"
-            href={next && href(next)}
-            aria-disabled={next ? undefined : "true"}
-            aria-label="Next state"
-          >
-            ›
-          </a>
+          {next ? (
+            <a class="hw-catalogue-step" rel="next" href={href(next)} aria-label="Next state">
+              ›
+            </a>
+          ) : (
+            <button class="hw-catalogue-step" type="button" disabled aria-label="Next state">
+              ›
+            </button>
+          )}
           <small>
             {at + 1} of {states.length}
             <span class="hw-catalogue-keys"> · ← → to step</span>
@@ -233,6 +236,21 @@ const root = {
     </nav>
   </template>
 )}
+<script is:inline>
+  // A module script runs after the parse, by which time a page can have painted, and the bar then
+  // pushes the story down by its own height: a layout shift. An observer's callback runs before
+  // the next paint.
+  (() => {
+    const bar = document.getElementById("hw-catalogue-bar");
+    if (!bar) return;
+    new MutationObserver((_, observer) => {
+      const main = document.querySelector("main");
+      if (!main) return;
+      observer.disconnect();
+      main.prepend(bar.content.cloneNode(true));
+    }).observe(document, { childList: true, subtree: true });
+  })();
+</script>
 <script is:inline type="module">
   // Astrobook's client router swaps pages without loading them, which drops every attribute the
   // head sets on <html> (data-hw-scale, hw-focus-ring) and leaves its page scripts
@@ -244,12 +262,7 @@ const root = {
     document
       .querySelector("[data-hw-theme]")
       ?.setAttribute("aria-pressed", String(theme()?.getTheme?.() === "dark"));
-  const bar = document.getElementById("hw-catalogue-bar");
-  const main = document.querySelector("main");
-  if (bar && main) {
-    main.prepend(bar.content.cloneNode(true));
-    pressed();
-  }
+  pressed();
   document.addEventListener("click", (event) => {
     if (!event.target.closest?.("[data-hw-theme]")) return;
     theme()?.setTheme?.(theme().getTheme?.() === "dark" ? "light" : "dark");
