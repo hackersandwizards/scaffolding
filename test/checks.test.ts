@@ -1265,14 +1265,14 @@ describe("catalog", () => {
         ["/fx//evil.example/x", "/evil.example/x"],
       ]) {
         const r = await fetch(`${server.url}${old}`, { redirect: "manual" });
-        expect([r.status, r.headers.get("location")]).toEqual([301, to]);
+        expect([r.status, r.headers.get("location")]).toEqual([307, to]);
       }
       // A file under the root is a module, not a page: it stays where it is.
       for (const path of ["/fx/mod.css", "/catalog/stories/mod.css"])
         expect((await fetch(`${server.url}${path}`, { redirect: "manual" })).status).toBe(200);
       // A page of the site's own under /catalog/ is not one of the catalog's former pages.
       expect((await fetch(`${server.url}/catalog/print/`, { redirect: "manual" })).status).not.toBe(
-        301,
+        307,
       );
       const start = `${server.url}/dashboard/Parts/box-parts/two`;
       let target: { webSocketDebuggerUrl: string } | undefined;
@@ -1525,6 +1525,10 @@ describe("check-spaces", () => {
     "  <a",
     '    href="/x">x</a>',
     "</p>",
+    "<pre-view>",
+    "  drawn by",
+    "  <code>x</code>",
+    "</pre-view>",
     "<pre>",
     "run the",
     "<code>check</code>",
@@ -1544,6 +1548,7 @@ describe("check-spaces", () => {
       ["9", "strong"],
       ["10", "a"],
       ["31", "a"],
+      ["36", "code"],
     ]);
     const empty = run(
       repo({ "src/B.astro": "---\n---\n<code>x</code>\n", "package.json": "{}" }),

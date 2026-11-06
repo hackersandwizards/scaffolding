@@ -91,11 +91,12 @@ function packageDir(from: string): string {
 /** The repository's name as the admin hub keys it: its checkout's folder, a worktree's main
  * checkout (the worktree's own folder names a branch), else the package folder outside Git. */
 function checkout(dir: string): string {
-  const [top, common] = spawnSync(
-    "git",
-    ["rev-parse", "--path-format=absolute", "--show-toplevel", "--git-common-dir"],
-    { cwd: dir, encoding: "utf8" },
-  ).stdout.split("\n");
+  const [top, common] =
+    spawnSync(
+      "git",
+      ["rev-parse", "--path-format=absolute", "--show-toplevel", "--git-common-dir"],
+      { cwd: dir, encoding: "utf8" },
+    ).stdout?.split("\n") ?? [];
   return basename(common?.endsWith("/.git") ? dirname(common) : top || dir);
 }
 
@@ -294,7 +295,8 @@ export function catalog(options: CatalogOptions): AstroIntegration {
           const to = moved(url?.pathname ?? "");
           const path = decoded(url?.pathname ?? "");
           if (to) {
-            res.writeHead(301, { Location: `${to}${url!.search}` });
+            // Temporary: dev ports pass between repositories, and a browser keeps a 301 for the port.
+            res.writeHead(307, { Location: `${to}${url!.search}` });
             return res.end();
           }
           const file = path.startsWith(`${base}/`) ? path.slice(base.length + 1) : "";

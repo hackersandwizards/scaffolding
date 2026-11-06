@@ -12,7 +12,15 @@ import {
   writeFileSync,
 } from "node:fs";
 import { basename, dirname, join } from "node:path";
-import { applyAllow, finish, git, readPackage, repoRoot, type Finding } from "../lib/repo.ts";
+import {
+  applyAllow,
+  finish,
+  git,
+  listFiles,
+  readPackage,
+  repoRoot,
+  type Finding,
+} from "../lib/repo.ts";
 import { storiesDir } from "../catalog/path.ts";
 
 const started = performance.now();
@@ -129,21 +137,7 @@ if (existsSync(at("package.json"))) {
     // An Astro app in any folder, rooted at its config's folder.
     const { configs, preset } = skeleton.catalog;
     const uses = new RegExp(`from\\s*["']${preset.replace(/[/.]/g, "\\$&")}["']`);
-    const found = git(
-      [
-        "ls-files",
-        "-z",
-        "--cached",
-        "--others",
-        "--exclude-standard",
-        "--deduplicate",
-        "--",
-      ].concat(configs.map((c: string) => `*${c}`)),
-      root,
-    )
-      .toString()
-      .split("\0")
-      .filter((p) => configs.includes(basename(p)) && exists(p));
+    const found = listFiles(root, false).filter((p) => configs.includes(basename(p)));
     const apps = found.filter((path) => uses.test(readFileSync(at(path), "utf8")));
     if (!apps.length)
       add(

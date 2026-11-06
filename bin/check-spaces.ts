@@ -23,7 +23,7 @@ function template(text: string): string[] {
       .replace(/^---\r?\n(?:[\s\S]*?\n)?---/, blank)
       // An attribute may hold ">" (`set:html={a => b}`), and `<script ... />` closes itself.
       .replace(
-        /<(script|style|pre|textarea)\b(?:"[^"]*"|'[^']*'|\{[^}]*\}|[^>"'{])*(?:\/>|>[\s\S]*?<\/\1>)/g,
+        /<(script|style|pre|textarea)(?=[\s/>])(?:"[^"]*"|'[^']*'|\{[^}]*\}|[^>"'{])*(?:\/>|>[\s\S]*?<\/\1>)/g,
         blank,
       )
       .replace(/<!--[\s\S]*?-->|\{\/\*[\s\S]*?\*\/\}|^\s*\/\/.*$/gm, blank)
