@@ -1829,6 +1829,70 @@ describe("check-history", () => {
     ]);
   });
 
+  test("reads a comment's lines joined, whatever marks them", () => {
+    const r = run(
+      shipped({
+        "src/a.ts": "// the flow (decision\n// merge-comparison, as drawn)\nconst a = 1;\n",
+        "src/b.ts": "/**\n * the flow (decision\n * merge-comparison)\n */\n",
+        "src/c.ts": "const a = 1; // the flow (blind\n             // panel)\n",
+        ".githooks/pre-commit": "# the flow (decision\n# merge-comparison)\nrun\n",
+        "src/d.ts": "// the flow (decision\r\n// merge-comparison)\r\n",
+        "src/e.html": "<!-- the flow (blind\n     panel) -->\n",
+      }),
+      "check-history",
+    );
+    expect(lines(r.out, "history").map((l) => l.replace(/ \(.*/, ""))).toEqual([
+      "[history] .githooks/pre-commit: decision id",
+      "[history] src/a.ts: decision id",
+      "[history] src/b.ts: decision id",
+      "[history] src/c.ts: review score",
+      "[history] src/d.ts: decision id",
+      "[history] src/e.html: review score",
+    ]);
+  });
+
+  test("keeps comments apart that code or an empty line separates", () => {
+    const r = run(
+      shipped({
+        "src/a.ts": "// the decision\nconst a = 1;\n// merge-comparison is a name\n",
+        "src/b.ts": "// the decision\n\n// merge-comparison is a name\n",
+        "src/c.ts": "const a = 1; // the decision\nconst b = 2; // merge-comparison\n",
+        ".githooks/pre-commit": "# the decision\n\n# merge-comparison is a name\nrun\n",
+      }),
+      "check-history",
+    );
+    expect(lines(r.out, "history")).toEqual([]);
+    expect(r.code).toBe(0);
+  });
+
+  test("flags a score comparison and leaves version numbers alone", () => {
+    const r = run(
+      shipped({
+        "src/a.ts": "// the flow, 7.94 against\n// 7.29 for the rest.\n",
+        "src/b.ts": "// the flow, 8.4 vs 7.9\n",
+        "src/c.ts": "// the flow, 8.00 against 7.00.\n",
+        "src/d.ts": "// the gap (7.00 in the same panel)\n",
+        "src/e.ts": "// both gaps, 7.75 of 10 against 5.75\n",
+        "src/clean.ts": [
+          "// 2.11.1 against 2.11.0 changed the flag",
+          "// v1.2 vs v1.3 changed the flag",
+          "// Node 18.2 vs 20.1 changed the flag",
+          "// 1.10.1 vs 1.9 changed the flag",
+          "// a side panel, 7.5 in the panel's width",
+          "",
+        ].join("\n"),
+      }),
+      "check-history",
+    );
+    expect(lines(r.out, "history").map((l) => l.replace(/ \(.*/, ""))).toEqual([
+      "[history] src/a.ts: review score",
+      "[history] src/b.ts: review score",
+      "[history] src/c.ts: review score",
+      "[history] src/d.ts: review score",
+      "[history] src/e.ts: review score",
+    ]);
+  });
+
   test("a block comment opens neither inside a string nor inside url()", () => {
     const end = "const b = 'x'; // */\n";
     const r = run(

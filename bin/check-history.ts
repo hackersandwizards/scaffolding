@@ -27,6 +27,11 @@ const HISTORY: [string, RegExp][] = [
     "review score",
     /\bblind[\s-]+(?:panels?|reviews?|rounds?|runs?|A\/B)|\bscored\b|\bnoise\s+\d|\boverall of 10\b|\bpersonas?\b|\breviewers?\b/gi,
   ],
+  // A score runs to 10 and has two parts, so a version such as 2.11.1 or v1.2, or 18.2, is none.
+  [
+    "review score",
+    /(?<![\w.])(?:10|\d)\.\d\d?\s+(?:(?:against|vs\.?|versus)\s+(?:10|\d)\.\d\d?(?!\w|\.\d)|of\s+10\b|in\s+the\s+same\s+panel\b)/gi,
+  ],
   // A review note, not the item folder the admin layout names.
   ["review pointer", /\bdocs\/agent-work\/(?!items\b)\S/g],
   [
@@ -46,6 +51,26 @@ const HISTORY: [string, RegExp][] = [
 ];
 const kinds = (text: string) => HISTORY.filter(([, re]) => text.match(re)).map(([kind]) => kind);
 
+/** A file's comments without their marks, one string for lines only a line break separates, so an
+ * id or a score wrapped across two lines reads whole. */
+function readComments(path: string, text: string): string[] {
+  const read: string[] = [];
+  let end = 0;
+  for (const m of text.matchAll(commentSyntax(path))) {
+    const mark = m.index + m[0].search(/\/[/*]|<!--|#/);
+    const body = text
+      .slice(mark, m.index + m[0].length)
+      .replace(/^\s*(?:\/\/+|\/\*+|<!--|\*+\/?|-->|#+)|(?:\*+\/|-->)\s*$/gm, "")
+      .replace(/\s+/g, " ")
+      .trim();
+    if (read.length && /^[ \t]*\r?\n?[ \t]*$/.test(text.slice(end, mark)))
+      read[read.length - 1] += ` ${body}`;
+    else read.push(body);
+    end = m.index + m[0].length;
+  }
+  return read;
+}
+
 // Verbatim from comments that shipped in company packages, the last ones planted: a pattern that
 // stops hitting its line fails the step rather than letting every file pass. A line with a path
 // must first come out of that file as a comment.
@@ -63,10 +88,17 @@ const controls = [
   ...(items.length ? [[`see ${items[0]} for the rest`, "item id"]] : []),
   ["a{b:c;}/* (Benedikt, 01.11.) */", "date", "a.css"],
   ["Item new-claim", "item id"],
+  ["// the before side stays (decision\n" + "// merge-comparison, 7.94", "decision id", "a.ts"],
+  [
+    "(decision merge-comparison, 7.94 against 7.29 for the transform's own drawing).",
+    "review score",
+  ],
+  ["// pushed every column's text down (7.00 in the same panel).", "review score"],
+  ["Claude and Codex: 7.75 of 10 against 5.75 for both gaps).", "review score"],
 ];
 const found: Finding[] = [];
 for (const [line, kind, file] of controls)
-  if (!kinds(file ? (line.match(commentSyntax(file))?.join() ?? "") : line).includes(kind))
+  if (!kinds(file ? readComments(file, line).join() : line).includes(kind))
     found.push({ check: "history", path: import.meta.path, text: line, message: `misses ${kind}` });
 
 // A repository declaring no files, exports or bin ships nothing another repository reads.
@@ -88,16 +120,11 @@ if (pack.status !== 0 || !shipped.length) {
 for (const path of shipped) {
   const bytes = readFileSync(join(root, path));
   if (bytes.includes(0)) continue;
-  for (const comment of bytes.toString("utf8").match(commentSyntax(path)) ?? [])
+  for (const comment of readComments(path, bytes.toString("utf8")))
     for (const [kind, re] of HISTORY)
       for (const m of comment.matchAll(re)) {
         const text = comment.slice(Math.max(0, m.index - 40), m.index + m[0].length + 40);
-        found.push({
-          check: "history",
-          path,
-          text: text.replace(/\s+/g, " ").trim(),
-          message: kind,
-        });
+        found.push({ check: "history", path, text: text.trim(), message: kind });
       }
 }
 finish("history", applyAllow(root, "history", found, true), started);
