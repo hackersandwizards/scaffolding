@@ -236,7 +236,7 @@ describe("check-coupling", () => {
       "src/self.ts": 'export const own = "node_modules/@hackersandwizards/fx/x.svg";\n',
       "src/styles.css": '@source "../node_modules/@hackersandwizards/brand/elements";\n',
       "tools/fonts.py":
-        "# node_modules/@hackersandwizards/brand\ndef f():\n    \"\"\"Reads node_modules/@hackersandwizards/brand.\"\"\"\nBRAND = 'node_modules/@hackersandwizards/brand/tokens/fonts'\nLOGOS = ROOT / 'node_modules' / '@hackersandwizards' / 'brand' / 'logos'\nMARKS = Path(\"node_modules\") / \"@hackersandwizards\"\n",
+        '# node_modules/@hackersandwizards/brand\ndef f():\n    """Reads node_modules/@hackersandwizards/brand."""\nCMD = [\n    """node_modules/@hackersandwizards/brand/data""",\n]\nBRAND = \'node_modules/@hackersandwizards/brand/tokens/fonts\'\nLOGOS = ROOT / \'node_modules\' / \'@hackersandwizards\' / \'brand\' / \'logos\'\nMARKS = Path("node_modules") / "@hackersandwizards"\n',
       "scripts/installed.ts": 'const dir = "node_modules/@hackersandwizards/";\n',
       "src/scope.ts": 'export const at = (n: string) => "node_modules/@hackersandwizards/" + n;\n',
       "og/template.html":
@@ -266,6 +266,7 @@ describe("check-coupling", () => {
       `[check-coupling] test/story.test.ts: ${installed} (node_modules/@hackersandwizards/slides)`,
       `[check-coupling] tools/fonts.py: ${installed} (node_modules") / "@hackersandwizards)`,
       `[check-coupling] tools/fonts.py: ${installed} (node_modules' / '@hackersandwizards)`,
+      `[check-coupling] tools/fonts.py: ${installed} (node_modules/@hackersandwizards/brand/data)`,
       `[check-coupling] tools/fonts.py: ${installed} (node_modules/@hackersandwizards/brand/tokens/fonts)`,
     ]);
   });

@@ -39,7 +39,8 @@ const INSTALLED =
   /node_modules[\s"'`,/\\)+]{1,8}(@hackersandwizards(?:\/[\w.-]*)?)(\/[^\s"'`)\]},;$?#]*)?/g;
 const COMMENT = /(^|[\s{])\/\*[\s\S]*?\*\/|<!--[\s\S]*?-->|(?<![:"'`\\])\/\/.*/gm;
 const HASH = /(^|\s)#.*/gm;
-const DOCSTRING = /^(\s*)(?:"""[\s\S]*?"""|'''[\s\S]*?''')/gm;
+// A docstring opens the file or the block a line ending in ":" starts.
+const DOCSTRING = /(^\s*|:[ \t]*\n\s*)(?:"""[\s\S]*?"""|'''[\s\S]*?''')/g;
 const SPECIFIER =
   /(?:\bfrom\s*|\bimport\s*\(?\s*|\brequire\s*\(\s*|@(?:import|use|forward|source|plugin|reference|config)\s+(?:url\()?\s*)["'`]([^"'`\n]+)["'`]/g;
 
@@ -124,8 +125,8 @@ for (const path of listFiles(root, staged)) {
       for (const m of line.matchAll(INSTALLED)) {
         if (m[1] === own || line.slice(0, m.index).includes("@source")) continue;
         if (STYLES.test(path)) {
-          const file = m[2] && posix.normalize(m[2].slice(1));
-          if (!file?.endsWith(".css") && !(file && publishes(m[1], file, true)))
+          const file = m[2]?.slice(1) && posix.normalize(m[2].slice(1));
+          if (!file || (!file.endsWith(".css") && !publishes(m[1], file, true)))
             flag(path, m[0], `a stylesheet names a disk path only to a file ${m[1]} exports`);
         } else
           flag(
