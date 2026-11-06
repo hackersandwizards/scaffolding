@@ -49,7 +49,7 @@ const HISTORY: [string, RegExp][] = [
     ),
   ],
   // A one-digit month needs a year, a closing bracket or a comma after it, so a decimal closing a
-  // sentence ("only 4.7.") is none, and a date starts no later than a version's first part.
+  // sentence ("only 4.7.") is none. A date never starts inside a dotted number ("2.11.3.").
   [
     "date",
     /\b20\d\d-\d\d-\d\d\b|(?<![\w.])(?:0?[1-9]|[12]\d|3[01])\.(?:(?:0[1-9]|1[0-2])\.(?:20\d\d)?|[1-9]\.(?:20\d\d|(?=[),])))(?!\w)/g,
