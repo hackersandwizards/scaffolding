@@ -55,8 +55,10 @@ const tilePreview = (item: CatalogItem) =>
       ? `<img src="${escapeCatalog(item.image)}" alt="" loading="lazy">`
       : (item.html ?? "");
 
+// data-hw-shell marks the shell's own brand elements, the tile's card and pill, which a check of the
+// repository's own elements skips.
 const catalogTile = (item: CatalogItem, group: string) =>
-  `<li><a class="hw-card hw-catalogue-tile" href="${escapeCatalog(item.href)}" data-search="${escapeCatalog(`${group} ${item.name} ${item.note ?? ""}`.toLowerCase())}">${
+  `<li><a class="hw-card hw-catalogue-tile" data-hw-shell href="${escapeCatalog(item.href)}" data-search="${escapeCatalog(`${group} ${item.name} ${item.note ?? ""}`.toLowerCase())}">${
     item.frame || item.image || item.html
       ? `<span class="hw-catalogue-preview"${
           item.frame && item.frameSize
@@ -66,7 +68,7 @@ const catalogTile = (item: CatalogItem, group: string) =>
       : ""
   }<span class="hw-catalogue-name">${escapeCatalog(item.name)}</span>${
     item.note ? `<span class="hw-catalogue-note">${escapeCatalog(item.note)}</span>` : ""
-  }${item.pill ? `<span class="hw-pill" data-tone="neutral">${escapeCatalog(item.pill)}</span>` : ""}</a></li>`;
+  }${item.pill ? `<span class="hw-pill" data-tone="neutral" data-hw-shell>${escapeCatalog(item.pill)}</span>` : ""}</a></li>`;
 
 // Filters the tiles by every word in the search field and hides a group left empty, and scales each
 // sized frame to its tile's width; delegated on the document, so it holds across Astro's client

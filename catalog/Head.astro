@@ -3,6 +3,7 @@
 import modules from "virtual:astrobook/story-modules.mjs";
 import config from "virtual:astrobook/global-config.mjs";
 import RepositoryHead from "virtual:scaffolding/catalog-head";
+import shell from "virtual:scaffolding/catalog";
 
 const FOLD = 12;
 type Story = { id: string; name: string };
@@ -40,9 +41,23 @@ const states = menu ? [...[...groups.values()].flat(), ...rest] : all;
 const at = states.findIndex((s) => s.id === id);
 const href = (s: Story) => `${base}/${s.id}${slash}`;
 const [prev, next] = [states[at - 1], states[at + 1]];
+const alone = path.startsWith(`${trim(config.storyBase)}/`);
+// brand's scale and night on <html>, set before the body draws: the home at the dense scale, a
+// page drawing a story at `storyScale`; night.css turns only a subtree marked data-hw-night under the
+// theme toggle's data-theme, which is every page but a state alone, so a tile's preview keeps the
+// state's own theme.
+const root = {
+  hwScale: mod || alone ? shell.storyScale : "dense",
+  hwNight: alone ? undefined : "",
+};
 ---
 
+<meta name="robots" content="noindex" />
 <RepositoryHead />
+<script
+  is:inline
+  set:html={`Object.assign(document.documentElement.dataset,${JSON.stringify(root)});`}
+/>
 <style is:global>
   #astrobook-sidebar,
   astrobook-sidebar-resize-handle {
@@ -194,8 +209,8 @@ const [prev, next] = [states[at - 1], states[at + 1]];
   </template>
 )}
 <script is:inline type="module">
-  // Astrobook's client router swaps pages without loading them, which drops every attribute a
-  // repository's head sets on <html> (data-hw-scale, hw-focus-ring) and leaves its page scripts
+  // Astrobook's client router swaps pages without loading them, which drops every attribute the
+  // head sets on <html> (data-hw-scale, hw-focus-ring) and leaves its page scripts
   // unrun. Without this marker the router loads each page in full. A module script runs once the
   // document is parsed, so the marker exists, and before the router's own module, which follows.
   document.querySelector('meta[name="astro-view-transitions-enabled"]')?.remove();

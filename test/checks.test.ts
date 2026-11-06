@@ -1,6 +1,7 @@
 import { afterAll, describe, expect, test } from "bun:test";
 import { spawnSync } from "node:child_process";
 import {
+  existsSync,
   mkdirSync,
   mkdtempSync,
   readdirSync,
@@ -982,7 +983,26 @@ describe("catalog", () => {
     expect(home.indexOf(">Types <")).toBeLessThan(home.indexOf(">Parts <"));
     expect(home).toContain('src="/stories/Types/box-types/two"');
     expect(readdirSync(join(dist, "stories/Parts/box-parts"))).toEqual(["one", "two"]);
+    // `previewSize` per group: a Types tile draws its frame whole at 1440 x 900, a Parts tile at
+    // three quarters.
+    expect(home).toContain(
+      'data-frame-width="1440" style="aspect-ratio:1440/900"><iframe src="/stories/Types/box-types/two"',
+    );
+    expect(home).toMatch(/<span class="hw-catalogue-preview"><iframe src="\/stories\/Parts\//);
+    // The shell's own card and pill carry data-hw-shell, for brand-elements to skip.
+    expect(home).toContain('<a class="hw-card hw-catalogue-tile" data-hw-shell href=');
+    expect(home).toContain('<span class="hw-pill" data-tone="neutral" data-hw-shell>');
+    expect(readFileSync(join(dist, "fx.txt"), "utf8")).toBe("fx\n");
     const page = (p: string) => readFileSync(join(dist, p, "index.html"), "utf8");
+    // Every page says noindex; the shell draws dense, a story at `storyScale`, and every page but a
+    // state alone turns with the theme toggle.
+    const root = (html: string) =>
+      html.match(/Object\.assign\(document\.documentElement\.dataset,(\{.*?\})\);/)?.[1];
+    expect(root(home)).toBe('{"hwScale":"dense","hwNight":""}');
+    expect(root(page("dashboard/Parts/box-parts/two"))).toBe('{"hwScale":"screen","hwNight":""}');
+    expect(root(page("stories/Parts/box-parts/two"))).toBe('{"hwScale":"screen"}');
+    for (const p of ["", "dashboard/Parts/box-parts/two", "stories/Parts/box-parts/two", "catalog"])
+      expect(page(p)).toContain('<meta name="robots" content="noindex">');
     // Every page of the catalog's former place forwards to its page at the root.
     expect(page("catalog/dashboard/Parts/box-parts/two")).toContain(
       'http-equiv="refresh" content="0; url=/dashboard/Parts/box-parts/two/"',
@@ -1050,6 +1070,14 @@ describe("catalog", () => {
     expect(page("catalog/stories/Types/box-types/two")).toContain(
       'url=/fx/stories/Types/box-types/two/"',
     );
+    // A base ending in /catalog mounts the catalog under a host with its own home: no forwarding
+    // pages and no public/, which the host serves.
+    expect(build(["--base", "/catalog"]).status).toBe(0);
+    expect(readFileSync(join(dist, "index.html"), "utf8")).toContain(
+      'src="/catalog/stories/Types/box-types/two"',
+    );
+    expect(existsSync(join(dist, "catalog"))).toBe(false);
+    expect(existsSync(join(dist, "fx.txt"))).toBe(false);
     // A redirect from "/" would take the catalog's place: the build fails and says why.
     const redirecting = join(fixture, "catalog", "redirecting.config.mjs");
     made.push(redirecting);
@@ -1167,9 +1195,14 @@ describe("catalog", () => {
       await until(`location.pathname.endsWith("/one") && document.readyState === "complete"`);
       await new Promise((r) => setTimeout(r, 500));
       const after = await evaluate(
-        `JSON.stringify([document.documentElement.dataset.hwScale, document.body.dataset.fxRan, !!document.querySelector("main .hw-catalogue-bar")])`,
+        `JSON.stringify([document.documentElement.dataset.fxHead, document.documentElement.dataset.hwScale, document.body.dataset.fxRan, !!document.querySelector("main .hw-catalogue-bar")])`,
       );
-      expect(JSON.parse(String(after))).toEqual(["dense", "/dashboard/Parts/box-parts/one", true]);
+      expect(JSON.parse(String(after))).toEqual([
+        "repository",
+        "screen",
+        "/dashboard/Parts/box-parts/one",
+        true,
+      ]);
       // The right arrow key steps to the next state.
       await evaluate(
         `document.dispatchEvent(new KeyboardEvent("keydown", { key: "ArrowRight", bubbles: true }))`,

@@ -9,6 +9,8 @@ export default defineConfig({
       lead: "Lead.",
       groupOrder: ["Types", "Parts"],
       previewStates: ["missing", "two"],
+      previewSize: { Types: [1440, 900] },
+      storyScale: "screen",
       header: { component: "./Header.astro" },
       head: "./Head.astro",
       copy: ["assets/*.svg", "assets/nested"],

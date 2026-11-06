@@ -28,8 +28,13 @@ export type CatalogOptions = {
   /** One or two sentences under the title. */
   lead: string;
   /** The tile preview's viewport in CSS px, drawn whole and scaled to the tile, such as
-   * [1440, 810] for a slide; without it the first state draws at three quarters. */
-  previewSize?: [number, number];
+   * [1440, 810] for a slide, or one per group, such as { Pages: [1440, 900] }; without one the
+   * first state draws at three quarters. */
+  previewSize?: [number, number] | Record<string, [number, number]>;
+  /** brand's data-hw-scale on <html> of every page that draws a story (a state's page and the
+   * state alone), such as "screen"; without it such a page keeps what the repository's head sets,
+   * else brand's default. The home draws at "dense". */
+  storyScale?: string;
   /** Groups shown first, in this order; the rest follow alphabetically. */
   groupOrder?: string[];
   /** The states a tile draws and links, in order of preference, each the story's export name in
@@ -149,6 +154,7 @@ export function catalog(options: CatalogOptions): AstroIntegration {
   let repo = "";
   let base = "";
   let atRoot = false;
+  let mounted = false;
   // Where an old link points, as dev serves it now: without the Pages base, and without /catalog
   // where the catalog moved to the root; undefined for a current path.
   let moved = (_: string): string | undefined => undefined;
@@ -160,6 +166,9 @@ export function catalog(options: CatalogOptions): AstroIntegration {
         // the root.
         const dev = inParams.command === "dev";
         const pagesBase = inParams.config.base.replace(/\/$/, "");
+        // A base ending in /catalog mounts the catalog under a host with its own home, which serves
+        // public/ itself and never had the catalog at its root.
+        mounted = pagesBase.endsWith("/catalog");
         const params = dev
           ? { ...inParams, config: inParams.updateConfig({ base: "/" }) }
           : inParams;
@@ -212,6 +221,7 @@ export function catalog(options: CatalogOptions): AstroIntegration {
           lead: options.lead,
           previews: options.previews ?? true,
           previewSize: options.previewSize,
+          storyScale: options.storyScale,
           groupOrder: options.groupOrder ?? [],
           previewStates: options.previewStates ?? [],
           provenance,
@@ -224,6 +234,7 @@ export function catalog(options: CatalogOptions): AstroIntegration {
         params.updateConfig({
           ...(own && { outDir: new URL("../dist/", params.config.root) }),
           vite: {
+            ...(mounted && !dev && { publicDir: false as const }),
             optimizeDeps: {
               entries: [`${relative(root, stories)}/**/*.stories.*`],
               include: ROUTER,
@@ -293,7 +304,7 @@ export function catalog(options: CatalogOptions): AstroIntegration {
       "astro:build:done": ({ dir }) => {
         const out = fileURLToPath(dir);
         // The catalog lived under /catalog/ until v2.0.0: each of its published pages forwards.
-        if (atRoot)
+        if (atRoot && !mounted)
           for (const page of globSync(["index.html", "{dashboard,stories}/**/index.html"], {
             cwd: out,
           })) {
@@ -303,7 +314,7 @@ export function catalog(options: CatalogOptions): AstroIntegration {
             mkdirSync(dirname(stub), { recursive: true });
             writeFileSync(
               stub,
-              `<!doctype html><meta charset="utf-8"><title>Moved</title><link rel="canonical" href="${to}"><meta http-equiv="refresh" content="0; url=${to}"><script>location.replace(${JSON.stringify(to)}+location.search+location.hash)</script><a href="${to}">${to}</a>\n`,
+              `<!doctype html><meta charset="utf-8"><title>Moved</title><meta name="robots" content="noindex"><link rel="canonical" href="${to}"><meta http-equiv="refresh" content="0; url=${to}"><script>location.replace(${JSON.stringify(to)}+location.search+location.hash)</script><a href="${to}">${to}</a>\n`,
             );
           }
         const pointers: string[] = [];

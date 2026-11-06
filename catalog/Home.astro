@@ -3,6 +3,7 @@ import modules from "virtual:astrobook/story-modules.mjs";
 import config from "virtual:astrobook/global-config.mjs";
 import options from "virtual:scaffolding/catalog";
 import Layout from "./Layout.astro";
+import type { CatalogOptions } from "./index.ts";
 
 type StoryModule = { name: string; directory?: string; stories: { id: string }[] };
 
@@ -13,7 +14,7 @@ interface Props {
   title?: string;
   lead?: string;
   previews?: boolean;
-  previewSize?: [number, number];
+  previewSize?: CatalogOptions["previewSize"];
   groupOrder?: string[];
   previewStates?: string[];
 }
@@ -51,7 +52,11 @@ for (const m of [...(modules as StoryModule[])].sort((a, b) => a.name.localeComp
     href: url(config.dashboardBase, first.id),
     pill: m.stories.length === 1 ? "1 state" : `${m.stories.length} states`,
     frame: previews ? url(config.storyBase, first.id) : undefined,
-    frameSize: previewSize,
+    frameSize: Array.isArray(previewSize)
+      ? previewSize
+      : previewSize && Object.hasOwn(previewSize, group)
+        ? previewSize[group]
+        : undefined,
   });
 }
 const data = {

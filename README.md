@@ -141,6 +141,12 @@ The shell (`catalog/`: Layout, Home, Head, `render.ts`, which draws the rail and
 `catalog.css`) reads brand's token roles by name only, and the repository's `css` supplies them.
 The options beyond those above:
 
+- `previewSize`: the tile preview's viewport in CSS px, drawn whole and scaled to the tile, for
+  every group (`[794, 1123]`) or per group (`{ Pages: [1440, 900] }`); a tile without one draws its
+  state at three quarters.
+- `storyScale`: brand's `data-hw-scale` on every page that draws a story, a state's page and the
+  state alone, such as `"screen"`; without it such a page keeps what the repository's `head` sets,
+  else brand's default. The home is always `"dense"`.
 - `title`: default "Catalog".
 - `href`: where the header's lockup links, default the site's root (Astro's `base`).
 - `admin`: under `astro dev`, a header link to the repository's page in the local admin hub,
@@ -164,7 +170,14 @@ The options beyond those above:
 
 A project Pages site, published under `/<repo>/`, sets Astro's `base: "/<repo>"` in its
 `defineConfig`; the catalog's links and the header's default link follow it in the build. `astro
-dev` serves at the root and redirects a path under the base there.
+dev` serves at the root and redirects a path under the base there. A base ending in `/catalog`
+mounts the catalog under a host with a home of its own, such as a Worker's site: the build leaves
+out `public/`, which the host serves, and writes no forwarding pages.
+
+Every catalog page carries `<meta name="robots" content="noindex">`. Every page but a state alone
+carries `data-hw-night`, so brand's `night.css` turns it under the theme toggle while a tile's
+preview keeps its own theme. The shell's own card and pill on the home carry `data-hw-shell`, for a
+check of the repository's elements to skip.
 
 `astro dev` starts quietly: Vite's start-up scan reads the stories, and the preset pre-bundles the
 client router Astrobook's layout loads, so no dependency is found only when the first page loads.
