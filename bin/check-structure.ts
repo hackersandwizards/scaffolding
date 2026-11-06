@@ -140,9 +140,12 @@ if (existsSync(at("package.json"))) {
       posix.normalize(String(p)),
     ),
   );
-  for (const entry of git(["ls-files", "-s", "-z"], root).toString().split("\0")) {
-    const [, mode, path] = /^(\d+) \S+ \d\t(.*)$/s.exec(entry) ?? [];
-    if (bins.has(path) && mode !== "100755")
+  const listed = bins.size
+    ? git(["ls-files", "-s", "-z", "--", ...[...bins].map((p) => `:(literal)${p}`)], root)
+    : "";
+  for (const entry of listed.toString().split("\0").filter(Boolean)) {
+    const [, mode, path] = /^(\d+) \S+ \d\t(.*)$/s.exec(entry)!;
+    if (mode === "100644")
       add(path, "a bin file is stored executable (check-structure --fix)", mode, () => {
         chmodSync(at(path), 0o755);
         git(["update-index", "--chmod=+x", "--", path], root);

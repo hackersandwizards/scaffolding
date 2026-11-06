@@ -265,7 +265,8 @@ describe("check-coupling", () => {
         "package.json": JSON.stringify({ scaffolding: { allow: entries } }),
         "src/a.ts": 'import "../../x";\n',
       });
-    const reasoned = { check: "coupling", path: "src/*.ts", reason: "test" };
+    // Its text names the path it excuses, and package.json is not flagged for it.
+    const reasoned = { check: "coupling", path: "src/*.ts", text: "../../x", reason: "test" };
     expect(run(allow([reasoned]), "check-coupling").code).toBe(0);
     expect(run(allow([{ ...reasoned, reason: "" }]), "check-coupling").out).toContain(
       "allow entry without a reason",
@@ -316,7 +317,7 @@ test("check-structure: a bin file is stored executable, and --fix makes it so", 
   expect(binLines()).toEqual([
     "[check-structure] bin/x.ts: a bin file is stored executable (check-structure --fix) (100644)",
   ]);
-  binLines(["--fix"]);
+  run(dir, "check-structure", ["--fix"]);
   expect(binLines()).toEqual([]);
   expect(sh(dir, ["ls-files", "-s", "bin/x.ts"]).stdout.toString()).toStartWith("100755");
 });
@@ -1325,6 +1326,18 @@ describe("catalog", () => {
     expect(refused.status).not.toBe(0);
     expect(`${refused.stdout}${refused.stderr}`).toContain("`redirects` leaves out");
     rmSync(redirecting);
+    // A package path outside the package's exports fails the build by name.
+    const unexported = join(fixture, "catalog", "unexported.config.mjs");
+    made.push(unexported);
+    writeFileSync(
+      unexported,
+      'import config from "./astro.config.mjs";\nimport { catalog } from "../../../catalog/index.ts";\nexport default { ...config, integrations: [catalog({ product: "Fx", css: [], lead: "", copy: ["@acme/fx/assets/skip.txt"] })] };\n',
+    );
+    const missing = build(["--config", "unexported.config.mjs"]);
+    expect(`${missing.stdout}${missing.stderr}`).toContain(
+      "catalog copy: @acme/fx/assets/skip.txt is no file in the exports of @acme/fx",
+    );
+    rmSync(unexported);
     // A site with a home page of its own keeps the catalog at /catalog/.
     const src = join(fixture, "catalog", "src");
     const pages = join(src, "pages");

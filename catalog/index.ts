@@ -156,24 +156,21 @@ const ROUTER = ["events", "router", "swap-functions", "types"].map(
 export function catalog(options: CatalogOptions): AstroIntegration {
   let inner: AstroIntegration | undefined;
   let repo = "";
-  // The packages a `copy` entry may name by a package path.
-  let packages = new Set<string>();
+  // Each `copy` entry naming a package path, with the file the package's exports give it.
+  const resolved = new Map<string, string>();
   let base = "";
   let atRoot = false;
   let mounted = false;
   // Where an old link points, as dev serves it now: without the Pages base, and without /catalog
   // where the catalog moved to the root; undefined for a current path.
   let moved = (_: string): string | undefined => undefined;
-  /** A `copy` entry as [path in the build, file or folder it copies]: a package path once, resolved
-   * through the package's exports, a glob once per match. */
+  /** A `copy` entry as [path in the build, file or folder it copies]: a package path once, a glob
+   * once per match. */
   const copied = (pattern: string): [string, string][] => {
-    const name = pattern
-      .split("/")
-      .slice(0, pattern.startsWith("@") ? 2 : 1)
-      .join("/");
-    return packages.has(name)
-      ? [[pattern, createRequire(join(repo, "package.json")).resolve(pattern)]]
-      : globSync(pattern, { cwd: repo }).map((file) => [file, join(repo, file)]);
+    const file = resolved.get(pattern);
+    return file
+      ? [[pattern, file]]
+      : globSync(pattern, { cwd: repo }).map((match) => [match, join(repo, match)]);
   };
   return {
     name: "@hackersandwizards/scaffolding/catalog",
@@ -231,10 +228,27 @@ export function catalog(options: CatalogOptions): AstroIntegration {
         const pkgFile = join(repo, "package.json");
         const pkg = existsSync(pkgFile) ? JSON.parse(readFileSync(pkgFile, "utf8")) : {};
         const name = String(pkg.name ?? basename(repo)).replace(/^@[^/]+\//, "");
-        packages = new Set([
+        // A package the repository declares, or its own, unless a folder of the repository has
+        // that name.
+        const declared = new Set([
           pkg.name,
-          ...Object.keys({ ...pkg.dependencies, ...pkg.devDependencies }),
+          ...Object.keys({
+            ...pkg.dependencies,
+            ...pkg.devDependencies,
+            ...pkg.peerDependencies,
+            ...pkg.optionalDependencies,
+          }),
         ]);
+        const require = createRequire(pkgFile);
+        for (const pattern of options.copy ?? []) {
+          const owner = packageOf(pattern);
+          if (!declared.has(owner) || existsSync(join(repo, owner!))) continue;
+          try {
+            resolved.set(pattern, require.resolve(pattern));
+          } catch {
+            throw new Error(`catalog copy: ${pattern} is no file in the exports of ${owner}`);
+          }
+        }
         const versions = [...new Set(options.css.map(packageOf).filter((p) => p !== undefined))]
           .map((p) => `${p} v${installed(p, root) ?? "?"}`)
           .join(" · ");
@@ -319,7 +333,8 @@ export function catalog(options: CatalogOptions): AstroIntegration {
             return res.end();
           }
           const file = path.startsWith(`${base}/`) ? path.slice(base.length + 1) : "";
-          const match = (options.copy ?? [])
+          if (!file || !options.copy) return next();
+          const match = options.copy
             .flatMap(copied)
             .find(([at]) => file === at || file.startsWith(`${at}/`));
           const full = match && join(match[1], file.slice(match[0].length));
@@ -359,10 +374,10 @@ export function catalog(options: CatalogOptions): AstroIntegration {
           for (const [file, source] of found) {
             const target = join(out, file);
             cpSync(source, target, { recursive: true, dereference: true });
-            const copied = statSync(target).isDirectory()
+            const files = statSync(target).isDirectory()
               ? readdirSync(target, { recursive: true, encoding: "utf8" }).map((f) => join(file, f))
               : [file];
-            for (const f of copied)
+            for (const f of files)
               if (statSync(join(out, f)).isFile() && isPointer(join(out, f))) pointers.push(f);
           }
         }

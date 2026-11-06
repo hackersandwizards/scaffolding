@@ -19,13 +19,13 @@ package's commands from `node_modules`, so each checkout, a new worktree include
 
 ## Commands
 
-| Command                   | Runs in                      | Checks                                                                                                                                                                                                                                                                                      |
-| ------------------------- | ---------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `scaffold <dir>`          | once                         | Creates a repository from `template/` with this version pinned, its catalog and admin area (below).                                                                                                                                                                                         |
-| `scaffolding check`       | `bun run check`              | The whole gate, below.                                                                                                                                                                                                                                                                      |
-| `check-structure [--fix]` | `bun run check`              | The repository against `skeleton.json`, the catalog, the gate's script names (below) and every `bin` file stored executable (100755), since bun marks one only as it installs. `--fix` writes the identical and owned files, the `.agents/skills` link, the hooks path and the `bin` modes. |
-| `check-confidential`      | pre-commit, commit-msg, push | Terms from a hashed list, Company OS screenshots and text in images (OCR, an unread image fails), commits purged from history.                                                                                                                                                              |
-| `check-staged`            | pre-commit                   | gitleaks on the index, then `check-coupling` and `check-confidential`, then prettier and eslint on the staged files; `validate:skills` when `.claude/` is staged, `admin-check` when an item is.                                                                                            |
+| Command                   | Runs in                      | Checks                                                                                                                                                                                                                                             |
+| ------------------------- | ---------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `scaffold <dir>`          | once                         | Creates a repository from `template/` with this version pinned, its catalog and admin area (below).                                                                                                                                                |
+| `scaffolding check`       | `bun run check`              | The whole gate, below.                                                                                                                                                                                                                             |
+| `check-structure [--fix]` | `bun run check`              | The repository against `skeleton.json`, the catalog, the gate's script names (below) and every `bin` file stored executable (100755). `--fix` writes the identical and owned files, the `.agents/skills` link, the hooks path and the `bin` modes. |
+| `check-confidential`      | pre-commit, commit-msg, push | Terms from a hashed list, Company OS screenshots and text in images (OCR, an unread image fails), commits purged from history.                                                                                                                     |
+| `check-staged`            | pre-commit                   | gitleaks on the index, then `check-coupling` and `check-confidential`, then prettier and eslint on the staged files; `validate:skills` when `.claude/` is staged, `admin-check` when an item is.                                                   |
 
 The gate and `check-staged` also run these files from `bin/` by path; they are steps, not commands,
 so an install leaves them not executable. A `node_modules/.bin` link to one is left from an install
@@ -185,7 +185,8 @@ The options beyond those above:
 - `copy`: files the built pages reach by a relative path rather than through Vite. A glob, relative
   to the repository, lands each match in the build at the same path. A package path of a package
   the repository declares, or of its own, such as `@hackersandwizards/brand/logos/avatar-512.png`,
-  names one file through the package's `exports` and lands it at that path, so a page under the
+  names one file through the package's `exports` (any other fails the build by name) and lands it
+  at that path, so a page under the
   base `/mail` names it as `/mail/@hackersandwizards/brand/logos/avatar-512.png` or by the relative
   path there. `astro dev` serves each at its path. A pattern matching nothing fails the
   build, and so does, with `CI=true`, a copied file that is still a Git LFS pointer.
@@ -237,9 +238,8 @@ with (`"styles": ["./styles/slides.css"]`); no other company package's CSS loads
 repository. A path into `node_modules` (a Tailwind `@source`) names the file on disk and passes
 where an `exports` entry targets it.
 
-**Installed paths.** Code, markup and data (every checked file but stylesheets: `.js`, `.ts` and
-their variants, `.astro`, `.vue`, `.svelte`, `.html`, `.json`, `.yaml`, `.toml`, `.sh`, the hooks
-and `package.json` with its scripts, tests included) name no `node_modules/@hackersandwizards/...`
+**Installed paths.** Code, markup and data (every file `check-coupling` reads but stylesheets,
+`package.json` with its scripts and tests included) name no `node_modules/@hackersandwizards/...`
 path, joined or as path segments: code takes a file through
 `import.meta.resolve("@hackersandwizards/brand/logos/mark.svg")`, which the package's `exports`
 answer (its folder through its `./package.json`), and a command from `node_modules/.bin`; a catalog

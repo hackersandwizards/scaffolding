@@ -77,9 +77,21 @@ function manifest(name: string) {
 }
 
 const own = readPackage(root).name;
+const withoutAllow = (json: string) => {
+  let pkg;
+  try {
+    pkg = JSON.parse(json);
+  } catch {
+    return json;
+  }
+  if (pkg.scaffolding) pkg.scaffolding = { ...pkg.scaffolding, allow: undefined };
+  return JSON.stringify(pkg, null, 2);
+};
 for (const path of listFiles(root, staged)) {
   if (!SCANNED.test(path) || SKIPPED.test(path)) continue;
-  const text = read(path).toString("utf8");
+  // An allow entry names the path it excuses; no rule reads it.
+  const raw = read(path).toString("utf8");
+  const text = path === "package.json" ? withoutAllow(raw) : raw;
   const base = path === "package.json" ? root : resolve(root, dirname(path));
   // A test holds path-like strings as data, so there only import specifiers count.
   const tokens = TEST.test(path)
@@ -91,13 +103,10 @@ for (const path of listFiles(root, staged)) {
       flag(path, token, "path leaves the repository; take it from the package its owner publishes");
   }
   // Code, markup and data reach an installed company package through its exports or its bin, never
-  // by a disk path. A comment or a Tailwind @source names the path without using it, as does an
-  // allow entry; CSS has its own rule.
+  // by a disk path. A comment or a Tailwind @source names the path without using it; CSS has its own
+  // rule.
   if (!STYLES.test(path) && text.includes("@hackersandwizards"))
-    for (const line of (path === "package.json"
-      ? JSON.stringify({ ...JSON.parse(text), scaffolding: undefined }, null, 2)
-      : text.replace(HASHED.test(path) ? HASH : COMMENT, "$1")
-    ).split("\n"))
+    for (const line of text.replace(HASHED.test(path) ? HASH : COMMENT, "$1").split("\n"))
       for (const m of line.matchAll(INSTALLED))
         if (m[1] !== own && !m[2]?.endsWith(".css") && !line.slice(0, m.index).includes("@source"))
           flag(
