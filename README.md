@@ -7,7 +7,7 @@ shell of its catalog.
 To work on the package itself, see [Developing the package](#developing-the-package).
 
 ```sh
-bun add -d github:hackersandwizards/scaffolding#v2.7.4
+bun add -d github:hackersandwizards/scaffolding#v2.10.0
 ```
 
 Requirements: bun 1.3 or newer, gitleaks (`brew install gitleaks`), `pdftotext` from poppler, and
