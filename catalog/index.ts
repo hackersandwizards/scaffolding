@@ -16,6 +16,7 @@ import {
 import { spawnSync } from "node:child_process";
 import { basename, dirname, join, relative } from "node:path";
 import { fileURLToPath } from "node:url";
+import { catalogPath, storiesDir } from "./path.ts";
 
 export { renderCatalog } from "./render.ts";
 export type { CatalogData, CatalogGroup, CatalogItem } from "./render.ts";
@@ -176,12 +177,9 @@ export function catalog(options: CatalogOptions): AstroIntegration {
         const own = basename(root) === "catalog";
         repo = packageDir(root);
         base = params.config.base.replace(/\/$/, "");
-        // The catalog is the site's home unless the site has one of its own: an index page or folder,
-        // or a catch-all route, which Astrobook's static "/" would shadow.
         const pages = join(fileURLToPath(params.config.srcDir), "pages");
-        atRoot = !(
-          existsSync(pages) && readdirSync(pages).some((f) => /^(index(\.|$)|\[\.\.\.)/.test(f))
-        );
+        atRoot =
+          catalogPath({ base, pages: existsSync(pages) ? readdirSync(pages) : [] }) === `${base}/`;
         if (atRoot && params.config.redirects["/"])
           throw new Error(
             'catalog: the catalog is the site\'s home, so `redirects` leaves out "/"; its former /catalog/ pages forward by themselves',
@@ -201,7 +199,7 @@ export function catalog(options: CatalogOptions): AstroIntegration {
           // "//host" in a Location header leaves the site.
           return now === path ? undefined : now.replace(/^\/+/, "/");
         };
-        const stories = join(root, own ? "stories" : "catalog/stories");
+        const stories = storiesDir(root);
         const pkgFile = join(repo, "package.json");
         const pkg = existsSync(pkgFile) ? JSON.parse(readFileSync(pkgFile, "utf8")) : {};
         const name = String(pkg.name ?? basename(repo)).replace(/^@[^/]+\//, "");

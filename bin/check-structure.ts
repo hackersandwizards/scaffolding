@@ -7,11 +7,13 @@ import {
   mkdirSync,
   readFileSync,
   readlinkSync,
+  rmSync,
   symlinkSync,
   writeFileSync,
 } from "node:fs";
-import { dirname, join } from "node:path";
+import { basename, dirname, join } from "node:path";
 import { applyAllow, finish, git, readPackage, repoRoot, type Finding } from "../lib/repo.ts";
+import { storiesDir } from "../catalog/path.ts";
 
 const started = performance.now();
 const fix = process.argv.includes("--fix");
@@ -37,8 +39,17 @@ const exists = (path: string) => {
   }
 };
 
-for (const path of skeleton.same as string[]) {
-  const template = join(home, "template", path);
+// A private repository runs no confidential check, so it keeps no hook that only starts bun for it.
+const pkg = readPackage(root);
+const privateHooks =
+  pkg.scaffolding?.private === true ? skeleton.private : { absent: [], same: [] };
+for (const path of privateHooks.absent as string[])
+  if (exists(path))
+    add(path, "not kept in a private repository (check-structure --fix)", "", () =>
+      rmSync(at(path)),
+    );
+for (const path of (skeleton.same as string[]).filter((p) => !privateHooks.absent.includes(p))) {
+  const template = join(home, privateHooks.same.includes(path) ? "private" : "template", path);
   if (exists(path) && readFileSync(at(path)).equals(readFileSync(template))) continue;
   add(
     path,
@@ -101,7 +112,6 @@ else {
 }
 
 if (existsSync(at("package.json"))) {
-  const pkg = readPackage(root);
   if (pkg.type !== skeleton.package.type)
     add("package.json", `type must be ${skeleton.package.type}`);
   if (pkg.engines?.npm !== skeleton.package["engines.npm"])
@@ -116,12 +126,32 @@ if (existsSync(at("package.json"))) {
     if (!/^check:[a-z0-9][\w:-]*$/.test(step) || !pkg.scripts?.[step])
       add("package.json", "a step of scaffolding.check is a script named check:<what>", step);
   if (surface) {
-    const { stories, configs, preset } = skeleton.catalog;
-    if (!exists(stories)) add(stories, "missing: the catalog's stories live here");
+    // An Astro app in any folder, rooted at its config's folder.
+    const { configs, preset } = skeleton.catalog;
     const uses = new RegExp(`from\\s*["']${preset.replace(/[/.]/g, "\\$&")}["']`);
-    const found = (configs as string[]).filter(exists);
-    if (!found.some((path) => uses.test(readFileSync(at(path), "utf8"))))
-      add(found[0] ?? configs[0], `the Astro config must use the catalog preset from ${preset}`);
+    const found = git(
+      [
+        "ls-files",
+        "-z",
+        "--cached",
+        "--others",
+        "--exclude-standard",
+        "--deduplicate",
+        "--",
+      ].concat(configs.map((c: string) => `*${c}`)),
+      root,
+    )
+      .toString()
+      .split("\0")
+      .filter((p) => configs.includes(basename(p)) && exists(p));
+    const apps = found.filter((path) => uses.test(readFileSync(at(path), "utf8")));
+    if (!apps.length)
+      add(
+        found[0] ?? `catalog/${configs[0]}`,
+        `the Astro config must use the catalog preset from ${preset}`,
+      );
+    for (const path of apps.map((app) => storiesDir(dirname(app))))
+      if (!exists(path)) add(path, "missing: the catalog's stories live here");
   }
 }
 

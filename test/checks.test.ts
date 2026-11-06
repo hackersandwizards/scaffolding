@@ -14,6 +14,7 @@ import {
 } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
+import { catalogPath } from "../catalog/path.ts";
 
 const bin = (name: string) => join(import.meta.dir, "..", "bin", `${name}.ts`);
 const made: string[] = [];
@@ -384,7 +385,6 @@ describe("scaffold and check-structure", () => {
     const found = lines(run(other, "check-structure").out, "check-structure");
     expect(found.sort()).toEqual([
       "[check-structure] catalog/astro.config.ts: the Astro config must use the catalog preset from @hackersandwizards/scaffolding/catalog",
-      "[check-structure] catalog/stories: missing: the catalog's stories live here",
       "[check-structure] package.json: a step of scaffolding.check is a script named check:<what> (brand-colours)",
       "[check-structure] package.json: a step of scaffolding.check is a script named check:<what> (lint)",
       "[check-structure] package.json: script build missing (build)",
@@ -407,6 +407,37 @@ describe("scaffold and check-structure", () => {
         'import { catalog } from "@hackersandwizards/scaffolding/catalog";\nexport default { integrations: [catalog] };\n',
     });
     expect(run(other, "check-structure").code).toBe(0);
+    // An Astro app in a subfolder keeps its stories under its own root.
+    mkdirSync(join(other, "talks"));
+    renameSync(join(other, "catalog/astro.config.ts"), join(other, "talks/astro.config.ts"));
+    expect(lines(run(other, "check-structure").out, "check-structure")).toEqual([
+      "[check-structure] talks/catalog/stories: missing: the catalog's stories live here",
+    ]);
+    write(other, { "talks/catalog/stories/.gitkeep": "" });
+    expect(run(other, "check-structure").code).toBe(0);
+  });
+
+  test("a private repository keeps no hook that only starts bun", () => {
+    const other = join(parent, "private");
+    run(parent, "scaffold", ["private", "--catalog-in", "x", "--admin-in", "x"]);
+    install(other);
+    write(other, { "bun.lock": "" });
+    sh(other, ["config", "core.hooksPath", ".githooks"]);
+    const pkg = JSON.parse(readFileSync(join(other, "package.json"), "utf8"));
+    pkg.scaffolding.private = true;
+    write(other, { "package.json": JSON.stringify(pkg) });
+    expect(lines(run(other, "check-structure").out, "check-structure").sort()).toEqual([
+      "[check-structure] .githooks/commit-msg: not kept in a private repository (check-structure --fix)",
+      "[check-structure] .githooks/pre-push: differs from the skeleton (check-structure --fix)",
+    ]);
+    run(other, "check-structure", ["--fix"]);
+    expect(run(other, "check-structure").code).toBe(0);
+    expect(existsSync(join(other, ".githooks/commit-msg"))).toBe(false);
+    const push = spawnSync(join(other, ".githooks/pre-push"), ["origin", "x"], {
+      cwd: other,
+      env: { PATH: "/usr/bin:/bin" },
+    });
+    expect(push.status).toBe(0);
   });
 
   test("a repository without package.json is reported, not a crash", () => {
@@ -961,6 +992,14 @@ describe("shared eslint config", () => {
 });
 
 describe("catalog", () => {
+  test("catalogPath: the root, or /catalog/ beside the site's own home; dev drops the base", () => {
+    expect(catalogPath({ base: "/s", pages: ["types", "about.astro"] })).toBe("/s/");
+    for (const page of ["index.astro", "index.html.ts", "index", "[...slug].astro"])
+      expect(catalogPath({ base: "/s/", pages: [page] })).toBe("/s/catalog/");
+    expect(catalogPath({ base: "/s", pages: ["[slug].astro", "indexes"], dev: true })).toBe("/");
+    expect(catalogPath({ base: "/s", pages: ["index.astro"], dev: true })).toBe("/catalog/");
+  });
+
   test("the preset builds the shell's home into the repository's dist/", () => {
     const fixture = join(import.meta.dir, "fixture");
     const dist = join(fixture, "dist");

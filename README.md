@@ -7,7 +7,7 @@ shell of its catalog.
 To work on the package itself, see [Developing the package](#developing-the-package).
 
 ```sh
-bun add -d github:hackersandwizards/scaffolding#v2.1.0
+bun add -d github:hackersandwizards/scaffolding#v2.3.0
 ```
 
 Requirements: bun 1.3 or newer, gitleaks (`brew install gitleaks`), `pdftotext` from poppler, and
@@ -99,9 +99,10 @@ attribute) is read with a fallback, `var(--accent, transparent)`.
 ## The catalog
 
 Every repository with a surface has a catalog: the scripts `dev`, `catalog` and
-`build`, its stories in `catalog/stories/`, and an Astro config using the preset. In a repository
-whose only Astro app is the catalog, that config is `catalog/astro.config.ts` and the build lands in
-`dist/`; in an Astro app it is the app's own config.
+`build`, its stories in `catalog/stories/` of the Astro app, and an Astro config using the preset. In a
+repository whose only Astro app is the catalog, that config is `catalog/astro.config.ts`, its stories
+are in `catalog/stories/` and the build lands in `dist/`; in an Astro app it is the app's own config,
+in any folder, such as `talks/astro.config.ts` with `talks/catalog/stories/`.
 
 ```ts
 import { defineConfig } from "astro/config";
@@ -174,13 +175,20 @@ dev` serves at the root and redirects a path under the base there. A base ending
 mounts the catalog under a host with a home of its own, such as a Worker's site: the build leaves
 out `public/`, which the host serves, and writes no forwarding pages.
 
+`catalogPath({ base, pages, dev })` from `@hackersandwizards/scaffolding/catalog/path.ts` states
+this rule as a pure function, for a reader such as the admin hub: `pages` are the entries of
+`srcDir/pages`, and it returns the catalog's path, `/` or `/catalog/` after the base, which `dev`
+drops. The preset calls it too.
+
 Every catalog page carries `<meta name="robots" content="noindex">`. Every page but a state alone
 carries `data-hw-night`, so brand's `night.css` turns it under the theme toggle while a tile's
 preview keeps its own theme. The shell's own card and pill on the home carry `data-hw-shell`, for a
 check of the repository's elements to skip.
 
-`astro dev` starts quietly: Vite's start-up scan reads the stories, and the preset pre-bundles the
-client router Astrobook's layout loads, so no dependency is found only when the first page loads.
+`astro dev` starts quietly: Vite's start-up scan reads the stories and the components they import,
+Astro adds the components under `srcDir`, and the preset pre-bundles the client router Astrobook's layout
+loads, so no dependency is found only when the first page loads. Slides' catalog, 240 pages without
+an `optimizeDeps` list of its own, found none late (06.11.2026).
 Vite still says "Re-optimizing dependencies because lockfile has changed" once after each change to
 `bun.lock`; a dependency the scan cannot reach goes into the repository's `optimizeDeps.include`.
 
@@ -280,7 +288,10 @@ checkout fetches on its own.
   with its build time. It leaves out every term the public text in `<file>` already carries, and
   refuses to build without `/usr/share/dict/words`.
 
-A repository with `"scaffolding": { "private": true }` skips the check.
+A repository with `"scaffolding": { "private": true }` skips the check. It keeps no `commit-msg`
+hook, and its `pre-push` hands the refs to Git LFS where used and starts bun only to refuse the
+commits a `.confidential-purged.json` lists. `check-structure --fix` removes the one and writes the
+other.
 
 `check-confidential purged <sha>...` writes `.confidential-purged.json`: after a history rewrite,
 the pre-push hook refuses a push from an old clone that still carries one of those commits.
@@ -298,7 +309,7 @@ publishes `dist/`. The caller, `.github/workflows/pages.yml`, is owned: where it
 ```yaml
 jobs:
   pages:
-    uses: hackersandwizards/scaffolding/.github/workflows/pages.yml@v2.1.0
+    uses: hackersandwizards/scaffolding/.github/workflows/pages.yml@v2.3.0
     permissions:
       contents: read
       pages: write
