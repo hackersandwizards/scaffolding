@@ -7,7 +7,7 @@ shell of its catalog.
 To work on the package itself, see [Developing the package](#developing-the-package).
 
 ```sh
-bun add -d github:hackersandwizards/scaffolding#v2.5.0
+bun add -d github:hackersandwizards/scaffolding#v2.6.0
 ```
 
 Requirements: bun 1.3 or newer, gitleaks (`brew install gitleaks`), `pdftotext` from poppler, and
@@ -101,7 +101,8 @@ attribute) is read with a fallback, `var(--accent, transparent)`.
 Every repository with a surface has a catalog: the scripts `dev`, `catalog` and
 `build`, its stories in `catalog/stories/` of the Astro app, and an Astro config using the preset. In a
 repository whose only Astro app is the catalog, that config is `catalog/astro.config.ts`, its stories
-are in `catalog/stories/` and the build lands in `dist/`; in an Astro app it is the app's own config,
+are in `catalog/stories/` and the build lands in the repository's `dist/` unless the config sets an
+`outDir` other than Astro's default `./dist`; in an Astro app it is the app's own config,
 in any folder, such as `talks/astro.config.ts` with `talks/catalog/stories/`.
 
 ```ts
@@ -136,7 +137,9 @@ menu grouped by a word three or more state names share (`BlockImage` under Block
 under Theme). In a blind panel of three personas, each scored by Claude and Codex, this bar scored
 8.2 of 10 for 38 states, as did a list beside the canvas, and the earlier row of 38 chips 5.0 (noise
 1.0); the tie went to the bar, which keeps the canvas at full width. A state reads in sentence case,
-`PrimaryOnNight` as "Primary on night", an acronym kept: in a blind panel of two personas, each
+`PrimaryOnNight` as "Primary on night", an acronym kept, and whole a plural acronym (`TwoPDFs` as
+"Two PDFs") and a few names with inner capitals (GitHub, GitLab, LinkedIn, YouTube, JavaScript,
+TypeScript, OpenAI): in a blind panel of two personas, each
 scored by Claude and Codex, sentence case scored 8.25 to 9.0 of 10, the export name 6.0 to 7.0 and
 Title Case 6.5 to 7.5 (one run each, noise not measured). Every page loads in full
 rather than through Astrobook's client router, which swapped pages in place and so dropped what a
@@ -167,7 +170,10 @@ The options beyond those above:
 - `head`: the repository's own `<head>` component, rendered on every page.
 - `header`: default brand's `AppHeader` and `header.css`.
 - `home`: a page of the repository that renders `Home.astro`, its foundations in the default slot
-  and a control such as a theme toggle in the `nav` slot.
+  and a control such as a theme toggle in the `nav` slot. Every paragraph above the tiles, the
+  slot's own included, takes the lead's measure (48rem) and leading (1.5), unless a class of the
+  repository's sets its own. How long the slot's text runs is the repository's: each line it adds
+  pushes the first tiles down.
 - `copy`: globs, relative to the repository, of files the built pages reach by a relative path
   rather than through Vite, such as brand's stylesheets under `node_modules`. Each match lands in
   the build at the same path, and `astro dev` serves it there. A pattern matching nothing fails the
@@ -298,7 +304,8 @@ checkout fetches on its own.
   refuses to build without `/usr/share/dict/words`.
 
 A repository with `"scaffolding": { "private": true }` skips the check. It keeps no `commit-msg`
-hook, and its `pre-push` hands the refs to Git LFS where used and starts bun only to refuse the
+hook, and its `pre-push` hands the refs to Git LFS where a `.gitattributes` in any folder tracks a
+file with it and starts bun only to refuse the
 commits a `.confidential-purged.json` lists. `check-structure --fix` removes the one and writes the
 other.
 

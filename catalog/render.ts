@@ -24,7 +24,7 @@ export type CatalogGroup = { name: string; items: CatalogItem[] };
 export type CatalogData = {
   title: string;
   lead: string;
-  /** One line in mono: where the shown values come from, such as the brand version, and how many
+  /** One line: where the shown values come from, such as the brand version, and how many
    * entries the page holds, in words ("26 components"): the title carries no count. */
   provenance: string;
   groups: CatalogGroup[];

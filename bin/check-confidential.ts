@@ -130,8 +130,11 @@ if (argv[0] === "prepush") {
     }
   }
   if (findings.length) finish("check-confidential", findings, started);
-  const attributes = join(root, ".gitattributes");
-  if (existsSync(attributes) && readFileSync(attributes, "utf8").includes("filter=lfs")) {
+  // A .gitattributes in any folder counts.
+  if (
+    spawnSync("git", ["grep", "-q", "filter=lfs", "--", ":(glob)**/.gitattributes"], { cwd: root })
+      .status === 0
+  ) {
     const lfs = spawnSync("git", ["lfs", "pre-push", ...argv.slice(1)], {
       input,
       stdio: ["pipe", "inherit", "inherit"],

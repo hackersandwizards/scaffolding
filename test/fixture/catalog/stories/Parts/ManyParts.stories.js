@@ -14,3 +14,5 @@ export const CenteredLayout = { args: { label: "centered layout" } };
 export const DensityOnPDF = { args: { label: "density on pdf" } };
 export const Specimen = { args: { label: "specimen" } };
 export const Specimen2 = { args: { label: "specimen 2" } };
+export const LoadingGitHub = { args: { label: "loading github" } };
+export const TwoPDFs = { args: { label: "two pdfs" } };

@@ -90,17 +90,23 @@
     font-size: var(--text-page, 1.5rem);
     line-height: 1.25;
   }
-  .hw-catalogue-lead {
+  /* Every paragraph above the tiles, a repository's own in the home's slot included, at one
+     measure and leading; at no specificity, so a class in this layer or unlayered wins. The provenance
+     line reads in the sans at the UI size (blind review 2026-11-06, 2 personas x Claude and Codex:
+     8.4 of 10 over 8.2 for mono at 13px, 7.6 for mono at 11px and 6.8 for the slot at full width,
+     noise 1.0). */
+  :where(.hw-catalogue-main > p, .hw-catalogue-main > :not(section) p) {
     max-width: 48rem;
+    line-height: 1.5;
+  }
+  .hw-catalogue-lead {
     margin: 0.5rem 0 0;
     font-size: var(--text-subheading, 1rem);
-    line-height: 1.5;
   }
   .hw-catalogue-provenance {
     margin: 0.5rem 0 0;
     color: var(--hw-cat-muted);
-    font-family: var(--font-mono);
-    font-size: var(--text-micro, 0.75rem);
+    font-size: var(--text-ui, 0.875rem);
   }
   .hw-catalogue-group {
     margin-top: 2.5rem;

@@ -692,6 +692,33 @@ describe("check-confidential", () => {
     const clean = sh(dir, ["rev-parse", "HEAD~1"]).stdout.toString().trim();
     expect(push(clean).status).toBe(0);
   });
+
+  test("both pre-push hooks hand the refs to Git LFS where a folder's .gitattributes tracks a file", () => {
+    const stub = temp();
+    const log = join(stub, "log");
+    writeFileSync(join(stub, "git-lfs"), '#!/bin/sh\necho "$*" >> "$LFS_LOG"\n', { mode: 0o755 });
+    const env = { ...process.env, PATH: `${stub}:${process.env.PATH}`, LFS_LOG: log };
+    const hooks = [
+      [process.execPath, bin("check-confidential"), "prepush"],
+      ["sh", join(import.meta.dir, "..", "private", ".githooks", "pre-push")],
+    ];
+    const pushes = (dir: string) => {
+      for (const [cmd, ...args] of hooks)
+        expect(spawnSync(cmd!, [...args, "origin", "x"], { cwd: dir, env, input: "" }).status).toBe(
+          0,
+        );
+      return existsSync(log) ? readFileSync(log, "utf8") : "";
+    };
+    expect(pushes(repo({ "package.json": "{}", "sub/a.bin": "a\n" }))).toBe("");
+    const lfs = {
+      "package.json": "{}",
+      "sub/.gitattributes": "*.bin filter=lfs\n",
+      "sub/a.bin": "a\n",
+    };
+    expect(pushes(repo(lfs))).toBe("pre-push origin x\n".repeat(2));
+    const root = { "package.json": "{}", ".gitattributes": "*.bin filter=lfs\n", "a.bin": "a\n" };
+    expect(pushes(repo(root))).toBe("pre-push origin x\n".repeat(4));
+  });
 });
 
 describe("check-confidential list source", () => {
@@ -1016,7 +1043,7 @@ describe("catalog", () => {
     // No page of its own at pages/index: the catalog is the site's home.
     const home = readFileSync(join(dist, "index.html"), "utf8");
     expect(home).toContain('<header class="fx-header"><a href="/">Fx</a></header>');
-    expect(home).toContain("fx catalog/stories · 3 components · 17 states");
+    expect(home).toContain("fx catalog/stories · 3 components · 19 states");
     // The admin hub serves only on this machine: a built page carries no link to it.
     expect(home).not.toContain("admin.localhost");
     expect(home.indexOf(">Types <")).toBeLessThan(home.indexOf(">Parts <"));
@@ -1088,6 +1115,9 @@ describe("catalog", () => {
     );
     // A state reads in sentence case, an acronym kept.
     expect(many).toMatch(/many-parts\/density-on-pdf">Density on PDF</);
+    // A plural acronym and a listed name with inner capitals stay whole.
+    expect(many).toMatch(/many-parts\/two-pd-fs">Two PDFs</);
+    expect(many).toMatch(/many-parts\/loading-git-hub">Loading GitHub</);
     expect(state).toContain("main.prepend(bar.content.cloneNode(true))");
     expect(page("stories/Parts/box-parts/two")).not.toContain('id="hw-catalogue-bar"');
     expect(home).not.toContain('id="hw-catalogue-bar"');
@@ -1099,7 +1129,7 @@ describe("catalog", () => {
     const routes = readdirSync(codegen, { recursive: true, encoding: "utf8" }).filter((f) =>
       f.endsWith(".astro"),
     );
-    expect(routes.length).toBe(34);
+    expect(routes.length).toBe(38);
     for (const f of routes)
       expect(readFileSync(join(codegen, f), "utf8")).not.toContain("client:load");
     // `copy`: each match at its own path, the rest of the folder left out.
@@ -1123,6 +1153,11 @@ describe("catalog", () => {
     );
     expect(existsSync(join(dist, "catalog"))).toBe(false);
     expect(existsSync(join(dist, "fx.txt"))).toBe(false);
+    // An outDir the config sets stays; only Astro's default moves to the repository's dist/.
+    const custom = join(fixture, "catalog", "custom");
+    made.push(custom);
+    expect(build(["--outDir", "./custom"]).status).toBe(0);
+    expect(existsSync(join(custom, "index.html"))).toBe(true);
     // A redirect from "/" would take the catalog's place: the build fails and says why.
     const redirecting = join(fixture, "catalog", "redirecting.config.mjs");
     made.push(redirecting);

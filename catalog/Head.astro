@@ -17,10 +17,13 @@ const mod = id
   ? (modules as StoryModule[]).find((m) => m.stories.some((s) => s.id === id))
   : undefined;
 const folder = (mod?.directory || "Components").split("/").join(" / ");
-// A state reads in sentence case, "PrimaryOnNight" as "Primary on night", an acronym kept.
+// A state reads in sentence case, "PrimaryOnNight" as "Primary on night", an acronym kept, a plural
+// one ("PDFs") and a name with inner capitals from the list ("GitHub") whole.
+const WORD =
+  /(?:GitHub|GitLab|LinkedIn|YouTube|JavaScript|TypeScript|OpenAI)(?!\p{Ll})|\p{Lu}{2,}s(?!\p{Ll})|\p{Lu}+(?!\p{Ll})|\p{Lu}?\p{Ll}+|\p{N}+/gu;
 const all = (mod?.stories ?? []).map((s) => {
-  const words = s.name.match(/\p{Lu}+(?!\p{Ll})|\p{Lu}?\p{Ll}+|\p{N}+/gu) ?? [s.name];
-  const label = words.map((w) => (/^\p{Lu}+$/u.test(w) ? w : w.toLowerCase())).join(" ");
+  const words = s.name.match(WORD) ?? [s.name];
+  const label = words.map((w) => (/^\p{Lu}?\p{Ll}+$/u.test(w) ? w.toLowerCase() : w)).join(" ");
   return { ...s, words, label: label[0].toUpperCase() + label.slice(1) };
 });
 type State = (typeof all)[number];
@@ -147,7 +150,10 @@ const root = {
     background: color-mix(in srgb, currentColor 12%, transparent);
     font-weight: 700;
   }
+  /* The position at the bar's size (blind review 2026-11-06: 8.4 of 10 over 7.4 at <small>'s
+     smaller size and 7.8 for the whole bar at 16px, noise 0). */
   .hw-catalogue-states small {
+    font-size: inherit;
     opacity: 0.75;
     white-space: nowrap;
   }

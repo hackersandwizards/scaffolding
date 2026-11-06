@@ -242,7 +242,11 @@ export function catalog(options: CatalogOptions): AstroIntegration {
               : undefined,
         };
         params.updateConfig({
-          ...(own && { outDir: new URL("../dist/", params.config.root) }),
+          // Astro's own default only: an outDir the config sets stays.
+          ...(own &&
+            params.config.outDir.href === new URL("dist/", params.config.root).href && {
+              outDir: new URL("../dist/", params.config.root),
+            }),
           vite: {
             ...(mounted && !dev && { publicDir: false as const }),
             optimizeDeps: {
