@@ -1770,6 +1770,30 @@ describe("check-history", () => {
     ]);
   });
 
+  test("reads every hit, an item slug only whole, and nothing where nothing ships", () => {
+    const r = run(
+      shipped({
+        "src/a.ts": "/** As written, 31.10.2026; see new-claim-flow (blind panel 01.11.). */\n",
+        "docs/agent-work/items/new-claim.md": "x\n",
+      }),
+      "check-history",
+    );
+    expect(lines(r.out, "history").map((l) => l.replace(/ \(.*/, ""))).toEqual([
+      "[history] src/a.ts: review score",
+      "[history] src/a.ts: date",
+      "[history] src/a.ts: date",
+    ]);
+    const surface = (pkg: object) =>
+      run(
+        repo({ "package.json": JSON.stringify(pkg), "a.ts": "// 2026-11-01\n" }),
+        "check-history",
+      );
+    expect(surface({ name: "fx", private: true }).code).toBe(0);
+    const noVersion = surface({ name: "fx", files: ["a.ts"] });
+    expect(noVersion.code).toBe(1);
+    expect(noVersion.out).toContain("bun pm pack listed no files");
+  });
+
   test("an allow entry keeps a case; a stale one is red", () => {
     const allowed = (text: string) =>
       shipped(

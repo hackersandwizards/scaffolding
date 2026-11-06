@@ -88,6 +88,8 @@ message. The step reads the comments of every text file `bun pm pack` lists and 
 scores and panels, dates, decision ids, item ids (the generic `AB-1` form and the repository's own
 `docs/agent-work/items/` names), paths to review notes and the founders' names. It first checks each
 pattern against a line that shipped once, so a pattern that stops matching turns the step red. A
+repository whose `package.json` declares no `files`, `exports` or `bin` ships nothing, and passes;
+one that does needs a `version` for `bun pm pack`. A
 date that is an example of a format gets an allow entry with `text`.
 
 `uniqueNames` lists names the framework dictates, which the unique-names step lets repeat. Every
