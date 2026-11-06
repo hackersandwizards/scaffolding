@@ -316,12 +316,14 @@ the pre-push hook refuses a push from an old clone that still carries one of tho
 
 The pre-push hook then hands the refs to `git lfs pre-push` where the push may carry LFS content:
 the repository keeps an LFS store (`lfs/objects` in its Git directory, or `lfs.storage`), or a
-pushed commit changes a path whose `filter` attribute is `lfs`, read from that commit's tree and
-`.git/info/attributes`. Git LFS reads the pushed commits itself, so a branch bringing LFS files the
-checked-out tree lacks still sends its objects. Any other push never starts git-lfs, which would
-otherwise verify locks against the remote on every push. Where LFS content may be pushed and git-lfs
-is not on `PATH`, as under a client's narrower `PATH`, the push is refused, so a file committed
-without the LFS filter never reaches the remote as a raw blob unnoticed.
+pushed commit changes a path whose `filter` attribute is `lfs` (`.git/info/attributes` included).
+Git LFS reads the pushed commits itself, so a branch bringing LFS files the checked-out tree lacks
+still sends its objects. Any other push never starts git-lfs, which would otherwise verify locks
+against the remote on every push. Where LFS content may be pushed and git-lfs is not on `PATH`, as
+under a client's narrower `PATH`, the push is refused, so a file committed raw under an LFS path on
+a machine without git-lfs is caught there. Where git-lfs runs, it decides as it does without this
+hook. The attributes are read from each pushed branch's tip, by a Git older than 2.40 from the
+checked-out tree.
 
 ## Pipelines
 

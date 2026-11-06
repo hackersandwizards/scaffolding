@@ -111,18 +111,19 @@ const report = (path: string, text: string, message: string) =>
 
 if (argv[0] === "prepush") {
   const input = readFileSync(0);
-  const fresh = input
+  const locals = input
     .toString()
     .split("\n")
     .map((line) => line.split(" ")[1])
-    .filter((local) => local && !/^0+$/.test(local))
-    .flatMap((local) => git(["rev-list", local, "--not", "--remotes"], root).toString().split("\n"))
-    .filter(Boolean);
+    .filter((local) => local && !/^0+$/.test(local));
   const file = join(root, ".confidential-purged.json");
   if (existsSync(file)) {
     const purged = JSON.parse(readFileSync(file, "utf8"));
     const bad = new Set<string>(purged.hashes);
     const h = hasher(purged.salt);
+    const fresh = locals.flatMap((local) =>
+      git(["rev-list", local, "--not", "--remotes"], root).toString().split("\n").filter(Boolean),
+    );
     for (const c of fresh)
       if (bad.has(h(c)))
         report(
@@ -132,27 +133,36 @@ if (argv[0] === "prepush") {
         );
   }
   if (findings.length) finish("check-confidential", findings, started);
-  // git-lfs starts only where a push may carry LFS content: a local LFS store holds objects, or a
-  // pushed commit changes a path whose `filter` attribute is lfs (read from that commit's tree and
-  // .git/info/attributes). Elsewhere it would only verify locks against the remote on every push.
+  // Without a store or an lfs-filtered path in the push git-lfs stays off: it would verify locks
+  // against the remote on every push.
   const common = resolve(root, git(["rev-parse", "--git-common-dir"], root).toString().trim());
   const storage = spawnSync("git", ["config", "lfs.storage"], { cwd: root }).stdout.toString();
-  const lfsPath = (c: string) => {
-    const paths = git(
-      ["diff-tree", "-m", "-r", "--root", "--name-only", "--no-commit-id", "-z", c],
+  const lfsPath = (local: string) => {
+    // latin1 keeps a path's bytes as they are, whatever its encoding.
+    const changed = git(
+      ["log", "--format=", "--name-only", "-z", local, "--not", "--remotes"],
       root,
-    );
-    const attrs = git(
-      ["check-attr", `--source=${c}`, "-z", "--stdin", "filter"],
-      root,
-      paths.toString(),
-    );
-    return attrs
-      .toString()
+    )
+      .toString("latin1")
+      .split("\0")
+      .filter(Boolean);
+    if (!changed.length) return false;
+    const paths = Buffer.from(`${[...new Set(changed)].join("\0")}\0`, "latin1");
+    const attrs = (source: string[]) =>
+      spawnSync("git", ["check-attr", ...source, "-z", "--stdin", "filter"], {
+        cwd: root,
+        input: paths,
+      });
+    // --source needs Git 2.40; an older git reads the checked-out attributes.
+    let r = attrs([`--source=${local}`]);
+    if (r.status !== 0) r = attrs([]);
+    if (r.status !== 0) throw new Error(`git check-attr: ${r.stderr}`);
+    return r.stdout
+      .toString("latin1")
       .split("\0")
       .some((v, i) => i % 3 === 2 && v === "lfs");
   };
-  if (existsSync(join(common, "lfs/objects")) || storage.trim() || fresh.some(lfsPath)) {
+  if (existsSync(join(common, "lfs/objects")) || storage.trim() || locals.some(lfsPath)) {
     if (spawnSync("git", ["lfs", "version"], { cwd: root }).status !== 0)
       report("push", "", "this push may carry Git LFS content and git-lfs is not on PATH");
     else {

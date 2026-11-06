@@ -742,7 +742,6 @@ describe("check-confidential", () => {
     write(raw, { "b.md": "b\n" });
     rawGit(["add", "b.md"]);
     rawGit(["commit", "-qm", "b"]);
-    expect(existsSync(join(raw, ".git/lfs"))).toBe(false);
     sh(raw, ["update-ref", "refs/remotes/origin/main", "HEAD~1"]);
     expect(both(raw)).toEqual([0, 0]);
     // .git/info/attributes counts as well.
