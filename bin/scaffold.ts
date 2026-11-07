@@ -106,7 +106,7 @@ const company = (repo: string, tag: string) => [
   `github:hackersandwizards/${repo}#${tag}`,
 ];
 // The eslint plugins come with this package, so only the tools themselves are pinned here.
-// `typescript` is the TypeScript 6 API that typescript-eslint and check-unique-names import;
+// `typescript` is the TypeScript 6 API that typescript-eslint imports;
 // `@typescript/native` brings `tsc` 7.
 const tools = ["@types/bun", "@typescript/native", "eslint", "prettier", "typescript"];
 if (!catalogIn) tools.push("astro", "astrobook", "stylelint");

@@ -112,10 +112,11 @@ confidential and history steps.
 | `./stylelint`                                  | `export default styles({ importFrom: [...] })` in `stylelint.config.js`                                                                                               |
 | `./chrome`, `./serve`                          | Chrome for Testing, the build the repository's `puppeteer-core` pins (newest cached without one), with the shared flags; a gate server on a port the system hands out |
 
-TypeScript comes as two packages until typescript-eslint and the unique-names step can read
-TypeScript 7, which ships no compiler API yet: `"typescript": "npm:@typescript/typescript6@…"` for the
-TypeScript 6 API they import, and `"@typescript/native": "npm:typescript@7…"` for `tsc`. A plain
-`typescript` 7 breaks lint and unique-names; the alias alone leaves no `tsc`.
+TypeScript comes as two packages until typescript-eslint can read TypeScript 7, which ships no
+compiler API yet: `"typescript": "npm:@typescript/typescript6@…"` for the TypeScript 6 API it
+imports, and `"@typescript/native": "npm:typescript@7…"` for `tsc`. A plain `typescript` 7 breaks
+lint; the alias alone leaves no `tsc`. The unique-names step parses with its own TypeScript 6
+and runs beside either.
 
 The stylelint base lets a stylesheet, and the `<style>` blocks of an Astro component, read only the
 custom properties brand's `tokens.root.css` (from the repository's installed brand), the files in

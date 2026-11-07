@@ -2090,6 +2090,27 @@ describe("check-unique-names", () => {
     expect(r.out).toContain("src/ü.ts:1");
     expect(r.code).toBe(1);
   });
+
+  // Installed as a consumer installs it, beside the consumer's own `typescript`, so a run that
+  // imported the consumer's TypeScript would crash on 7, which ships no compiler API.
+  test.each([
+    ["6", "@typescript/old"],
+    ["7", "@typescript/native"],
+  ])("runs beside a consumer's TypeScript %s", (_, consumerTs) => {
+    const dir = repo({ ...code, "package.json": "{}" });
+    const own = join(import.meta.dir, "..");
+    const pkg = join(dir, "node_modules/@hackersandwizards/scaffolding");
+    for (const path of ["package.json", "bin/check-unique-names.ts", "lib/repo.ts"])
+      write(pkg, { [path]: readFileSync(join(own, path), "utf8") });
+    symlinkSync(join(own, "node_modules", consumerTs), join(dir, "node_modules/typescript"));
+    symlinkSync(join(own, "node_modules/@typescript"), join(dir, "node_modules/@typescript"));
+    const r = spawnSync(process.execPath, [join(pkg, "bin/check-unique-names.ts")], {
+      cwd: dir,
+      encoding: "utf8",
+    });
+    expect(`${r.stdout}${r.stderr}`).toContain("twice is defined 2 times");
+    expect(r.status).toBe(1);
+  });
 });
 
 describe("check-spaces", () => {

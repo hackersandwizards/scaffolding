@@ -3,7 +3,7 @@
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
-import ts from "typescript";
+import ts from "@typescript/typescript6";
 import { applyAllow, listFiles, readPackage, repoRoot, type Finding } from "../lib/repo.ts";
 
 function scriptSource(file: string): string {
