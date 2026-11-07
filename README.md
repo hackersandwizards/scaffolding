@@ -154,9 +154,10 @@ that entry's rail name, and only it, with `aria-current`; the shell draws it wit
 edge, darkens its group's label and, on a phone, marks the group's chip. A group's label never takes
 a fill of its own. While the home scrolls, the shell's script marks the label of the group being read
 with `aria-current="true"`, drawn in the accent with the same edge: the last group whose top has
-passed a third of the window, or the last group once its end shows. The rail's names scroll under
-the search to keep that label in view; a mark another script set stays. Without script nothing is
-marked. Astrobook draws each state, its sidebar
+passed a third of the window; once one has and the last group's end shows, the group the address
+names where its top shows, else the last group, so a click on a group near the end marks it. On a phone
+that group's chip takes the open entry's look. The rail's names scroll under the search to keep
+that label in view; a mark another script set stays. Without script nothing is marked. Astrobook draws each state, its sidebar
 hidden on every page. A state's page carries a bar instead: back to the home, the file's folder and name, the
 theme toggle, a link to the state alone, and the states: previous and next, with the left and right
 arrow keys too, the position ("10 of 38"), and between them a link per state, or above 12 states a

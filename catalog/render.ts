@@ -75,8 +75,10 @@ const catalogTile = (item: CatalogItem, group: string) =>
 // on the content's own ground, shrunk where it is taller than the tile and measured afresh each
 // time, so a refit never shrinks it again, as Storybook's "centered"
 // layout does. Marks the rail's label of the group read now with aria-current="true": the last
-// group whose top has passed a third of the viewport, the last group once its end shows; a mark
-// another script set, such as "page", stays. The rail's names scroll, never the page, to keep that
+// group whose top has passed a third of the viewport; once one has, and the last group's end
+// shows, the group the address names where its top shows, else the last group, so a click on a
+// group the page cannot scroll up to that third marks that group; a mark another script set, such
+// as "page", stays. The rail's names scroll, never the page, to keep that
 // label in view. Delegated on the document, scroll caught in the capture phase since Astrobook
 // scrolls <main> rather than the window, so it holds across Astro's client router swaps and runs
 // once.
@@ -93,7 +95,8 @@ if(ground)p.style.background=ground;};
 const all=()=>document.querySelectorAll(".hw-catalogue-preview").forEach(fit);all();
 const spy=()=>{for(const root of document.querySelectorAll(".hw-catalogue")){
 const groups=[...root.querySelectorAll(".hw-catalogue-group")].filter((g)=>g.getClientRects().length),last=groups.at(-1);
-let on=groups.findLast((g)=>g.getBoundingClientRect().top<=innerHeight/3);if(on&&last.getBoundingClientRect().bottom<=innerHeight)on=last;
+let on=groups.findLast((g)=>g.getBoundingClientRect().top<=innerHeight/3);
+if(on&&last.getBoundingClientRect().bottom<=innerHeight){const hit=groups.find((g)=>"#"+encodeURIComponent(g.id)===location.hash);on=hit&&hit.getBoundingClientRect().top>=0?hit:last;}
 for(const a of root.querySelectorAll(".hw-catalogue-rail > nav > ul > li > a")){const mine=on&&a.getAttribute("href")==="#"+on.id,was=a.getAttribute("aria-current");
 if(mine&&!was){const box=a.closest("nav"),r=a.getBoundingClientRect(),b=box.getBoundingClientRect();a.setAttribute("aria-current","true");if(r.top<b.top||r.bottom>b.bottom)box.scrollTop+=r.top-b.top-8;}
 else if(!mine&&was==="true")a.removeAttribute("aria-current");}}};spy();
