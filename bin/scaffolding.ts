@@ -95,9 +95,19 @@ function run(name: string, line: string, buffered: boolean): Promise<Result> {
   });
 }
 
-// Side by side, reported in a fixed order so the output reads the same on every run.
-async function group(steps: [string, string][]): Promise<boolean> {
-  const results = await Promise.all(steps.map(([n, c]) => run(n, c, steps.length > 1)));
+// Side by side, reported in a fixed order so the output reads the same on every run. A step named
+// in `after` starts once the step it names, listed before it, has finished, passed or failed.
+async function group(
+  steps: [string, string][],
+  after: Record<string, string> = {},
+): Promise<boolean> {
+  const buffered = steps.length > 1;
+  const runs = new Map<string, Promise<Result>>();
+  for (const [n, c] of steps) {
+    const first = runs.get(after[n] ?? "");
+    runs.set(n, first ? first.then(() => run(n, c, buffered)) : run(n, c, buffered));
+  }
+  const results = await Promise.all(runs.values());
   for (const r of results) {
     process.stderr.write(r.out);
     console.error(
@@ -111,7 +121,11 @@ const started = performance.now();
 // Install first: a tree a pin-raising merge left behind gets installed, and a lockfile out of step
 // fails under its own name, not a later step's.
 let ok = await group([["install", "bun install --frozen-lockfile"]]);
-if (ok) ok = await group(Object.entries(shared));
+// A typecheck of `astro check` and the catalog's `astro build` both run Astro's sync, whose Vite
+// server optimizes dependencies into one folder (node_modules/.astro/vite-sync). On a cache an
+// install invalidated, two at once race on its rename and one fails with ENOTEMPTY, so the catalog
+// build waits for the typecheck.
+if (ok) ok = await group(Object.entries(shared), { catalog: "typecheck" });
 for (const entry of config.check ?? []) {
   if (!ok) break;
   const steps = (Array.isArray(entry) ? entry : [entry]).map((s): [string, string] => [

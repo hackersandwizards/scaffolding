@@ -55,7 +55,8 @@ the hub's sync list, creating it on GitHub and switching Pages on stay steps for
 
 ## The gate
 
-`scaffolding check` runs `bun install --frozen-lockfile`, then the shared steps side by side:
+`scaffolding check` runs `bun install --frozen-lockfile`, then the shared steps side by side, the
+catalog build once the typecheck has finished:
 format, lint, styles (stylelint), typecheck, structure, coupling, unique names, spaces, confidential,
 history, licenses, the tests, the catalog build (`bun run build`) and admin (the item files, with the pinned
 `@hackersandwizards/admin`'s `admin-check`; a repository without admin pinned needs `skip.admin`). Then the repository's own steps from
