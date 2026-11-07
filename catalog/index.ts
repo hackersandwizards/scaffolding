@@ -71,7 +71,7 @@ export type CatalogOptions = {
   header?: { component: string; css?: string[] };
   /** Files the built pages reach by a relative path rather than through Vite: globs relative to
    * the repository, each match copied into the build at the same relative path, symlinks followed,
-   * and package paths, such as "@hackersandwizards/brand/logos/avatar-512.png", of a package the
+   * and package paths, such as "@hackersandwizards/brand/logos/icon-maskable-512.png", of a package the
    * repository declares or of the repository itself, each resolved through the package's exports
    * and copied to that path. `dev` serves each at its path. In CI (`CI=true`) a copied file that is
    * still a Git LFS pointer fails the build, so a published page never links one. */

@@ -238,10 +238,10 @@ The options beyond those above:
   keeps its width.
 - `copy`: files the built pages reach by a relative path rather than through Vite. A glob, relative
   to the repository, lands each match in the build at the same path. A package path of a package
-  the repository declares, or of its own, such as `@hackersandwizards/brand/logos/avatar-512.png`,
+  the repository declares, or of its own, such as `@hackersandwizards/brand/logos/icon-maskable-512.png`,
   names one file through the package's `exports` (any other fails the build by name) and lands it
   at that path, so a page under the
-  base `/mail` names it as `/mail/@hackersandwizards/brand/logos/avatar-512.png` or by the relative
+  base `/mail` names it as `/mail/@hackersandwizards/brand/logos/icon-maskable-512.png` or by the relative
   path there. `astro dev` serves each at its path. A pattern matching nothing fails the
   build, and so does, with `CI=true`, a copied file that is still a Git LFS pointer.
 - `serverOnly`: every story is an Astro component, so each state renders on the server only;
