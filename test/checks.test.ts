@@ -1279,8 +1279,9 @@ describe("catalog", () => {
     expect(r.status).toBe(0);
     // No page of its own at pages/index: the catalog is the site's home.
     const home = readFileSync(join(dist, "index.html"), "utf8");
+    // `nav`: an href from "/" counts from the base, the current item links to the catalog's home.
     expect(home).toContain(
-      '<header class="fx-header"><a href="/">Fx</a><div class="hw-header-nav"></div></header>',
+      '<header class="fx-header"><a href="/">Fx</a><div class="hw-header-nav hw-catalogue-nav"><nav class="hw-header-nav" aria-label="Main" data-hw-catalogs><a class="hw-header-link" href="/">Site</a><a class="hw-header-link" href="/" aria-current="page">Fx</a><a class="hw-header-link" href="https://example.com/other/">Other</a><a class="hw-header-link" href="//example.com/far/">Far</a></nav></div></header>',
     );
     expect(home).toContain("fx catalog/stories · 3 components · 24 states");
     // The admin hub serves only on this machine: a built page carries no link to it.
@@ -1331,6 +1332,11 @@ describe("catalog", () => {
     const barOf = (html: string) =>
       html.match(/<template id="hw-catalogue-bar">([\s\S]*?)<\/template>/)?.[1] ?? "";
     const bar = barOf(state);
+    // A state's page carries the header above the bar, the current item marked as the place, not
+    // the page.
+    expect(bar).toStartWith(
+      '<div data-hw-catalogue-top><header class="fx-header"><a href="/">Fx</a><div class="hw-header-nav hw-catalogue-nav"><nav class="hw-header-nav" aria-label="Main" data-hw-catalogs><a class="hw-header-link" href="/">Site</a><a class="hw-header-link" href="/" aria-current="true">Fx</a><a class="hw-header-link" href="https://example.com/other/">Other</a><a class="hw-header-link" href="//example.com/far/">Far</a></nav></div></header></div><nav class="hw-catalogue-bar"',
+    );
     expect(bar).toContain('<nav class="hw-catalogue-bar" aria-label="Catalog">');
     expect(bar).toContain('<a href="/"><span aria-hidden="true">');
     expect(bar).toMatch(/Parts \/ <strong>BoxParts<\/strong>/);
@@ -1380,7 +1386,7 @@ describe("catalog", () => {
     // A plural acronym and a listed name with inner capitals stay whole.
     expect(many).toMatch(/many-parts\/two-pd-fs">Two PDFs</);
     expect(many).toMatch(/many-parts\/loading-git-hub">Loading GitHub</);
-    expect(state).toContain("main.prepend(bar.content.cloneNode(true))");
+    expect(state).toContain("if (top) main.before(top);");
     expect(page("stories/Parts/box-parts/two")).not.toContain('id="hw-catalogue-bar"');
     expect(home).not.toContain('id="hw-catalogue-bar"');
     // `serverOnly`: no state's route keeps Astrobook's client:load branch.
@@ -1407,7 +1413,7 @@ describe("catalog", () => {
     expect(build(["--base", "/fx"]).status).toBe(0);
     const based = readFileSync(join(dist, "index.html"), "utf8");
     expect(based).toContain(
-      '<header class="fx-header"><a href="/fx/">Fx</a><div class="hw-header-nav"></div></header>',
+      '<header class="fx-header"><a href="/fx/">Fx</a><div class="hw-header-nav hw-catalogue-nav"><nav class="hw-header-nav" aria-label="Main" data-hw-catalogs><a class="hw-header-link" href="/fx/">Site</a><a class="hw-header-link" href="/fx/" aria-current="page">Fx</a><a class="hw-header-link" href="https://example.com/other/">Other</a><a class="hw-header-link" href="//example.com/far/">Far</a></nav></div></header>',
     );
     expect(based).toContain('src="/fx/stories/Types/box-types/two"');
     expect(page("catalog/stories/Types/box-types/two")).toContain(

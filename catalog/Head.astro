@@ -1,10 +1,11 @@
 ---
 // The bar sits in a <template>, which <head> allows, and the script moves it into <main> as the
-// parser creates that.
+// parser creates that; the header, where the preset has a `nav`, goes before <main>.
 import modules from "virtual:astrobook/story-modules.mjs";
 import config from "virtual:astrobook/global-config.mjs";
 import RepositoryHead from "virtual:scaffolding/catalog-head";
 import shell from "virtual:scaffolding/catalog";
+import Top from "./Top.astro";
 
 const FOLD = 12;
 type Story = { id: string; name: string };
@@ -75,6 +76,10 @@ const root = {
   #astrobook-sidebar,
   astrobook-sidebar-resize-handle {
     display: none !important;
+  }
+  /* Astrobook's body is a row of sidebar and <main>, which scrolls: the header stays above it. */
+  body:has(> [data-hw-catalogue-top]) {
+    flex-direction: column;
   }
   /* A story that is a whole page may style a bare <main>, the bar's parent, as a centred grid. */
   .hw-catalogue-bar {
@@ -172,6 +177,11 @@ const root = {
 </style>
 {mod && (
   <template id="hw-catalogue-bar">
+    {shell.nav && (
+      <div data-hw-catalogue-top>
+        <Top current="true" />
+      </div>
+    )}
     <nav class="hw-catalogue-bar" aria-label="Catalog">
       <a href={`${trim(config.astrobookBase)}/`}>
         <span aria-hidden="true">←&nbsp;</span>Catalog
@@ -254,7 +264,10 @@ const root = {
         const main = document.querySelector("main");
         if (!main) return;
         observer.disconnect();
-        main.prepend(bar.content.cloneNode(true));
+        const parts = bar.content.cloneNode(true);
+        const top = parts.querySelector("[data-hw-catalogue-top]");
+        if (top) main.before(top);
+        main.prepend(parts);
         pressed();
       }).observe(document, { childList: true, subtree: true });
     document.addEventListener("click", (event) => {

@@ -172,8 +172,9 @@ first goes in an underscore name. Every page loads in full rather than through A
 router, which swapped pages in place and so dropped what a repository's `head` sets on `<html>` and
 left its page scripts unrun.
 
-The shell (`catalog/`: Layout, Home, Head, `render.ts`, which draws the rail and tiles, and
-`catalog.css`) reads brand's token roles by name only, and the repository's `css` supplies them.
+The shell (`catalog/`: Layout, Home, Head, Top, which draws the header, `render.ts`, which draws
+the rail and tiles, and `catalog.css`) reads brand's token roles by name only, and the repository's
+`css` supplies them.
 Its shapes follow brand's rule: the brand corner for a preview, the small corner for the search
 field, a rail row, the state menu, the theme toggle and the link to a state alone, round for the
 state chips and the arrows.
@@ -196,9 +197,16 @@ The options beyond those above:
 - `previewStates`: the states a tile draws and links first, each the story's export name in kebab
   case, such as `["light", "loaded-dark"]` for `Light` and `LoadedDark`.
 - `head`: the repository's own `<head>` component, rendered on every page.
-- `header`: default brand's `AppHeader`, `header.css` and `night.css`. Whatever the `nav` slot
-  holds sits in one `hw-header-nav` group at the bar's right, after the admin link; a `nav` of class
-  `hw-header-nav` passed there lays its items into that group.
+- `header`: default brand's `AppHeader`, `header.css` and `night.css`. The admin link, the `nav`
+  option's links and whatever the home's `nav` slot holds sit in that order in one `hw-header-nav`
+  group at the bar's right; a `nav` of class `hw-header-nav` passed there lays its items into that
+  group.
+- `nav`: the header's links on the home and on every state's page, which then carries the header
+  above its bar, such as `{ items: catalogs, current: "Slides" }` with brand's `catalogs.json`. Each
+  item is `{ name, href }`, an href starting with one `/` counting from the base. The item named
+  `current` links to the catalog's home and carries `aria-current`: `"page"` on the home, `"true"`
+  on a state's page, whose header stays above the scrolling story. The links render as brand's catalog list does (`hw-header-link` in a
+  `nav.hw-header-nav` with `data-hw-catalogs`).
 - `home`: a page of the repository that renders `Home.astro`, its foundations in the default slot
   and a control such as a theme toggle in the `nav` slot. The running text above the tiles takes
   the lead's measure (48rem) and leading (1.5), unless a class of the repository's sets its own: a

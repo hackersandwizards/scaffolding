@@ -283,9 +283,3 @@
 [data-astrobook-root][data-active-story=""] main {
   padding: 0;
 }
-
-/* Unlayered, as brand's header.css is: a nav a repository passes into Layout.astro's header group
-   lays its items into that group, so the bar keeps one scrolling row. */
-.hw-header-nav > .hw-header-nav {
-  display: contents;
-}

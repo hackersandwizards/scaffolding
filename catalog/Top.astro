@@ -1,0 +1,52 @@
+---
+// The header of the home and of a state's page: the repository's header, its nav and, under
+// `astro dev`, the admin link.
+import Header from "virtual:scaffolding/catalog-header";
+import shell from "virtual:scaffolding/catalog";
+
+interface Props {
+  product?: string;
+  href?: string;
+  admin?: string;
+  /** aria-current on the nav's item for this catalog: "page" on its home, "true" below it. */
+  current: "page" | "true";
+}
+
+// A state's page takes the preset's values; the home passes its own, which a repository's home may
+// override.
+const { product = shell.product, href = shell.href, admin = shell.admin, current } = Astro.props;
+const nav: { name: string; href: string; current?: true }[] | undefined = shell.nav;
+---
+
+<Header product={product} href={href}>
+  {/* One group at the bar's right, the admin link first: the header spreads its children apart.
+  A div, so a nav inside keeps its landmark; the rule below lays that nav's items into this row. */}
+  <div class="hw-header-nav hw-catalogue-nav">
+    {admin && (
+      <a class="hw-header-link" href={admin}>
+        <span aria-hidden="true">←&nbsp;</span>Admin hub
+      </a>
+    )}
+    {nav && (
+      <nav class="hw-header-nav" aria-label="Main" data-hw-catalogs>
+        {nav.map((item) => (
+          <a
+            class="hw-header-link"
+            href={item.href}
+            aria-current={item.current ? current : undefined}
+          >
+            {item.name}
+          </a>
+        ))}
+      </nav>
+    )}
+    <slot />
+  </div>
+</Header>
+
+<style is:global>
+  /* Unlayered, as brand's header.css is, so the bar keeps one scrolling row. */
+  .hw-catalogue-nav > .hw-header-nav {
+    display: contents;
+  }
+</style>

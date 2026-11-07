@@ -47,6 +47,10 @@ export type CatalogOptions = {
   title?: string;
   /** Where the header's lockup links; default the site's root, Astro's `base`. */
   href?: string;
+  /** The header's nav on every page but a state alone, such as brand's catalogs.json: an href
+   * starting with "/" counts from Astro's `base`, and the item named `current` links to this
+   * catalog's home and carries aria-current. */
+  nav?: { items: { name: string; href: string }[]; current?: string };
   /** Under `astro dev`, a header link to the repository's page in the local admin hub,
    * http://admin.localhost:4329/<repo>/dashboard, the repo named as the hub names it. */
   admin?: boolean;
@@ -193,8 +197,8 @@ export function catalog(options: CatalogOptions): AstroIntegration {
         repo = packageDir(root);
         base = params.config.base.replace(/\/$/, "");
         const pages = join(fileURLToPath(params.config.srcDir), "pages");
-        atRoot =
-          catalogPath({ base, pages: existsSync(pages) ? readdirSync(pages) : [] }) === `${base}/`;
+        const home = catalogPath({ base, pages: existsSync(pages) ? readdirSync(pages) : [] });
+        atRoot = home === `${base}/`;
         if (atRoot && params.config.redirects["/"])
           throw new Error(
             'catalog: the catalog is the site\'s home, so `redirects` leaves out "/"; its former /catalog/ pages forward by themselves',
@@ -259,9 +263,15 @@ export function catalog(options: CatalogOptions): AstroIntegration {
         const header = options.header ?? BRAND_HEADER;
         // A relative specifier counts from the Astro root, as Astrobook reads `head` and `home`.
         const spec = (s: string) => JSON.stringify(s.startsWith(".") ? join(root, s) : s);
+        const nav = options.nav;
         const shared = {
           product: options.product,
           href: options.href ?? `${base}/`,
+          nav: nav?.items.map(({ name, href }) =>
+            name === nav.current
+              ? { name, href: home, current: true }
+              : { name, href: /^\/(?!\/)/.test(href) ? `${base}${href}` : href },
+          ),
           title: options.title ?? "Catalog",
           lead: options.lead,
           previews: options.previews ?? true,
