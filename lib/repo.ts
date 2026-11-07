@@ -38,8 +38,9 @@ export const stylelintFlags = (root: string) => [
   "compact",
 ];
 
-export type Finding = { check: string; path: string; text: string; message: string };
-type AllowEntry = { check?: string; path?: string; text?: string; reason?: unknown };
+/** `term`: the text is a bare term, which an allow entry names whole. */
+export type Finding = { check: string; path: string; text: string; message: string; term?: true };
+type AllowEntry = { check?: string; path?: string; text?: string | string[]; reason?: unknown };
 
 export function git(args: string[], cwd = process.cwd(), input?: string): Buffer {
   const r = spawnSync("git", args, { cwd, input, maxBuffer: Infinity });
@@ -104,10 +105,18 @@ const glob = (pattern: string) =>
       .join(".*")}$`,
   );
 
-const covers = (entry: AllowEntry, f: Finding) =>
+// Folded as the confidential scan reads text: NFKC words joined by one space, in lower case.
+const fold = (s: string) =>
+  (s.normalize("NFKC").match(/[\p{L}\p{N}]+/gu) ?? []).join(" ").toLowerCase();
+
+// A longer term containing the entry's ("<name> Consulting") stays red.
+const textCovers = (text: string, f: Finding) =>
+  f.term ? fold(f.text) === fold(text) : f.text.includes(text);
+
+const covers = (entry: AllowEntry, f: Finding, text = entry.text) =>
   entry.check === f.check &&
   (entry.path === undefined || glob(entry.path).test(f.path)) &&
-  (entry.text === undefined || f.text.includes(entry.text));
+  (text === undefined || [text].flat().some((t) => textCovers(t, f)));
 
 /**
  * Drops each finding a `scaffolding.allow` entry of package.json covers, and reports every entry
@@ -131,13 +140,16 @@ export function applyAllow(
         text: JSON.stringify(e),
         message: "allow entry without a reason",
       });
-    else if (stale && !findings.some((f) => covers(e, f)))
-      left.push({
-        check,
-        path: "package.json",
-        text: JSON.stringify(e),
-        message: "allow entry matches nothing",
-      });
+    else if (stale)
+      // Each text of a list is its own exception and dies with its own case.
+      for (const text of Array.isArray(e.text) && e.text.length ? e.text : [e.text])
+        if (!findings.some((f) => covers(e, f, text)))
+          left.push({
+            check,
+            path: "package.json",
+            text: JSON.stringify({ ...e, text }),
+            message: "allow entry matches nothing",
+          });
   }
   return left;
 }

@@ -305,7 +305,14 @@ function scanText(where: string, text: string) {
     for (const part of joined.split(/[-_/.]/))
       if (part.length > 3 && part === part.toLowerCase() && bad.has(h(`cs:${part.toUpperCase()}`)))
         found.add(part);
-  for (const name of found) report(where, name, "confidential term from the company records");
+  for (const name of found)
+    findings.push({
+      check: "confidential",
+      path: where,
+      text: name,
+      message: "confidential term from the company records",
+      term: true,
+    });
 }
 
 const IMAGE = /\.(?:png|jpe?g|webp|gif|heic|tiff?)$/i;

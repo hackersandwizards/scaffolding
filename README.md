@@ -291,7 +291,10 @@ A finding a repository keeps goes in its `package.json` with the reason:
 ```
 
 `path` takes `*` within a folder and `**` across folders, and `text` narrows an entry to findings
-containing it. An entry without a reason fails, and so does one that no longer matches anything.
+containing it, or for a confidential term the whole term in any case, its accents composed or
+not and its punctuation read as a space: `"Jane Doe"` keeps `JANE DOE`, never `Jane Doe Consulting`.
+`text` may be a list, each item its own exception. An entry without a reason fails, and so does an entry, or
+an item of its list, that no longer matches anything.
 For `check: "unique-names"`, `path` exempts the definition sites it covers, such as a copy another
 repository syncs in.
 

@@ -784,6 +784,40 @@ describe("check-confidential", () => {
     expect(run(dir, "check-confidential", ["--staged"], env).code).toBe(0);
   });
 
+  test("an entry's text is the whole term in any case; a longer term containing it stays red", () => {
+    const entry = (text: string | string[]) => ({
+      check: "confidential",
+      text,
+      reason: "test",
+    });
+    const audit = (text: string | string[], body: string) =>
+      lines(
+        run(
+          repo({
+            "package.json": JSON.stringify({ scaffolding: { allow: [entry(text)] } }),
+            "a.md": body,
+          }),
+          "check-confidential",
+          ["--tree", "HEAD"],
+          env,
+        ).out,
+        "check-confidential",
+      );
+    expect(audit("Jane Q Doe".normalize("NFD"), "JANE Q DOE and jane q doe\n")).toEqual([]);
+    expect(audit("Jane-Q. Doe", "Jane Q Doe\n")).toEqual([]);
+    expect(audit("Acme Widgets", "Acme Widgets GmbH\n")).toEqual([
+      "[check-confidential] a.md: confidential term from the company records (Acme Widgets GmbH)",
+    ]);
+    expect(
+      audit(
+        ["jane q doe", "acme widgets gmbh", "acme widgets", "zyx"],
+        "Jane Q Doe, Acme Widgets GmbH\n",
+      ),
+    ).toEqual([
+      `[check-confidential] package.json: allow entry matches nothing (${JSON.stringify(entry("zyx"))})`,
+    ]);
+  });
+
   test.if(process.platform === "darwin")("an image that cannot be decoded is refused", () => {
     const dir = repo({ "package.json": "{}" });
     write(dir, { "bad.png": "not an image at all" });
