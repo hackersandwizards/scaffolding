@@ -17,6 +17,7 @@ import {
   applyAllow,
   finish,
   git,
+  isReason,
   listFiles,
   readPackage,
   repoRoot,
@@ -126,7 +127,7 @@ if (existsSync(at("package.json"))) {
     add("package.json", `engines.npm must be ${skeleton.package["engines.npm"]}`);
   if (pkg.packageManager !== own.packageManager)
     add("package.json", `packageManager must be ${own.packageManager}`, String(pkg.packageManager));
-  const surface = !String(pkg.scaffolding?.skip?.catalog ?? "").trim();
+  const surface = !isReason(pkg.scaffolding?.skip?.catalog);
   const scripts = [...skeleton.package.scripts, ...(surface ? skeleton.catalog.scripts : [])];
   for (const script of scripts as string[])
     if (!pkg.scripts?.[script]) add("package.json", `script ${script} missing`, script);

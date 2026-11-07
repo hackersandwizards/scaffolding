@@ -6,6 +6,7 @@ import { spawn, spawnSync } from "node:child_process";
 import { existsSync, mkdtempSync, readFileSync, rmSync } from "node:fs";
 import { availableParallelism, tmpdir } from "node:os";
 import { join } from "node:path";
+import { isReason } from "../lib/repo.ts";
 
 function refuseCommit(message: string): never {
   console.error(`[check:staged] ${message}`);
@@ -150,7 +151,7 @@ async function prettierPasses(bin: string, path: string, input: Buffer, r: ToolR
 const gateStep: Record<string, string> = { prettier: "format", eslint: "lint" };
 const skip = pkg.scaffolding?.skip ?? {};
 const active = Object.entries(tools).filter(
-  ([tool]) => staged.length && !String(skip[gateStep[tool]] ?? "").trim(),
+  ([tool]) => staged.length && !isReason(skip[gateStep[tool]]),
 );
 for (const [tool] of active)
   // Fail closed: a checkout without `bun install`, such as a fresh worktree, or a package that

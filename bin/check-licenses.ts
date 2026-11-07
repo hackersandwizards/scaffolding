@@ -1,6 +1,6 @@
 #!/usr/bin/env bun
 import { spawnSync } from "node:child_process";
-import { readPackage, repoRoot } from "../lib/repo.ts";
+import { isReason, readPackage, repoRoot } from "../lib/repo.ts";
 
 const ALLOWED = new Set([
   "MIT",
@@ -22,7 +22,7 @@ const ALLOWED = new Set([
   "MPL-2.0",
 ]);
 
-type Exception = { license?: string; reason?: string };
+type Exception = { license?: unknown; reason?: unknown };
 const LIBVIPS =
   "LGPL libvips, a shared library sharp loads at build or request time on our own machines; conveyed in nothing we hand out";
 const DEFAULTS: Record<string, Exception> = {
@@ -112,7 +112,7 @@ function checkLicenses() {
 
   const own: Record<string, Exception> = readPackage(root).scaffolding?.licenses ?? {};
   for (const [pattern, e] of Object.entries(own))
-    if (!e?.reason?.trim() || !e.license)
+    if (!isReason(e?.reason) || typeof e.license !== "string" || !e.license)
       problems.push(`scaffolding.licenses["${pattern}"] needs a license string and a reason`);
   // A repository's own entries first, so one never reads as stale behind a default.
   const exceptions = [...Object.entries(own), ...Object.entries(DEFAULTS)];

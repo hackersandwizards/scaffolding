@@ -2,7 +2,7 @@
 import { spawn, spawnSync } from "node:child_process";
 import { existsSync } from "node:fs";
 import { join } from "node:path";
-import { readPackage, repoRoot } from "../lib/repo.ts";
+import { isReason, readPackage, repoRoot } from "../lib/repo.ts";
 
 const KEYS = new Set([
   "allow",
@@ -63,12 +63,12 @@ const shared: Record<string, string> = {
   catalog: "bun run --silent build",
   admin: "admin-check",
 };
-if (!config.test && !config.skip?.test)
+if (!config.test && !isReason(config.skip?.test))
   fail("scaffolding.test is missing: name the tests, or skip.test with a reason");
 const declared = { ...(pkg.dependencies as object), ...(pkg.devDependencies as object) };
-if (!("@hackersandwizards/admin" in declared) && !config.skip?.admin)
+if (!("@hackersandwizards/admin" in declared) && !isReason(config.skip?.admin))
   fail("@hackersandwizards/admin is not pinned: pin it, or skip.admin with a reason");
-const skip: Record<string, string> = { ...config.skip };
+const skip = { ...config.skip };
 // A private repository's shipped files reach only company readers.
 if (config.private) {
   skip.confidential ??= "scaffolding.private";
@@ -76,7 +76,7 @@ if (config.private) {
 }
 for (const [step, reason] of Object.entries(skip)) {
   if (!(step in shared)) fail(`scaffolding.skip names no shared step: ${step}`);
-  if (!String(reason).trim()) fail(`scaffolding.skip.${step} has no reason`);
+  if (!isReason(reason)) fail(`scaffolding.skip.${step} has no reason`);
   delete shared[step];
 }
 

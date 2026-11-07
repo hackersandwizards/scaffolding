@@ -292,9 +292,10 @@ describe("check-coupling", () => {
     // Its text names the path it excuses, and package.json is not flagged for it.
     const reasoned = { check: "coupling", path: "src/*.ts", text: "../../x", reason: "test" };
     expect(run(allow([reasoned]), "check-coupling").code).toBe(0);
-    expect(run(allow([{ ...reasoned, reason: "" }]), "check-coupling").out).toContain(
-      "allow entry without a reason",
-    );
+    for (const reason of ["", true])
+      expect(run(allow([{ ...reasoned, reason }]), "check-coupling").out).toContain(
+        "allow entry without a reason",
+      );
     const stale = allow([reasoned, { check: "coupling", path: "src/gone.ts", reason: "old" }]);
     expect(run(stale, "check-coupling").out).toContain("allow entry matches nothing");
   });
@@ -514,7 +515,8 @@ describe("scaffold and check-structure", () => {
     write(other, { "bun.lock": "" });
     sh(other, ["config", "core.hooksPath", ".githooks"]);
     const pkg = JSON.parse(readFileSync(join(other, "package.json"), "utf8"));
-    delete pkg.scaffolding.skip.catalog;
+    // false gives no reason, as a missing skip.catalog does.
+    pkg.scaffolding.skip.catalog = false;
     pkg.scaffolding.check = ["brand-colours", ["check:markers", "lint"]];
     pkg.scripts["check:markers"] = "true";
     write(other, { "package.json": JSON.stringify(pkg) });
@@ -1193,6 +1195,15 @@ describe("scaffolding check", () => {
       expect(run(dir, "scaffolding", ["check"], { CHECK_LOCK: join(dir, ".lock") }).code).toBe(1);
     }
   });
+
+  test("a skip whose value is no text gives no reason", () => {
+    for (const lint of [false, 0, {}, true]) {
+      const dir = gate({ skip: { ...skip, lint } });
+      const r = run(dir, "scaffolding", ["check"], { CHECK_LOCK: join(dir, ".lock") });
+      expect(r.out).toContain("scaffolding.skip.lint has no reason");
+      expect(r.code).toBe(1);
+    }
+  });
 });
 
 describe("shared eslint config", () => {
@@ -1679,11 +1690,15 @@ describe("check-staged", () => {
     expect(staged({ scaffolding: { skip: { format: "", lint: "none" } } }).out).toContain(
       "prettier not installed",
     );
+    for (const format of [false, {}])
+      expect(staged({ scaffolding: { skip: { format, lint: "none" } } }).out).toContain(
+        "prettier not installed",
+      );
     expect(staged({ scaffolding: { skip: { format: "none", lint: "none" } } }).code).toBe(0);
     const prettierOnly = staged({ scaffolding: { skip: { lint: "none" } } }, true);
     expect(prettierOnly.out).not.toContain("not installed");
     expect(prettierOnly.code).toBe(0);
-  });
+  }, 20_000);
 
   test("a file staged in the old docs/tracking folder runs admin-check too", () => {
     const dir = repo({ "package.json": pkg });
@@ -2096,9 +2111,15 @@ describe("check-licenses", () => {
     const changed = keep({ gsap: { ...pinned, license: "MIT" } });
     expect(changed.code).toBe(1);
     expect(changed.out).toContain('pins "MIT", installed is "Standard');
-    const reasonless = keep({ gsap: { license: pinned.license } });
-    expect(reasonless.code).toBe(1);
-    expect(reasonless.out).toContain("needs a license string and a reason");
+    for (const gsap of [
+      { license: pinned.license },
+      { ...pinned, reason: {} },
+      { ...pinned, license: true },
+    ]) {
+      const reasonless = keep({ gsap });
+      expect(reasonless.code).toBe(1);
+      expect(reasonless.out).toContain("needs a license string and a reason");
+    }
     const stale = keep({ gsap: pinned, "left-pad": { license: "MIT", reason: "gone" } });
     expect(stale.code).toBe(1);
     expect(stale.out).toContain('scaffolding.licenses["left-pad"] matches no installed package');

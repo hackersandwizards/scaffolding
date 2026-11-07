@@ -14,8 +14,12 @@ export const commentSyntax = (path: string) =>
     ? /(^|\s)#.*/gm
     : /(^|[\s{};,)>]|\b(?=\/\*\s)|(?<=\*\/))\/\*[\s\S]*?\*\/|<!--[\s\S]*?-->|(?<![:"'`\\])\/\/.*/gm;
 
+/** A reason is a non-blank string, so `false`, `0` or `{}` in package.json gives none. */
+export const isReason = (value: unknown): value is string =>
+  typeof value === "string" && value.trim() !== "";
+
 export type Finding = { check: string; path: string; text: string; message: string };
-type AllowEntry = { check?: string; path?: string; text?: string; reason?: string };
+type AllowEntry = { check?: string; path?: string; text?: string; reason?: unknown };
 
 export function git(args: string[], cwd = process.cwd(), input?: string): Buffer {
   const r = spawnSync("git", args, { cwd, input, maxBuffer: Infinity });
@@ -54,9 +58,9 @@ export type Package = {
     typecheck?: string;
     test?: string;
     uniqueNames?: string[];
-    skip?: Record<string, string>;
+    skip?: Record<string, unknown>;
     check?: (string | string[])[];
-    licenses?: Record<string, { license?: string; reason?: string }>;
+    licenses?: Record<string, { license?: string; reason?: unknown }>;
   };
   [field: string]: unknown;
 };
@@ -100,7 +104,7 @@ export function applyAllow(
   const mine = allow.filter((e) => e.check === check);
   const left = findings.filter((f) => !mine.some((e) => covers(e, f)));
   for (const e of mine) {
-    if (!e.reason?.trim())
+    if (!isReason(e.reason))
       left.push({
         check,
         path: "package.json",
