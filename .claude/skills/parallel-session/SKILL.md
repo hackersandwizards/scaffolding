@@ -23,7 +23,9 @@ serves the page across all repos at `http://admin.localhost:4329` from each repo
     veto. Only for direction, money, a relationship or anything leaving the company. Every other
     such point an agent settles is `status: assumed`; a minor or reversible default is named in
     the report only.
-  - `review`: a request to look at something, with what to look at in the body.
+  - `review`: a request to look at something, with what to look at in the body. Only for what no
+    reviewer can judge for the person; a choice a blind review settled and a run shipped gets no
+    review item, and the run's report names it.
 
   A task, even one phrased as a question ("Who fixes the privacy policy?"), is `work`.
 - `docs/agent-work/YYYY-MM-DD-<topic>.md`: one report per topic, what was measured, with evidence.

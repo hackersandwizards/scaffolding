@@ -6,13 +6,18 @@
     "rule": "Customer-facing copy writes the company hackers&wizards, inside a quoted client statement too."
   },
   "claim": {
-    "en": "Agents bring the speed. Flow needs teams in tune.",
-    "de": "Agenten bringen das Tempo. Flow braucht eingespielte Teams.",
+    "en": "Agents in the team. Teams in flow.",
+    "de": "Agenten im Team. Teams im Flow.",
     "word": {
-      "en": "Flow",
+      "en": "flow",
       "de": "Flow"
     },
-    "since": "2026-11-06"
+    "since": "2026-11-07"
+  },
+  "headline": {
+    "en": "Your teams have agents. Once every role is in step, your releases speed up.",
+    "de": "Eure Teams haben Agenten. Wenn alle Rollen eingespielt sind, werden eure Releases schneller.",
+    "since": "2026-11-07"
   },
   "mission": {
     "en": "We bring every role that builds our clients' products into flow with agentic engineering, as one team.",
@@ -111,6 +116,18 @@
       "text": "Euer ganzes Unternehmen unaufhaltsam, im Flow mit Agentic Engineering.",
       "lang": "de",
       "retired": "2026-11-06",
+      "replacedBy": "claim"
+    },
+    {
+      "text": "Agents bring the speed. Flow needs teams in tune.",
+      "lang": "en",
+      "retired": "2026-11-07",
+      "replacedBy": "claim"
+    },
+    {
+      "text": "Agenten bringen das Tempo. Flow braucht eingespielte Teams.",
+      "lang": "de",
+      "retired": "2026-11-07",
       "replacedBy": "claim"
     }
   ]
