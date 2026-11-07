@@ -154,7 +154,7 @@ const packageOf = (spec: string) =>
         .join("/");
 
 // Astrobook's layout loads Astro's client router; found only when the first page loads, these
-// modules made Vite optimise again and print it after every start whose lockfile had changed.
+// modules make Vite optimise again and print it after every start whose lockfile has changed.
 const ROUTER = ["events", "router", "swap-functions", "types"].map(
   (m) => `astro/virtual-modules/transitions-${m}.js`,
 );
@@ -251,7 +251,7 @@ export function catalog(options: CatalogOptions): AstroIntegration {
         const require = createRequire(pkgFile);
         for (const pattern of options.copy ?? []) {
           const owner = packageOf(pattern);
-          if (!declared.has(owner) || existsSync(join(repo, owner!))) continue;
+          if (!owner || !declared.has(owner) || existsSync(join(repo, owner))) continue;
           try {
             resolved.set(pattern, require.resolve(pattern));
           } catch {
@@ -365,6 +365,13 @@ export function catalog(options: CatalogOptions): AstroIntegration {
           const file = path.startsWith(`${base}/`) ? path.slice(base.length + 1) : "";
           if (!file || !options.copy) return next();
           const match = options.copy
+            .filter((pattern) => {
+              // Every match of a pattern starts with the segments before its first wildcard.
+              const parts = pattern.replace(/^\.\//, "").split("/");
+              const wild = parts.findIndex((p) => /[*?[{]/.test(p));
+              const fixed = parts.slice(0, wild < 0 ? undefined : wild).join("/");
+              return !fixed || file === fixed || file.startsWith(`${fixed}/`);
+            })
             .flatMap(copied)
             .find(([at]) => file === at || file.startsWith(`${at}/`));
           const full = match && join(match[1], file.slice(match[0].length));

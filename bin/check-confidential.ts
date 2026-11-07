@@ -159,8 +159,11 @@ if (argv[0] === "prepush") {
     ...(storage.trim() ? [resolve(common, storage.trim(), "objects")] : []),
   ];
   const lfsPath = (local: string) => {
-    // latin1 keeps a path's bytes as they are, whatever its encoding.
-    const changed = git(["log", "--format=", "--name-only", "-z", local, ...notOnRemote], root)
+    // latin1 keeps a path's bytes as they are, whatever its encoding; -m lists what a merge changes.
+    const changed = git(
+      ["log", "-m", "--format=", "--name-only", "-z", local, ...notOnRemote],
+      root,
+    )
       .toString("latin1")
       .split("\0")
       .filter(Boolean);

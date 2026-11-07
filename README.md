@@ -75,7 +75,7 @@ non-blank string in `skip`:
 ```
 
 **Spaces.** Astro's default `compressHTML` drops a line break where text meets an inline tag
-(`a`, `code`, `span`, `strong`, `em`, `kbd`): "drawn by" on one line and `<code>brand</code>` on
+(HTML's inline elements, such as `a`, `code`, `small` or `time`): "drawn by" on one line and `<code>brand</code>` on
 the next render as "drawn bybrand". Turned off instead, it keeps every break the formatter writes,
 so a wrapped link carries a space inside its underline and a bare break before punctuation shows as
 a space. The template keeps compression on, and the step flags a line ending in text whose next line

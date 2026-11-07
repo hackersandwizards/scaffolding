@@ -186,8 +186,7 @@ if (!staged || listFiles(root, true).includes("package.json")) {
         flag("package.json", `${name}@${spec}`, "local path dependency");
       else if (GIT.test(spec) && !TAG.test(spec))
         flag("package.json", `${name}@${spec}`, "Git dependency not pinned to a version tag");
-      // A stale install renders with the old engine while every file reads the new pin: documents
-      // once ran brand 0.21.6 against a v0.24.4 pin, and its list markers vanished.
+      // A stale install renders with the old engine while every file reads the new pin.
       else if (GIT.test(spec) && field !== "peerDependencies") {
         const pinned = TAG.exec(spec)![0].replace(/^#(?:semver:)?v?/, "");
         const installed = (manifest(name)?.version as string | undefined) ?? "nothing";

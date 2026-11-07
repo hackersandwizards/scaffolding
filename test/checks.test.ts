@@ -942,8 +942,28 @@ describe("check-confidential", () => {
     expect(
       both(repo({ "package.json": "{}", ".gitattributes": "*.psd lockable\n", "a.psd": "x" })),
     ).toEqual([3, 1]);
+    // A merge whose resolution alone changes a lockable path.
+    const merged = repo({
+      "package.json": "{}",
+      ".gitattributes": "*.psd lockable\n",
+      "a.psd": "x",
+    });
+    sh(merged, ["update-ref", "refs/remotes/origin/main", "HEAD"]);
+    sh(merged, ["checkout", "-qb", "side"]);
+    write(merged, { "c.md": "c\n" });
+    sh(merged, ["add", "c.md"]);
+    sh(merged, ["commit", "-qm", "c"]);
+    sh(merged, ["checkout", "-q", "main"]);
+    write(merged, { "d.md": "d\n" });
+    sh(merged, ["add", "d.md"]);
+    sh(merged, ["commit", "-qm", "d"]);
+    sh(merged, ["merge", "-q", "--no-commit", "side"]);
+    write(merged, { "a.psd": "y" });
+    sh(merged, ["add", "a.psd"]);
+    sh(merged, ["commit", "-qm", "m"]);
+    expect(both(merged)).toEqual([3, 1]);
     expect(logged()).toBe(
-      "pre-push origin x\n".repeat(3) + "pre-push backup x\n" + "pre-push origin x\n".repeat(2),
+      "pre-push origin x\n".repeat(3) + "pre-push backup x\n" + "pre-push origin x\n".repeat(3),
     );
   });
 });
@@ -1532,7 +1552,7 @@ describe("catalog", () => {
   }, 60_000);
 
   // A repository's head sets attributes on <html> and runs page scripts: Astrobook's client router
-  // swapped pages in place, which dropped both until a reload.
+  // swaps pages in place, which drops both until a reload.
   test("dev serves `copy`, and a click in the bar loads the next state in full", async () => {
     const { serve, freePort } = await import("../lib/serve.ts");
     const { chromeArgs, chromeBinary, INSTALL_HINT } = await import("../lib/chrome.ts");
@@ -1940,6 +1960,10 @@ describe("check-spaces", () => {
     "run the",
     "<code>check</code>",
     "</pre>",
+    "<p>",
+    "  sold by",
+    "  <small>x</small>",
+    "</p>",
     "",
   ].join("\n");
 
@@ -1956,6 +1980,7 @@ describe("check-spaces", () => {
       ["10", "a"],
       ["31", "a"],
       ["36", "code"],
+      ["44", "small"],
     ]);
     const empty = run(
       repo({ "src/B.astro": "---\n---\n<code>x</code>\n", "package.json": "{}" }),
@@ -1997,7 +2022,8 @@ describe("check-history", () => {
         "src/b.ts": "const a = 'Benedikt'; // see new-claim for the rest\n",
         "src/c.html": "<!-- OS-1 -->\n",
         ".githooks/pre-commit": "# decision label-system, 06.11.\nrun\n",
-        "src/clean.ts": "// how to use it, why it is so\nconst at = '2026-11-01';\n",
+        "src/clean.ts":
+          "// how to use it, why it is so: UTF-8, SHA-256, Node 22.12.\nconst at = '2026-11-01';\n",
         "docs/agent-work/items/new-claim.md": "x\n",
         "other/d.css": "/* blind panel 2026-11-01 */\n",
       }),

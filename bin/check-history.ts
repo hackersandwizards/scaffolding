@@ -43,16 +43,17 @@ const HISTORY: [string, RegExp][] = [
   [
     "item id",
     new RegExp(
-      String.raw`\b[A-Z]{2,4}-\d+\b|\b[Ii]tems?\s+[a-z0-9]+(?:-[a-z0-9]+)+` +
+      String.raw`\b(?!(?:AES|CVE|CWE|ISO|RFC|SHA|UTF)-)[A-Z]{2,4}-\d+\b|\b[Ii]tems?\s+[a-z0-9]+(?:-[a-z0-9]+)+` +
         (items.length ? String.raw`|(?<![\w-])(?:${items.join("|")})(?![\w-])` : ""),
       "g",
     ),
   ],
   // A one-digit month needs a year, a closing bracket or a comma after it, so a decimal closing a
-  // sentence ("only 4.7.") is none. A date never starts inside a dotted number ("2.11.3.").
+  // sentence ("only 4.7.") is none. A date never starts inside a dotted number ("2.11.3.") or
+  // after a capitalised name, as a version does ("Node 22.12.").
   [
     "date",
-    /\b20\d\d-\d\d-\d\d\b|(?<![\w.])(?:0?[1-9]|[12]\d|3[01])\.(?:(?:0[1-9]|1[0-2])\.(?:20\d\d)?|[1-9]\.(?:20\d\d|(?=[),])))(?!\w)/g,
+    /\b20\d\d-\d\d-\d\d\b|(?<![\w.])(?<!\b[A-Z]\w*\s)(?:0?[1-9]|[12]\d|3[01])\.(?:(?:0[1-9]|1[0-2])\.(?:20\d\d)?|[1-9]\.(?:20\d\d|(?=[),])))(?!\w)/g,
   ],
   ["person", /\b(?:Benedikt|Stefan|Stemmildt|Munz)\b/g],
 ];
@@ -108,8 +109,13 @@ const found: Finding[] = [];
 for (const [line, kind, file] of controls)
   if (!kinds(file ? readComments(file, line).join() : line).includes(kind))
     found.push({ check: "history", path: import.meta.path, text: line, message: `misses ${kind}` });
-if (kinds("only 4.7.").includes("date"))
-  found.push({ check: "history", path: import.meta.path, text: "only 4.7.", message: "hits date" });
+for (const [line, kind] of [
+  ["only 4.7.", "date"],
+  ["needs Node 22.12.", "date"],
+  ["reads UTF-8, hashes with SHA-256", "item id"],
+])
+  if (kinds(line).includes(kind))
+    found.push({ check: "history", path: import.meta.path, text: line, message: `hits ${kind}` });
 
 // A repository declaring no files, exports or bin ships nothing another repository reads.
 const pkg = readPackage(root);

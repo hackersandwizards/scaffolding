@@ -65,7 +65,7 @@ if (!("@hackersandwizards/admin" in declared) && !isReason(config.skip?.admin))
   fail("@hackersandwizards/admin is not pinned: pin it, or skip.admin with a reason");
 const skip = { ...config.skip };
 // A private repository's shipped files reach only company readers.
-if (config.private) {
+if (config.private === true) {
   skip.confidential ??= "scaffolding.private";
   skip.history ??= "scaffolding.private";
 }
