@@ -1608,7 +1608,7 @@ describe("check-staged", () => {
   // A stand-in for admin's bin: red while any item file says "broken".
   const adminCheck = '#!/bin/sh\n! grep -rl broken "${1:-.}/docs/agent-work/items"\n';
   const pkg = JSON.stringify({
-    scaffolding: { private: true },
+    scaffolding: { private: true, skip: { format: "fixture", lint: "fixture" } },
     devDependencies: { "@hackersandwizards/admin": "github:acme/admin#v1.0.0" },
   });
 
@@ -1639,7 +1639,7 @@ describe("check-staged", () => {
   test("a tool that exits before reading a partly staged file fails the check, never crashes it", () => {
     const dir = repo({
       "package.json": JSON.stringify({
-        scaffolding: { private: true },
+        scaffolding: { private: true, skip: { lint: "fixture" } },
         devDependencies: { prettier: "3" },
       }),
       "big.txt": "a\n",
@@ -1654,6 +1654,35 @@ describe("check-staged", () => {
     expect(r.out).not.toContain("EPIPE");
     expect(r.out).toContain("[check:staged] prettier: big.txt as staged");
     expect(r.code).toBe(1);
+  });
+
+  test("a missing prettier or eslint is refused, declared or not, unless the gate skips it", () => {
+    const staged = (manifest: object, prettier = false) => {
+      const dir = repo({ "package.json": JSON.stringify(manifest) });
+      if (prettier) {
+        write(dir, { "node_modules/.bin/prettier": "#!/bin/sh\nexit 0\n" });
+        chmodSync(join(dir, "node_modules/.bin/prettier"), 0o755);
+      }
+      write(dir, { "a.ts": "export {};\n" });
+      sh(dir, ["add", "a.ts"]);
+      return run(dir, "check-staged");
+    };
+    const declared = staged({ devDependencies: { prettier: "3", eslint: "10" } });
+    expect(declared.code).toBe(1);
+    expect(declared.out).toContain("prettier not installed");
+    const undeclared = staged({});
+    expect(undeclared.code).toBe(1);
+    expect(undeclared.out).toContain("prettier not installed");
+    const lintMissing = staged({ scaffolding: { skip: { format: "none" } } });
+    expect(lintMissing.code).toBe(1);
+    expect(lintMissing.out).toContain("eslint not installed");
+    expect(staged({ scaffolding: { skip: { format: "", lint: "none" } } }).out).toContain(
+      "prettier not installed",
+    );
+    expect(staged({ scaffolding: { skip: { format: "none", lint: "none" } } }).code).toBe(0);
+    const prettierOnly = staged({ scaffolding: { skip: { lint: "none" } } }, true);
+    expect(prettierOnly.out).not.toContain("not installed");
+    expect(prettierOnly.code).toBe(0);
   });
 
   test("a file staged in the old docs/tracking folder runs admin-check too", () => {

@@ -145,29 +145,39 @@ async function prettierPasses(bin: string, path: string, input: Buffer, r: ToolR
   return !info.code && JSON.parse(`${info.stdout}`).inferredParser === null;
 }
 
-const runs = Object.entries(tools)
-  .filter(([tool]) => tool in declared)
-  .flatMap(([tool, flags]) => {
-    const bin = `node_modules/.bin/${tool}`;
-    // Fail closed: a checkout without `bun install`, such as a fresh worktree, would pass every file.
-    if (!existsSync(bin)) refuseCommit(`${tool} not installed: bun install`);
-    return [
-      ...chunks
-        .filter((paths) => paths.length)
-        .map((paths) => runStagedTool(bin, [...flags, ...paths])),
-      ...partial.map(async (path) => {
-        const input = stagedContent(path);
-        const r = await runStagedTool(bin, stdinFlags[tool](path), input);
-        if (tool === "prettier" ? await prettierPasses(bin, path, input, r) : !r.code)
-          return { out: "", code: 0 };
-        const why = tool === "prettier" && !r.code ? "not formatted\n" : r.out;
-        return {
-          out: `[check:staged] ${tool}: ${path} as staged\n${why}`,
-          code: r.code || 1,
-        };
-      }),
-    ];
-  });
+// Run what the gate runs: each tool unless scaffolding.skip gives its gate step a reason, declared
+// or not. Every install is checked before any run starts, so a refusal leaves no tool running.
+const gateStep: Record<string, string> = { prettier: "format", eslint: "lint" };
+const skip = pkg.scaffolding?.skip ?? {};
+const active = Object.entries(tools).filter(
+  ([tool]) => staged.length && !String(skip[gateStep[tool]] ?? "").trim(),
+);
+for (const [tool] of active)
+  // Fail closed: a checkout without `bun install`, such as a fresh worktree, or a package that
+  // does not pin the tool, would pass every file.
+  if (!existsSync(`node_modules/.bin/${tool}`))
+    refuseCommit(
+      `${tool} not installed: pin it and bun install, or skip.${gateStep[tool]} with a reason`,
+    );
+const runs = active.flatMap(([tool, flags]) => {
+  const bin = `node_modules/.bin/${tool}`;
+  return [
+    ...chunks
+      .filter((paths) => paths.length)
+      .map((paths) => runStagedTool(bin, [...flags, ...paths])),
+    ...partial.map(async (path) => {
+      const input = stagedContent(path);
+      const r = await runStagedTool(bin, stdinFlags[tool](path), input);
+      if (tool === "prettier" ? await prettierPasses(bin, path, input, r) : !r.code)
+        return { out: "", code: 0 };
+      const why = tool === "prettier" && !r.code ? "not formatted\n" : r.out;
+      return {
+        out: `[check:staged] ${tool}: ${path} as staged\n${why}`,
+        code: r.code || 1,
+      };
+    }),
+  ];
+});
 if (skills) runs.push(runStagedTool(process.execPath, ["run", "validate:skills"]));
 if (items) runs.push(checkStagedItems());
 
