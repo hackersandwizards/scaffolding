@@ -95,18 +95,18 @@ const spy=()=>{for(const root of document.querySelectorAll(".hw-catalogue")){
 const groups=[...root.querySelectorAll(".hw-catalogue-group")].filter((g)=>g.getClientRects().length),last=groups.at(-1);
 let on=groups.findLast((g)=>g.getBoundingClientRect().top<=innerHeight/3);if(on&&last.getBoundingClientRect().bottom<=innerHeight)on=last;
 for(const a of root.querySelectorAll(".hw-catalogue-rail > nav > ul > li > a")){const mine=on&&a.getAttribute("href")==="#"+on.id,was=a.getAttribute("aria-current");
-if(mine&&!was){a.setAttribute("aria-current","true");const box=a.closest("nav"),r=a.getBoundingClientRect(),b=box.getBoundingClientRect();if(r.top<b.top||r.bottom>b.bottom)box.scrollTop+=r.top-b.top-8;}
+if(mine&&!was){const box=a.closest("nav"),r=a.getBoundingClientRect(),b=box.getBoundingClientRect();a.setAttribute("aria-current","true");if(r.top<b.top||r.bottom>b.bottom)box.scrollTop+=r.top-b.top-8;}
 else if(!mine&&was==="true")a.removeAttribute("aria-current");}}};spy();
 if(window.hwCatalogue)return;window.hwCatalogue=1;
 let frame=0,tick=0;const later=()=>{cancelAnimationFrame(tick);tick=requestAnimationFrame(spy);};
-addEventListener("resize",()=>{cancelAnimationFrame(frame);frame=requestAnimationFrame(all);later();});document.addEventListener("astro:page-load",()=>{all();spy();});
-document.addEventListener("scroll",later,{capture:true,passive:true});document.addEventListener("input",later);
+addEventListener("resize",()=>{cancelAnimationFrame(frame);frame=requestAnimationFrame(()=>{all();spy();});});document.addEventListener("astro:page-load",()=>{all();spy();});
+document.addEventListener("scroll",later,{capture:true,passive:true});
 document.addEventListener("load",(e)=>{const p=e.target.parentElement;if(e.target instanceof HTMLIFrameElement&&p&&p.matches(".hw-catalogue-preview")){fit(p);e.target.contentDocument?.fonts?.ready.then(()=>fit(p));}},true);
 document.addEventListener("input",(e)=>{const f=e.target;if(!(f instanceof HTMLInputElement)||!f.matches(".hw-catalogue-search"))return;
 const q=f.value.trim().toLowerCase().split(/\\s+/);const root=f.closest(".hw-catalogue");
 for(const g of root.querySelectorAll(".hw-catalogue-group")){let n=0;const link=root.querySelector('.hw-catalogue-rail a[href="#'+g.id+'"]'),names=link?.nextElementSibling?.children??[];
 g.querySelectorAll(".hw-catalogue-tile").forEach((t,i)=>{const hit=q.every((w)=>t.dataset.search.includes(w));t.parentElement.hidden=!hit;if(names[i])names[i].hidden=!hit;if(hit)n++;});
-g.hidden=n===0;if(link)link.parentElement.hidden=n===0;}});
+g.hidden=n===0;if(link)link.parentElement.hidden=n===0;}later();});
 })();</script>`;
 
 export function renderCatalog(data: CatalogData): string {

@@ -11,22 +11,29 @@
     --hw-cat-accent: var(--accent, var(--color-teal-dark));
     /* The open entry's ground in the rail. */
     --hw-cat-wash: color-mix(in srgb, var(--hw-cat-accent) 14%, transparent);
+    /* The open entry's edge, which the group being read shares. */
+    --hw-cat-edge: inset 3px 0 var(--hw-cat-accent);
+    /* The page's padding above and below, which the sticky rail keeps too. */
+    --hw-cat-above: 1.5rem;
+    --hw-cat-below: 3rem;
     display: grid;
     grid-template-columns: 15rem minmax(0, 1fr);
     gap: 2rem;
-    padding-block: 1.5rem 3rem;
+    padding-block: var(--hw-cat-above) var(--hw-cat-below);
     color: var(--hw-cat-fg);
     font-family: var(--font-sans);
   }
-  /* The names scroll under the search, which stays in view. Short of the grid's bottom padding
-     too, so the rail never slides up under the header at the page's end. */
+  /* The names scroll under the search, which stays in view. Short of the bottom padding too, so the
+     rail never slides up under the header at the page's end. */
   .hw-catalogue-rail {
     position: sticky;
-    top: calc(var(--spacing-app-header, 4rem) + 1.5rem);
+    top: calc(var(--spacing-app-header, 4rem) + var(--hw-cat-above));
     display: flex;
     flex-direction: column;
     align-self: start;
-    max-height: calc(100vh - var(--spacing-app-header, 4rem) - 4.5rem);
+    max-height: calc(
+      100vh - var(--spacing-app-header, 4rem) - var(--hw-cat-above) - var(--hw-cat-below)
+    );
   }
   .hw-catalogue-rail > nav {
     min-height: 0;
@@ -77,7 +84,7 @@
   .hw-catalogue-rail .hw-catalogue-names a[aria-current] {
     border-radius: 0 var(--hw-corner-sm, var(--radius-sm)) var(--hw-corner-sm, var(--radius-sm)) 0;
     background: var(--hw-cat-wash);
-    box-shadow: inset 3px 0 var(--hw-cat-accent);
+    box-shadow: var(--hw-cat-edge);
     font-weight: 600;
   }
   /* Wide, the rail lists every element by name under its group's label, as a component library's
@@ -106,7 +113,7 @@
        the accent with the open entry's edge, unfilled. */
     .hw-catalogue-rail > nav > ul > li:has(> a[aria-current="true"]) > a {
       border-radius: 0;
-      box-shadow: inset 3px 0 var(--hw-cat-accent);
+      box-shadow: var(--hw-cat-edge);
       color: var(--hw-cat-accent);
     }
     .hw-catalogue-rail > nav > ul > li > a .hw-catalogue-count {
@@ -231,10 +238,11 @@
     .hw-catalogue {
       grid-template-columns: minmax(0, 1fr);
     }
-    .hw-catalogue-rail,
-    .hw-catalogue-rail > nav {
+    .hw-catalogue-rail {
       position: static;
       max-height: none;
+    }
+    .hw-catalogue-rail > nav {
       overflow: visible;
     }
     /* The phone keeps the groups as one row of chips under the search. */
