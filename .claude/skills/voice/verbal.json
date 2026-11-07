@@ -6,13 +6,13 @@
     "rule": "Customer-facing copy writes the company hackers&wizards, inside a quoted client statement too."
   },
   "claim": {
-    "en": "Your whole company unstoppable, in flow with agentic engineering.",
-    "de": "Euer ganzes Unternehmen unaufhaltsam, im Flow mit Agentic Engineering.",
+    "en": "Agents bring the speed. Flow needs teams in tune.",
+    "de": "Agenten bringen das Tempo. Flow braucht eingespielte Teams.",
     "word": {
-      "en": "flow",
+      "en": "Flow",
       "de": "Flow"
     },
-    "since": "2026-09-19"
+    "since": "2026-11-06"
   },
   "mission": {
     "en": "We bring every role that builds our clients' products into flow with agentic engineering, as one team.",
@@ -25,12 +25,12 @@
     "since": "2026-09-19"
   },
   "position": {
-    "en": "We help CIOs and CTOs whose developers have coding agents and whose releases come no faster. We get the whole company unstoppable, in flow with agentic engineering, so the speed their teams gain reaches their customers, shows in lead time and in the cost of every shipped change, and stays with their own people.",
-    "de": null
+    "en": "We help CIOs and CTOs whose developers have coding agents and whose releases come no faster. We train their engineering and product teams in agentic engineering until every role works in tune with the others. That way the speed their teams gain reaches their customers, shows in lead time and in the cost of every shipped change, and stays with their own people.",
+    "de": "Wir helfen CIOs und CTOs, deren Entwicklerteams mit Coding Agents arbeiten, ohne dass die Releases schneller kommen. Wir schulen ihre Engineering- und Produktteams in Agentic Engineering, bis alle Rollen eingespielt zusammenarbeiten. So kommt das gewonnene Tempo bei ihren Kunden an, zeigt sich in der Lead Time und in den Kosten jeder ausgelieferten Änderung und bleibt bei ihren eigenen Leuten."
   },
   "boilerplate": {
-    "en": "hackers&wizards makes whole companies unstoppable, in flow with agentic engineering, so the speed their teams gain reaches their customers.",
-    "de": null
+    "en": "hackers&wizards trains engineering and product teams in agentic engineering until every role works in tune with the others, so the speed their teams gain reaches their customers.",
+    "de": "hackers&wizards trainiert Engineering- und Produktteams in Agentic Engineering, bis alle Rollen eingespielt zusammenarbeiten. So kommt das Tempo, das die Teams gewinnen, bei ihren Kunden an."
   },
   "values": [
     {
@@ -98,6 +98,18 @@
       "text": "May your context be rich and your agents aligned.",
       "lang": "en",
       "retired": "2026-11-03",
+      "replacedBy": "claim"
+    },
+    {
+      "text": "Your whole company unstoppable, in flow with agentic engineering.",
+      "lang": "en",
+      "retired": "2026-11-06",
+      "replacedBy": "claim"
+    },
+    {
+      "text": "Euer ganzes Unternehmen unaufhaltsam, im Flow mit Agentic Engineering.",
+      "lang": "de",
+      "retired": "2026-11-06",
       "replacedBy": "claim"
     }
   ]
