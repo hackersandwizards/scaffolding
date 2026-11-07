@@ -150,12 +150,12 @@ export default defineConfig({
 
 The catalog is the site's home, unless the site has a home of its own (`pages/index.*`, a
 `pages/index/` folder or a top-level catch-all `pages/[...x]` under Astro's `srcDir`); then it lives
-at `/catalog/`. A `redirects` entry for `/` fails the build where the catalog is the home. A catalog
-that moved to the root still answers every page of its former `/catalog/` path, a forwarding page in
-the build and a redirect in dev. The shell's own links to the catalog, the header's `current` item
-and a state's back link, read `/catalog/` after the base wherever it lives; a base ending in
-`/catalog`, a build opened from disk and a site with a page of its own at `/catalog/` link the home
-itself.
+at `/catalog/`. A `redirects` entry for `/` fails the build where the catalog is the home.
+`/catalog/` after the base opens the catalog wherever it lives: a catalog at the root answers every
+page under `/catalog/` too, a forwarding page in the build and a redirect in dev, and the shell's
+own links, the header's `current` item and a state's back link, read `/catalog/`. A build opened
+from disk and a page of the site's own at `/catalog/` forward nothing; there those links name the
+home.
 
 A build whose `build.assetsPrefix` is a `file://` URL is opened from disk: there every link and frame
 to a page of the build names its file by file URL (`…/stories/x/index.html`), since a root-relative
