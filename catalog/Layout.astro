@@ -6,10 +6,12 @@ import "./catalog.css";
 type Props = Omit<CatalogData, "intro"> & { product: string; href?: string; admin?: string };
 
 const { product, href, admin, ...data } = Astro.props;
-// The home's foundations follow the last group of tiles, as a group of their own.
-const groups = Astro.slots.has("default")
-  ? [...data.groups, { name: "Foundations", items: [], html: await Astro.slots.render("default") }]
-  : data.groups;
+// The home's foundations follow the last group of tiles, as a group of their own: Home.astro
+// passes its slot on even when empty, and renderCatalog drops a group of whitespace.
+const groups = [
+  ...data.groups,
+  { name: "Foundations", items: [], html: await Astro.slots.render("default") },
+];
 ---
 
 <Top product={product} href={href} admin={admin} current="page">

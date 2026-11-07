@@ -1523,6 +1523,41 @@ describe("catalog", () => {
       'catalog nav: current "Fxx" names no item',
     );
     rmSync(misnamed);
+    // The shell's home holds no foundations: no group of its own. A home with some draws them as
+    // Foundations; beside a stories folder of that name the build fails, and a home of whitespace
+    // and a comment leaves the folder the one group (compressHTML off, as in the repositories).
+    expect(home).not.toContain('id="foundations"');
+    const catalogDir = join(fixture, "catalog");
+    const homed = join(catalogDir, "homed.config.mjs");
+    const ownHome = join(catalogDir, "OwnHome.astro");
+    const folder = join(catalogDir, "stories", "Foundations");
+    made.push(homed, ownHome, folder);
+    const ownHomeWith = (body: string) =>
+      write(catalogDir, {
+        "homed.config.mjs":
+          'import config from "./astro.config.mjs";\nimport { catalog } from "../../../catalog/index.ts";\nexport default { ...config, compressHTML: false, integrations: [catalog({ product: "Fx", css: [], lead: "", header: { component: "./Header.astro" }, home: "./OwnHome.astro" })] };\n',
+        "OwnHome.astro": `---\nimport Home from "../../../catalog/Home.astro";\n---\n\n<Home>${body}</Home>\n`,
+      });
+    ownHomeWith("<p>Tokens</p>");
+    expect(build(["--config", "homed.config.mjs"]).status).toBe(0);
+    expect(readFileSync(join(dist, "index.html"), "utf8")).toContain('id="foundations"');
+    write(folder, {
+      "Tokens.stories.js":
+        'import Box from "../../Box.astro";\n\nexport default { component: Box };\nexport const One = { args: { label: "one" } };\n',
+    });
+    const twice = build(["--config", "homed.config.mjs"]);
+    expect(twice.status).not.toBe(0);
+    expect(`${twice.stdout}${twice.stderr}`).toContain(
+      'catalog: the groups "Foundations" and "Foundations" both draw as #foundations',
+    );
+    ownHomeWith("\n  <!-- none yet -->\n");
+    expect(build(["--config", "homed.config.mjs"]).status).toBe(0);
+    const folderOnly = readFileSync(join(dist, "index.html"), "utf8");
+    expect(folderOnly.match(/id="foundations"/g)).toHaveLength(1);
+    expect(folderOnly).not.toContain("hw-catalogue-text");
+    rmSync(folder, { recursive: true });
+    rmSync(homed);
+    rmSync(ownHome);
     // Without `nav`, the header lists brand's catalogs.json, the one named as `product` current.
     const brand = join(fixture, "node_modules", "@hackersandwizards", "brand");
     const navless = join(fixture, "catalog", "navless.config.mjs");
@@ -1743,6 +1778,29 @@ describe("catalog", () => {
     expect(html).toContain(
       '</section><section class="hw-catalogue-group" id="foundations"><h2>Foundations</h2><div class="hw-catalogue-text"><p>Tokens</p></div></section></div>',
     );
+  });
+
+  test("a group of whitespace draws nothing; two groups under one anchor fail", async () => {
+    const { renderCatalog } = await import("../catalog/render.ts");
+    const base = { title: "t", lead: "l", provenance: "p" };
+    const item = { name: "x", href: "/x" };
+    const html = renderCatalog({
+      ...base,
+      groups: [
+        { name: "Parts", items: [item] },
+        { name: "Foundations", items: [], html: "\n  " },
+      ],
+    });
+    expect(html).not.toContain("foundations");
+    expect(() =>
+      renderCatalog({
+        ...base,
+        groups: [
+          { name: "Form Fields", items: [item] },
+          { name: "form-fields", items: [item] },
+        ],
+      }),
+    ).toThrow('catalog: the groups "Form Fields" and "form-fields" both draw as #form-fields');
   });
 
   test("group anchors keep non-ASCII letters", async () => {

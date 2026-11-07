@@ -117,19 +117,31 @@ const off=n===0&&typed;g.hidden=off;if(link)link.parentElement.hidden=off;}later
 
 export function renderCatalog(data: CatalogData): string {
   const { search = "Search", groups: groupsLabel = "Groups" } = data.labels ?? {};
-  const groups = data.groups.filter((g) => g.items.length > 0 || g.html !== undefined);
+  // A group of markup holding only whitespace draws nothing, as an empty group of tiles.
+  const anchors = new Map<string, string>();
+  const groups = data.groups
+    .filter((g) => g.items.length > 0 || g.html?.trim())
+    .map((g) => {
+      const anchor = anchorOf(g.name);
+      if (anchors.has(anchor))
+        throw new Error(
+          `catalog: the groups "${anchors.get(anchor)}" and "${g.name}" both draw as #${anchor}: rename one, such as its stories folder`,
+        );
+      anchors.set(anchor, g.name);
+      return { ...g, anchor };
+    });
   const count = (g: CatalogGroup) =>
     g.items.length ? `<span class="hw-catalogue-count">${g.items.length}</span>` : "";
   const rail = groups
     .map(
       (g) =>
-        `<li><a href="#${anchorOf(g.name)}"><span>${escapeCatalog(g.name)}</span>${count(g)}</a>${g.html === undefined ? `<ul class="hw-catalogue-names">${g.items.map((i) => `<li><a href="${escapeCatalog(i.href)}">${escapeCatalog(i.name)}</a></li>`).join("")}</ul>` : ""}</li>`,
+        `<li><a href="#${g.anchor}"><span>${escapeCatalog(g.name)}</span>${count(g)}</a>${g.html === undefined ? `<ul class="hw-catalogue-names">${g.items.map((i) => `<li><a href="${escapeCatalog(i.href)}">${escapeCatalog(i.name)}</a></li>`).join("")}</ul>` : ""}</li>`,
     )
     .join("");
   const sections = groups
     .map(
       (g) =>
-        `<section class="hw-catalogue-group" id="${anchorOf(g.name)}"><h2>${[escapeCatalog(g.name), count(g)].filter(Boolean).join(" ")}</h2>${g.html === undefined ? `<ul class="hw-catalogue-grid">${g.items.map((i) => catalogTile(i, g.name)).join("")}</ul>` : `<div class="hw-catalogue-text">${g.html}</div>`}</section>`,
+        `<section class="hw-catalogue-group" id="${g.anchor}"><h2>${[escapeCatalog(g.name), count(g)].filter(Boolean).join(" ")}</h2>${g.html === undefined ? `<ul class="hw-catalogue-grid">${g.items.map((i) => catalogTile(i, g.name)).join("")}</ul>` : `<div class="hw-catalogue-text">${g.html}</div>`}</section>`,
     )
     .join("");
   return `<div class="hw-catalogue hw-container"><aside class="hw-catalogue-rail"><input class="hw-catalogue-search" type="search" placeholder="${escapeCatalog(search)}" aria-label="${escapeCatalog(search)}"><nav aria-label="${escapeCatalog(groupsLabel)}"><ul>${rail}</ul></nav></aside><div class="hw-catalogue-main"><h1>${escapeCatalog(data.title)}</h1><p class="hw-catalogue-lead">${escapeCatalog(data.lead)}</p><p class="hw-catalogue-provenance">${escapeCatalog(data.provenance)}</p>${data.intro ?? ""}${sections}</div></div>${SCRIPT}`;

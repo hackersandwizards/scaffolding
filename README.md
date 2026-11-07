@@ -219,10 +219,12 @@ The options beyond those above:
 - `home`: a page of the repository that renders `Home.astro`, its foundations in the default slot
   and a control such as a theme toggle in the `nav` slot. Every home opens on the tiles: the slot
   draws after the last group as the group "Foundations", the rail's last entry, hidden while the
-  search holds a word. Its own headings start at `h3`, under that group's `h2`. Its running text takes
-  the lead's measure (48rem) and leading (1.5), unless a class of the repository's sets its own: a
-  paragraph of the slot, of a wrapper element in it, or of a `details` or `section` in that
-  wrapper. A paragraph deeper down, in the slot's own grid or tile, keeps its width.
+  search holds a word. A slot holding only whitespace draws no group. Two groups whose names make
+  the same anchor, such as a filled slot and a stories folder Foundations, fail the build. Its own
+  headings start at `h3`, under that group's `h2`. Its running text takes the lead's measure
+  (48rem) and leading (1.5), unless a class of the repository's sets its own: a paragraph of the
+  slot, of a wrapper element in it, or of a `details` or `section` in that wrapper. A paragraph
+  deeper down, in the slot's own grid or tile, keeps its width.
 - `copy`: files the built pages reach by a relative path rather than through Vite. A glob, relative
   to the repository, lands each match in the build at the same path. A package path of a package
   the repository declares, or of its own, such as `@hackersandwizards/brand/logos/avatar-512.png`,
