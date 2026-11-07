@@ -174,8 +174,9 @@ left its page scripts unrun.
 
 The shell (`catalog/`: Layout, Home, Head, `render.ts`, which draws the rail and tiles, and
 `catalog.css`) reads brand's token roles by name only, and the repository's `css` supplies them.
-Its shapes follow brand's rule: the brand corner for a preview and a worded button, the small corner
-for the search field, a rail row and the state menu, round for the state chips and the arrows.
+Its shapes follow brand's rule: the brand corner for a preview, the small corner for the search
+field, a rail row, the state menu, the theme toggle and the link to a state alone, round for the
+state chips and the arrows.
 The options beyond those above:
 
 - `previewSize`: the tile preview's viewport in CSS px, drawn whole and scaled to the tile, for

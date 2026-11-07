@@ -1301,7 +1301,9 @@ describe("catalog", () => {
     expect(bar).toContain('<a href="/"><span aria-hidden="true">');
     expect(bar).toMatch(/Parts \/ <strong>BoxParts<\/strong>/);
     expect(bar).toContain('<button type="button" data-hw-theme aria-pressed="false">');
-    expect(bar).toContain('href="/stories/Parts/box-parts/two">Open this state alone</a>');
+    expect(bar).toMatch(
+      /<a class="hw-catalogue-tool" href="\/stories\/Parts\/box-parts\/two">\s*Open this state alone\s*<\/a>/,
+    );
     expect(bar).toContain('<ul aria-label="States">');
     expect(bar).toMatch(/href="\/dashboard\/Parts\/box-parts\/one">One/);
     expect(bar).toMatch(/href="\/dashboard\/Parts\/box-parts\/two" aria-current="page">Two/);
