@@ -7,3 +7,6 @@ owns the counterfactual, the choice of owner, and the action boundary.
 
 Load it before writing or editing a skill, agent definition or rule too: it states what such an
 artifact leaves out, the history behind a rule included.
+
+Load it too when the same failure costs you a second time in one session, without anyone
+correcting you.

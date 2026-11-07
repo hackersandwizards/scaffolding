@@ -38,10 +38,21 @@ role no repair there, the edit is theirs, in a scheduled review too: report the 
 - One agent failing under a fleet rule earns a bound in that agent's own file. A second agent
   failing the same way is the signal to promote the bound into the rule.
 
-Edit the canonical artifact, never a generated mirror, plugin cache or customer-specific copy. Add
+Edit the canonical artifact, never a plugin cache or customer-specific copy. Add
 only a new reusable invariant. Never add the concrete customer, work product, wording, answer, or
 outcome. Forward-test only when it cannot
 mutate live systems or require new approval.
+
+## Without a correction
+
+A failure that costs a second time in one session names its owner:
+
+- The same command or tool fails twice: fix the tool, or record the working route in its skill.
+- You re-derive what a file, memory or earlier run already held: the owner of that fact.
+- Turns pass without progress on the stated goal: the responsible agent file.
+- You repeat the same sequence of three or more steps by hand: a script or a skill step.
+- You work around a failing script instead of fixing it: the script.
+- A shortcut visible in the run was used by no artifact: whichever artifact owns that work.
 
 ## Write for a literal reader
 

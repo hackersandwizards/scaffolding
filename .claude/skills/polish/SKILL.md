@@ -69,7 +69,7 @@ One pass of each. Name any finding you dismissed, and why, in the final summary,
 
 Run the repo's own checks, the gate on its own line, and read `$?`. "A gate that ran but was never read" in `references/failure-modes.md` names this phase's traps.
 
-A failing check blocks the commit. Fix it if the sweep caused it; report it and stop if it predates the sweep. A failure traced to a file in the exclusion set is another session's half-finished edit: wait for the gate to clear, and report it and stop if it does not. Never edit that file, and never bypass the hook, to get past it.
+A failing check blocks the commit. Fix it if the sweep caused it; report it and stop if it predates the sweep. A failure traced to a file in the exclusion set is another session's half-finished edit: wait for the gate to clear, and report it and stop if it does not. Never bypass the hook to get past it.
 
 ## 6. Commit and push
 

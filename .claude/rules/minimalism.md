@@ -7,12 +7,14 @@ prompts) and in any document. Say the least that fully does the job, then stop.
 
 1. Does this need to exist at all? If speculative, skip it and say so. Where the omission fails
    silently, as a missing allowlist entry or fail-closed guard does, include it and name why.
-2. Standard library does it? Use it.
-3. Native platform feature covers it? Use it.
-4. A dependency solves it, installed or added to the project? Use it. Never add one for what a few
+2. Does this repository already have it? Search for an existing helper, type, script, skill or
+   section and reuse it before writing a new one.
+3. Standard library does it? Use it.
+4. Native platform feature covers it? Use it.
+5. A dependency solves it, installed or added to the project? Use it. Never add one for what a few
    lines do.
-5. Can it be one line? One line.
-6. Only then: the minimum code that works.
+6. Can it be one line? One line.
+7. Only then: the minimum code that works.
 
 **Rules:**
 

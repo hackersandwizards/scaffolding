@@ -1,9 +1,9 @@
 // The pre-commit check every repository runs as `bun run check:staged`: the staged secret scan, then
-// `prettier --check` and `eslint` on the staged files. Check, never write: re-staging a rewritten
-// file would sweep another session's unstaged lines in that file into this commit. A file whose
-// working tree differs from the index is checked from the index on stdin, so those unstaged lines
-// neither pass nor block this commit. A repository defining a `validate:skills` script also runs it
-// whenever the index touches `.claude/`; that validator reads the working tree.
+// `prettier --check`, `eslint` and `stylelint` on the staged files. Check, never write: re-staging a
+// rewritten file would sweep another session's unstaged lines in that file into this commit. A file
+// whose working tree differs from the index is checked from the index on stdin, so those unstaged
+// lines neither pass nor block this commit. A repository defining a `validate:skills` script also
+// runs it whenever the index touches `.claude/`; that validator reads the working tree.
 import { spawn, spawnSync } from "node:child_process";
 import { existsSync, readFileSync } from "node:fs";
 import { availableParallelism } from "node:os";
@@ -41,8 +41,15 @@ const differs = new Set(unstaged.stdout.split("\0"));
 const partial = staged.filter((path) => differs.has(path));
 const whole = staged.filter((path) => !differs.has(path));
 
-// Both tools get every staged path and skip what their own config ignores, so this and
-// `bun run check` judge the same files.
+// Prettier and eslint get every staged path and skip what their own config ignores; stylelint gets
+// the CSS and Astro ones scaffolding's styles step lints and skips what .gitignore ignores, so this
+// and `bun run check` judge the same files. That step's glob skips dot segments and node_modules; a
+// staged path is named explicitly, so the filter drops them here.
+const styleGlob = new Bun.Glob("**/*.{css,astro}");
+const mine = (tool: string, paths: string[]) =>
+  tool === "stylelint"
+    ? paths.filter((path) => styleGlob.match(path) && !/(^|\/)(\.|node_modules\/)/.test(path))
+    : paths;
 const tools: Record<string, string[]> = {
   prettier: [
     "--check",
@@ -52,13 +59,21 @@ const tools: Record<string, string[]> = {
     "warn",
   ],
   eslint: ["--cache", "--no-warn-ignored", "--no-error-on-unmatched-pattern"],
+  stylelint: [
+    ...(existsSync("stylelint.config.js") ? ["--config", "stylelint.config.js"] : []),
+    "--allow-empty-input",
+    "--ignore-path",
+    ".gitignore",
+    "--formatter",
+    "compact",
+  ],
 };
 const stdinFlags: Record<string, (path: string) => string[]> = {
   // No --check: prettier --check on stdin exits 0 on a syntax error. The output is compared instead.
   prettier: (path) => ["--ignore-unknown", "--log-level", "warn", "--stdin-filepath", path],
   eslint: (path) => ["--cache", "--no-warn-ignored", "--stdin", "--stdin-filename", path],
+  stylelint: (path) => [...tools.stylelint, "--stdin", "--stdin-filename", path],
 };
-const declared = { ...pkg.dependencies, ...pkg.devDependencies };
 
 // Chunked: a commit touching most of a repository passes more path bytes than ARG_MAX holds.
 const chunks: string[][] = [[]];
@@ -124,29 +139,47 @@ async function prettierPasses(bin: string, path: string, input: Buffer, r: ToolR
   return !info.code && JSON.parse(`${info.stdout}`).inferredParser === null;
 }
 
-const runs = Object.entries(tools)
-  .filter(([tool]) => tool in declared)
-  .flatMap(([tool, flags]) => {
-    const bin = `node_modules/.bin/${tool}`;
-    // Fail closed: a checkout without `bun install`, such as a fresh worktree, would pass every file.
-    if (!existsSync(bin)) refuseCommit(`${tool} not installed: bun install`);
-    return [
-      ...chunks
-        .filter((paths) => paths.length)
-        .map((paths) => runStagedTool(bin, [...flags, ...paths])),
-      ...partial.map(async (path) => {
-        const input = stagedContent(path);
-        const r = await runStagedTool(bin, stdinFlags[tool](path), input);
-        if (tool === "prettier" ? await prettierPasses(bin, path, input, r) : !r.code)
-          return { out: "", code: 0 };
-        const why = tool === "prettier" && !r.code ? "not formatted\n" : r.out;
-        return {
-          out: `[check:staged] ${tool}: ${path} as staged\n${why}`,
-          code: r.code || 1,
-        };
-      }),
-    ];
-  });
+// Each tool with a staged file to judge runs unless scaffolding.skip gives its gate step a reason (a
+// non-blank string, so `false` or `0` gives none), declared or not. Every install is checked before any run starts, so a refusal leaves no tool
+// running.
+const gateStep: Record<string, string> = {
+  prettier: "format",
+  eslint: "lint",
+  stylelint: "styles",
+};
+const skip = pkg.scaffolding?.skip ?? {};
+const active = Object.entries(tools).filter(
+  ([tool]) =>
+    mine(tool, staged).length &&
+    !(typeof skip[gateStep[tool]] === "string" && skip[gateStep[tool]].trim()),
+);
+for (const [tool] of active)
+  // Fail closed: a checkout without `bun install`, such as a fresh worktree, or a repository that
+  // never installed the tool, would pass every file.
+  if (!existsSync(`node_modules/.bin/${tool}`))
+    refuseCommit(
+      `${tool} not installed: pin it and bun install, or scaffolding.skip.${gateStep[tool]} in package.json with a reason`,
+    );
+const runs = active.flatMap(([tool, flags]) => {
+  const bin = `node_modules/.bin/${tool}`;
+  return [
+    ...chunks
+      .map((paths) => mine(tool, paths))
+      .filter((paths) => paths.length)
+      .map((paths) => runStagedTool(bin, [...flags, ...paths])),
+    ...mine(tool, partial).map(async (path) => {
+      const input = stagedContent(path);
+      const r = await runStagedTool(bin, stdinFlags[tool](path), input);
+      if (tool === "prettier" ? await prettierPasses(bin, path, input, r) : !r.code)
+        return { out: "", code: 0 };
+      const why = tool === "prettier" && !r.code ? "not formatted\n" : r.out;
+      return {
+        out: `[check:staged] ${tool}: ${path} as staged\n${why}`,
+        code: r.code || 1,
+      };
+    }),
+  ];
+});
 if (skills) runs.push(runStagedTool(process.execPath, ["run", "validate:skills"]));
 
 // Concurrent for speed, reported in a fixed order so the output reads the same on every run.

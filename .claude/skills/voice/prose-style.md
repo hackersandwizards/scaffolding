@@ -83,7 +83,8 @@ every message in the thread runs in another language, and then the thread decide
 governs the language and states nothing, that silence is not this section's to fill.
 
 Without a governing record: a thread already in one language stays in it, and a mixed thread
-matches what the recipient used last. No prior history: DACH region, German names or a `.de`
+matches what the recipient used last. A new thread to several recipients takes the language they
+all share, never the language of the sender's existing thread with one of them. No prior history: DACH region, German names or a `.de`
 domain mean German, an international name means English. If still uncertain, write English.
 
 ## German orthography

@@ -16,6 +16,7 @@ or surface variation.
 | "Not a trend, an epidemic" / "Not a tool, a partner" | the concrete claim without the contrast frame |
 | "X isn't evolving, it's accelerating" (any pivot punctuation) | same rule, banned in all forms |
 | DE: "Nicht nur X, sondern Y" / "Das ist kein X, das ist ein Y" | nenn Y direkt |
+| Split over two sentences: "X war nie das Schwierige. Schwierig ist Y." / "X is not the problem. Y is." | state Y and its cost directly |
 
 ### Negative parallelism ("no X, no Y, just Z")
 

@@ -2,6 +2,8 @@
 
 - Running unattended, say so in every subagent prompt you write. A fresh delegate inherits none of
   your context and will otherwise stop to ask.
+- A session whose task delegates its procedure, a schedule above all, delegates every request a
+  person adds after taking it over too, to that request's owner and with the person present.
 - The colleague holding a case drafts its outbound message itself through the channel's skill,
   rather than handing the draft to the colleague who owns the channel.
 - A brief yields to a rule and to the channel's skill: where they conflict, follow the rule or skill

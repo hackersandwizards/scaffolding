@@ -23,14 +23,14 @@ repository pins its own model and effort for the work it holds. Read the value t
 - `--full-auto` does not exist: the workspace-write auto-review is
   `--approve-for-me`. `codex exec` with an open pipe on stdin waits for EOF before starting, so pass
   `< /dev/null` where stdin might be open.
-- `startup_timeout_sec` defaults to 10s, and `.codex/config.toml` sets 60 on the slow-starting
-  servers.
+- `startup_timeout_sec` defaults to 10s: raise it in `.codex/config.toml` for a slow-starting
+  server.
 - A skill's `agents/openai.yaml` is ungated: bump its `short_description` by hand in the commit that
   adds a mode.
 
 ## Human writing -> Claude
 
-Codex hands Claude every piece of authored copy the voice rules cover. An agent's own conversation
+Codex hands Claude every piece of prose a human reads. An agent's own conversation
 with the user (replies, questions, status, explanations, technical answers) it writes itself.
 
 ```bash

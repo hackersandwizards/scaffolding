@@ -45,6 +45,11 @@ Prefer these over their classic equivalents.
   change, read the permission the API returns (`permissions.admin` in `gh api repos/<org>/<repo>`):
   after the person's decision, the change is yours.
 - A push after a directory rename can pack every renamed blob again (git's sparse walk compares only changed paths): 491 objects and 39 MB for 66 new ones, which GitLab let hang. Push it with `git -c pack.useSparse=false push`.
+- `git log --since=<date>` without a time reads that date at the current clock time, so a same-day
+  window returns nothing: write `--since='<date> 00:00'`.
+- A pipeline exits with its last command's status: `git push ... | tail -2 && git tag vX` tags after
+  a rejected push. Chain on the push itself and tag only once `git rev-parse HEAD` equals
+  `origin/main`. A tag that landed off main stays put: merge `origin/main` into the tagged commit.
 - `lazygit` for git TUI, `git-filter-repo` for history rewrites
 - Global git aliases from `~/.gitconfig` that add workflow behavior:
   - `git all <args...>` -> run `git <args...>` in every repository under the current tree
@@ -85,3 +90,7 @@ The Bash tool runs zsh. A bare word starting with `=` (`echo =====`) is a failed
 drops the rest of the command line, and `:r` right after a variable is a modifier (`$sha:refs/...`
 loses its `r`). Quote separators and write `${var}:`. An unmatched glob fails its own command with
 `no matches found`.
+`path`, `fpath`, `cdpath` and `manpath` are tied to their uppercase variables, so a loop variable
+named `path` empties the search path and every later command fails with `command not found`. An
+unquoted `$list` stays one word: `for x in $list` runs once and `git commit -- $files` passes one
+long pathspec. Split with `${=list}`, or `${(f)list}` for lines.

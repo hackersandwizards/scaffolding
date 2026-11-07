@@ -14,7 +14,8 @@ serves the page across all repos at `http://admin.localhost:4329` from each repo
 
 - `docs/agent-work/items/<id>.md`: one file per item, YAML frontmatter plus a body starting with
   `# <title>`. `kind` is one of:
-  - `goal`: the goal in the person's words, the limits, what done means, and a deploy hold.
+  - `goal`: the goal in the person's words, the limits, a deploy hold, and one to eight done
+    criteria, each checkable by someone who did none of the work and naming its proof.
     Usually `goal.md`, one per repo.
   - `work`: one open piece of work, with `owner` (whoever moves next: the person, an agent or
     anyone else) and `evidence` (a commit hash, a file, or "not established").
@@ -96,6 +97,9 @@ items up.
    takes `status: decided`, `decision` and `by`, then is deleted: in the commit that carries the
    decision out, or, where work remains, replaced by a `work` item naming the `id`.
    `git log --all -- docs/agent-work/items/<id>.md` finds a deleted item.
+   A goal criterion counts as verified only after a delegate that built none of it checks it
+   against the real result and writes PASS or FAIL with its reason under the criterion; until then
+   report it as "reported met".
 5. Before each commit that touches `docs/agent-work/items/`, run `bun run admin-check` in the repo.
    Check: it prints `ok`.
 6. A report and an item state the current state only. A later batch on the same topic edits that

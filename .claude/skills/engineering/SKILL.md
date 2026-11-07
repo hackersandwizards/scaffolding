@@ -11,7 +11,7 @@ description: >-
 Architecture docs (CLAUDE.md, rules) outrank existing code where the two disagree. Given a bug
 report, fix it on its best reading without asking, and name any other defensible reading with the
 fix. Ask first only where no fix can start: the requirement contradicts itself or names a missing
-artifact. Fix a bug test-first: a failing test that reproduces it, then the fix. Never simplify away input validation at a trust boundary, error
+artifact. Fix a bug test-first: a failing test that reproduces it, then the fix. Before editing the function a bug report names, read every caller, and fix the defect once where they all route through rather than on the one path the report names. Never simplify away input validation at a trust boundary, error
 handling that prevents data loss, security measures, or accessibility basics.
 
 - Cleanup, review and quality passes scan the whole working tree, not only the files this
@@ -33,10 +33,10 @@ handling that prevents data loss, security measures, or accessibility basics.
   against an unchanged lockfile.
 - Start every script and tool through `bun run`: a package.json script where one fits, else the
   project's own binary (`bun run vitest run <file>`), never `bunx`, `npx` or `node_modules/.bin` for a tool the project installs.
-  A hook is one line in `.githooks/` calling a script: `check:staged` runs scaffolding's
-  `check-staged` where the repository pins `@hackersandwizards/scaffolding`, else `check-staged.ts`
-  from this folder; `lfs:pre-push` runs `git lfs pre-push` where LFS is used and scaffolding's
-  `check-confidential prepush` does not. `scaffolding check` serialises `bun run check` itself, and scaffolding's skeleton
+  A repository pinning `@hackersandwizards/scaffolding` takes its hooks from scaffolding's skeleton
+  (`check-structure --fix`). Elsewhere a hook is one line in `.githooks/` calling a script:
+  `check:staged` runs `check-staged.ts` from this folder, `lfs:pre-push` runs `git lfs pre-push`
+  where LFS is used. `scaffolding check` serialises `bun run check` itself, and scaffolding's skeleton
   file `scripts/repo/only-bun.cjs` is the `preinstall` guard. npm 7 writes
   `node_modules` and `package-lock.json` before `preinstall` runs, so `package.json` also sets
   `"engines": {"npm": "please-use-bun"}` and `.npmrc` sets `engine-strict=true`. A package other
