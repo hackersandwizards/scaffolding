@@ -21,10 +21,11 @@ if (process.argv[2] !== "check") {
 }
 const root = repoRoot();
 const home = join(import.meta.dir, "..");
-if (!process.env.SCAFFOLDING_LOCKED) {
+// The run check-lock starts carries --locked and goes on to the checks.
+if (process.argv[3] !== "--locked") {
   const run = spawnSync(
     process.execPath,
-    [join(home, "bin/check-lock.ts"), process.execPath, import.meta.path, "check"],
+    [join(home, "bin/check-lock.ts"), process.execPath, import.meta.path, "check", "--locked"],
     { stdio: "inherit", cwd: root },
   );
   process.exit(run.status ?? 1);

@@ -19,8 +19,6 @@ import { join, resolve } from "node:path";
 import { afterAll, describe, expect, it } from "bun:test";
 
 const SCRIPT = resolve(import.meta.dirname, "../bin/check-lock.ts");
-// The gate runs these tests under its own lock, and every run here would otherwise pass through.
-delete process.env.SCAFFOLDING_LOCKED;
 
 const roots: string[] = [];
 afterAll(() => {
@@ -72,6 +70,11 @@ const openWriter = async (fifo: string): Promise<number> => {
     }
   }
   throw new Error(`no reader opened ${fifo}`);
+};
+
+const until = async (ok: () => boolean, ms: number): Promise<void> => {
+  for (const end = Date.now() + ms; !ok() && Date.now() < end;)
+    await new Promise((go) => setTimeout(go, 50));
 };
 
 describe("check-lock serialises the checks", () => {
@@ -146,10 +149,6 @@ describe("check-lock serialises the checks", () => {
         stdio: "ignore",
       });
       return new Promise<number | null>((done) => child.on("close", done));
-    };
-    const until = async (ok: () => boolean, ms: number) => {
-      for (const end = Date.now() + ms; !ok() && Date.now() < end;)
-        await new Promise((go) => setTimeout(go, 50));
     };
 
     execFileSync("mkfifo", [lock]);
@@ -265,8 +264,7 @@ describe("check-lock wraps a consumer's build", () => {
       stdio: "ignore",
     });
     const finished = new Promise((go) => check.on("close", go));
-    for (const end = Date.now() + 5_000; !existsSync(lock) && Date.now() < end;)
-      await new Promise((go) => setTimeout(go, 20));
+    await until(() => existsSync(lock), 5_000);
     expect(existsSync(lock)).toBe(true);
 
     const build = run(lock, ["sh", "-c", `test -e ${done} && echo built`]);
@@ -282,6 +280,24 @@ describe("check-lock wraps a consumer's build", () => {
     expect(result.status).toBe(0);
     expect(result.stdout).toBe("built\n");
   }, 30_000);
+
+  it("still takes the lock a different checkout's command holds", () => {
+    const lock = lockPath();
+    heldBy(lock, process.pid);
+    const result = run(lock, ["echo", "built"], {
+      CHECK_LOCK_WAIT_MS: "1500",
+      SCAFFOLDING_LOCKED: `${lock}.other`,
+    });
+    expect(result.status).toBe(1);
+    expect(result.stdout).not.toContain("built");
+  }, 30_000);
+
+  it("names a command that cannot start", () => {
+    const result = run(lockPath(), ["no-such-command-here"]);
+    expect(result.status).toBe(1);
+    expect(result.stdout).toContain("not found");
+    expect(result.stdout).not.toContain("output above");
+  });
 });
 
 describe("check-lock fails open", () => {

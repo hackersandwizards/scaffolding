@@ -12,8 +12,9 @@ import { resolve } from "node:path";
 // falls through to running the checks, since it must never be the thing that stops work. A live
 // holder past the wait fails instead: running beside it is the corruption this lock exists to stop.
 // A consumer wraps its build in it too (`check-lock astro build`), since a build rewriting dist/
-// while a gate step reads it fails that step. SCAFFOLDING_LOCKED marks the command's process tree
-// as holding the lock, so a build the gate starts runs at once instead of waiting for its own gate.
+// while a gate step reads it fails that step. SCAFFOLDING_LOCKED names the lock the command's
+// process tree holds, so a build the gate starts runs at once instead of waiting for its own gate,
+// while one it starts in another checkout still takes that checkout's lock.
 
 // `bun run` starts this from the repository root, for the gate and a wrapped build alike.
 const LOCK = process.env.CHECK_LOCK ?? resolve("node_modules", ".check.lock");
@@ -160,7 +161,7 @@ const stop = (signal: NodeJS.Signals): never => process.exit(128 + constants.sig
 for (const signal of SIGNALS) process.on(signal, stop);
 let held = false;
 try {
-  if (!process.env.SCAFFOLDING_LOCKED) held = await waitForLock();
+  if (process.env.SCAFFOLDING_LOCKED !== LOCK) held = await waitForLock();
 } catch (error) {
   console.warn(
     `[check-lock] lock unusable (${String(error)}); running "${command.join(" ")}" unserialised`,
@@ -179,13 +180,15 @@ function release(): void {
 
 const result = spawnSync(command[0], command.slice(1), {
   stdio: "inherit",
-  env: { ...process.env, SCAFFOLDING_LOCKED: "1" },
+  env: { ...process.env, SCAFFOLDING_LOCKED: LOCK },
 });
 release();
-if (result.status !== 0) {
+if (result.error)
+  console.log(`[check-lock] ${command.join(" ")} did not start: ${result.error.message}`);
+else if (result.status !== 0) {
   const cause = result.signal ? `killed by ${result.signal}` : `exit ${result.status}`;
   console.log(
-    `[check-lock] ${command.join(" ")} failed (${cause}). The failing step and its reason are on stderr.`,
+    `[check-lock] ${command.join(" ")} failed (${cause}). Its own output above says why.`,
   );
 }
 // A signalled child reports a null status, and exiting 0 there would hide a killed gate.
