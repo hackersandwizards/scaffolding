@@ -9,6 +9,8 @@
     --hw-cat-muted: color-mix(in srgb, var(--hw-cat-fg) 70%, transparent);
     --hw-cat-line: var(--border, var(--color-border));
     --hw-cat-accent: var(--accent, var(--color-teal-dark));
+    /* The open entry's ground in the rail. */
+    --hw-cat-wash: color-mix(in srgb, var(--hw-cat-accent) 14%, transparent);
     display: grid;
     grid-template-columns: 15rem minmax(0, 1fr);
     gap: 2rem;
@@ -56,9 +58,20 @@
     color: inherit;
     font-size: var(--text-ui, 0.875rem);
     text-decoration: none;
+    /* brand's focus ring inside the link: outside it, the rail's scroll box clips it. */
+    --hw-focus-offset: -3px;
   }
   .hw-catalogue-rail a:hover {
-    background: color-mix(in srgb, var(--hw-cat-fg) 6%, transparent);
+    background: color-mix(in srgb, var(--hw-cat-fg) 5%, transparent);
+  }
+  /* The open entry, which a page marks with aria-current: an accent wash and edge, set apart from
+     the grey hover. Only the entry; its group's label darkens below (wide) or turns a chip
+     (narrow). */
+  .hw-catalogue-rail .hw-catalogue-names a[aria-current] {
+    border-radius: 0 var(--hw-corner-sm, var(--radius-sm)) var(--hw-corner-sm, var(--radius-sm)) 0;
+    background: var(--hw-cat-wash);
+    box-shadow: inset 3px 0 var(--hw-cat-accent);
+    font-weight: 600;
   }
   /* Wide, the rail lists every element by name under its group's label, as a component library's
      sidebar does. */
@@ -72,6 +85,15 @@
       font-size: var(--text-micro, 0.75rem);
       letter-spacing: 0.06em;
       text-transform: uppercase;
+    }
+    /* A group's label is a label, never a filled row: hover and an open entry under it only
+       darken its text. */
+    .hw-catalogue-rail > nav > ul > li > a:hover {
+      background: none;
+    }
+    .hw-catalogue-rail > nav > ul > li > a:hover,
+    .hw-catalogue-rail > nav > ul > li:has(a[aria-current]) > a {
+      color: var(--hw-cat-fg);
     }
     .hw-catalogue-rail > nav > ul > li > a .hw-catalogue-count {
       display: none;
@@ -226,6 +248,10 @@
       border: 1px solid var(--hw-cat-line);
       border-radius: var(--radius-pill, 999px);
       white-space: nowrap;
+    }
+    .hw-catalogue-rail li:has(a[aria-current]) > a {
+      border-color: var(--hw-cat-accent);
+      background: var(--hw-cat-wash);
     }
   }
 }

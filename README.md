@@ -149,7 +149,10 @@ that moved to the root still answers every page of its former `/catalog/` path, 
 the build and a redirect in dev.
 
 The home is the catalog's one index: its rail names every file under its group's label (on a phone
-the groups alone, as chips) and its tiles draw each file; Astrobook draws each state, its sidebar
+the groups alone, as chips) and its tiles draw each file. A page that opens an entry in place marks
+that entry's rail name, and only it, with `aria-current`; the shell draws it with an accent wash and
+edge, darkens its group's label and, on a phone, marks the group's chip. A group's label never takes
+a fill of its own. Astrobook draws each state, its sidebar
 hidden on every page. A state's page carries a bar instead: back to the home, the file's folder and name, the
 theme toggle, a link to the state alone, and the states: previous and next, with the left and right
 arrow keys too, the position ("10 of 38"), and between them a link per state, or above 12 states a
