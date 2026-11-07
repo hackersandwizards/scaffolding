@@ -345,6 +345,13 @@ test("check-structure: a bin file is stored executable, and --fix makes it so", 
   run(dir, "check-structure", ["--fix"]);
   expect(binLines()).toEqual([]);
   expect(sh(dir, ["ls-files", "-s", "bin/x.ts"]).stdout.toString()).toStartWith("100755");
+  // --fix stages the mode alone, never an uncommitted edit.
+  sh(dir, ["update-index", "--chmod=-x", "bin/x.ts"]);
+  writeFileSync(join(dir, "bin/x.ts"), "#!/usr/bin/env bun\nedited;\n");
+  run(dir, "check-structure", ["--fix"]);
+  expect(sh(dir, ["ls-files", "-s", "bin/x.ts"]).stdout.toString()).toStartWith(
+    `100755 ${sh(dir, ["rev-parse", "HEAD:bin/x.ts"]).stdout.toString().trim()} `,
+  );
 });
 
 test("every bin target and every file in bin/ is stored executable", () => {
@@ -950,17 +957,12 @@ describe("check-confidential", () => {
     });
     sh(merged, ["update-ref", "refs/remotes/origin/main", "HEAD"]);
     sh(merged, ["checkout", "-qb", "side"]);
-    write(merged, { "c.md": "c\n" });
-    sh(merged, ["add", "c.md"]);
-    sh(merged, ["commit", "-qm", "c"]);
+    sh(merged, ["commit", "-q", "--allow-empty", "-m", "c"]);
     sh(merged, ["checkout", "-q", "main"]);
-    write(merged, { "d.md": "d\n" });
-    sh(merged, ["add", "d.md"]);
-    sh(merged, ["commit", "-qm", "d"]);
+    sh(merged, ["commit", "-q", "--allow-empty", "-m", "d"]);
     sh(merged, ["merge", "-q", "--no-commit", "side"]);
     write(merged, { "a.psd": "y" });
-    sh(merged, ["add", "a.psd"]);
-    sh(merged, ["commit", "-qm", "m"]);
+    sh(merged, ["commit", "-qam", "m"]);
     expect(both(merged)).toEqual([3, 1]);
     expect(logged()).toBe(
       "pre-push origin x\n".repeat(3) + "pre-push backup x\n" + "pre-push origin x\n".repeat(3),
@@ -1661,6 +1663,12 @@ describe("catalog", () => {
         // The story's own inline script found the bar: it stood above the story from the start.
         "above",
       ]);
+      // A key a story's own window listener takes stays with the story.
+      await evaluate(
+        `window.addEventListener("keydown", (e) => e.preventDefault(), { once: true }); document.dispatchEvent(new KeyboardEvent("keydown", { key: "ArrowRight", bubbles: true, cancelable: true }))`,
+      );
+      await new Promise((r) => setTimeout(r, 500));
+      expect(String(await evaluate("location.pathname"))).toEndWith("/one/");
       // The right arrow key steps to the next state.
       await evaluate(
         `document.dispatchEvent(new KeyboardEvent("keydown", { key: "ArrowRight", bubbles: true }))`,
@@ -2023,7 +2031,7 @@ describe("check-history", () => {
         "src/c.html": "<!-- OS-1 -->\n",
         ".githooks/pre-commit": "# decision label-system, 06.11.\nrun\n",
         "src/clean.ts":
-          "// how to use it, why it is so: UTF-8, SHA-256, Node 22.12.\nconst at = '2026-11-01';\n",
+          "// how to use it, why it is so: UTF-8, SHA-256\nconst at = '2026-11-01';\n",
         "docs/agent-work/items/new-claim.md": "x\n",
         "other/d.css": "/* blind panel 2026-11-01 */\n",
       }),

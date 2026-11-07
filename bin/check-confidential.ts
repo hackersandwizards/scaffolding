@@ -159,9 +159,10 @@ if (argv[0] === "prepush") {
     ...(storage.trim() ? [resolve(common, storage.trim(), "objects")] : []),
   ];
   const lfsPath = (local: string) => {
-    // latin1 keeps a path's bytes as they are, whatever its encoding; -m lists what a merge changes.
+    // latin1 keeps a path's bytes as they are, whatever its encoding. -c lists the paths a merge's
+    // resolution changes; what it takes from a side counts through that side's own commits.
     const changed = git(
-      ["log", "-m", "--format=", "--name-only", "-z", local, ...notOnRemote],
+      ["log", "-c", "--format=", "--name-only", "-z", local, ...notOnRemote],
       root,
     )
       .toString("latin1")

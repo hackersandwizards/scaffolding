@@ -6,9 +6,9 @@ import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { applyAllow, finish, listFiles, repoRoot, type Finding } from "../lib/repo.ts";
 
-// HTML's inline elements: compressHTML drops the break before each alike.
+// HTML's inline elements that sit in running text: compressHTML drops the break before each.
 const INLINE =
-  "a|abbr|b|bdi|bdo|button|cite|code|data|dfn|em|i|kbd|label|mark|q|s|samp|small|span|strong|sub|sup|time|u|var";
+  "a|abbr|b|bdi|bdo|button|cite|code|data|del|dfn|em|i|img|input|ins|kbd|label|mark|meter|output|progress|q|s|samp|select|small|span|strong|sub|sup|svg|time|u|var";
 const opens = new RegExp(`^\\s*<(${INLINE})(?:[\\s>]|$)`);
 const closes = new RegExp(`</(${INLINE})>\\s*$`);
 // Text: a line that ends in neither a tag (>), an expression (} or {" "}), an opening bracket nor

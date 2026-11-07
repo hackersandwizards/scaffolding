@@ -277,7 +277,8 @@ const root = {
     document.addEventListener("change", (event) => {
       if (event.target.matches?.("[data-hw-states]")) location.href = event.target.value;
     });
-    // The arrow keys step through the states unless a field or the story has the focus.
+    // The arrow keys step through the states unless a field or the story has the focus, or a
+    // story's own handler, which runs after this one, takes the key.
     document.addEventListener("keydown", (event) => {
       if (
         event.defaultPrevented ||
@@ -295,7 +296,7 @@ const root = {
         return;
       const rel = { ArrowLeft: "prev", ArrowRight: "next" }[event.key];
       const link = rel && document.querySelector(`.hw-catalogue-bar a[rel="${rel}"]`);
-      if (link) location.href = link.href;
+      if (link) setTimeout(() => event.defaultPrevented || (location.href = link.href));
     });
   })();
 </script>

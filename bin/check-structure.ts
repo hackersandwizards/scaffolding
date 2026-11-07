@@ -145,11 +145,13 @@ if (existsSync(at("package.json"))) {
     ? git(["ls-files", "-s", "-z", "--", ...[...bins].map((p) => `:(literal)${p}`)], root)
     : "";
   for (const entry of listed.toString().split("\0").filter(Boolean)) {
-    const [, mode, path] = /^(\d+) \S+ \d\t(.*)$/s.exec(entry)!;
-    if (mode === "100644")
+    const [, mode, blob, stage, path] = /^(\d+) (\S+) (\d)\t(.*)$/s.exec(entry)!;
+    // An unmerged path waits for its merge.
+    if (mode === "100644" && stage === "0")
       add(path, "a bin file is stored executable (check-structure --fix)", mode, () => {
         chmodSync(at(path), 0o755);
-        git(["update-index", "--chmod=+x", "--", path], root);
+        // --chmod would stage the file's uncommitted content too.
+        git(["update-index", "--cacheinfo", `100755,${blob},${path}`], root);
       });
   }
   if (surface) {

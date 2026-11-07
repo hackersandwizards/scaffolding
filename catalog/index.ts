@@ -15,7 +15,7 @@ import {
 } from "node:fs";
 import { spawnSync } from "node:child_process";
 import { createRequire } from "node:module";
-import { basename, dirname, join, relative } from "node:path";
+import { basename, dirname, join, posix, relative } from "node:path";
 import { fileURLToPath } from "node:url";
 import { catalogPath, storiesDir } from "./path.ts";
 
@@ -353,6 +353,12 @@ export function catalog(options: CatalogOptions): AstroIntegration {
           if (route.type === "page" && route.origin === "project") pageRoutes.add(route.pattern);
       },
       "astro:server:setup": ({ server }) => {
+        // Each `copy` entry with the folder every match lies in: the segments before its first
+        // wildcard.
+        const fixed = (options.copy ?? []).map((pattern) => [
+          pattern,
+          posix.normalize(pattern.replace(/(?:^|\/)[^/]*[*?[{].*$/, "")).replace(/^\.$|\/$/, ""),
+        ]);
         server.middlewares.use((req, res, next) => {
           const url = URL.parse(req.url ?? "", "http://x");
           const to = moved(url?.pathname ?? "");
@@ -363,16 +369,10 @@ export function catalog(options: CatalogOptions): AstroIntegration {
             return res.end();
           }
           const file = path.startsWith(`${base}/`) ? path.slice(base.length + 1) : "";
-          if (!file || !options.copy) return next();
-          const match = options.copy
-            .filter((pattern) => {
-              // Every match of a pattern starts with the segments before its first wildcard.
-              const parts = pattern.replace(/^\.\//, "").split("/");
-              const wild = parts.findIndex((p) => /[*?[{]/.test(p));
-              const fixed = parts.slice(0, wild < 0 ? undefined : wild).join("/");
-              return !fixed || file === fixed || file.startsWith(`${fixed}/`);
-            })
-            .flatMap(copied)
+          if (!file || !fixed.length) return next();
+          const match = fixed
+            .filter(([, prefix]) => !prefix || file === prefix || file.startsWith(`${prefix}/`))
+            .flatMap(([pattern]) => copied(pattern))
             .find(([at]) => file === at || file.startsWith(`${at}/`));
           const full = match && join(match[1], file.slice(match[0].length));
           if (
