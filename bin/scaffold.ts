@@ -127,7 +127,7 @@ if (catalogIn) {
   Object.assign(pkg.scripts, {
     dev: "ASTRO_DEV_BACKGROUND=1 bun --bun astro dev --root catalog",
     catalog: "bun run dev",
-    build: "bun --bun astro build --root catalog",
+    build: "check-lock bun --bun astro build --root catalog",
   });
 if (adminIn) pkg.scaffolding.skip.admin = `the admin area lives in ${adminIn}`;
 writeFileSync(pkgPath, `${JSON.stringify(pkg, null, 2)}\n`);

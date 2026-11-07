@@ -1,7 +1,7 @@
 {
   "name": "@hackersandwizards/scaffolding",
-  "version": "2.20.1",
-  "description": "Repository skeleton, gate commands, shared configs and the catalog shell: scaffold, scaffolding check, check-structure, check-confidential, check-staged, and the catalog preset.",
+  "version": "2.21.0",
+  "description": "Repository skeleton, gate commands, shared configs and the catalog shell: scaffold, scaffolding check, check-structure, check-confidential, check-staged, check-lock, and the catalog preset.",
   "keywords": [
     "astro-component"
   ],
@@ -12,6 +12,7 @@
     "check-structure": "bin/check-structure.ts",
     "check-confidential": "bin/check-confidential.ts",
     "check-staged": "bin/check-staged.ts",
+    "check-lock": "bin/check-lock.ts",
     "scaffolding": "bin/scaffolding.ts"
   },
   "exports": {

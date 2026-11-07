@@ -400,7 +400,7 @@ describe("scaffold and check-structure", () => {
       "github:hackersandwizards/admin#v0.10.0",
     );
     expect(pkg.scaffolding.skip).toEqual({ test: "new repository: no tests yet" });
-    expect(pkg.scripts.build).toBe("bun --bun astro build --root catalog");
+    expect(pkg.scripts.build).toBe("check-lock bun --bun astro build --root catalog");
     const config = readFileSync(join(dir, "catalog/astro.config.ts"), "utf8");
     expect(config).toContain('base: "/demo"');
     expect(config).toContain("port: 4655 }");

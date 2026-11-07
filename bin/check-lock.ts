@@ -11,8 +11,11 @@ import { resolve } from "node:path";
 // script dies part-way through its output. Serialising the runs removes the overlap. A broken lock
 // falls through to running the checks, since it must never be the thing that stops work. A live
 // holder past the wait fails instead: running beside it is the corruption this lock exists to stop.
+// A consumer wraps its build in it too (`check-lock astro build`), since a build rewriting dist/
+// while a gate step reads it fails that step. SCAFFOLDING_LOCKED marks the command's process tree
+// as holding the lock, so a build the gate starts runs at once instead of waiting for its own gate.
 
-// `bun run check` starts this from the repository root, whichever repository it is.
+// `bun run` starts this from the repository root, for the gate and a wrapped build alike.
 const LOCK = process.env.CHECK_LOCK ?? resolve("node_modules", ".check.lock");
 
 // Worst case is every concurrent session's check back to back. Four sessions never approach this.
@@ -157,7 +160,7 @@ const stop = (signal: NodeJS.Signals): never => process.exit(128 + constants.sig
 for (const signal of SIGNALS) process.on(signal, stop);
 let held = false;
 try {
-  held = await waitForLock();
+  if (!process.env.SCAFFOLDING_LOCKED) held = await waitForLock();
 } catch (error) {
   console.warn(
     `[check-lock] lock unusable (${String(error)}); running "${command.join(" ")}" unserialised`,
@@ -174,7 +177,10 @@ function release(): void {
   }
 }
 
-const result = spawnSync(command[0], command.slice(1), { stdio: "inherit" });
+const result = spawnSync(command[0], command.slice(1), {
+  stdio: "inherit",
+  env: { ...process.env, SCAFFOLDING_LOCKED: "1" },
+});
 release();
 if (result.status !== 0) {
   const cause = result.signal ? `killed by ${result.signal}` : `exit ${result.status}`;

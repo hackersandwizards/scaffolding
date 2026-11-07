@@ -19,6 +19,8 @@ import { join, resolve } from "node:path";
 import { afterAll, describe, expect, it } from "bun:test";
 
 const SCRIPT = resolve(import.meta.dirname, "../bin/check-lock.ts");
+// The gate runs these tests under its own lock, and every run here would otherwise pass through.
+delete process.env.SCAFFOLDING_LOCKED;
 
 const roots: string[] = [];
 afterAll(() => {
@@ -251,6 +253,34 @@ describe("check-lock serialises the checks", () => {
     const result = run(lock, ["echo", "ran"], { CHECK_LOCK_WAIT_MS: "1500" });
     expect(result.status).toBe(1);
     expect(result.stdout).not.toContain("ran");
+  }, 30_000);
+});
+
+describe("check-lock wraps a consumer's build", () => {
+  it("holds a build back until the running check has finished", async () => {
+    const lock = lockPath();
+    const done = `${lock}.check-done`;
+    const check = spawn("bun", [SCRIPT, "sh", "-c", `sleep 1; : > ${done}`], {
+      env: { ...process.env, CHECK_LOCK: lock },
+      stdio: "ignore",
+    });
+    const finished = new Promise((go) => check.on("close", go));
+    for (const end = Date.now() + 5_000; !existsSync(lock) && Date.now() < end;)
+      await new Promise((go) => setTimeout(go, 20));
+    expect(existsSync(lock)).toBe(true);
+
+    const build = run(lock, ["sh", "-c", `test -e ${done} && echo built`]);
+    await finished;
+    expect(build.status).toBe(0);
+    expect(build.stdout).toBe("built\n");
+  }, 30_000);
+
+  // The gate's own catalog step and a Playwright webServer inside it run the wrapped build.
+  it("runs a build nested inside a locked command at once", () => {
+    const lock = lockPath();
+    const result = run(lock, ["bun", SCRIPT, "echo", "built"], { CHECK_LOCK_WAIT_MS: "1500" });
+    expect(result.status).toBe(0);
+    expect(result.stdout).toBe("built\n");
   }, 30_000);
 });
 

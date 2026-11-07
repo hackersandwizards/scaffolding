@@ -25,7 +25,7 @@ if (!process.env.SCAFFOLDING_LOCKED) {
   const run = spawnSync(
     process.execPath,
     [join(home, "bin/check-lock.ts"), process.execPath, import.meta.path, "check"],
-    { stdio: "inherit", cwd: root, env: { ...process.env, SCAFFOLDING_LOCKED: "1" } },
+    { stdio: "inherit", cwd: root },
   );
   process.exit(run.status ?? 1);
 }
