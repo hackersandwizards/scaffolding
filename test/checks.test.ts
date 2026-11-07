@@ -1289,14 +1289,14 @@ describe("catalog", () => {
     expect(home.indexOf(">Types <")).toBeLessThan(home.indexOf(">Parts <"));
     // The rail names every element under its group, linked to the state its tile draws.
     expect(home).toMatch(
-      /<ul class="hw-catalogue-names"><li><a href="\/dashboard\/Parts\/box-parts\/two">BoxParts<\/a>/,
+      /<ul class="hw-catalogue-names"><li><a href="\/dashboard\/Parts\/box-parts\/two\/">BoxParts<\/a>/,
     );
-    expect(home).toContain('src="/stories/Types/box-types/two"');
+    expect(home).toContain('src="/stories/Types/box-types/two/"');
     expect(readdirSync(join(dist, "stories/Parts/box-parts"))).toEqual(["one", "two"]);
     // `previewSize` per group: a Types tile draws its frame whole at 1440 x 900, a Parts tile at
     // three quarters.
     expect(home).toContain(
-      'data-frame-width="1440" style="aspect-ratio:1440/900"><iframe src="/stories/Types/box-types/two"',
+      'data-frame-width="1440" style="aspect-ratio:1440/900"><iframe src="/stories/Types/box-types/two/"',
     );
     expect(home).toMatch(/<span class="hw-catalogue-preview"><iframe src="\/stories\/Parts\//);
     // The shell's own card and pill carry data-hw-shell, for brand-elements to skip.
@@ -1342,13 +1342,13 @@ describe("catalog", () => {
     expect(bar).toMatch(/Parts \/ <strong>BoxParts<\/strong>/);
     expect(bar).toContain('<button type="button" data-hw-theme aria-pressed="false">');
     expect(bar).toMatch(
-      /<a class="hw-catalogue-tool" href="\/stories\/Parts\/box-parts\/two">\s*Open this state alone\s*<\/a>/,
+      /<a class="hw-catalogue-tool" href="\/stories\/Parts\/box-parts\/two\/">\s*Open this state alone\s*<\/a>/,
     );
     expect(bar).toContain('<ul aria-label="States">');
-    expect(bar).toMatch(/href="\/dashboard\/Parts\/box-parts\/one">One/);
-    expect(bar).toMatch(/href="\/dashboard\/Parts\/box-parts\/two" aria-current="page">Two/);
+    expect(bar).toMatch(/href="\/dashboard\/Parts\/box-parts\/one\/">One/);
+    expect(bar).toMatch(/href="\/dashboard\/Parts\/box-parts\/two\/" aria-current="page">Two/);
     expect(bar).toContain(
-      '<a class="hw-catalogue-step" rel="prev" href="/dashboard/Parts/box-parts/one"',
+      '<a class="hw-catalogue-step" rel="prev" href="/dashboard/Parts/box-parts/one/"',
     );
     // A step with nowhere to go is no anchor: Lighthouse's crawlable-anchors fails one without href.
     expect(bar).toContain(
@@ -1359,7 +1359,7 @@ describe("catalog", () => {
       '<button class="hw-catalogue-step" type="button" disabled aria-label="Previous state">',
     );
     expect(first).toContain(
-      '<a class="hw-catalogue-step" rel="next" href="/dashboard/Parts/box-parts/two"',
+      '<a class="hw-catalogue-step" rel="next" href="/dashboard/Parts/box-parts/two/"',
     );
     expect(`${bar}${first}`).not.toMatch(/<a(?![^>]*href)[^>]*>/);
     expect(bar).toContain("2 of 2");
@@ -1367,25 +1367,25 @@ describe("catalog", () => {
     const many = barOf(page("dashboard/Parts/many-parts/block-image"));
     expect(many).not.toContain("<ul");
     expect(many).toContain(
-      '<optgroup label="Block"><option value="/dashboard/Parts/many-parts/block-code">Block code</option><option value="/dashboard/Parts/many-parts/block-image" selected>Block image</option>',
+      '<optgroup label="Block"><option value="/dashboard/Parts/many-parts/block-code/">Block code</option><option value="/dashboard/Parts/many-parts/block-image/" selected>Block image</option>',
     );
     expect(many).toContain(
-      '<optgroup label="Theme"><option value="/dashboard/Parts/many-parts/accent-theme">Accent theme</option>',
+      '<optgroup label="Theme"><option value="/dashboard/Parts/many-parts/accent-theme/">Accent theme</option>',
     );
     expect(many).toContain(
-      '</optgroup><option value="/dashboard/Parts/many-parts/angebot-ohne-preise">Angebot ohne Preise</option>',
+      '</optgroup><option value="/dashboard/Parts/many-parts/angebot-ohne-preise/">Angebot ohne Preise</option>',
     );
     // A camelCase state reads in sentence case, an acronym kept; a name with underscores keeps its
     // author's case. Either way the first word is capitalised.
-    expect(many).toMatch(/many-parts\/density-on-pdf">Density on PDF</);
+    expect(many).toMatch(/many-parts\/density-on-pdf\/">Density on PDF</);
     expect(many).toMatch(/">Folie 35 Eine Woche zum</);
     expect(many).toMatch(/">In German</);
     // So a German noun after the first word needs an underscore name.
     expect(many).toMatch(/">Mit impressum</);
     expect(many).toMatch(/">Primary on night</);
     // A plural acronym and a listed name with inner capitals stay whole.
-    expect(many).toMatch(/many-parts\/two-pd-fs">Two PDFs</);
-    expect(many).toMatch(/many-parts\/loading-git-hub">Loading GitHub</);
+    expect(many).toMatch(/many-parts\/two-pd-fs\/">Two PDFs</);
+    expect(many).toMatch(/many-parts\/loading-git-hub\/">Loading GitHub</);
     expect(state).toContain("if (top) main.before(top);");
     expect(page("stories/Parts/box-parts/two")).not.toContain('id="hw-catalogue-bar"');
     expect(home).not.toContain('id="hw-catalogue-bar"');
@@ -1415,7 +1415,7 @@ describe("catalog", () => {
     expect(based).toContain(
       '<header class="fx-header"><a href="/fx/">Fx</a><div class="hw-header-nav hw-catalogue-nav"><nav class="hw-header-nav" aria-label="Main" data-hw-catalogs><a class="hw-header-link" href="/fx/">Site</a><a class="hw-header-link" href="/fx/" aria-current="page">Fx</a><a class="hw-header-link" href="https://example.com/other/">Other</a><a class="hw-header-link" href="//example.com/far/">Far</a></nav></div></header>',
     );
-    expect(based).toContain('src="/fx/stories/Types/box-types/two"');
+    expect(based).toContain('src="/fx/stories/Types/box-types/two/"');
     expect(page("catalog/stories/Types/box-types/two")).toContain(
       'url=/fx/stories/Types/box-types/two/"',
     );
@@ -1423,7 +1423,7 @@ describe("catalog", () => {
     // pages and no public/, which the host serves.
     expect(build(["--base", "/catalog"]).status).toBe(0);
     expect(readFileSync(join(dist, "index.html"), "utf8")).toContain(
-      'src="/catalog/stories/Types/box-types/two"',
+      'src="/catalog/stories/Types/box-types/two/"',
     );
     expect(existsSync(join(dist, "catalog"))).toBe(false);
     expect(existsSync(join(dist, "fx.txt"))).toBe(false);
@@ -1432,6 +1432,24 @@ describe("catalog", () => {
     made.push(custom);
     expect(build(["--outDir", "./custom"]).status).toBe(0);
     expect(existsSync(join(custom, "index.html"))).toBe(true);
+    // A story link ends where Astro writes its page: no slash where a page is a file of its own,
+    // unless the site asks for one.
+    const files = join(fixture, "catalog", "files.config.mjs");
+    made.push(files);
+    for (const [slash, end] of [
+      ["ignore", ""],
+      ["always", "/"],
+    ]) {
+      writeFileSync(
+        files,
+        `import config from "./astro.config.mjs";\nexport default { ...config, trailingSlash: "${slash}", build: { format: "file" } };\n`,
+      );
+      expect(build(["--config", "files.config.mjs"]).status).toBe(0);
+      expect(readFileSync(join(dist, "index.html"), "utf8")).toContain(
+        `<li><a href="/dashboard/Parts/box-parts/two${end}">BoxParts</a>`,
+      );
+    }
+    rmSync(files);
     // A redirect from "/" would take the catalog's place: the build fails and says why.
     const redirecting = join(fixture, "catalog", "redirecting.config.mjs");
     made.push(redirecting);
@@ -1569,9 +1587,9 @@ describe("catalog", () => {
       };
       await until(`document.readyState === "complete" && !!document.body.dataset.fxRan`);
       await evaluate(
-        `document.querySelector('.hw-catalogue-bar a[href$="/box-parts/one"]').click()`,
+        `document.querySelector('.hw-catalogue-bar a[href$="/box-parts/one/"]').click()`,
       );
-      await until(`location.pathname.endsWith("/one") && document.readyState === "complete"`);
+      await until(`location.pathname.endsWith("/one/") && document.readyState === "complete"`);
       await new Promise((r) => setTimeout(r, 500));
       const after = await evaluate(
         `JSON.stringify([document.documentElement.dataset.fxHead, document.documentElement.dataset.hwScale, document.body.dataset.fxRan, !!document.querySelector("main .hw-catalogue-bar"), document.body.dataset.fxBar])`,
@@ -1579,7 +1597,7 @@ describe("catalog", () => {
       expect(JSON.parse(String(after))).toEqual([
         "repository",
         "screen",
-        "/dashboard/Parts/box-parts/one",
+        "/dashboard/Parts/box-parts/one/",
         true,
         // The story's own inline script found the bar: it stood above the story from the start.
         "above",
@@ -1588,7 +1606,7 @@ describe("catalog", () => {
       await evaluate(
         `document.dispatchEvent(new KeyboardEvent("keydown", { key: "ArrowRight", bubbles: true }))`,
       );
-      await until(`location.pathname.endsWith("/two") && document.readyState === "complete"`);
+      await until(`location.pathname.endsWith("/two/") && document.readyState === "complete"`);
       ws.close();
     } finally {
       browser.kill();

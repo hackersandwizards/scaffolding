@@ -280,6 +280,13 @@ export function catalog(options: CatalogOptions): AstroIntegration {
           groupOrder: options.groupOrder ?? [],
           previewStates: options.previewStates ?? [],
           provenance,
+          // A story link ends in a slash where the site asks for one, or leaves it open and Astro
+          // writes each page as a folder's index.html, which a static host serves only there.
+          slash:
+            params.config.trailingSlash === "always" ||
+            (params.config.trailingSlash === "ignore" && params.config.build.format === "directory")
+              ? "/"
+              : "",
           // The hub serves only on this machine, so a published page carries no link to it.
           admin:
             dev && options.admin

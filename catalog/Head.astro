@@ -10,7 +10,6 @@ import Top from "./Top.astro";
 const FOLD = 12;
 type Story = { id: string; name: string };
 type StoryModule = { name: string; directory?: string; stories: Story[] };
-const slash = config.trailingSlash === "always" ? "/" : "";
 const trim = (s: string) => s.replace(/\/$/, "");
 const path = trim(decodeURI(Astro.url.pathname));
 const base = trim(config.dashboardBase);
@@ -52,7 +51,7 @@ for (const s of all) {
 }
 const states = menu ? [...[...groups.values()].flat(), ...rest] : all;
 const at = states.findIndex((s) => s.id === id);
-const href = (s: Story) => `${base}/${s.id}${slash}`;
+const href = (s: Story) => `${base}/${s.id}${shell.slash}`;
 const [prev, next] = [states[at - 1], states[at + 1]];
 const alone = path.startsWith(`${trim(config.storyBase)}/`);
 // brand's scale and night on <html>, set before the body draws: the home at the dense scale, a
@@ -193,7 +192,7 @@ const root = {
         <button type="button" data-hw-theme aria-pressed="false">
           Dark theme
         </button>
-        <a class="hw-catalogue-tool" href={`${trim(config.storyBase)}/${id}${slash}`}>
+        <a class="hw-catalogue-tool" href={`${trim(config.storyBase)}/${id}${shell.slash}`}>
           Open this state alone
         </a>
       </span>
