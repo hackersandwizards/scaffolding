@@ -1,8 +1,7 @@
 #!/usr/bin/env bun
 import { spawn, spawnSync } from "node:child_process";
-import { existsSync } from "node:fs";
 import { join } from "node:path";
-import { isReason, readPackage, repoRoot } from "../lib/repo.ts";
+import { isReason, readPackage, repoRoot, styleFiles, stylelintFlags } from "../lib/repo.ts";
 
 const KEYS = new Set([
   "allow",
@@ -44,11 +43,7 @@ const bin = (name: string) => `bun ${join(home, "bin", `${name}.ts`)}`;
 const shared: Record<string, string> = {
   format: "bun --bun prettier --check --log-level warn .",
   lint: "bun --bun eslint --cache --concurrency=auto .",
-  // One line per finding: the default formatter's table threw "Subject parameter value width" in a
-  // run with findings, and a plain line format has no table. The repository's own config governs
-  // every file, so a nested repository's config (a submodule's) never takes over its files and the
-  // root config's ignoreFiles holds.
-  styles: `bun --bun stylelint "**/*.{css,astro}"${existsSync(join(root, "stylelint.config.js")) ? " --config stylelint.config.js" : ""} --allow-empty-input --ignore-path .gitignore --formatter compact`,
+  styles: `bun --bun stylelint "${styleFiles}" ${stylelintFlags(root).join(" ")}`,
   typecheck: `bun --bun ${config.typecheck ?? "tsc --noEmit"}`,
   structure: bin("check-structure"),
   coupling: bin("check-coupling"),

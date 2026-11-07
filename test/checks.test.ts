@@ -1700,6 +1700,56 @@ describe("check-staged", () => {
     expect(prettierOnly.code).toBe(0);
   }, 20_000);
 
+  test("staged CSS and Astro files run stylelint with the repository's config, unless skip.styles", () => {
+    const stylelint = join(import.meta.dir, "..", "node_modules/stylelint/bin/stylelint.mjs");
+    const html = join(import.meta.dir, "..", "node_modules/postcss-html/lib/index.js");
+    const skip = { format: "none", lint: "none" };
+    const staged = (files: Record<string, string>, styles?: unknown, installed = true) => {
+      const dir = repo({
+        "package.json": JSON.stringify({
+          type: "module",
+          scaffolding: { skip: { ...skip, styles } },
+        }),
+        "stylelint.config.js": `export default { overrides: [{ files: ["**/*.astro"], customSyntax: "${html}" }], rules: { "color-no-invalid-hex": true } };\n`,
+        "nested/.stylelintrc.json": "{}",
+      });
+      if (installed) {
+        mkdirSync(join(dir, "node_modules/.bin"), { recursive: true });
+        symlinkSync(stylelint, join(dir, "node_modules/.bin/stylelint"));
+      }
+      write(dir, files);
+      sh(dir, ["add", ...Object.keys(files)]);
+      return { dir, ...run(dir, "check-staged") };
+    };
+    const bad = "a { color: #ggg; }\n";
+    expect(staged({ "a.css": bad }, undefined, false).out).toContain("stylelint not installed");
+    expect(staged({ "a.ts": "export {};\n", ".x/a.css": bad }, undefined, false).code).toBe(0);
+    expect(staged({ "a.css": bad }, "none", false).code).toBe(0);
+    expect(staged({ "a.css": bad }, " ", false).out).toContain("stylelint not installed");
+    // nested/c.css: a nested config would let it pass, but the repository's own governs, as in the gate.
+    const red = staged({
+      "a.css": bad,
+      "a.ts": "#ggg\n",
+      "B.astro": `<p>a</p>\n<style>\n  ${bad}</style>\n`,
+      "nested/c.css": bad,
+      ".storybook/d.css": bad,
+    });
+    expect(red.out).toContain("a.css: line 1, col 12, error - Invalid hex color");
+    expect(red.out).toContain("B.astro: line 3, col 14, error - Invalid hex color");
+    expect(red.out).toContain("nested/c.css: line 1, col 12");
+    expect(red.out).not.toContain("a.ts:");
+    expect(red.out).not.toContain("d.css");
+    expect(red.code).toBe(1);
+    const ok = staged({ "a.css": "a { color: #fff; }\n" });
+    expect(ok.code).toBe(0);
+    write(ok.dir, { "a.css": bad });
+    sh(ok.dir, ["add", "a.css"]);
+    write(ok.dir, { "a.css": "a { color: #000; }\n" });
+    const partial = run(ok.dir, "check-staged");
+    expect(partial.out).toContain("[check:staged] stylelint: a.css as staged");
+    expect(partial.code).toBe(1);
+  }, 20_000);
+
   test("a file staged in the old docs/tracking folder runs admin-check too", () => {
     const dir = repo({ "package.json": pkg });
     write(dir, { "docs/tracking/items/a.md": "fine\n" });

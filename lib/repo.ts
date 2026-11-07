@@ -1,5 +1,6 @@
 import { spawnSync } from "node:child_process";
 import { existsSync, readFileSync } from "node:fs";
+import { join } from "node:path";
 
 /** A file's comments, by its kind: `#` lines for shell, Python, YAML, TOML, Git hooks and the
  * editor and Prettier ignore files, else block, HTML and `//` comments, a `//` in a URL or a
@@ -17,6 +18,25 @@ export const commentSyntax = (path: string) =>
 /** A reason is a non-blank string, so `false`, `0` or `{}` in package.json gives none. */
 export const isReason = (value: unknown): value is string =>
   typeof value === "string" && value.trim() !== "";
+
+/** The files the styles step lints, and stylelint's arguments past them, shared by the gate and the
+ * hook so both judge the same files. The repository's own config governs every file, so a nested
+ * repository's config (a submodule's) never takes over its files and the root config's ignoreFiles
+ * holds. One line per finding: the default formatter's table threw "Subject parameter value width"
+ * in a run with findings, and a plain line format has no table. */
+export const styleFiles = "**/*.{css,astro}";
+const styleGlob = new Bun.Glob(styleFiles);
+// The gate's glob skips dot folders, dot files and node_modules; a staged path is named explicitly.
+export const styled = (path: string) =>
+  styleGlob.match(path) && !/(^|\/)(\.|node_modules\/)/.test(path);
+export const stylelintFlags = (root: string) => [
+  ...(existsSync(join(root, "stylelint.config.js")) ? ["--config", "stylelint.config.js"] : []),
+  "--allow-empty-input",
+  "--ignore-path",
+  ".gitignore",
+  "--formatter",
+  "compact",
+];
 
 export type Finding = { check: string; path: string; text: string; message: string };
 type AllowEntry = { check?: string; path?: string; text?: string; reason?: unknown };

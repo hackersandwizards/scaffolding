@@ -6,7 +6,7 @@ import { spawn, spawnSync } from "node:child_process";
 import { existsSync, mkdtempSync, readFileSync, rmSync } from "node:fs";
 import { availableParallelism, tmpdir } from "node:os";
 import { join } from "node:path";
-import { isReason } from "../lib/repo.ts";
+import { isReason, styled, stylelintFlags } from "../lib/repo.ts";
 
 function refuseCommit(message: string): never {
   console.error(`[check:staged] ${message}`);
@@ -64,8 +64,10 @@ const differs = new Set(unstaged.stdout.split("\0"));
 const partial = staged.filter((path) => differs.has(path));
 const whole = staged.filter((path) => !differs.has(path));
 
-// Both tools get every staged path and skip what their own config ignores, so this and
-// `bun run check` judge the same files.
+// Prettier and eslint get every staged path, stylelint the CSS and Astro ones the gate's styles step
+// lints, and each skips what its own config ignores, so this and `bun run check` judge the same files.
+const mine = (tool: string, paths: string[]) =>
+  tool === "stylelint" ? paths.filter(styled) : paths;
 const tools: Record<string, string[]> = {
   prettier: [
     "--check",
@@ -75,11 +77,13 @@ const tools: Record<string, string[]> = {
     "warn",
   ],
   eslint: ["--cache", "--no-warn-ignored", "--no-error-on-unmatched-pattern"],
+  stylelint: stylelintFlags("."),
 };
 const stdinFlags: Record<string, (path: string) => string[]> = {
   // No --check: prettier --check on stdin exits 0 on a syntax error. The output is compared instead.
   prettier: (path) => ["--ignore-unknown", "--log-level", "warn", "--stdin-filepath", path],
   eslint: (path) => ["--cache", "--no-warn-ignored", "--stdin", "--stdin-filename", path],
+  stylelint: (path) => [...tools.stylelint, "--stdin", "--stdin-filename", path],
 };
 
 // Chunked: a commit touching most of a repository passes more path bytes than ARG_MAX holds.
@@ -148,10 +152,14 @@ async function prettierPasses(bin: string, path: string, input: Buffer, r: ToolR
 
 // Run what the gate runs: each tool unless scaffolding.skip gives its gate step a reason, declared
 // or not. Every install is checked before any run starts, so a refusal leaves no tool running.
-const gateStep: Record<string, string> = { prettier: "format", eslint: "lint" };
+const gateStep: Record<string, string> = {
+  prettier: "format",
+  eslint: "lint",
+  stylelint: "styles",
+};
 const skip = pkg.scaffolding?.skip ?? {};
 const active = Object.entries(tools).filter(
-  ([tool]) => staged.length && !isReason(skip[gateStep[tool]]),
+  ([tool]) => mine(tool, staged).length && !isReason(skip[gateStep[tool]]),
 );
 for (const [tool] of active)
   // Fail closed: a checkout without `bun install`, such as a fresh worktree, or a package that
@@ -164,9 +172,10 @@ const runs = active.flatMap(([tool, flags]) => {
   const bin = `node_modules/.bin/${tool}`;
   return [
     ...chunks
+      .map((paths) => mine(tool, paths))
       .filter((paths) => paths.length)
       .map((paths) => runStagedTool(bin, [...flags, ...paths])),
-    ...partial.map(async (path) => {
+    ...mine(tool, partial).map(async (path) => {
       const input = stagedContent(path);
       const r = await runStagedTool(bin, stdinFlags[tool](path), input);
       if (tool === "prettier" ? await prettierPasses(bin, path, input, r) : !r.code)
