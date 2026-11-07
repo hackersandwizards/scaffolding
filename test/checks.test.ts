@@ -15,6 +15,7 @@ import {
 } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
+import { pathToFileURL } from "node:url";
 import { catalogPath } from "../catalog/path.ts";
 
 const bin = (name: string) => join(import.meta.dir, "..", "bin", `${name}.ts`);
@@ -1487,6 +1488,34 @@ describe("catalog", () => {
       );
     }
     rmSync(files);
+    // A build with a file-URL assetsPrefix is opened from disk: every link to a page or file of the
+    // build names its file by file URL, the home's frames, a copied file and a state menu's options
+    // included; a link outside the build stays, and no page forwards from /catalog/.
+    const disk = join(fixture, "catalog", "disk.config.mjs");
+    made.push(disk);
+    writeFileSync(
+      disk,
+      `import config from "./astro.config.mjs";\nexport default { ...config, build: { assetsPrefix: ${JSON.stringify(pathToFileURL(`${dist}/`).href)} } };\n`,
+    );
+    expect(build(["--config", "disk.config.mjs"]).status).toBe(0);
+    const onDisk = readFileSync(join(dist, "index.html"), "utf8");
+    const at = (p: string) => pathToFileURL(join(dist, p)).href;
+    expect(onDisk).toContain(`<iframe src="${at("stories/Types/box-types/two/index.html")}"`);
+    expect(onDisk).toContain(
+      `<li><a href="${at("dashboard/Parts/box-parts/two/index.html")}">BoxParts</a>`,
+    );
+    expect(onDisk).toContain(`<a href="${at("index.html")}">Fx</a>`);
+    expect(onDisk).toContain('href="https://example.com/other/"');
+    expect(onDisk).not.toMatch(/\s(href|src)="\/(?!\/)/);
+    expect(page("dashboard/Parts/box-parts/two")).toContain(
+      `href="${at("stories/Parts/box-parts/two/index.html")}">Open this state alone`,
+    );
+    expect(onDisk).toContain(`<link rel="icon" href="${at("assets/logo.svg")}">`);
+    expect(page("dashboard/Parts/many-parts/block-image")).toContain(
+      `<option value="${at("dashboard/Parts/many-parts/block-code/index.html")}">Block code</option>`,
+    );
+    expect(existsSync(join(dist, "catalog"))).toBe(false);
+    rmSync(disk);
     // A redirect from "/" would take the catalog's place: the build fails and says why.
     const redirecting = join(fixture, "catalog", "redirecting.config.mjs");
     made.push(redirecting);

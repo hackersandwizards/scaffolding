@@ -16,7 +16,7 @@ import {
 import { spawnSync } from "node:child_process";
 import { createRequire } from "node:module";
 import { basename, dirname, join, posix, relative } from "node:path";
-import { fileURLToPath } from "node:url";
+import { fileURLToPath, pathToFileURL } from "node:url";
 import { catalogPath, storiesDir } from "./path.ts";
 import { NOINDEX } from "./robots.ts";
 
@@ -191,6 +191,11 @@ export function catalog(options: CatalogOptions): AstroIntegration {
   // The patterns of the repository's own routes Astro renders as pages: an endpoint writes its
   // bytes as it means them, such as a mail as sent, and the shell's pages carry noindex already.
   const pageRoutes = new Set<string>();
+  // Every route Astro renders as a page, the shell's and Astrobook's included.
+  const allPages = new Set<string>();
+  // A build whose assetsPrefix is a file URL is opened from disk, where a root-relative link
+  // resolves to the disk's root.
+  let onDisk = false;
   // Where an old link points, as dev serves it now: without the Pages base, and without /catalog
   // where the catalog moved to the root; undefined for a current path.
   let moved = (_: string): string | undefined => undefined;
@@ -221,6 +226,12 @@ export function catalog(options: CatalogOptions): AstroIntegration {
         const own = basename(root) === "catalog";
         repo = packageDir(root);
         base = params.config.base.replace(/\/$/, "");
+        const prefix = params.config.build.assetsPrefix;
+        onDisk =
+          !dev &&
+          (typeof prefix === "string" ? [prefix] : Object.values(prefix ?? {})).some((p) =>
+            p.startsWith("file:"),
+          );
         const pages = join(fileURLToPath(params.config.srcDir), "pages");
         const home = catalogPath({ base, pages: existsSync(pages) ? readdirSync(pages) : [] });
         atRoot = home === `${base}/`;
@@ -370,8 +381,12 @@ export function catalog(options: CatalogOptions): AstroIntegration {
       },
       "astro:routes:resolved": ({ routes }) => {
         pageRoutes.clear();
-        for (const route of routes)
-          if (route.type === "page" && route.origin === "project") pageRoutes.add(route.pattern);
+        allPages.clear();
+        for (const route of routes) {
+          if (route.type !== "page") continue;
+          allPages.add(route.pattern);
+          if (route.origin === "project") pageRoutes.add(route.pattern);
+        }
       },
       "astro:server:setup": ({ server }) => {
         // Each `copy` entry with the folder every match lies in: the segments before its first
@@ -427,8 +442,9 @@ export function catalog(options: CatalogOptions): AstroIntegration {
             writeFileSync(file, tagged);
           }
         }
-        // The catalog lived under /catalog/ until v2.0.0: each of its published pages forwards.
-        if (atRoot && !mounted)
+        // The catalog lived under /catalog/ until v2.0.0: each of its published pages forwards. A
+        // build opened from disk was never published there.
+        if (atRoot && !mounted && !onDisk)
           for (const page of globSync(["index.html", "{dashboard,stories}/**/index.html"], {
             cwd: out,
           })) {
@@ -458,6 +474,32 @@ export function catalog(options: CatalogOptions): AstroIntegration {
         // Only in CI: locally a pointer may be a file .lfsconfig leaves out.
         if (process.env.CI === "true" && pointers.length)
           throw new Error(`catalog copy: still Git LFS pointers: ${pointers.join(", ")}`);
+        // Opened from disk, each link to a page or file of the build, a state menu's option included,
+        // names its file by file URL, as Astro names the assets, since a folder there opens as a
+        // listing, not its index.html. Last, once every `copy` entry is in place.
+        if (onDisk)
+          for (const [pattern, urls] of assets) {
+            if (!allPages.has(pattern)) continue;
+            for (const url of urls) {
+              if (!url.pathname.endsWith(".html")) continue;
+              const file = fileURLToPath(url);
+              const html = readFileSync(file, "utf8");
+              const linked = html.replace(
+                /(\s(?:href|src|value)=")(\/(?!\/)[^"?#]*)([^"]*")/g,
+                (all, attr: string, path: string, rest: string) => {
+                  if (path !== base && !path.startsWith(`${base}/`)) return all;
+                  const at = decoded(path.slice(base.length + 1));
+                  const target = at.split("/").includes("..")
+                    ? undefined
+                    : [at, join(at, "index.html"), `${at.replace(/\/$/, "")}.html`]
+                        .map((f) => join(out, f))
+                        .find((f) => statSync(f, { throwIfNoEntry: false })?.isFile());
+                  return target ? `${attr}${pathToFileURL(target).href}${rest}` : all;
+                },
+              );
+              if (linked !== html) writeFileSync(file, linked);
+            }
+          }
       },
     },
   };

@@ -154,6 +154,11 @@ at `/catalog/`. A `redirects` entry for `/` fails the build where the catalog is
 that moved to the root still answers every page of its former `/catalog/` path, a forwarding page in
 the build and a redirect in dev.
 
+A build whose `build.assetsPrefix` is a `file://` URL is opened from disk: there every link and frame
+to a page of the build names its file by file URL (`…/stories/x/index.html`), since a root-relative
+path would resolve to the disk's root and a folder opens as a listing. Such a build does not serve
+over HTTP.
+
 The home is the catalog's one index: its rail names every file under its group's label (on a phone
 the groups alone, as chips) and its tiles draw each file. A page that opens an entry in place marks
 that entry's rail name, and only it, with `aria-current`; the shell draws it with an accent wash and
