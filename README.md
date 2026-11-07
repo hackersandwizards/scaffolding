@@ -152,7 +152,10 @@ The catalog is the site's home, unless the site has a home of its own (`pages/in
 `pages/index/` folder or a top-level catch-all `pages/[...x]` under Astro's `srcDir`); then it lives
 at `/catalog/`. A `redirects` entry for `/` fails the build where the catalog is the home. A catalog
 that moved to the root still answers every page of its former `/catalog/` path, a forwarding page in
-the build and a redirect in dev.
+the build and a redirect in dev. The shell's own links to the catalog, the header's `current` item
+and a state's back link, read `/catalog/` after the base wherever it lives; a base ending in
+`/catalog`, a build opened from disk and a site with a page of its own at `/catalog/` link the home
+itself.
 
 A build whose `build.assetsPrefix` is a `file://` URL is opened from disk: there every link and frame
 to a page of the build names its file by file URL (`…/stories/x/index.html`), since a root-relative
@@ -215,7 +218,7 @@ The options beyond those above:
 - `nav`: the header's links on the home and on every state's page, which then carries the header
   above its bar, such as `{ items: catalogs, current: "Slides" }` with brand's `catalogs.json`. Each
   item is `{ name, href }`, an href starting with one `/` counting from the base. The item named
-  `current` links to the catalog's home and carries `aria-current`: `"page"` on the home, `"true"`
+  `current` links to the catalog as above and carries `aria-current`: `"page"` on the home, `"true"`
   on a state's page, whose header stays above the scrolling story. A `current` that names no item
   fails the build. The links render as brand's catalog list does (`hw-header-link` in a
   `nav.hw-header-nav` with `data-hw-catalogs`). Without `nav`, the header lists brand's

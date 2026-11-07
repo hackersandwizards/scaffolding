@@ -50,7 +50,7 @@ export type CatalogOptions = {
   href?: string;
   /** The header's nav on every page but a state alone, such as brand's catalogs.json: an href
    * starting with "/" counts from Astro's `base`, and the item named `current` links to this
-   * catalog's home and carries aria-current; a `current` naming no item fails the build. Without
+   * catalog, at /catalog/ after the base, and carries aria-current; a `current` naming no item fails the build. Without
    * it, brand's catalogs.json where the repository resolves @hackersandwizards/brand, the item
    * named `product` current. */
   nav?: { items: { name: string; href: string }[]; current?: string };
@@ -188,6 +188,8 @@ export function catalog(options: CatalogOptions): AstroIntegration {
   let base = "";
   let atRoot = false;
   let mounted = false;
+  // A build writes forwarding pages at /catalog/ for a catalog at the site's root.
+  let forwards = false;
   // The patterns of the repository's own routes Astro renders as pages: an endpoint writes its
   // bytes as it means them, such as a mail as sent, and the shell's pages carry noindex already.
   const pageRoutes = new Set<string>();
@@ -235,6 +237,13 @@ export function catalog(options: CatalogOptions): AstroIntegration {
         const pages = join(fileURLToPath(params.config.srcDir), "pages");
         const home = catalogPath({ base, pages: existsSync(pages) ? readdirSync(pages) : [] });
         atRoot = home === `${base}/`;
+        forwards = atRoot && !mounted && !onDisk;
+        // Every link to the catalog reads /catalog/: a mounted catalog's home already does, a
+        // build opened from disk forwards nothing, and a site's own page there keeps its place.
+        const link =
+          forwards && !globSync(["catalog.*", "catalog/index.*"], { cwd: pages }).length
+            ? `${base}/catalog/`
+            : home;
         if (atRoot && params.config.redirects["/"])
           throw new Error(
             'catalog: the catalog is the site\'s home, so `redirects` leaves out "/"; its former /catalog/ pages forward by themselves',
@@ -308,9 +317,10 @@ export function catalog(options: CatalogOptions): AstroIntegration {
           href: options.href ?? `${base}/`,
           nav: nav?.items.map(({ name, href }) =>
             name === nav.current
-              ? { name, href: home, current: true }
+              ? { name, href: link, current: true }
               : { name, href: /^\/(?!\/)/.test(href) ? `${base}${href}` : href },
           ),
+          link,
           title: options.title ?? "Catalog",
           lead: options.lead,
           previews: options.previews ?? true,
@@ -444,7 +454,7 @@ export function catalog(options: CatalogOptions): AstroIntegration {
         }
         // The catalog lived under /catalog/ until v2.0.0: each of its published pages forwards. A
         // build opened from disk was never published there.
-        if (atRoot && !mounted && !onDisk)
+        if (forwards)
           for (const page of globSync(["index.html", "{dashboard,stories}/**/index.html"], {
             cwd: out,
           })) {

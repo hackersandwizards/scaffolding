@@ -1317,9 +1317,10 @@ describe("catalog", () => {
     expect(r.status).toBe(0);
     // No page of its own at pages/index: the catalog is the site's home.
     const home = readFileSync(join(dist, "index.html"), "utf8");
-    // `nav`: an href from "/" counts from the base, the current item links to the catalog's home.
+    // `nav`: an href from "/" counts from the base, the current item links to /catalog/, which
+    // forwards to the home.
     expect(home).toContain(
-      '<header class="fx-header"><a href="/">Fx</a><div class="hw-header-nav hw-catalogue-nav"><nav class="hw-header-nav" aria-label="Main" data-hw-catalogs><a class="hw-header-link" href="/">Site</a><a class="hw-header-link" href="/" aria-current="page">Fx</a><a class="hw-header-link" href="https://example.com/other/">Other</a><a class="hw-header-link" href="//example.com/far/">Far</a></nav></div></header>',
+      '<header class="fx-header"><a href="/">Fx</a><div class="hw-header-nav hw-catalogue-nav"><nav class="hw-header-nav" aria-label="Main" data-hw-catalogs><a class="hw-header-link" href="/">Site</a><a class="hw-header-link" href="/catalog/" aria-current="page">Fx</a><a class="hw-header-link" href="https://example.com/other/">Other</a><a class="hw-header-link" href="//example.com/far/">Far</a></nav></div></header>',
     );
     expect(home).toContain("fx catalog/stories · 3 components · 24 states");
     // The admin hub serves only on this machine: a built page carries no link to it.
@@ -1373,10 +1374,10 @@ describe("catalog", () => {
     // A state's page carries the header above the bar, the current item marked as the place, not
     // the page.
     expect(bar).toStartWith(
-      '<div data-hw-catalogue-top><header class="fx-header"><a href="/">Fx</a><div class="hw-header-nav hw-catalogue-nav"><nav class="hw-header-nav" aria-label="Main" data-hw-catalogs><a class="hw-header-link" href="/">Site</a><a class="hw-header-link" href="/" aria-current="true">Fx</a><a class="hw-header-link" href="https://example.com/other/">Other</a><a class="hw-header-link" href="//example.com/far/">Far</a></nav></div></header></div><nav class="hw-catalogue-bar"',
+      '<div data-hw-catalogue-top><header class="fx-header"><a href="/">Fx</a><div class="hw-header-nav hw-catalogue-nav"><nav class="hw-header-nav" aria-label="Main" data-hw-catalogs><a class="hw-header-link" href="/">Site</a><a class="hw-header-link" href="/catalog/" aria-current="true">Fx</a><a class="hw-header-link" href="https://example.com/other/">Other</a><a class="hw-header-link" href="//example.com/far/">Far</a></nav></div></header></div><nav class="hw-catalogue-bar"',
     );
     expect(bar).toContain('<nav class="hw-catalogue-bar" aria-label="Catalog">');
-    expect(bar).toContain('<a href="/"><span aria-hidden="true">');
+    expect(bar).toContain('<a href="/catalog/"><span aria-hidden="true">');
     expect(bar).toMatch(/Parts \/ <strong>BoxParts<\/strong>/);
     expect(bar).toContain('<button type="button" data-hw-theme aria-pressed="false">');
     expect(bar).toMatch(
@@ -1451,7 +1452,7 @@ describe("catalog", () => {
     expect(build(["--base", "/fx"]).status).toBe(0);
     const based = readFileSync(join(dist, "index.html"), "utf8");
     expect(based).toContain(
-      '<header class="fx-header"><a href="/fx/">Fx</a><div class="hw-header-nav hw-catalogue-nav"><nav class="hw-header-nav" aria-label="Main" data-hw-catalogs><a class="hw-header-link" href="/fx/">Site</a><a class="hw-header-link" href="/fx/" aria-current="page">Fx</a><a class="hw-header-link" href="https://example.com/other/">Other</a><a class="hw-header-link" href="//example.com/far/">Far</a></nav></div></header>',
+      '<header class="fx-header"><a href="/fx/">Fx</a><div class="hw-header-nav hw-catalogue-nav"><nav class="hw-header-nav" aria-label="Main" data-hw-catalogs><a class="hw-header-link" href="/fx/">Site</a><a class="hw-header-link" href="/fx/catalog/" aria-current="page">Fx</a><a class="hw-header-link" href="https://example.com/other/">Other</a><a class="hw-header-link" href="//example.com/far/">Far</a></nav></div></header>',
     );
     expect(based).toContain('src="/fx/stories/Types/box-types/two/"');
     expect(page("catalog/stories/Types/box-types/two")).toContain(
@@ -1460,8 +1461,14 @@ describe("catalog", () => {
     // A base ending in /catalog mounts the catalog under a host with its own home: no forwarding
     // pages and no public/, which the host serves.
     expect(build(["--base", "/catalog"]).status).toBe(0);
-    expect(readFileSync(join(dist, "index.html"), "utf8")).toContain(
-      'src="/catalog/stories/Types/box-types/two/"',
+    const mountedHome = readFileSync(join(dist, "index.html"), "utf8");
+    expect(mountedHome).toContain('src="/catalog/stories/Types/box-types/two/"');
+    // Its home reads /catalog/ already: the current item links there, not to /catalog/catalog/.
+    expect(mountedHome).toContain(
+      '<a class="hw-header-link" href="/catalog/" aria-current="page">Fx</a>',
+    );
+    expect(page("dashboard/Parts/box-parts/two")).toContain(
+      '<a href="/catalog/"><span aria-hidden',
     );
     expect(existsSync(join(dist, "catalog"))).toBe(false);
     expect(existsSync(join(dist, "fx.txt"))).toBe(false);
@@ -1505,6 +1512,9 @@ describe("catalog", () => {
       `<li><a href="${at("dashboard/Parts/box-parts/two/index.html")}">BoxParts</a>`,
     );
     expect(onDisk).toContain(`<a href="${at("index.html")}">Fx</a>`);
+    expect(onDisk).toContain(
+      `<a class="hw-header-link" href="${at("index.html")}" aria-current="page">Fx</a>`,
+    );
     expect(onDisk).toContain('href="https://example.com/other/"');
     expect(onDisk).not.toMatch(/\s(href|src)="\/(?!\/)/);
     expect(page("dashboard/Parts/box-parts/two")).toContain(
@@ -1604,7 +1614,7 @@ describe("catalog", () => {
     );
     expect(build(["--config", "navless.config.mjs"]).status).toBe(0);
     expect(readFileSync(join(dist, "index.html"), "utf8")).toContain(
-      '<nav class="hw-header-nav" aria-label="Main" data-hw-catalogs><a class="hw-header-link" href="https://example.com/other/">Other</a><a class="hw-header-link" href="/" aria-current="page">Fx</a></nav>',
+      '<nav class="hw-header-nav" aria-label="Main" data-hw-catalogs><a class="hw-header-link" href="https://example.com/other/">Other</a><a class="hw-header-link" href="/catalog/" aria-current="page">Fx</a></nav>',
     );
     rmSync(navless);
     rmSync(join(fixture, "node_modules"), { recursive: true });
@@ -1642,6 +1652,13 @@ describe("catalog", () => {
       "catalog: headless/index.html has no <head> for its noindex",
     );
     rmSync(join(pages, "headless.astro"));
+    // A page of the site's own at /catalog/ beside a root catalog keeps its place: the catalog
+    // links its home.
+    writeFileSync(join(pages, "catalog", "index.astro"), head("<p>site catalog page</p>"));
+    expect(build().status).toBe(0);
+    expect(page("catalog")).toContain("site catalog page");
+    expect(page("")).toContain('<a class="hw-header-link" href="/" aria-current="page">Fx</a>');
+    rmSync(join(pages, "catalog", "index.astro"));
     // A site with a home page of its own keeps the catalog at /catalog/; only the catalog's pages
     // get noindex.
     writeFileSync(join(pages, "index.astro"), head("<p>site home</p>"));
