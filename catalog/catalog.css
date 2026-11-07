@@ -150,6 +150,21 @@
     max-width: 48rem;
     line-height: 1.5;
   }
+  /* A heading of the home's slot, or of a wrapper element in it: the subheading step in the h2's
+     face, 2.5rem between sections. The slot's first element, and a heading opening the first
+     wrapper, sit at the h2's own 1rem below. At no specificity, as the paragraphs. */
+  :where(.hw-catalogue-text > h3, .hw-catalogue-text > :not(section) > h3) {
+    margin: 2.5rem 0 0.5rem;
+    font-family: var(--font-mono);
+    font-size: var(--text-subheading, 1rem);
+    line-height: var(--text-subheading--line-height, 1.35);
+  }
+  :where(
+    .hw-catalogue-text > :first-child,
+    .hw-catalogue-text > :first-child:not(section) > h3:first-child
+  ) {
+    margin-top: 0;
+  }
   .hw-catalogue-lead {
     margin: 0.5rem 0 0;
     font-size: var(--text-subheading, 1rem);

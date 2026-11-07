@@ -221,10 +221,13 @@ The options beyond those above:
   draws after the last group as the group "Foundations", the rail's last entry, hidden while the
   search holds a word. A slot holding only whitespace draws no group. Two groups whose names make
   the same anchor, such as a filled slot and a stories folder Foundations, fail the build. Its own
-  headings start at `h3`, under that group's `h2`. Its running text takes the lead's measure
-  (48rem) and leading (1.5), unless a class of the repository's sets its own: a paragraph of the
-  slot, of a wrapper element in it, or of a `details` or `section` in that wrapper. A paragraph
-  deeper down, in the slot's own grid or tile, keeps its width.
+  headings start at `h3`, under that group's `h2`: an `h3` of the slot or of a wrapper element in
+  it takes the `h2`'s face at `--text-subheading` and its line height, 2.5rem above and 0.5rem
+  below, and the slot's first element sits 1rem under the `h2`, unless a class of the repository's
+  sets its own. Its running text takes the lead's measure (48rem) and leading (1.5), unless a class
+  of the repository's sets its own: a paragraph of the slot, of a wrapper element in it, or of a
+  `details` or `section` in that wrapper. A paragraph deeper down, in the slot's own grid or tile,
+  keeps its width.
 - `copy`: files the built pages reach by a relative path rather than through Vite. A glob, relative
   to the repository, lands each match in the build at the same path. A package path of a package
   the repository declares, or of its own, such as `@hackersandwizards/brand/logos/avatar-512.png`,
