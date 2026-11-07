@@ -85,6 +85,7 @@
     },
     {
       "text": "Elevate your team",
+      "capital": true,
       "lang": "en",
       "replacedBy": "claim"
     },
