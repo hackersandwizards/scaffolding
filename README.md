@@ -210,7 +210,8 @@ The options beyond those above:
   above its bar, such as `{ items: catalogs, current: "Slides" }` with brand's `catalogs.json`. Each
   item is `{ name, href }`, an href starting with one `/` counting from the base. The item named
   `current` links to the catalog's home and carries `aria-current`: `"page"` on the home, `"true"`
-  on a state's page, whose header stays above the scrolling story. The links render as brand's catalog list does (`hw-header-link` in a
+  on a state's page, whose header stays above the scrolling story. A `current` that names no item
+  fails the build. The links render as brand's catalog list does (`hw-header-link` in a
   `nav.hw-header-nav` with `data-hw-catalogs`).
 - `home`: a page of the repository that renders `Home.astro`, its foundations in the default slot
   and a control such as a theme toggle in the `nav` slot. The running text above the tiles takes
@@ -245,7 +246,11 @@ this rule as a pure function, for a reader such as the admin hub: `pages` are th
 drops. The preset calls it too.
 
 Every catalog page carries `<meta name="robots" content="noindex">` and the `lead` as its
-`<meta name="description">`, so a repository's head adds neither. Every page but a state alone
+`<meta name="description">`, so a repository's head adds neither. The build adds the noindex tag, right
+after `<head>`, to the repository's own pages under the catalog's path too: every page of the site
+where the catalog is its home, else every page under `/catalog/`. A page with a robots tag of its
+own keeps it, a page without `<head>` fails the build, and a file an endpoint writes, such as a
+mail as sent, stays as written. Every page but a state alone
 carries `data-hw-night`, so brand's `night.css` turns it under the theme toggle while a tile's
 preview keeps its own theme. The shell's own card and pill on the home carry `data-hw-shell`, for a
 check of the repository's elements to skip.

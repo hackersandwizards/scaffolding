@@ -1473,14 +1473,53 @@ describe("catalog", () => {
       "catalog copy: @acme/fx/assets/skip.txt is no file in the exports of @acme/fx",
     );
     rmSync(unexported);
-    // A site with a home page of its own keeps the catalog at /catalog/.
+    // A `nav.current` naming no item fails the build by name.
+    const misnamed = join(fixture, "catalog", "misnamed.config.mjs");
+    made.push(misnamed);
+    writeFileSync(
+      misnamed,
+      'import config from "./astro.config.mjs";\nimport { catalog } from "../../../catalog/index.ts";\nexport default { ...config, integrations: [catalog({ product: "Fx", css: [], lead: "", nav: { items: [{ name: "Fx", href: "/" }], current: "Fxx" } })] };\n',
+    );
+    const misnamedBuild = build(["--config", "misnamed.config.mjs"]);
+    expect(misnamedBuild.status).not.toBe(0);
+    expect(`${misnamedBuild.stdout}${misnamedBuild.stderr}`).toContain(
+      'catalog nav: current "Fxx" names no item',
+    );
+    rmSync(misnamed);
+    // A page of the repository's own gets noindex where it has none; one with a robots tag of its
+    // own and an endpoint's file stay as written.
     const src = join(fixture, "catalog", "src");
     const pages = join(src, "pages");
     made.push(src);
-    mkdirSync(pages, { recursive: true });
-    writeFileSync(join(pages, "index.astro"), "<p>site home</p>\n");
+    mkdirSync(join(pages, "catalog"), { recursive: true });
+    const head = (body: string) =>
+      `<html lang="en"><head><title>t</title>${body}</head><body></body></html>\n`;
+    writeFileSync(join(pages, "own.astro"), head(""));
+    writeFileSync(join(pages, "kept.astro"), head('<meta name="robots" content="index">'));
+    writeFileSync(
+      join(pages, "raw.html.ts"),
+      'export const GET = () => new Response("<html><head></head></html>");\n',
+    );
+    expect(build().status).toBe(0);
+    expect(page("own")).toContain('<head><meta name="robots" content="noindex"><title>');
+    expect(page("kept")).not.toContain("noindex");
+    expect(readFileSync(join(dist, "raw.html"), "utf8")).toBe("<html><head></head></html>");
+    writeFileSync(join(pages, "headless.astro"), "<p>no head</p>\n");
+    const headless = build();
+    expect(headless.status).not.toBe(0);
+    expect(`${headless.stdout}${headless.stderr}`).toContain(
+      "catalog: headless/index.html has no <head> for its noindex",
+    );
+    rmSync(join(pages, "headless.astro"));
+    // A site with a home page of its own keeps the catalog at /catalog/; only the catalog's pages
+    // get noindex.
+    writeFileSync(join(pages, "index.astro"), head("<p>site home</p>"));
+    writeFileSync(join(pages, "catalog", "extra.astro"), head(""));
     expect(build().status).toBe(0);
     expect(page("").includes("site home")).toBe(true);
+    expect(page("")).not.toContain("noindex");
+    expect(page("own")).not.toContain("noindex");
+    expect(page("catalog/extra")).toContain('<meta name="robots" content="noindex">');
     expect(page("catalog")).toContain("fx catalog/stories");
     expect(page("catalog/dashboard/Parts/box-parts/two")).toContain('href="/catalog/"');
     rmSync(src, { recursive: true });

@@ -49,7 +49,7 @@ export type CatalogOptions = {
   href?: string;
   /** The header's nav on every page but a state alone, such as brand's catalogs.json: an href
    * starting with "/" counts from Astro's `base`, and the item named `current` links to this
-   * catalog's home and carries aria-current. */
+   * catalog's home and carries aria-current; a `current` naming no item fails the build. */
   nav?: { items: { name: string; href: string }[]; current?: string };
   /** Under `astro dev`, a header link to the repository's page in the local admin hub,
    * http://admin.localhost:4329/<repo>/dashboard, the repo named as the hub names it. */
@@ -83,6 +83,7 @@ const BRAND_HEADER = {
   // night.css turns the header under the data-hw-night that Head.astro sets.
   css: ["@hackersandwizards/brand/header.css", "@hackersandwizards/brand/night.css"],
 };
+const NOINDEX = '<meta name="robots" content="noindex">';
 const OPTIONS = "virtual:scaffolding/catalog";
 const HEADER = "virtual:scaffolding/catalog-header";
 const HEAD = "virtual:scaffolding/catalog-head";
@@ -166,6 +167,9 @@ export function catalog(options: CatalogOptions): AstroIntegration {
   let base = "";
   let atRoot = false;
   let mounted = false;
+  // The patterns of the repository's own routes Astro renders as pages: an endpoint writes its
+  // bytes as it means them, such as a mail as sent, and the shell's pages carry noindex already.
+  const pageRoutes = new Set<string>();
   // Where an old link points, as dev serves it now: without the Pages base, and without /catalog
   // where the catalog moved to the root; undefined for a current path.
   let moved = (_: string): string | undefined => undefined;
@@ -264,6 +268,9 @@ export function catalog(options: CatalogOptions): AstroIntegration {
         // A relative specifier counts from the Astro root, as Astrobook reads `head` and `home`.
         const spec = (s: string) => JSON.stringify(s.startsWith(".") ? join(root, s) : s);
         const nav = options.nav;
+        // A misspelt or renamed `current` would link this catalog's entry to the published site.
+        if (nav?.current !== undefined && !nav.items.some(({ name }) => name === nav.current))
+          throw new Error(`catalog nav: current "${nav.current}" names no item`);
         const shared = {
           product: options.product,
           href: options.href ?? `${base}/`,
@@ -340,6 +347,11 @@ export function catalog(options: CatalogOptions): AstroIntegration {
           }
         }
       },
+      "astro:routes:resolved": ({ routes }) => {
+        pageRoutes.clear();
+        for (const route of routes)
+          if (route.type === "page" && route.origin === "project") pageRoutes.add(route.pattern);
+      },
       "astro:server:setup": ({ server }) => {
         server.middlewares.use((req, res, next) => {
           const url = URL.parse(req.url ?? "", "http://x");
@@ -369,8 +381,24 @@ export function catalog(options: CatalogOptions): AstroIntegration {
       "astro:server:start": async (params) => {
         await inner?.hooks["astro:server:start"]?.(params);
       },
-      "astro:build:done": ({ dir }) => {
+      "astro:build:done": ({ dir, assets }) => {
         const out = fileURLToPath(dir);
+        // A page of the repository's own under the catalog's path carries noindex too.
+        const under = atRoot ? "" : "catalog/";
+        for (const [pattern, urls] of assets) {
+          if (!pageRoutes.has(pattern)) continue;
+          for (const url of urls) {
+            const page = url.pathname.slice(dir.pathname.length);
+            if (!page.endsWith(".html") || !page.startsWith(under)) continue;
+            const file = fileURLToPath(url);
+            const html = readFileSync(file, "utf8");
+            const head = html.slice(0, html.search(/<\/head>/i));
+            if (/<meta\s[^>]*\bname\s*=\s*["']?robots["'\s/>]/i.test(head)) continue;
+            const tagged = html.replace(/<head\b[^>]*>/i, `$&${NOINDEX}`);
+            if (tagged === html) throw new Error(`catalog: ${page} has no <head> for its noindex`);
+            writeFileSync(file, tagged);
+          }
+        }
         // The catalog lived under /catalog/ until v2.0.0: each of its published pages forwards.
         if (atRoot && !mounted)
           for (const page of globSync(["index.html", "{dashboard,stories}/**/index.html"], {
@@ -382,7 +410,7 @@ export function catalog(options: CatalogOptions): AstroIntegration {
             mkdirSync(dirname(stub), { recursive: true });
             writeFileSync(
               stub,
-              `<!doctype html><meta charset="utf-8"><title>Moved</title><meta name="robots" content="noindex"><link rel="canonical" href="${to}"><meta http-equiv="refresh" content="0; url=${to}"><script>location.replace(${JSON.stringify(to)}+location.search+location.hash)</script><a href="${to}">${to}</a>\n`,
+              `<!doctype html><meta charset="utf-8"><title>Moved</title>${NOINDEX}<link rel="canonical" href="${to}"><meta http-equiv="refresh" content="0; url=${to}"><script>location.replace(${JSON.stringify(to)}+location.search+location.hash)</script><a href="${to}">${to}</a>\n`,
             );
           }
         const pointers: string[] = [];
