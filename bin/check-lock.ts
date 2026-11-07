@@ -1,6 +1,6 @@
 #!/usr/bin/env bun
 
-import { spawnSync } from "node:child_process";
+import { type ChildProcess, spawn } from "node:child_process";
 import { createHash } from "node:crypto";
 import { linkSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { constants } from "node:os";
@@ -154,11 +154,23 @@ if (command.length === 0) {
 }
 
 // A signal's default action killed a waiter inside dropIfStale and left its claim for good once
-// the stale lock was gone. A handler defers the signal to the event loop, after the claim's
-// finally has removed it. Only for the wait: the run itself keeps the default actions.
-const SIGNALS = ["SIGINT", "SIGTERM", "SIGHUP"] as const;
-const stop = (signal: NodeJS.Signals): never => process.exit(128 + constants.signals[signal]);
-for (const signal of SIGNALS) process.on(signal, stop);
+// the stale lock was gone, and once the command runs it ended check-lock alone, so a build ran on
+// beside a lock whose dead holder read as stale. One handler serves both phases, leaving no gap:
+// while waiting it defers the signal to the event loop, after the claim's finally has removed it;
+// while running it passes the signal to the command, and a second one kills it.
+const SIGNALS = ["SIGINT", "SIGTERM", "SIGHUP", "SIGQUIT"] as const;
+let child: ChildProcess | undefined = undefined;
+let received: NodeJS.Signals | undefined;
+function onSignal(signal: NodeJS.Signals): void {
+  if (!child) process.exit(128 + constants.signals[signal]);
+  try {
+    process.kill(-child.pid!, received ? "SIGKILL" : signal);
+  } catch {
+    /* the group is already gone */
+  }
+  received ??= signal;
+}
+for (const signal of SIGNALS) process.on(signal, onSignal);
 let held = false;
 try {
   if (process.env.SCAFFOLDING_LOCKED !== LOCK) held = await waitForLock();
@@ -167,7 +179,6 @@ try {
     `[check-lock] lock unusable (${String(error)}); running "${command.join(" ")}" unserialised`,
   );
 }
-for (const signal of SIGNALS) process.off(signal, stop);
 
 function release(): void {
   if (!held) return;
@@ -178,10 +189,26 @@ function release(): void {
   }
 }
 
-const result = spawnSync(command[0], command.slice(1), {
+// Passing the signal to the command alone was not enough: `sh -c 'cd catalog && astro build'` died
+// and left the build running. So the command runs in its own process group (detached, which also
+// gives up the terminal: opening /dev/tty fails), the handler signals that group, and after a
+// signal the lock is released once the group is empty.
+const spawned = spawn(command[0], command.slice(1), {
   stdio: "inherit",
   env: { ...process.env, SCAFFOLDING_LOCKED: LOCK },
+  detached: true,
 });
+child = spawned;
+const result = await new Promise<{
+  status: number | null;
+  signal: NodeJS.Signals | null;
+  error?: Error;
+}>((done) => {
+  spawned.on("error", (error) => done({ status: null, signal: null, error }));
+  spawned.on("exit", (status, signal) => done({ status, signal }));
+});
+// Only after a signal: a command that exits on its own may leave a process behind on purpose.
+while (received && running(-spawned.pid!)) await sleep(100);
 release();
 if (result.error)
   console.log(`[check-lock] ${command.join(" ")} did not start: ${result.error.message}`);
@@ -190,6 +217,11 @@ else if (result.status !== 0) {
   console.log(
     `[check-lock] ${command.join(" ")} failed (${cause}). Its own output above says why.`,
   );
+}
+// Dying by the signal tells the calling shell it was an interrupt, so a loop of builds stops.
+if (received) {
+  process.removeAllListeners(received);
+  process.kill(process.pid, received);
 }
 // A signalled child reports a null status, and exiting 0 there would hide a killed gate.
 process.exit(result.status ?? 1);

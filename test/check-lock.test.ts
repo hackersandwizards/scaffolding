@@ -292,6 +292,51 @@ describe("check-lock wraps a consumer's build", () => {
     expect(result.stdout).not.toContain("built");
   }, 30_000);
 
+  // Killing check-lock alone left the build running beside a lock whose dead holder read as stale,
+  // and a terminal's Ctrl-C ended check-lock before a build still shutting down had exited.
+  for (const [how, signal, group] of [
+    ["a kill of check-lock alone", "SIGTERM", false],
+    ["a Ctrl-C to the whole process group", "SIGINT", true],
+  ] as const)
+    it(`holds the lock until the build has exited after ${how}`, async () => {
+      const lock = lockPath();
+      const pidFile = `${lock}.child`;
+      // The build sits under a shell, as in `check-lock sh -c 'cd catalog && astro build'`, and
+      // takes a second to shut down. The trailing `:` keeps a shell that execs its last command.
+      const build = `echo $$ > ${pidFile}; trap 'sleep 1; exit 1' INT TERM; while :; do sleep 0.1; done`;
+      const wrapped = ["sh", "-c", 'cd . && sh -c "$1"; :', "sh", build];
+      const check = spawn("bun", [SCRIPT, ...wrapped], {
+        env: { ...process.env, CHECK_LOCK: lock },
+        stdio: "ignore",
+        detached: group,
+      });
+      const finished = new Promise<NodeJS.Signals | null>((go) =>
+        check.on("close", (_, how) => go(how)),
+      );
+      await until(() => existsSync(pidFile) && readFileSync(pidFile, "utf8").endsWith("\n"), 5_000);
+      const child = Number(readFileSync(pidFile, "utf8"));
+      process.kill(group ? -check.pid! : check.pid!, signal);
+      // A regression must fail here, not hang the run or leave the build behind.
+      const died = await Promise.race([finished, Bun.sleep(10_000).then(() => "hung")]);
+      const alive = (() => {
+        try {
+          process.kill(child, 0);
+          return true;
+        } catch {
+          return false;
+        }
+      })();
+      for (const pid of [check.pid!, child])
+        try {
+          process.kill(pid, "SIGKILL");
+        } catch {
+          /* already gone */
+        }
+      expect(alive).toBe(false);
+      expect(died).toBe(signal);
+      expect(existsSync(lock)).toBe(false);
+    }, 30_000);
+
   it("names a command that cannot start", () => {
     const result = run(lockPath(), ["no-such-command-here"]);
     expect(result.status).toBe(1);
