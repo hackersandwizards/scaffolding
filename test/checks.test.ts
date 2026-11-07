@@ -1522,7 +1522,16 @@ describe("catalog", () => {
       join(pages, "raw.html.ts"),
       'export const GET = () => new Response("<html><head></head></html>");\n',
     );
+    // An endpoint whose page should not be indexed adds the shell's own tag.
+    writeFileSync(
+      join(pages, "tagged.html.ts"),
+      'import { NOINDEX } from "../../../../../catalog/robots.ts";\n' +
+        "export const GET = () => new Response(`<html><head>${NOINDEX}</head></html>`);\n",
+    );
     expect(build().status).toBe(0);
+    expect(readFileSync(join(dist, "tagged.html"), "utf8")).toBe(
+      '<html><head><meta name="robots" content="noindex"></head></html>',
+    );
     expect(page("own")).toContain('<head><meta name="robots" content="noindex"><title>');
     expect(page("kept")).not.toContain("noindex");
     expect(readFileSync(join(dist, "raw.html"), "utf8")).toBe("<html><head></head></html>");
@@ -1997,6 +2006,17 @@ describe("check-spaces", () => {
     expect(empty.code).toBe(0);
   });
 
+  test("passes where every Astro config turns compressHTML off; one on, or commented out, reads", () => {
+    const off = "export default {\n  compressHTML: false,\n};\n";
+    const code = (configs: Record<string, string>) =>
+      run(repo({ "src/A.astro": page, "package.json": "{}", ...configs }), "check-spaces").code;
+    expect(code({ "astro.config.mjs": off, "catalog/astro.config.ts": off })).toBe(0);
+    expect(
+      code({ "astro.config.mjs": off, "catalog/astro.config.ts": "export default {};\n" }),
+    ).toBe(1);
+    expect(code({ "astro.config.mts": "// compressHTML: false\nexport default {};\n" })).toBe(1);
+  });
+
   test("an allow entry keeps a flex case; a stale one is red", () => {
     const allowed = (text: string) =>
       repo({
@@ -2324,6 +2344,51 @@ describe("check-licenses", () => {
     expect(empty.out).toContain("run bun install");
     const bare = repo({ "package.json": JSON.stringify({ name: "fx" }) });
     expect(run(bare, "check-licenses").code).toBe(1);
+  });
+
+  test("a lock entry bun skips passes when nothing installed needs it, and is red when it is", () => {
+    // Tailwind's oxide-wasm32-wasi shape: "a" bundles its own "b", and the top-level "b" serves
+    // only "c", which this platform leaves out.
+    const mit = { version: "1.0.0", license: "MIT" };
+    const dir = repo({
+      "src/a/package.json": JSON.stringify({
+        name: "a",
+        ...mit,
+        dependencies: { b: "1.0.0" },
+        bundledDependencies: ["b"],
+      }),
+      "src/a/node_modules/b/package.json": JSON.stringify({ name: "b", ...mit }),
+      "src/b/package.json": JSON.stringify({ name: "b", ...mit }),
+      "src/c/package.json": JSON.stringify({ name: "c", ...mit, dependencies: { b: "1.0.0" } }),
+      "package.json": JSON.stringify({
+        name: "fx",
+        dependencies: { a: "file:./a-1.0.0.tgz" },
+        optionalDependencies: { c: "file:./c-1.0.0.tgz" },
+        overrides: { b: "file:./b-1.0.0.tgz" },
+      }),
+    });
+    for (const p of ["a", "b", "c"])
+      spawnSync(process.execPath, ["pm", "pack", "--destination", dir], {
+        cwd: join(dir, "src", p),
+      });
+    const bun = (args: string[]) =>
+      expect(spawnSync(process.execPath, args, { cwd: dir }).status).toBe(0);
+    bun(["install"]);
+    const lock = join(dir, "bun.lock");
+    const pinned = readFileSync(lock, "utf8").replace(
+      /("c": \["c@[^"]*", \{ "dependencies": \{ "b": "1\.0\.0" \})/,
+      '$1, "os": "none"',
+    );
+    expect(pinned).toContain('"os": "none"');
+    writeFileSync(lock, pinned);
+    rmSync(join(dir, "node_modules"), { recursive: true });
+    bun(["install", "--frozen-lockfile"]);
+    expect(existsSync(join(dir, "node_modules/b"))).toBe(false);
+    expect(run(dir, "check-licenses")).toEqual({ code: 0, out: "" });
+    rmSync(join(dir, "node_modules/a/node_modules/b"), { recursive: true });
+    const unbundled = run(dir, "check-licenses");
+    expect(unbundled.code).toBe(1);
+    expect(unbundled.out).toContain("a/b");
   });
 
   test("check-staged runs it when bun.lock or package.json is staged", () => {

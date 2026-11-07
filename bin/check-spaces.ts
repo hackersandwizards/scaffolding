@@ -1,10 +1,18 @@
 #!/usr/bin/env bun
 // Astro's default compressHTML drops a line break where text meets an inline tag, so "drawn by" on
 // one line and "<code>brand</code>" on the next render as "drawn bybrand". Prettier writes {" "}
-// where a space is meant; this finds the line breaks that still carry one.
+// where a space is meant; this finds the line breaks that still carry one. Where every Astro config
+// turns compressHTML off, every break renders as written and the check passes.
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
-import { applyAllow, finish, listFiles, repoRoot, type Finding } from "../lib/repo.ts";
+import {
+  applyAllow,
+  commentSyntax,
+  finish,
+  listFiles,
+  repoRoot,
+  type Finding,
+} from "../lib/repo.ts";
 
 // HTML's inline elements that sit in running text: compressHTML drops the break before each.
 const INLINE =
@@ -35,8 +43,16 @@ function template(text: string): string[] {
 
 const started = performance.now();
 const root = repoRoot();
+const files = listFiles(root, false);
+// The config names Astro looks for.
+const configs = files.filter((f) => /(?:^|\/)astro\.config\.m?[jt]s$/.test(f));
+const off = (config: string) =>
+  /\bcompressHTML\s*:\s*false\b/.test(
+    readFileSync(join(root, config), "utf8").replace(commentSyntax(config), "$1"),
+  );
+if (configs.length && configs.every(off)) finish("spaces", [], started);
 const found: Finding[] = [];
-for (const file of listFiles(root, false).filter((f) => f.endsWith(".astro"))) {
+for (const file of files.filter((f) => f.endsWith(".astro"))) {
   const lines = template(readFileSync(join(root, file), "utf8"));
   lines.forEach((line, i) => {
     const next = lines[i + 1] ?? "";

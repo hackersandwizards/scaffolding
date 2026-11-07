@@ -81,8 +81,8 @@ so a wrapped link carries a space inside its underline and a bare break before p
 a space. The template keeps compression on, and the step flags a line ending in text whose next line
 starts with an inline tag, and an inline closing tag whose next line starts with a word; the fix is
 the `{" "}` prettier itself writes, or joining the lines. A break no space belongs in, such as an
-icon in a flex row, gets an allow entry with `text`; a repository with `compressHTML: false` skips
-the step with that reason.
+icon in a flex row, gets an allow entry with `text`. Where every `astro.config.*` in the repository
+sets `compressHTML: false`, the step passes, and it reads the files again once one turns it back on.
 
 **History.** What a package ships is public wherever a consumer serves or bundles it, so a comment
 in a shipped file says how to use the code and why, and the history behind it goes to the commit
@@ -250,7 +250,8 @@ Every catalog page carries `<meta name="robots" content="noindex">` and the `lea
 after `<head>`, to the repository's own pages under the catalog's path too: every page of the site
 where the catalog is its home, else every page under `/catalog/`. A page with a robots tag of its
 own keeps it, a page without `<head>` fails the build, and a file an endpoint writes, such as a
-mail as sent, stays as written. Every page but a state alone
+mail as sent, stays as written; an endpoint that wants the tag imports it as `NOINDEX` from
+`@hackersandwizards/scaffolding/catalog/robots.ts`. Every page but a state alone
 carries `data-hw-night`, so brand's `night.css` turns it under the theme toggle while a tile's
 preview keeps its own theme. The shell's own card and pill on the home carry `data-hw-shell`, for a
 check of the repository's elements to skip.
@@ -325,7 +326,10 @@ PSF-2.0, Unlicense, Zlib, WTFPL, OFL-1.1, MPL-2.0. In an SPDX expression an `OR`
 side does, an `AND` only when every side does, and `WITH` keeps the base licence, so
 `(MIT OR GPL-3.0-or-later)` passes and `Apache-2.0 AND LGPL-3.0-or-later` fails. A licence string
 that is not an expression (`Unknown`, `SEE LICENSE IN LICENSE`, a URL) fails. A bun error, output
-that is not the expected JSON, or no package listed fails with "run bun install".
+that is not the expected JSON, or no package listed fails with "run bun install". So does bun's
+warning that `bun.lock` entries are not installed, unless no installed package and no workspace
+needs one: Tailwind's `@tailwindcss/oxide-wasm32-wasi` uses its bundled copies, and the top-level
+entries bun skips serve only packages left out on this platform.
 
 Shipped exceptions, which may match nothing: `@hackersandwizards/*` (our own packages) and sharp's
 LGPL libvips builds (`@img/sharp-libvips-*`, `@img/sharp-win32-*`, `@img/sharp-wasm32`, each with

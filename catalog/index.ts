@@ -18,6 +18,7 @@ import { createRequire } from "node:module";
 import { basename, dirname, join, posix, relative } from "node:path";
 import { fileURLToPath } from "node:url";
 import { catalogPath, storiesDir } from "./path.ts";
+import { NOINDEX } from "./robots.ts";
 
 export { renderCatalog } from "./render.ts";
 export type { CatalogData, CatalogGroup, CatalogItem } from "./render.ts";
@@ -83,7 +84,6 @@ const BRAND_HEADER = {
   // night.css turns the header under the data-hw-night that Head.astro sets.
   css: ["@hackersandwizards/brand/header.css", "@hackersandwizards/brand/night.css"],
 };
-const NOINDEX = '<meta name="robots" content="noindex">';
 const OPTIONS = "virtual:scaffolding/catalog";
 const HEADER = "virtual:scaffolding/catalog-header";
 const HEAD = "virtual:scaffolding/catalog-head";
