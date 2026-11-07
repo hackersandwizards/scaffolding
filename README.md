@@ -152,7 +152,11 @@ The home is the catalog's one index: its rail names every file under its group's
 the groups alone, as chips) and its tiles draw each file. A page that opens an entry in place marks
 that entry's rail name, and only it, with `aria-current`; the shell draws it with an accent wash and
 edge, darkens its group's label and, on a phone, marks the group's chip. A group's label never takes
-a fill of its own. Astrobook draws each state, its sidebar
+a fill of its own. While the home scrolls, the shell's script marks the label of the group being read
+with `aria-current="true"`, drawn in the accent with the same edge: the last group whose top has
+passed a third of the window, or the last group once its end shows. The rail's names scroll under
+the search to keep that label in view; a mark another script set stays. Without script nothing is
+marked. Astrobook draws each state, its sidebar
 hidden on every page. A state's page carries a bar instead: back to the home, the file's folder and name, the
 theme toggle, a link to the state alone, and the states: previous and next, with the left and right
 arrow keys too, the position ("10 of 38"), and between them a link per state, or above 12 states a
@@ -190,7 +194,9 @@ The options beyond those above:
 - `previewStates`: the states a tile draws and links first, each the story's export name in kebab
   case, such as `["light", "loaded-dark"]` for `Light` and `LoadedDark`.
 - `head`: the repository's own `<head>` component, rendered on every page.
-- `header`: default brand's `AppHeader` and `header.css`.
+- `header`: default brand's `AppHeader`, `header.css` and `night.css`. Whatever the `nav` slot
+  holds sits in one `hw-header-nav` group at the bar's right, after the admin link; a `nav` of class
+  `hw-header-nav` passed there lays its items into that group.
 - `home`: a page of the repository that renders `Home.astro`, its foundations in the default slot
   and a control such as a theme toggle in the `nav` slot. The running text above the tiles takes
   the lead's measure (48rem) and leading (1.5), unless a class of the repository's sets its own: a

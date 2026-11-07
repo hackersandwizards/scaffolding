@@ -18,11 +18,18 @@
     color: var(--hw-cat-fg);
     font-family: var(--font-sans);
   }
+  /* The names scroll under the search, which stays in view. Short of the grid's bottom padding
+     too, so the rail never slides up under the header at the page's end. */
   .hw-catalogue-rail {
     position: sticky;
     top: calc(var(--spacing-app-header, 4rem) + 1.5rem);
+    display: flex;
+    flex-direction: column;
     align-self: start;
-    max-height: calc(100vh - var(--spacing-app-header, 4rem) - 3rem);
+    max-height: calc(100vh - var(--spacing-app-header, 4rem) - 4.5rem);
+  }
+  .hw-catalogue-rail > nav {
+    min-height: 0;
     overflow-y: auto;
   }
   .hw-catalogue-search {
@@ -94,6 +101,13 @@
     .hw-catalogue-rail > nav > ul > li > a:hover,
     .hw-catalogue-rail > nav > ul > li:has(a[aria-current]) > a {
       color: var(--hw-cat-fg);
+    }
+    /* The group read now, which the shell's script marks with aria-current="true": the label in
+       the accent with the open entry's edge, unfilled. */
+    .hw-catalogue-rail > nav > ul > li:has(> a[aria-current="true"]) > a {
+      border-radius: 0;
+      box-shadow: inset 3px 0 var(--hw-cat-accent);
+      color: var(--hw-cat-accent);
     }
     .hw-catalogue-rail > nav > ul > li > a .hw-catalogue-count {
       display: none;
@@ -217,7 +231,8 @@
     .hw-catalogue {
       grid-template-columns: minmax(0, 1fr);
     }
-    .hw-catalogue-rail {
+    .hw-catalogue-rail,
+    .hw-catalogue-rail > nav {
       position: static;
       max-height: none;
       overflow: visible;
@@ -259,4 +274,10 @@
 /* Unlayered, since Astrobook's own styles are. */
 [data-astrobook-root][data-active-story=""] main {
   padding: 0;
+}
+
+/* Unlayered, as brand's header.css is: a nav a repository passes into Layout.astro's header group
+   lays its items into that group, so the bar keeps one scrolling row. */
+.hw-header-nav > .hw-header-nav {
+  display: contents;
 }

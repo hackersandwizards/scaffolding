@@ -1245,7 +1245,9 @@ describe("catalog", () => {
     expect(r.status).toBe(0);
     // No page of its own at pages/index: the catalog is the site's home.
     const home = readFileSync(join(dist, "index.html"), "utf8");
-    expect(home).toContain('<header class="fx-header"><a href="/">Fx</a></header>');
+    expect(home).toContain(
+      '<header class="fx-header"><a href="/">Fx</a><div class="hw-header-nav"></div></header>',
+    );
     expect(home).toContain("fx catalog/stories · 3 components · 24 states");
     // The admin hub serves only on this machine: a built page carries no link to it.
     expect(home).not.toContain("admin.localhost");
@@ -1368,7 +1370,9 @@ describe("catalog", () => {
     // A project Pages site sets Astro's base: the links and the header's default follow it.
     expect(build(["--base", "/fx"]).status).toBe(0);
     const based = readFileSync(join(dist, "index.html"), "utf8");
-    expect(based).toContain('<header class="fx-header"><a href="/fx/">Fx</a></header>');
+    expect(based).toContain(
+      '<header class="fx-header"><a href="/fx/">Fx</a><div class="hw-header-nav"></div></header>',
+    );
     expect(based).toContain('src="/fx/stories/Types/box-types/two"');
     expect(page("catalog/stories/Types/box-types/two")).toContain(
       'url=/fx/stories/Types/box-types/two/"',

@@ -10,17 +10,16 @@ const intro = Astro.slots.has("default") ? await Astro.slots.render("default") :
 ---
 
 <Header product={product} href={href}>
-  {/* One group at the bar's right, the link first: the header spreads its children apart. A div,
-  so the repository's own nav items keep their landmark. */}
-  {admin ? (
-    <div class="hw-header-nav">
+  {/* One group at the bar's right, the admin link first: the header spreads its children apart.
+  A div, so a nav the repository passes keeps its landmark; catalog.css lays that nav's items into
+  this row. */}
+  <div class="hw-header-nav">
+    {admin && (
       <a class="hw-header-link" href={admin}>
         <span aria-hidden="true">←&nbsp;</span>Admin hub
       </a>
-      <slot name="nav" />
-    </div>
-  ) : (
+    )}
     <slot name="nav" />
-  )}
+  </div>
 </Header>
 <Fragment set:html={renderCatalog({ ...data, intro })} />

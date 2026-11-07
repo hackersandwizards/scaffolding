@@ -76,7 +76,8 @@ export type CatalogOptions = {
 
 const BRAND_HEADER = {
   component: "@hackersandwizards/brand/expert/components/AppHeader.astro",
-  css: ["@hackersandwizards/brand/header.css"],
+  // night.css turns the header under the data-hw-night that Head.astro sets.
+  css: ["@hackersandwizards/brand/header.css", "@hackersandwizards/brand/night.css"],
 };
 const OPTIONS = "virtual:scaffolding/catalog";
 const HEADER = "virtual:scaffolding/catalog-header";

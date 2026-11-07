@@ -74,8 +74,12 @@ const catalogTile = (item: CatalogItem, group: string) =>
 // empty; draws each sized frame whole at its tile's width, and centres every other frame's content
 // on the content's own ground, shrunk where it is taller than the tile and measured afresh each
 // time, so a refit never shrinks it again, as Storybook's "centered"
-// layout does. Delegated on the document, so it holds across Astro's
-// client router swaps and runs once.
+// layout does. Marks the rail's label of the group read now with aria-current="true": the last
+// group whose top has passed a third of the viewport, the last group once its end shows; a mark
+// another script set, such as "page", stays. The rail's names scroll, never the page, to keep that
+// label in view. Delegated on the document, scroll caught in the capture phase since Astrobook
+// scrolls <main> rather than the window, so it holds across Astro's client router swaps and runs
+// once.
 const SCRIPT = `<script>(()=>{
 const fit=(p)=>{const f=p.firstElementChild;if(!(f instanceof HTMLIFrameElement))return;
 if(p.dataset.frameWidth){f.style.transform="scale("+p.clientWidth/p.dataset.frameWidth+")";return;}
@@ -87,8 +91,16 @@ f.style.transform="translate("+((p.clientWidth-r.width*s)/2-r.left*s)+"px,"+((p.
 const ground=[c,m,d.body,d.documentElement].map((e)=>d.defaultView.getComputedStyle(e).backgroundColor).find((b)=>!/^(transparent|rgba\\(.*, 0\\))$/.test(b));
 if(ground)p.style.background=ground;};
 const all=()=>document.querySelectorAll(".hw-catalogue-preview").forEach(fit);all();
+const spy=()=>{for(const root of document.querySelectorAll(".hw-catalogue")){
+const groups=[...root.querySelectorAll(".hw-catalogue-group")].filter((g)=>g.getClientRects().length),last=groups.at(-1);
+let on=groups.findLast((g)=>g.getBoundingClientRect().top<=innerHeight/3);if(on&&last.getBoundingClientRect().bottom<=innerHeight)on=last;
+for(const a of root.querySelectorAll(".hw-catalogue-rail > nav > ul > li > a")){const mine=on&&a.getAttribute("href")==="#"+on.id,was=a.getAttribute("aria-current");
+if(mine&&!was){a.setAttribute("aria-current","true");const box=a.closest("nav"),r=a.getBoundingClientRect(),b=box.getBoundingClientRect();if(r.top<b.top||r.bottom>b.bottom)box.scrollTop+=r.top-b.top-8;}
+else if(!mine&&was==="true")a.removeAttribute("aria-current");}}};spy();
 if(window.hwCatalogue)return;window.hwCatalogue=1;
-let frame=0;addEventListener("resize",()=>{cancelAnimationFrame(frame);frame=requestAnimationFrame(all);});document.addEventListener("astro:page-load",all);
+let frame=0,tick=0;const later=()=>{cancelAnimationFrame(tick);tick=requestAnimationFrame(spy);};
+addEventListener("resize",()=>{cancelAnimationFrame(frame);frame=requestAnimationFrame(all);later();});document.addEventListener("astro:page-load",()=>{all();spy();});
+document.addEventListener("scroll",later,{capture:true,passive:true});document.addEventListener("input",later);
 document.addEventListener("load",(e)=>{const p=e.target.parentElement;if(e.target instanceof HTMLIFrameElement&&p&&p.matches(".hw-catalogue-preview")){fit(p);e.target.contentDocument?.fonts?.ready.then(()=>fit(p));}},true);
 document.addEventListener("input",(e)=>{const f=e.target;if(!(f instanceof HTMLInputElement)||!f.matches(".hw-catalogue-search"))return;
 const q=f.value.trim().toLowerCase().split(/\\s+/);const root=f.closest(".hw-catalogue");
