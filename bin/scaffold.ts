@@ -106,7 +106,9 @@ const company = (repo: string, tag: string) => [
   `github:hackersandwizards/${repo}#${tag}`,
 ];
 // The eslint plugins come with this package, so only the tools themselves are pinned here.
-const tools = ["@types/bun", "eslint", "prettier", "typescript"];
+// `typescript` is the TypeScript 6 API that typescript-eslint and check-unique-names import;
+// `@typescript/native` brings `tsc` 7.
+const tools = ["@types/bun", "@typescript/native", "eslint", "prettier", "typescript"];
 if (!catalogIn) tools.push("astro", "astrobook", "stylelint");
 // Set here, not in the template: there it would govern this package's own template files with a
 // package that only resolves in a repository that installs it.
