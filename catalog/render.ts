@@ -19,7 +19,9 @@ export type CatalogItem = {
   html?: string;
 };
 
-export type CatalogGroup = { name: string; items: CatalogItem[] };
+/** A group of tiles, or with `html` a group of trusted markup, such as the system's foundations,
+ * shown while the search is empty. */
+export type CatalogGroup = { name: string; items: CatalogItem[]; html?: string };
 
 export type CatalogData = {
   title: string;
@@ -28,7 +30,7 @@ export type CatalogData = {
    * entries the page holds, in words ("26 components"): the title carries no count. */
   provenance: string;
   groups: CatalogGroup[];
-  /** Markup between the provenance line and the first group, trusted: the system's foundations. */
+  /** Markup between the provenance line and the first group, trusted. */
   intro?: string;
   /** The rail's words, English unless the page passes its own. */
   labels?: { search?: string; groups?: string };
@@ -71,17 +73,17 @@ const catalogTile = (item: CatalogItem, group: string) =>
   }${item.pill ? `<span class="hw-pill" data-tone="neutral" data-hw-shell>${escapeCatalog(item.pill)}</span>` : ""}</a></li>`;
 
 // Filters the tiles and the rail's names by every word in the search field and hides a group left
-// empty; draws each sized frame whole at its tile's width, and centres every other frame's content
-// on the content's own ground, shrunk where it is taller than the tile and measured afresh each
-// time, so a refit never shrinks it again, as Storybook's "centered"
-// layout does. Marks the rail's label of the group read now with aria-current="true": the last
-// group whose top has passed a third of the viewport; once one has, and the last group's end
-// shows, the group the address names where its top shows, else the last group, so a click on a
-// group the page cannot scroll up to that third marks that group; a mark another script set, such
-// as "page", stays. The rail's names scroll, never the page, to keep that
-// label in view. Delegated on the document, scroll caught in the capture phase since Astrobook
-// scrolls <main> rather than the window, so it holds across Astro's client router swaps and runs
-// once.
+// empty, a group of markup while the field holds a word; draws each sized frame whole at its
+// tile's width, and centres every other frame's content on the content's own ground, shrunk where
+// it is taller than the tile and measured afresh each time, so a refit never shrinks it again, as
+// Storybook's "centered" layout does. Marks the rail's label of the group read now with
+// aria-current="true": the last group whose top has passed a third of the viewport; once one has
+// and the page can scroll no further, the group the address names where its top shows, else, once
+// the page has scrolled, the last group, so a click on a group the page cannot scroll up to that
+// third marks that group; a mark another script set, such as "page", stays. The rail's names
+// scroll, never the page, to keep that label in view. Delegated on the document, scroll caught in
+// the capture phase since Astrobook scrolls <main> rather than the window, so it holds across
+// Astro's client router swaps and runs once.
 const SCRIPT = `<script>(()=>{
 const fit=(p)=>{const f=p.firstElementChild;if(!(f instanceof HTMLIFrameElement))return;
 if(p.dataset.frameWidth){f.style.transform="scale("+p.clientWidth/p.dataset.frameWidth+")";return;}
@@ -96,7 +98,8 @@ const all=()=>document.querySelectorAll(".hw-catalogue-preview").forEach(fit);al
 const spy=()=>{for(const root of document.querySelectorAll(".hw-catalogue")){
 const groups=[...root.querySelectorAll(".hw-catalogue-group")].filter((g)=>g.getClientRects().length),last=groups.at(-1);
 let on=groups.findLast((g)=>g.getBoundingClientRect().top<=innerHeight/3);
-if(on&&last.getBoundingClientRect().bottom<=innerHeight){const hit=groups.find((g)=>"#"+encodeURIComponent(g.id)===location.hash);on=hit&&hit.getBoundingClientRect().top>=0?hit:last;}
+const m=document.querySelector("main"),s=m&&m.scrollHeight>m.clientHeight?m:document.scrollingElement;
+if(on&&s.scrollTop+s.clientHeight>=s.scrollHeight-1){const hit=groups.find((g)=>"#"+encodeURIComponent(g.id)===location.hash);if(hit&&hit.getBoundingClientRect().top>=0)on=hit;else if(s.scrollTop>0)on=last;}
 for(const a of root.querySelectorAll(".hw-catalogue-rail > nav > ul > li > a")){const mine=on&&a.getAttribute("href")==="#"+on.id,was=a.getAttribute("aria-current");
 if(mine&&!was){const box=a.closest("nav"),r=a.getBoundingClientRect(),b=box.getBoundingClientRect();a.setAttribute("aria-current","true");if(r.top<b.top||r.bottom>b.bottom)box.scrollTop+=r.top-b.top-8;}
 else if(!mine&&was==="true")a.removeAttribute("aria-current");}}};spy();
@@ -106,25 +109,27 @@ addEventListener("resize",()=>{cancelAnimationFrame(frame);frame=requestAnimatio
 document.addEventListener("scroll",later,{capture:true,passive:true});
 document.addEventListener("load",(e)=>{const p=e.target.parentElement;if(e.target instanceof HTMLIFrameElement&&p&&p.matches(".hw-catalogue-preview")){fit(p);e.target.contentDocument?.fonts?.ready.then(()=>fit(p));}},true);
 document.addEventListener("input",(e)=>{const f=e.target;if(!(f instanceof HTMLInputElement)||!f.matches(".hw-catalogue-search"))return;
-const q=f.value.trim().toLowerCase().split(/\\s+/);const root=f.closest(".hw-catalogue");
+const q=f.value.trim().toLowerCase().split(/\\s+/);const typed=q.join("")!=="";const root=f.closest(".hw-catalogue");
 for(const g of root.querySelectorAll(".hw-catalogue-group")){let n=0;const link=root.querySelector('.hw-catalogue-rail a[href="#'+g.id+'"]'),names=link?.nextElementSibling?.children??[];
 g.querySelectorAll(".hw-catalogue-tile").forEach((t,i)=>{const hit=q.every((w)=>t.dataset.search.includes(w));t.parentElement.hidden=!hit;if(names[i])names[i].hidden=!hit;if(hit)n++;});
-g.hidden=n===0;if(link)link.parentElement.hidden=n===0;}later();});
+const off=n===0&&typed;g.hidden=off;if(link)link.parentElement.hidden=off;}later();});
 })();</script>`;
 
 export function renderCatalog(data: CatalogData): string {
   const { search = "Search", groups: groupsLabel = "Groups" } = data.labels ?? {};
-  const groups = data.groups.filter((g) => g.items.length > 0);
+  const groups = data.groups.filter((g) => g.items.length > 0 || g.html !== undefined);
+  const count = (g: CatalogGroup) =>
+    g.items.length ? `<span class="hw-catalogue-count">${g.items.length}</span>` : "";
   const rail = groups
     .map(
       (g) =>
-        `<li><a href="#${anchorOf(g.name)}"><span>${escapeCatalog(g.name)}</span><span class="hw-catalogue-count">${g.items.length}</span></a><ul class="hw-catalogue-names">${g.items.map((i) => `<li><a href="${escapeCatalog(i.href)}">${escapeCatalog(i.name)}</a></li>`).join("")}</ul></li>`,
+        `<li><a href="#${anchorOf(g.name)}"><span>${escapeCatalog(g.name)}</span>${count(g)}</a>${g.html === undefined ? `<ul class="hw-catalogue-names">${g.items.map((i) => `<li><a href="${escapeCatalog(i.href)}">${escapeCatalog(i.name)}</a></li>`).join("")}</ul>` : ""}</li>`,
     )
     .join("");
   const sections = groups
     .map(
       (g) =>
-        `<section class="hw-catalogue-group" id="${anchorOf(g.name)}"><h2>${escapeCatalog(g.name)} <span class="hw-catalogue-count">${g.items.length}</span></h2><ul class="hw-catalogue-grid">${g.items.map((i) => catalogTile(i, g.name)).join("")}</ul></section>`,
+        `<section class="hw-catalogue-group" id="${anchorOf(g.name)}"><h2>${[escapeCatalog(g.name), count(g)].filter(Boolean).join(" ")}</h2>${g.html === undefined ? `<ul class="hw-catalogue-grid">${g.items.map((i) => catalogTile(i, g.name)).join("")}</ul>` : `<div class="hw-catalogue-text">${g.html}</div>`}</section>`,
     )
     .join("");
   return `<div class="hw-catalogue hw-container"><aside class="hw-catalogue-rail"><input class="hw-catalogue-search" type="search" placeholder="${escapeCatalog(search)}" aria-label="${escapeCatalog(search)}"><nav aria-label="${escapeCatalog(groupsLabel)}"><ul>${rail}</ul></nav></aside><div class="hw-catalogue-main"><h1>${escapeCatalog(data.title)}</h1><p class="hw-catalogue-lead">${escapeCatalog(data.lead)}</p><p class="hw-catalogue-provenance">${escapeCatalog(data.provenance)}</p>${data.intro ?? ""}${sections}</div></div>${SCRIPT}`;

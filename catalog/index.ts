@@ -50,7 +50,9 @@ export type CatalogOptions = {
   href?: string;
   /** The header's nav on every page but a state alone, such as brand's catalogs.json: an href
    * starting with "/" counts from Astro's `base`, and the item named `current` links to this
-   * catalog's home and carries aria-current; a `current` naming no item fails the build. */
+   * catalog's home and carries aria-current; a `current` naming no item fails the build. Without
+   * it, brand's catalogs.json where the repository resolves @hackersandwizards/brand, the item
+   * named `product` current. */
   nav?: { items: { name: string; href: string }[]; current?: string };
   /** Under `astro dev`, a header link to the repository's page in the local admin hub,
    * http://admin.localhost:4329/<repo>/dashboard, the repo named as the hub names it. */
@@ -61,7 +63,8 @@ export type CatalogOptions = {
    * the shell's Head.astro. */
   head?: string;
   /** The repository's own home page, relative to the Astro root, rendering Home.astro with its
-   * foundations; without it the shell's Home.astro is the home. */
+   * foundations in the default slot, drawn after the tiles as the group "Foundations"; without it
+   * the shell's Home.astro is the home. */
   home?: string;
   /** An Astro component taking `product`, `href` and a default slot, and the CSS it needs;
    * a relative path counts from the Astro root. */
@@ -115,6 +118,24 @@ function installed(name: string, from: string): string | undefined {
     if (existsSync(file)) return JSON.parse(readFileSync(file, "utf8")).version;
     if (dirname(dir) === dir) return undefined;
   }
+}
+
+/** brand's list of catalogs as the header's nav, the one named `product` current; none where the
+ * repository cannot resolve it. */
+function brandNav(
+  require: ReturnType<typeof createRequire>,
+  product: string,
+): CatalogOptions["nav"] {
+  let items: { name: string; href: string }[];
+  try {
+    items = require("@hackersandwizards/brand/catalogs.json");
+  } catch (e) {
+    // Only a brand that is missing or older than the list leaves the header without it.
+    const code = (e as { code?: string }).code;
+    if (code === "MODULE_NOT_FOUND" || code === "ERR_PACKAGE_PATH_NOT_EXPORTED") return undefined;
+    throw e;
+  }
+  return { items, current: items.some(({ name }) => name === product) ? product : undefined };
 }
 
 const POINTER = "version https://git-lfs.github.com/spec/";
@@ -267,7 +288,7 @@ export function catalog(options: CatalogOptions): AstroIntegration {
         const header = options.header ?? BRAND_HEADER;
         // A relative specifier counts from the Astro root, as Astrobook reads `head` and `home`.
         const spec = (s: string) => JSON.stringify(s.startsWith(".") ? join(root, s) : s);
-        const nav = options.nav;
+        const nav = options.nav ?? brandNav(require, options.product);
         // A misspelt or renamed `current` would link this catalog's entry to the published site.
         if (nav?.current !== undefined && !nav.items.some(({ name }) => name === nav.current))
           throw new Error(`catalog nav: current "${nav.current}" names no item`);

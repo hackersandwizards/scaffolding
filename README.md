@@ -7,7 +7,7 @@ shell of its catalog.
 To work on the package itself, see [Developing the package](#developing-the-package).
 
 ```sh
-bun add -d github:hackersandwizards/scaffolding#v2.11.4
+bun add -d github:hackersandwizards/scaffolding#v2.19.0
 ```
 
 Requirements: bun 1.3 or newer, gitleaks (`brew install gitleaks`), `pdftotext` from poppler, and
@@ -213,13 +213,16 @@ The options beyond those above:
   `current` links to the catalog's home and carries `aria-current`: `"page"` on the home, `"true"`
   on a state's page, whose header stays above the scrolling story. A `current` that names no item
   fails the build. The links render as brand's catalog list does (`hw-header-link` in a
-  `nav.hw-header-nav` with `data-hw-catalogs`).
+  `nav.hw-header-nav` with `data-hw-catalogs`). Without `nav`, the header lists brand's
+  `catalogs.json` where the repository resolves `@hackersandwizards/brand`, the item named as
+  `product` current; a catalog the list leaves out marks none.
 - `home`: a page of the repository that renders `Home.astro`, its foundations in the default slot
-  and a control such as a theme toggle in the `nav` slot. The running text above the tiles takes
+  and a control such as a theme toggle in the `nav` slot. Every home opens on the tiles: the slot
+  draws after the last group as the group "Foundations", the rail's last entry, hidden while the
+  search holds a word. Its own headings start at `h3`, under that group's `h2`. Its running text takes
   the lead's measure (48rem) and leading (1.5), unless a class of the repository's sets its own: a
   paragraph of the slot, of a wrapper element in it, or of a `details` or `section` in that
-  wrapper. A paragraph deeper down, in the slot's own grid or tile, keeps its width. How long the slot's text runs is the repository's: each line it adds
-  pushes the first tiles down.
+  wrapper. A paragraph deeper down, in the slot's own grid or tile, keeps its width.
 - `copy`: files the built pages reach by a relative path rather than through Vite. A glob, relative
   to the repository, lands each match in the build at the same path. A package path of a package
   the repository declares, or of its own, such as `@hackersandwizards/brand/logos/avatar-512.png`,
@@ -409,7 +412,7 @@ publishes `dist/`. The caller, `.github/workflows/pages.yml`, is owned: where it
 ```yaml
 jobs:
   pages:
-    uses: hackersandwizards/scaffolding/.github/workflows/pages.yml@v2.3.0
+    uses: hackersandwizards/scaffolding/.github/workflows/pages.yml@v2.19.0
     permissions:
       contents: read
       pages: write

@@ -137,15 +137,15 @@
     font-size: var(--text-page, 1.5rem);
     line-height: 1.25;
   }
-  /* The running text above the tiles at one measure and leading: a paragraph of the main, of a
-     wrapper the home's slot puts there, or of a details or section in that wrapper. A paragraph
-     deeper down sits in a repository's own grid or tile and keeps its width. At no specificity,
-     so a class in this layer or unlayered wins. The provenance line reads in the sans at the UI
-     size. */
+  /* The running text at one measure and leading: a paragraph of the main or of a group of markup,
+     such as the foundations, of a wrapper the home's slot puts there, or of a details or section in that
+     wrapper. A paragraph deeper down sits in a repository's own grid or tile and keeps its width.
+     At no specificity, so a class in this layer or unlayered wins. The provenance line reads in
+     the sans at the UI size. */
   :where(
-    .hw-catalogue-main > p,
-    .hw-catalogue-main > :not(section) > p,
-    .hw-catalogue-main > :not(section) > :is(details, section) > p
+    :is(.hw-catalogue-main, .hw-catalogue-text) > p,
+    :is(.hw-catalogue-main, .hw-catalogue-text) > :not(section) > p,
+    :is(.hw-catalogue-main, .hw-catalogue-text) > :not(section) > :is(details, section) > p
   ) {
     max-width: 48rem;
     line-height: 1.5;
@@ -163,7 +163,7 @@
     margin-top: 2.5rem;
     scroll-margin-top: calc(var(--spacing-app-header, 4rem) + 1rem);
   }
-  .hw-catalogue-group h2 {
+  .hw-catalogue-group > h2 {
     margin: 0 0 1rem;
     font-family: var(--font-mono);
     font-size: var(--text-heading, 1.25rem);

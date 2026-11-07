@@ -1523,6 +1523,27 @@ describe("catalog", () => {
       'catalog nav: current "Fxx" names no item',
     );
     rmSync(misnamed);
+    // Without `nav`, the header lists brand's catalogs.json, the one named as `product` current.
+    const brand = join(fixture, "node_modules", "@hackersandwizards", "brand");
+    const navless = join(fixture, "catalog", "navless.config.mjs");
+    made.push(join(fixture, "node_modules"), navless);
+    write(brand, {
+      "package.json": JSON.stringify({ exports: { "./catalogs.json": "./expert/catalogs.json" } }),
+      "expert/catalogs.json": JSON.stringify([
+        { name: "Other", href: "https://example.com/other/" },
+        { name: "Fx", href: "https://example.com/fx/" },
+      ]),
+    });
+    writeFileSync(
+      navless,
+      'import config from "./astro.config.mjs";\nimport { catalog } from "../../../catalog/index.ts";\nexport default { ...config, integrations: [catalog({ product: "Fx", css: [], lead: "", header: { component: "./Header.astro" } })] };\n',
+    );
+    expect(build(["--config", "navless.config.mjs"]).status).toBe(0);
+    expect(readFileSync(join(dist, "index.html"), "utf8")).toContain(
+      '<nav class="hw-header-nav" aria-label="Main" data-hw-catalogs><a class="hw-header-link" href="https://example.com/other/">Other</a><a class="hw-header-link" href="/" aria-current="page">Fx</a></nav>',
+    );
+    rmSync(navless);
+    rmSync(join(fixture, "node_modules"), { recursive: true });
     // A page of the repository's own gets noindex where it has none; one with a robots tag of its
     // own and an endpoint's file stay as written.
     const src = join(fixture, "catalog", "src");
@@ -1704,6 +1725,25 @@ describe("catalog", () => {
       server.stop();
     }
   }, 90_000);
+
+  test("a group of markup draws it in place of tiles, without a count", async () => {
+    const { renderCatalog } = await import("../catalog/render.ts");
+    const html = renderCatalog({
+      title: "t",
+      lead: "l",
+      provenance: "p",
+      groups: [
+        { name: "Parts", items: [{ name: "x", href: "/x" }] },
+        { name: "Foundations", items: [], html: "<p>Tokens</p>" },
+      ],
+    });
+    expect(html).toContain(
+      '<li><a href="#foundations"><span>Foundations</span></a></li></ul></nav>',
+    );
+    expect(html).toContain(
+      '</section><section class="hw-catalogue-group" id="foundations"><h2>Foundations</h2><div class="hw-catalogue-text"><p>Tokens</p></div></section></div>',
+    );
+  });
 
   test("group anchors keep non-ASCII letters", async () => {
     const { renderCatalog } = await import("../catalog/render.ts");

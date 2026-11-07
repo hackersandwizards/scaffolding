@@ -6,10 +6,13 @@ import "./catalog.css";
 type Props = Omit<CatalogData, "intro"> & { product: string; href?: string; admin?: string };
 
 const { product, href, admin, ...data } = Astro.props;
-const intro = Astro.slots.has("default") ? await Astro.slots.render("default") : "";
+// The home's foundations follow the last group of tiles, as a group of their own.
+const groups = Astro.slots.has("default")
+  ? [...data.groups, { name: "Foundations", items: [], html: await Astro.slots.render("default") }]
+  : data.groups;
 ---
 
 <Top product={product} href={href} admin={admin} current="page">
   <slot name="nav" />
 </Top>
-<Fragment set:html={renderCatalog({ ...data, intro })} />
+<Fragment set:html={renderCatalog({ ...data, groups })} />
