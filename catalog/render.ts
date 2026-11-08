@@ -4,9 +4,10 @@
 export type CatalogItem = {
   name: string;
   href: string;
-  /** Words under the name, searched with it, the name without its spaces ("GridSlide") and the
-   * group's name. */
+  /** Words under the name, searched with it and the group's name. */
   note?: string;
+  /** Further words the search finds and the tile does not show, such as a story's file name. */
+  search?: string;
   /** A short count or kind in a neutral pill, such as "3 states". */
   pill?: string;
   /** A page drawn in the tile at three quarters, centred, loaded once the page has painted and the
@@ -65,7 +66,7 @@ const tilePreview = (item: CatalogItem) =>
 // data-hw-shell marks the shell's own brand elements, the tile's card and pill, which a check of the
 // repository's own elements skips.
 const catalogTile = (item: CatalogItem, group: string) =>
-  `<li><a class="hw-card hw-catalog-tile" data-hw-shell href="${escapeCatalog(item.href)}" data-search="${escapeCatalog(`${group} ${item.name} ${item.name.replace(/\s+/g, "")} ${item.note ?? ""}`.toLowerCase())}">${
+  `<li><a class="hw-card hw-catalog-tile" data-hw-shell href="${escapeCatalog(item.href)}" data-search="${escapeCatalog(`${group} ${item.name} ${item.note ?? ""} ${item.search ?? ""}`.toLowerCase())}">${
     item.frame || item.image || item.html
       ? `<span class="hw-catalog-preview"${
           item.frame && item.frameSize
@@ -84,7 +85,7 @@ const catalogTile = (item: CatalogItem, group: string) =>
 // all at once (Chrome's loading="lazy" loaded 30 of 40 frames up front). A hidden page, such as a
 // headless check's tab without focus, never paints and its observer never reports (0 of 39 tiles
 // in 10 s): with no first paint to protect and nobody scrolling, it loads every tile at once, so
-// a check reads them all; with data-srcdoc from the
+// a check reads them all. A frame with data-srcdoc draws from the
 // page's HTML, a <base> keeping its relative links. Draws each sized frame whole at its tile's
 // width, and centres every other frame's content, shrunk where it is taller than the tile and
 // measured afresh each time, so a refit never shrinks it again, as Storybook's "centered" layout
@@ -119,9 +120,9 @@ if(own&&!d.getElementById("hw-preview-only"))d.head.insertAdjacentHTML("beforeen
 const all=()=>document.querySelectorAll(".hw-catalog-preview").forEach(fit);all();
 const load=(f)=>{const u=f.dataset.src;if(!u)return;delete f.dataset.src;if(!f.hasAttribute("data-srcdoc")){f.src=u;return;}
 fetch(new URL(u,location.href)).then((r)=>r.ok&&r.text().then((h)=>{f.srcdoc=h.replace(/<head\b[^>]*>/i,'$&<base href="'+r.url+'">');})).catch(()=>{});};
-let started=0;const start=()=>{if(started++)return;const m=document.querySelector("main"),root=m&&m.scrollHeight>m.clientHeight?m:null;
+let started=0;const start=()=>{if(started++)return;const frames=document.querySelectorAll(".hw-catalog-preview iframe[data-src]");if(document.hidden){frames.forEach(load);return;}const m=document.querySelector("main"),root=m&&m.scrollHeight>m.clientHeight?m:null;
 const near=new IntersectionObserver((seen)=>{for(const e of seen)if(e.isIntersecting){near.unobserve(e.target);load(e.target);}},{root,rootMargin:"200px 0px"});
-document.querySelectorAll(".hw-catalog-preview iframe[data-src]").forEach((f)=>document.hidden?load(f):near.observe(f));};
+frames.forEach((f)=>near.observe(f));};
 if(document.hidden)start();
 if(PerformanceObserver.supportedEntryTypes?.includes("paint"))new PerformanceObserver((_,o)=>{o.disconnect();start();}).observe({type:"paint",buffered:true});
 addEventListener("load",()=>setTimeout(start,2000),{once:true});

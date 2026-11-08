@@ -10,13 +10,13 @@ const WORD =
 /** The name's words, the first capitalised. */
 export function wordsOf(name: string): string[] {
   const [first, ...rest] = name.match(WORD) ?? [name];
-  return [first[0].toUpperCase() + first.slice(1), ...rest];
+  return [first.charAt(0).toUpperCase() + first.slice(1), ...rest];
 }
 
 /** The name as it reads: "GridSlide" as "Grid slide". */
-export function label(name: string): string {
+export function label(name: string, words = wordsOf(name)): string {
   const sentence = !name.includes("_");
-  return wordsOf(name)
+  return words
     .map((w, i) => (i && sentence && /^\p{Lu}?\p{Ll}+$/u.test(w) ? w.toLowerCase() : w))
     .join(" ");
 }

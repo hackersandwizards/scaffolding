@@ -45,7 +45,8 @@ const groups = new Map<
   }[]
 >();
 let states = 0;
-for (const m of [...(modules as StoryModule[])].sort((a, b) => a.name.localeCompare(b.name))) {
+const named = (modules as StoryModule[]).map((m) => ({ ...m, label: label(m.name) }));
+for (const m of named.sort((a, b) => a.label.localeCompare(b.label))) {
   const first =
     previewStates
       .map((state) => m.stories.find((s) => s.id.endsWith(`/${state}`)))
@@ -55,7 +56,8 @@ for (const m of [...(modules as StoryModule[])].sort((a, b) => a.name.localeComp
   const group = m.directory?.split("/")[0] || "Components";
   if (!groups.has(group)) groups.set(group, []);
   groups.get(group)!.push({
-    name: label(m.name),
+    name: m.label,
+    search: m.name,
     href: url(config.dashboardBase, first.id),
     pill: m.stories.length === 1 ? "1 state" : `${m.stories.length} states`,
     frame: previews ? url(config.storyBase, first.id) : undefined,

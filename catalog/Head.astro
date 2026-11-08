@@ -19,11 +19,10 @@ const mod = id
   ? (modules as StoryModule[]).find((m) => m.stories.some((s) => s.id === id))
   : undefined;
 const folder = (mod?.directory || "Components").split("/").join(" / ");
-const all = (mod?.stories ?? []).map((s) => ({
-  ...s,
-  words: wordsOf(s.name),
-  label: label(s.name),
-}));
+const all = (mod?.stories ?? []).map((s) => {
+  const words = wordsOf(s.name);
+  return { ...s, words, label: label(s.name, words) };
+});
 type State = (typeof all)[number];
 // Above FOLD states a menu groups them by a word three or more names share, the first word before
 // the last: "BlockImage" under "Block", "AccentTheme" under "Theme"; the rest come last.

@@ -157,15 +157,16 @@ export function applyAllow(
         message: "allow entry without a reason",
       });
     else if (stale)
-      // Each text of a list is its own exception and dies with its own case.
+      // Each text and each path of a list is its own exception and dies with its own case.
       for (const text of Array.isArray(e.text) && e.text.length ? e.text : [e.text])
-        if (!findings.some((f) => covers(e, f, text)))
-          left.push({
-            check,
-            path: "package.json",
-            text: JSON.stringify({ ...e, text }),
-            message: "allow entry matches nothing",
-          });
+        for (const path of Array.isArray(e.path) && e.path.length ? e.path : [e.path])
+          if (!findings.some((f) => covers({ ...e, path }, f, text)))
+            left.push({
+              check,
+              path: "package.json",
+              text: JSON.stringify({ ...e, path, text }),
+              message: "allow entry matches nothing",
+            });
   }
   return left;
 }

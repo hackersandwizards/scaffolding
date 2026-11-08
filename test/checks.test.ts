@@ -936,7 +936,7 @@ describe("check-confidential", () => {
     const allow = [
       {
         check: "confidential",
-        path: ["people/jane-q-doe/**", "file names", "package.json"],
+        path: ["people/jane-q-doe/**", "file names", "package.json", "gone/**"],
         text: "Jane Q Doe",
         reason: "test",
       },
@@ -953,6 +953,8 @@ describe("check-confidential", () => {
     ).out;
     expect(lines(out, "check-confidential")).toEqual([
       "[check-confidential] other.md: confidential term from the company records (Jane Q Doe)",
+      // Each path of the list dies with its own case.
+      `[check-confidential] package.json: allow entry matches nothing (${JSON.stringify({ ...allow[0], path: "gone/**" })})`,
     ]);
   });
 
@@ -2047,6 +2049,15 @@ describe("catalog", () => {
         ),
       ).toBe(false);
       expect(failed).toEqual([]);
+      // Behind another tab the page is hidden and never paints: every tile loads at once.
+      await send("Target.createTarget", { url: "about:blank" });
+      expect(await evaluate("document.hidden")).toBe(true);
+      const before = frames("/story/");
+      await send("Page.navigate", { url: `${server.url}home` });
+      await until(`document.readyState === "complete"`);
+      for (const end = Date.now() + 10_000; frames("/story/") - before < 40 && Date.now() < end;)
+        await new Promise((r) => setTimeout(r, 100));
+      expect(frames("/story/") - before).toBe(40);
     } finally {
       page.close();
       void server.stop(true);
@@ -2093,6 +2104,18 @@ describe("catalog", () => {
         ],
       }),
     ).toThrow('catalog: the groups "Form Fields" and "form-fields" both draw as #form-fields');
+  });
+
+  test("the search finds a tile by its `search` words, which the tile does not show", async () => {
+    const { renderCatalog } = await import("../catalog/render.ts");
+    const html = renderCatalog({
+      title: "t",
+      lead: "l",
+      provenance: "p",
+      groups: [{ name: "Parts", items: [{ name: "Grid slide", href: "/x", search: "GridSlide" }] }],
+    });
+    expect(html).toContain('data-search="parts grid slide  gridslide"');
+    expect(html).not.toContain(">GridSlide<");
   });
 
   test("group anchors keep non-ASCII letters", async () => {
