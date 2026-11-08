@@ -398,8 +398,10 @@ export function catalog(options: CatalogOptions): AstroIntegration {
         const anchor = "from 'astrobook/client';\n";
         for (const file of globSync("**/*.astro", { cwd: dir })) {
           const path = join(dir, file);
-          const kind = file.split("/")[0];
+          const kind = file.split(/[\\/]/)[0];
           const source = readFileSync(path, "utf8");
+          // A route of a deleted story, which Astrobook leaves, keeps the import it has.
+          if (source.includes(`import "${CSS}`)) continue;
           if (!(kind === "dashboard" || kind === "stories") || !source.includes(anchor))
             throw new Error(`catalog: Astrobook's route ${file} has no place for its CSS import`);
           const code = source.replace(anchor, `$&import "${CSS}${kind}";\n`);

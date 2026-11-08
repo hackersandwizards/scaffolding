@@ -38,13 +38,19 @@ async function browse(url: string, args: string[] = []) {
     [chrome, ...chromeArgs(temp()), `--remote-debugging-port=${port}`, ...args],
     { stderr: "ignore" },
   );
-  let target: { webSocketDebuggerUrl: string } | undefined;
-  for (let i = 0; i < 100 && !target; i++)
-    target = await fetch(`http://127.0.0.1:${port}/json/new?${url}`, { method: "PUT" })
-      .then((r) => r.json())
-      .catch(() => new Promise((r) => setTimeout(r, 100)));
-  const ws = new WebSocket(target!.webSocketDebuggerUrl);
-  await new Promise((r) => ws.addEventListener("open", r, { once: true }));
+  let ws: WebSocket;
+  try {
+    let target: { webSocketDebuggerUrl: string } | undefined;
+    for (let i = 0; i < 100 && !target; i++)
+      target = await fetch(`http://127.0.0.1:${port}/json/new?${url}`, { method: "PUT" })
+        .then((r) => r.json())
+        .catch(() => new Promise((r) => setTimeout(r, 100)));
+    ws = new WebSocket(target!.webSocketDebuggerUrl);
+    await new Promise((r) => ws.addEventListener("open", r, { once: true }));
+  } catch (e) {
+    browser.kill();
+    throw e;
+  }
   let id = 0;
   const send = (method: string, params: object = {}) =>
     new Promise<{ value?: unknown }>((done) => {
@@ -1933,8 +1939,8 @@ describe("catalog", () => {
       )) as [number, number];
       expect(paint).toBeGreaterThan(0);
       expect(firstFrame).toBeGreaterThanOrEqual(paint);
-      // The marked element alone shows, centred in its tile on what it paints, on its own ground;
-      // the page's canvas, white, would show around a box with a ground of its own.
+      // The marked element alone shows, centred in its tile on what it paints, on the page's ground
+      // around it, white, even where it has a ground of its own; the frame's canvas is cleared.
       const fit = (tile: number) =>
         evaluate(`(() => {
         const p = document.querySelectorAll(".hw-catalogue-preview")[${tile}], f = p.firstElementChild, d = f.contentDocument;
@@ -1943,17 +1949,14 @@ describe("catalog", () => {
         return { dx: tx + (r.left + r.width / 2) * s - p.clientWidth / 2, dy: ty + (r.top + r.height / 2) * s - p.clientHeight / 2,
           spec: getComputedStyle(d.querySelector(".spec")).visibility, preview: getComputedStyle(d.querySelector("[data-hw-preview]")).visibility, ground: p.style.background, canvas: getComputedStyle(d.documentElement).backgroundColor };
       })()`) as Promise<Record<string, number | string>>;
-      for (const [tile, ground] of [
-        [0, "rgb(255, 255, 255)"],
-        [1, "rgb(1, 2, 3)"],
-      ] as const) {
+      for (const tile of [0, 1]) {
         const at = await fit(tile);
         expect(Math.abs(at.dx as number)).toBeLessThan(1);
         expect(Math.abs(at.dy as number)).toBeLessThan(1);
         expect([at.spec, at.preview, at.ground, at.canvas]).toEqual([
           "hidden",
           "visible",
-          ground,
+          "rgb(255, 255, 255)",
           "rgba(0, 0, 0, 0)",
         ]);
       }

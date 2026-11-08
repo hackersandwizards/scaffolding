@@ -78,18 +78,17 @@ const catalogTile = (item: CatalogItem, group: string) =>
 
 // Filters the tiles and the rail's names by every word in the search field and hides a group left
 // empty, a group of markup while the field holds a word. Loads a frame once the page reports its
-// first paint (on load where a browser reports none; two animation frames still started before
-// it) and the tile comes within 200 px of the view, so the frames neither delay the
-// first paint nor load all at once (Chrome's loading="lazy" loaded 30 of 40 frames up front); with
-// data-srcdoc from the page's HTML, a <base> keeping its relative links. Draws each sized frame
-// whole at its tile's width, and centres every other frame's content on the content's own ground,
-// shrunk where it is taller than the tile and measured afresh each time, so a refit never shrinks
-// it again, as Storybook's "centered" layout does, 8 px clear of each side: the element marked
-// data-hw-preview alone, everything else and the page's canvas hidden once the ground is read, fitted
-// to what it paints (its own box where it has a ground, background image, border, shadow or is a
-// control or image, else
-// its text and such boxes inside, so a full-width wrapper centres its button rather than its own
-// box), else <main>'s only child or <main>. Marks the rail's label of the group read now with
+// first paint (2 s after load where none comes; two animation frames still started before it) and
+// the tile comes within 200 px of the view, so the frames neither delay the first paint nor load
+// all at once (Chrome's loading="lazy" loaded 30 of 40 frames up front); with data-srcdoc from the
+// page's HTML, a <base> keeping its relative links. Draws each sized frame whole at its tile's
+// width, and centres every other frame's content, shrunk where it is taller than the tile and
+// measured afresh each time, so a refit never shrinks it again, as Storybook's "centered" layout
+// does, 8 px clear of each side, on the ground around it: the element marked data-hw-preview alone,
+// everything else and the page's canvas hidden once the ground is read, fitted to what it paints
+// (its own box where it has a ground, background image, border, shadow or is a control or image,
+// else its text and such boxes inside, so a full-width wrapper centres its button rather than its
+// own box); else <main>'s only child or <main>. Marks the rail's label of the group read now with
 // aria-current="true": the last group whose top has passed a third of the viewport; once one has
 // and the page can scroll no further, the group the address names where its top shows, else, once
 // the page has scrolled, the last group, so a click on a group the page cannot scroll up to that
@@ -110,15 +109,17 @@ if(!r.height)return;
 const s=Math.min(0.75,(p.clientHeight-16)/r.height,(p.clientWidth-16)/r.width);
 if(r.bottom>f.clientHeight)f.style.height=r.bottom+"px";
 f.style.transform="translate("+((p.clientWidth-r.width*s)/2-r.left*s)+"px,"+((p.clientHeight-r.height*s)/2-r.top*s)+"px) scale("+s+")";
-const ground=[c,m,d.body,d.documentElement].map((e)=>css(e).backgroundColor).find((b)=>!clear(b));
+let ground;for(let e=own?own.parentElement:c;e&&!ground;e=e.parentElement)if(!clear(css(e).backgroundColor))ground=css(e).backgroundColor;
 if(ground)p.style.background=ground;
 if(own&&!d.getElementById("hw-preview-only"))d.head.insertAdjacentHTML("beforeend",'<style id="hw-preview-only">html,body{background:none!important}body{visibility:hidden}[data-hw-preview]{visibility:visible}</style>');};
 const all=()=>document.querySelectorAll(".hw-catalogue-preview").forEach(fit);all();
-const load=(f)=>{const u=f.dataset.src;delete f.dataset.src;if(!f.hasAttribute("data-srcdoc")){f.src=u;return;}
-const at=new URL(u,location.href).href;fetch(at).then((r)=>r.ok?r.text():"").then((h)=>{f.srcdoc=h.replace(/<head\b[^>]*>/i,'$&<base href="'+at+'">');});};
-const near=new IntersectionObserver((seen)=>{for(const e of seen)if(e.isIntersecting){near.unobserve(e.target);load(e.target);}},{rootMargin:"200px 0px",scrollMargin:"200px 0px"});
-const start=()=>document.querySelectorAll(".hw-catalogue-preview iframe[data-src]").forEach((f)=>near.observe(f));
-if(PerformanceObserver.supportedEntryTypes?.includes("paint"))new PerformanceObserver((_,o)=>{o.disconnect();start();}).observe({type:"paint",buffered:true});else addEventListener("load",start,{once:true});
+const load=(f)=>{const u=f.dataset.src;if(!u)return;delete f.dataset.src;if(!f.hasAttribute("data-srcdoc")){f.src=u;return;}
+fetch(new URL(u,location.href)).then((r)=>r.ok&&r.text().then((h)=>{f.srcdoc=h.replace(/<head\b[^>]*>/i,'$&<base href="'+r.url+'">');})).catch(()=>{});};
+let started=0;const start=()=>{if(started++)return;const m=document.querySelector("main"),root=m&&m.scrollHeight>m.clientHeight?m:null;
+const near=new IntersectionObserver((seen)=>{for(const e of seen)if(e.isIntersecting){near.unobserve(e.target);load(e.target);}},{root,rootMargin:"200px 0px"});
+document.querySelectorAll(".hw-catalogue-preview iframe[data-src]").forEach((f)=>near.observe(f));};
+if(PerformanceObserver.supportedEntryTypes?.includes("paint"))new PerformanceObserver((_,o)=>{o.disconnect();start();}).observe({type:"paint",buffered:true});
+addEventListener("load",()=>setTimeout(start,2000),{once:true});
 const spy=()=>{for(const root of document.querySelectorAll(".hw-catalogue")){
 const groups=[...root.querySelectorAll(".hw-catalogue-group")].filter((g)=>g.getClientRects().length),last=groups.at(-1);
 let on=groups.findLast((g)=>g.getBoundingClientRect().top<=innerHeight/3);

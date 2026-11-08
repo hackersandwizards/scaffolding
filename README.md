@@ -198,8 +198,9 @@ The options beyond those above:
 - `previewSize`: the tile preview's viewport in CSS px, drawn whole and scaled to the tile, for
   every group (`[794, 1123]`) or per group (`{ Pages: [1440, 900] }`); a tile without one draws its
   state at three quarters, centred on the state's own ground and shrunk where it is taller than the
-  tile: the element the state marks `data-hw-preview` alone, the rest of the page hidden, such as a
-  specimen under its spec text, else the only child of `<main>`, else `<main>`.
+  tile: the element the state marks `data-hw-preview` alone, such as a specimen under its spec text,
+  fitted to what it paints, on the ground around it, the rest of the page hidden; else the only child
+  of `<main>`, else `<main>`.
 - `storyScale`: brand's `data-hw-scale` on every page that draws a story, a state's page and the
   state alone, such as `"screen"`; without it such a page keeps what the repository's `head` sets,
   else brand's default. The home is always `"dense"`.
