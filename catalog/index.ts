@@ -325,7 +325,11 @@ export function catalog(options: CatalogOptions): AstroIntegration {
         // A relative specifier counts from the Astro root, as Astrobook reads `head` and `home`.
         const spec = (s: string) => JSON.stringify(s.startsWith(".") ? join(root, s) : s);
         const nav = options.nav ?? brandNav(require, options.product);
-        const around = [...(header.css ?? []), join(import.meta.dirname, "chrome.css")];
+        const around = [
+          join(import.meta.dirname, "ground.css"),
+          ...(header.css ?? []),
+          join(import.meta.dirname, "chrome.css"),
+        ];
         const imports = (list: string[]) => list.map((c) => `import ${spec(c)};`).join("");
         // A misspelt or renamed `current` would link this catalog's entry to the published site.
         if (nav?.current !== undefined && !nav.items.some(({ name }) => name === nav.current))
@@ -409,7 +413,7 @@ export function catalog(options: CatalogOptions): AstroIntegration {
         // Astrobook whose routes read otherwise fails the build rather than drop every page's CSS.
         const dir = fileURLToPath(params.createCodegenDir());
         const anchor = "from 'astrobook/client';\n";
-        const lead = /^const \{[^}]*\bargs\b[^}]*\} = parseStoryNamedExport\(.*$/m;
+        const lead = /^const \{[^}:]*\bargs\b[^}:]*\} = parseStoryNamedExport\([^\n]*\);$/m;
         for (const file of globSync("**/*.astro", { cwd: dir })) {
           const path = join(dir, file);
           const kind = file.split(/[\\/]/)[0];

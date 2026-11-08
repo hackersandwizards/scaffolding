@@ -1,0 +1,7 @@
+/* Loaded before any other stylesheet, so this layer sorts below every layer a page declares: a
+   home whose `homeCss` is tokens alone keeps its ground, and a story's ground on html or body wins. */
+@layer hw-catalog-ground {
+  html {
+    background: var(--background, var(--color-bg));
+  }
+}

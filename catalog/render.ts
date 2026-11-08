@@ -104,7 +104,7 @@ const catalogTile = (item: CatalogItem, group: string) =>
 // the capture phase since Astrobook scrolls <main> rather than the window, so it holds across
 // Astro's client router swaps and runs once.
 const SCRIPT = `<script>(()=>{
-const part=(m,s)=>{let e;try{e=m.querySelector(s);}catch{}if(!e)console.error("data-hw-preview: "+s+" selects nothing, drawing the whole mark");return e||m;};
+const part=(m,s)=>{let e;try{e=m.querySelector(s);}catch{}if(!e&&!m.dataset.hwPreviewLogged){m.dataset.hwPreviewLogged="1";console.error("data-hw-preview: "+s+" selects nothing, drawing the whole mark");}return e||m;};
 const fit=(p)=>{const f=p.firstElementChild;if(!(f instanceof HTMLIFrameElement))return;
 const d=f.contentDocument,mark=d&&d.querySelector("[data-hw-preview]"),own=mark&&(mark.dataset.hwPreview?part(mark,mark.dataset.hwPreview):mark),css=(e)=>d.defaultView.getComputedStyle(e),clear=(b)=>/^(transparent|rgba\\(.*, 0\\))$/.test(b);
 const around=(c)=>{if(own&&d.getElementById("hw-preview-only"))return;let ground;for(let e=c;e&&!ground;e=e.parentElement)if(!clear(css(e).backgroundColor))ground=css(e).backgroundColor;

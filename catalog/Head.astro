@@ -49,13 +49,14 @@ const alone = path.startsWith(`${storyBase}/`);
 // A state alone is the frame a tile draws, so the state's page is the one a reader lands on. An
 // absolute URL needs Astro's `site`.
 const url = trim(Astro.url.pathname);
-const page = `${alone ? base + url.slice(storyBase.length) : url}${shell.slash}` || "/";
+const page =
+  `${alone ? url.replace(encodeURI(storyBase), encodeURI(base)) : url}${shell.slash}` || "/";
 const canonical = Astro.site ? new URL(page, Astro.site).href : page;
 const { hwCatalogLead: lead } = Astro.locals as { hwCatalogLead?: unknown };
 // brand's scale and night on <html>, set before the body draws: the home at the dense scale, a
 // page drawing a story at `storyScale`; night.css turns only a subtree marked data-hw-night under the
 // theme toggle's data-theme, which is every page but a state alone, so a tile's preview keeps the
-// state's own theme.
+// state's own theme, and no page where `themeToggle` is false.
 const root = {
   hwScale: mod || alone ? shell.storyScale : "dense",
   hwNight: alone || !shell.themeToggle ? undefined : "",

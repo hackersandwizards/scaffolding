@@ -200,7 +200,7 @@ The options beyond those above:
   every group (`[794, 1123]`) or per group (`{ Pages: [1440, 900] }`); a tile without one draws its
   state at three quarters, centred on the state's own ground and shrunk where it is taller than the
   tile: the element the state marks `data-hw-preview` alone, such as a specimen under its spec text,
-  fitted to what it paints and cut to any box clipping it, on the ground around it, the rest of the
+  fitted to what it paints and cut to any box inside the mark clipping it, on the ground around it, the rest of the
   page hidden; else the only child of `<main>`, else `<main>`. A sized tile draws the mark alone too
   and keeps its window size. A non-empty value is a selector for the part inside the marked element
   to draw (`data-hw-preview=".part"`); one that selects nothing draws the whole mark and logs an
@@ -282,8 +282,8 @@ this rule as a pure function, for a reader such as the admin hub: `pages` are th
 drops. The preset calls it too.
 
 Every catalog page carries the `lead` as its `<meta name="description">`, or a state's own where
-its story sets `args.lead`, so a repository's head adds none. Every page carries a
-`<link rel="canonical">`, so a repository's head adds none either: its own URL, and for a state
+its story sets `args.lead`, so a repository's head adds none. Every page, but for a build opened
+from disk, carries a `<link rel="canonical">`, so a repository's head adds none either: its own URL, and for a state
 alone the state's page under `/dashboard/`. It is absolute where Astro's `site` is set and
 root-relative otherwise, so a published catalog sets `site`. Where the repository resolves
 `@hackersandwizards/brand`, every page carries brand's favicon; a `<link rel="icon">` in the
