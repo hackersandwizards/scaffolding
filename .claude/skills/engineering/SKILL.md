@@ -58,7 +58,10 @@ handling that prevents data loss, security measures, or accessibility basics.
   screen, forbids hand-built substitutes for library components, and lists the reference app's UI
   audits as gates from the first wave.
 - Every repository with a UI links its design-system catalogue in the UI, guarded by a coverage
-  test and named in its `CLAUDE.md`.
+  test and named in its `CLAUDE.md`. A catalogue shows only what its repository adds to or changes
+  from the packages it builds on (brand's elements, slides' slide types), never their parts again
+  nor its own content such as decks; with nothing added it stays empty. An element two
+  repositories build moves into the package they share.
 - Decks run only on our own slide engine, never Slidev or reveal.js. Two exceptions stay and are
   never proposed for porting: the one client reveal.js deck in Company OS and a partner's own
   course repositories.
