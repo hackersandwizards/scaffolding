@@ -33,7 +33,9 @@ handling that prevents data loss, security measures, or accessibility basics.
   against an unchanged lockfile.
 - Start every tool the project installs through `bun run`: a package.json script where one fits,
   else the project's own binary (`bun run vitest run <file>`), never `bunx`, `npx` or
-  `node_modules/.bin`. A repository script runs as `bun <path>`.
+  `node_modules/.bin`. A person runs a repository's scripts through one entry point that lists
+  them, never by path: in a bun project a package.json script, elsewhere a `justfile` recipe with a
+  doc comment and a group, whose bare `just` lists them. Never both for one script.
   A repository pinning `@hackersandwizards/scaffolding` takes its hooks from scaffolding's skeleton
   (`check-structure --fix`). Elsewhere a hook is one line in `.githooks/` calling a script:
   `check:staged` runs `check-staged.ts` from this folder, `lfs:pre-push` runs `git lfs pre-push`
