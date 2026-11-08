@@ -64,8 +64,8 @@ const tilePreview = (item: CatalogItem) =>
       ? `<img src="${escapeCatalog(item.image)}" alt="" loading="lazy">`
       : (item.html ?? "");
 
-// data-hw-shell marks the shell's own brand elements, the tile's card and pill, which a check of the
-// repository's own elements skips.
+// data-hw-shell marks the shell's own brand elements, the tile's card and pill and the rail's search
+// field and navigation list, which a check of the repository's own elements skips.
 const catalogTile = (item: CatalogItem, group: string) =>
   `<li><a class="hw-card hw-catalog-tile" data-hw-shell href="${escapeCatalog(item.href)}" data-search="${escapeCatalog(`${group} ${item.name} ${item.note ?? ""} ${item.search ?? ""}`.toLowerCase())}">${
     item.frame || item.image || item.html
@@ -171,7 +171,7 @@ export function renderCatalog(data: CatalogData): string {
   const rail = groups
     .map(
       (g) =>
-        `<li><a href="#${g.anchor}"><span>${escapeCatalog(g.name)}</span>${count(g)}</a>${g.html === undefined ? `<ul class="hw-catalog-names">${g.items.map((i) => `<li><a href="${escapeCatalog(i.href)}">${escapeCatalog(i.name)}</a></li>`).join("")}</ul>` : ""}</li>`,
+        `<li><a href="#${g.anchor}"><span>${escapeCatalog(g.name)}</span>${g.items.length ? `<span class="hw-nav-count">${g.items.length}</span>` : ""}</a>${g.html === undefined ? `<ul class="hw-catalog-names">${g.items.map((i) => `<li><a href="${escapeCatalog(i.href)}">${escapeCatalog(i.name)}</a></li>`).join("")}</ul>` : ""}</li>`,
     )
     .join("");
   const sections = groups
@@ -180,5 +180,5 @@ export function renderCatalog(data: CatalogData): string {
         `<section class="hw-catalog-group" id="${g.anchor}"><h2>${[escapeCatalog(g.name), count(g)].filter(Boolean).join(" ")}</h2>${g.html === undefined ? `<ul class="hw-catalog-grid">${g.items.map((i) => catalogTile(i, g.name)).join("")}</ul>` : `<div class="hw-catalog-text">${g.html}</div>`}</section>`,
     )
     .join("");
-  return `<div class="hw-catalog hw-container"><aside class="hw-catalog-rail"><input class="hw-catalog-search" type="search" placeholder="${escapeCatalog(search)}" aria-label="${escapeCatalog(search)}"><nav aria-label="${escapeCatalog(groupsLabel)}"><ul>${rail}</ul></nav></aside><div class="hw-catalog-main"><h1>${escapeCatalog(data.title)}</h1><p class="hw-catalog-lead">${escapeCatalog(data.lead)}</p><p class="hw-catalog-provenance">${escapeCatalog(data.provenance)}</p>${data.intro ?? ""}${sections}</div></div>${SCRIPT}`;
+  return `<div class="hw-catalog hw-container"><aside class="hw-catalog-rail" data-hw-shell><div class="hw-search"><input class="hw-field hw-catalog-search" type="search" placeholder="${escapeCatalog(search)}" aria-label="${escapeCatalog(search)}"></div><nav class="hw-nav" aria-label="${escapeCatalog(groupsLabel)}"><ul>${rail}</ul></nav></aside><div class="hw-catalog-main"><h1>${escapeCatalog(data.title)}</h1><p class="hw-catalog-lead">${escapeCatalog(data.lead)}</p><p class="hw-catalog-provenance">${escapeCatalog(data.provenance)}</p>${data.intro ?? ""}${sections}</div></div>${SCRIPT}`;
 }

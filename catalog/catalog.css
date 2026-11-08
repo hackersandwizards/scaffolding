@@ -8,10 +8,8 @@
     --hw-cat-muted: color-mix(in srgb, var(--hw-cat-fg) 70%, transparent);
     --hw-cat-line: var(--border, var(--color-border));
     --hw-cat-accent: var(--accent, var(--color-teal-dark));
-    /* The open entry's ground in the rail. */
+    /* The phone's chip of the group being read. */
     --hw-cat-wash: color-mix(in srgb, var(--hw-cat-accent) 14%, transparent);
-    /* The open entry's edge, which the group being read shares. */
-    --hw-cat-edge: inset 3px 0 var(--hw-cat-accent);
     /* The page's padding above and below, which the sticky rail keeps too. */
     --hw-cat-above: 1.5rem;
     --hw-cat-below: 3rem;
@@ -38,91 +36,21 @@
     min-height: 0;
     overflow-y: auto;
   }
-  .hw-catalog-search {
-    box-sizing: border-box;
-    width: 100%;
-    min-height: var(--hw-control-height, 2.5rem);
+  /* brand's search field and navigation list (hw-search, hw-nav) under the shell's mark. */
+  .hw-catalog-rail > .hw-search {
     margin-bottom: 1rem;
-    padding: 0 0.75rem;
-    border: 1px solid var(--hw-cat-line);
-    border-radius: var(--hw-corner-sm, var(--radius-sm));
-    background: transparent;
-    color: inherit;
-    font: inherit;
-    font-size: var(--text-ui, 0.875rem);
   }
-  /* The muted text, not the browser's grey. */
-  .hw-catalog-search::placeholder {
-    color: var(--hw-cat-muted);
-    opacity: 1;
-  }
-  .hw-catalog-rail ul,
   .hw-catalog-grid {
     margin: 0;
     padding: 0;
     list-style: none;
   }
-  /* At least 24 px high, WCAG 2.2's minimum target size, which Lighthouse's target-size audits:
-     a name at the UI size measured 21 to 23 px. */
+  /* brand's focus ring inside the link: outside it, the rail's scroll box clips it. */
   .hw-catalog-rail a {
-    display: flex;
-    justify-content: space-between;
-    box-sizing: border-box;
-    align-items: center;
-    gap: 0.5rem;
-    min-height: 24px;
-    padding: 0.25rem 0.5rem;
-    border-radius: var(--hw-corner-sm, var(--radius-sm));
-    color: inherit;
-    font-size: var(--text-ui, 0.875rem);
-    text-decoration: none;
-    /* brand's focus ring inside the link: outside it, the rail's scroll box clips it. */
     --hw-focus-offset: -3px;
   }
-  .hw-catalog-rail a:hover {
-    background: color-mix(in srgb, var(--hw-cat-fg) 5%, transparent);
-  }
-  /* The open entry, which a page marks with aria-current: an accent wash and edge, set apart from
-     the grey hover. Only the entry; its group's label darkens below (wide) or turns a chip
-     (narrow). */
-  .hw-catalog-rail .hw-catalog-names a[aria-current] {
-    border-radius: 0 var(--hw-corner-sm, var(--radius-sm)) var(--hw-corner-sm, var(--radius-sm)) 0;
-    background: var(--hw-cat-wash);
-    box-shadow: var(--hw-cat-edge);
-    font-weight: 600;
-  }
-  /* Wide, the rail lists every element by name under its group's label, as a component library's
-     sidebar does. */
   .hw-catalog-rail .hw-catalog-names {
-    margin: 0 0 1rem;
-  }
-  @media (width > 48rem) {
-    .hw-catalog-rail > nav > ul > li > a {
-      color: var(--hw-cat-muted);
-      font-family: var(--font-mono);
-      font-size: var(--text-micro, 0.75rem);
-      letter-spacing: 0.06em;
-      text-transform: uppercase;
-    }
-    /* A group's label is a label, never a filled row: hover and an open entry under it only
-       darken its text. */
-    .hw-catalog-rail > nav > ul > li > a:hover {
-      background: none;
-    }
-    .hw-catalog-rail > nav > ul > li > a:hover,
-    .hw-catalog-rail > nav > ul > li:has(a[aria-current]) > a {
-      color: var(--hw-cat-fg);
-    }
-    /* The group read now, which the shell's script marks with aria-current="true": the label in
-       the accent with the open entry's edge, unfilled. */
-    .hw-catalog-rail > nav > ul > li:has(> a[aria-current="true"]) > a {
-      border-radius: 0;
-      box-shadow: var(--hw-cat-edge);
-      color: var(--hw-cat-accent);
-    }
-    .hw-catalog-rail > nav > ul > li > a .hw-catalog-count {
-      display: none;
-    }
+    margin-block: 0.125rem 0.75rem;
   }
   .hw-catalog-count {
     color: var(--hw-cat-muted);
@@ -265,11 +193,12 @@
       overflow: visible;
     }
     /* The phone keeps the groups as one row of chips under the search. */
-    .hw-catalog-search {
+    .hw-catalog-rail > .hw-search {
       margin-bottom: 0.5rem;
     }
     .hw-catalog-rail ul {
       display: flex;
+      flex-direction: row;
       gap: 0.375rem;
       margin-inline: -1rem;
       padding-inline: 1rem;

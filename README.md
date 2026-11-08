@@ -191,9 +191,12 @@ left its page scripts unrun.
 The shell (`catalog/`: Layout, Home, Head, Top, which draws the header, `render.ts`, which draws
 the rail and tiles, and `catalog.css`) reads brand's token roles by name only, and the repository's
 `css` supplies them.
-Its shapes follow brand's rule: the brand corner for a preview, the small corner for the search
-field, a rail row, the state menu, the theme toggle and the link to a state alone, round for the
-state chips and the arrows.
+The home's rail is brand's search field (`hw-search`) over its navigation list (`hw-nav`), so the
+home's stylesheets need brand v1.47.0 or later with its `elements.css`, as its tiles need brand's
+card and pill.
+The shapes the shell draws itself follow brand's rule: the brand corner for a preview, the small
+corner for the state menu, the theme toggle and the link to a state alone, round for the phone's
+group chips, the state chips and the arrows.
 The options beyond those above:
 
 - `previewSize`: the tile preview's viewport in CSS px, drawn whole and scaled to the tile, for
