@@ -1,9 +1,9 @@
 ---
 name: shell-tools
 description: >-
-  Preferred CLI tools on this machine and the GNU/BSD portability rule, before shell commands for file
-  or text search, HTTP, JSON, git hosting, JavaScript, Python or system inspection, and for scripts
-  that must run on macOS and Linux.
+  The zsh traps of the Bash tool (a bare `=word`, an unmatched glob, a function named like an alias),
+  preferred CLI tools on this machine and the GNU/BSD portability rule. Load before the first Bash
+  command of a run, and for scripts that must run on macOS and Linux.
 ---
 
 # Shell tools
@@ -36,7 +36,7 @@ Prefer these over their classic equivalents.
 - `zoxide` for directory jumping (`z <pattern>`)
 
 **HTTP and data:**
-- `xh` over `curl` and `httpie`
+- `xh` over `curl` and `httpie`. `xh` reads a non-terminal stdin as the request body and waits for it to close, past `--timeout` (12 s with stdin held open, 0 s with the flag): pass `--ignore-stdin` in a script or tool call.
 - `jaq` over `jq`, `pandoc` for document conversion
 - `scrapling` to scrape web pages to markdown (`scrapling extract get <url> out.md`)
 
@@ -89,7 +89,10 @@ Environment: macOS (darwin), Homebrew, zsh, Ghostty terminal.
 The Bash tool runs zsh. A bare word starting with `=` (`echo =====`) is a failed command lookup that
 drops the rest of the command line, and `:r` right after a variable is a modifier (`$sha:refs/...`
 loses its `r`). Quote separators and write `${var}:`. An unmatched glob fails its own command with
-`no matches found`.
+`no matches found`: quote every glob a command receives as an argument (`--include='*.ts'`), and
+list files with `ls <dir> | grep` rather than a bare pattern that may match nothing. A function
+named like an alias of the shell snapshot (`g`, `c`, `t`) fails to parse with `defining function
+based on alias`: give a function a name no alias holds.
 `path`, `fpath`, `cdpath` and `manpath` are tied to their uppercase variables, so a loop variable
 named `path` empties the search path and every later command fails with `command not found`. An
 unquoted `$list` stays one word: `for x in $list` runs once and `git commit -- $files` passes one

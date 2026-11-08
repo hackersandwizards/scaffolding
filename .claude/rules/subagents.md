@@ -49,10 +49,11 @@
   command or a `Monitor` script: the run stays in that waiter's process group, and stopping the
   waiter kills it.
 - Wait for a background command with `Monitor` and an `until` loop (30 minutes at most, 10 under
-  `claude -p`), with a foreground command whose `timeout` stays within 10 minutes, or, in the
-  top-level session, by starting it with `run_in_background` and waiting on its exit. A delegate
-  waits inside its turn and ends it only with its result, a blocker or a question. A foreground
-  `sleep` chained to a check is blocked.
+  `claude -p`), or, in the top-level session, by starting it with `run_in_background` and waiting
+  on its exit, so the person can still talk to the session. A delegate may also wait with a
+  foreground command whose `timeout` stays within 10 minutes, and waits inside its turn, ending it
+  only with its result, a blocker or a question. A foreground `sleep` chained to a check is
+  blocked: put the `sleep` inside the `until` loop.
 - Stop a finished delegate's task before you stop the process it left running. Stopping the process
   first wakes the delegate to re-report its whole context. Leave idle entries of finished delegates alone. Read the scratch folder named in a
   process's command line before stopping it: it may be a live delegate's run. Stop a process by its own

@@ -11,6 +11,9 @@ description: >-
 
 Polish finds defects by reading code, instruction artifacts and memory files as written.
 
+At the end of a session, run `dependency-updates` in each repository before phase 1, and after
+phase 6 bring its root Markdown files (README, CONTRIBUTING) in line with what the code now does.
+
 An argument narrows what each phase covers, never which phases run. Report what the scope excluded.
 
 The argument `recent` scopes the run to everything committed since the earlier of two days back
@@ -46,7 +49,11 @@ Run `/code-review high` and `/security-review` over the scope first; their findi
 phase's. In a repository with a UI, measure performance on a server the run starts itself on a
 free port (Lighthouse per public page type, response and render time per app route) and report
 before and after numbers for each fix in the repository's one `docs/agent-work/YYYY-MM-DD-performance.md`,
-written with today's date, deleting the previous one in the same commit.
+written with today's date, deleting the previous one in the same commit. Serve the before state
+from a detached worktree on the commit before the fix, measure before and after back to back so each
+pair shares its load, and write the 1-minute load average beside each series. Before each batch,
+wait up to five minutes while that load exceeds the core count (`getconf _NPROCESSORS_ONLN`), then
+measure anyway.
 
 Fan out one subagent per module or top-level directory to review it for minimalism, design, performance and security, with the path of `references/failure-modes.md` in its prompt to read in full. Reviewers report and do not edit.
 

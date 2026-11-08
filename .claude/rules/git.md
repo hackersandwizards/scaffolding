@@ -22,6 +22,10 @@ Other sessions share this working tree and its index.
 - Before `--amend`, verify that `HEAD` is still your commit. Repair a wrong fold index-free with
   `git commit-tree` plus `git update-ref` and the expected old value, never `reset` or `rebase`.
   Abandon the repair if it races.
+- Never switch a hook off: no `--no-verify`, no variable or `core.hooksPath` override that skips it,
+  and no `commit-tree` outside the fold repair above. A hook failing on another session's file waits
+  for that session. A hook failing a correct commit is a defect for the repository that owns it: fix
+  it in this run where that is yours, else the commit waits and the report names the defect.
 - A commit from a private index (`GIT_INDEX_FILE`) reads that index from the commit's parent
   immediately before writing the tree. Check: `git show --stat HEAD` lists only your paths.
 - `git checkout -- <path>` and `git restore` install whatever another session staged there. Revert
@@ -65,7 +69,9 @@ Other sessions share this working tree and its index.
   delegate's `isolation: worktree`, is allowed where it pays off, which `parallel-session` weighs.
   It starts from `origin/main`, so this tree's uncommitted and unpushed work is absent there. Its
   commits reach `main` within the same delegate run (`git fetch`, `git rebase origin/main`,
-  `git push origin HEAD:main`). Never push a branch and never open a pull request. A release
+  `git push origin HEAD:main`). Where Git LFS files show as modified with no change and stop
+  that rebase, `git checkout -- <path>` inside the worktree clears them. Never push a branch and never open a pull request. A release
   (version bump and tag) while another session works in the same checkout goes from a detached
-  worktree on `origin/main` holding only your commits: read the version there, gate and tag there,
-  and after a rejected push fetch and bump again from the new `origin/main`.
+  worktree on `origin/main` holding only your commits: read the version there, gate there, push,
+  and tag once the push has landed; after a rejected push fetch and bump again from the new
+  `origin/main`.

@@ -140,8 +140,8 @@ async function prettierPasses(bin: string, path: string, input: Buffer, r: ToolR
 }
 
 // Each tool with a staged file to judge runs unless scaffolding.skip gives its gate step a reason (a
-// non-blank string, so `false` or `0` gives none), declared or not. Every install is checked before any run starts, so a refusal leaves no tool
-// running.
+// non-blank string, so `false` or `0` gives none), declared or not. Every install is checked before
+// any run starts, so a refusal leaves no tool running.
 const gateStep: Record<string, string> = {
   prettier: "format",
   eslint: "lint",

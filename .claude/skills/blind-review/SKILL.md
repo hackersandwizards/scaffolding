@@ -66,6 +66,10 @@ none, because receipt".
    (assets, documents, slides, sites, apps) before the first surface, and once more after the last
    batch that changed a surface, beside the per-surface scores. Name the combinations you skipped.
    Check: the report lists the surfaces and the skipped combinations.
+   A shared line (a claim, a headline) rolled out to a surface makes that surface's copy around it a
+   candidate of its own: rewritten so the whole text fits the place, the brand's mission and vision
+   and the rest of the appearance, and scored in that context against the current copy. The line
+   pasted in unchanged is one candidate, never the default. Check: each surface reports both scores.
 6. A person's preferred variant is a hypothesis the next round tests blind, never a score.
 7. Between rounds, ask every reviewer what keeps each criterion below the maximum, group the reasons
    by element and fix one or two causes. Fix only what a real reader or user would notice.

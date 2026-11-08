@@ -41,9 +41,9 @@ language. They've seen every consulting deck; surprise them with specifics they 
 
 ## Core positioning: the verbatim set
 
-Primary headline: the claim, `claim` in `verbal.json` (German and English), its results named in
-the copy under it. Flow is the emotional result.
-The result under the claim is the speed the teams gain reaching the customers, and it is stated as
+The home H1 is `headline` in `verbal.json` (German and English), its results named in the copy
+under it. The claim, `claim` there, is the sign-off line on banners, slides and the footer.
+The result under the headline is the speed the teams gain reaching the customers, and it is stated as
 an outcome, lead time from idea to first users and the cost of a shipped change, never as output
 such as pull request counts or tool use.
 
