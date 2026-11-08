@@ -3230,4 +3230,45 @@ describe("serve", () => {
     );
     expect(Date.now() - started).toBeLessThan(5_000);
   }, 10_000);
+
+  for (const stopped of [true, false])
+    test(`${stopped ? "stop()" : "SIGKILL to the process that served"} ends a server behind a wrapper`, async () => {
+      const app = join(temp(), "app.ts");
+      writeFileSync(
+        app,
+        "Bun.serve({ hostname: process.env.HOST, port: Number(process.env.PORT), fetch: () => new Response(String(process.pid)) });\n",
+      );
+      // `; :` keeps sh as the parent, so the server is a grandchild.
+      const wrapped = JSON.stringify(["sh", "-c", `${process.execPath} ${app}; :`]);
+      const parent = Bun.spawn(
+        [
+          process.execPath,
+          "-e",
+          `const s = await (await import(${JSON.stringify(join(import.meta.dir, "..", "lib", "serve.ts"))})).serve(${wrapped}); console.log(await (await fetch(s.url)).text()); ${stopped ? "s.stop();" : "await new Promise(() => {});"}`,
+        ],
+        { stdout: "pipe" },
+      );
+      try {
+        let line = "";
+        const decoder = new TextDecoder();
+        for await (const chunk of parent.stdout) {
+          line += decoder.decode(chunk);
+          if (line.includes("\n")) break;
+        }
+        const pid = Number(line);
+        expect(pid).toBeGreaterThan(0);
+        if (!stopped) parent.kill("SIGKILL");
+        const alive = () => {
+          try {
+            return process.kill(pid, 0);
+          } catch {
+            return false;
+          }
+        };
+        for (const end = Date.now() + 5_000; alive() && Date.now() < end;) await Bun.sleep(100);
+        expect(alive()).toBe(false);
+      } finally {
+        parent.kill("SIGKILL");
+      }
+    }, 15_000);
 });
