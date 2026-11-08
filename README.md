@@ -21,7 +21,7 @@ package's commands from `node_modules`, so each checkout, a new worktree include
 
 | Command                   | Runs in                      | Checks                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                               |
 | ------------------------- | ---------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| `scaffold <dir>`          | once                         | Creates a repository from `template/` with this version pinned, its catalog and admin area (below).                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                  |
+| `scaffold <dir>`          | once                         | Creates a repository from `template/` and `template-catalog/` with this version pinned (below).                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                      |
 | `scaffolding check`       | `bun run check`              | The whole gate, below.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                               |
 | `check-structure [--fix]` | `bun run check`              | The repository against `skeleton.json`, the catalog, the gate's script names (below) and every `bin` target stored executable (100755). `--fix` writes the identical and owned files, the `.agents/skills` link, the hooks path and the `bin` modes.                                                                                                                                                                                                                                                                                                                                                                                                                                 |
 | `check-confidential`      | pre-commit, commit-msg, push | Terms from a hashed list, Company OS screenshots and text in images (OCR, an unread image fails), commits purged from history.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                       |
@@ -44,13 +44,14 @@ deleting it changes nothing for the gate.
 ## A new repository
 
 `scaffold <dir> [--port <port>] [--name <package>]` (port 4600 and the folder's name by default)
-writes the skeleton, the catalog (`catalog/astro.config.ts` on the
-preset with `base: "/<name>"` and the port, an example component and story, `stylelint.config.js`,
-the scripts `dev`, `catalog`, `build` and `preview`, the Pages workflow) and the admin area
-(`docs/agent-work/items/goal.md`), and pins brand and admin to the newest tag on their remotes, so an
-admin or brand release reaches new repositories without a scaffolding release. A repository whose
-catalog or admin area lives in another repository leaves either out with `--catalog-in <repo>` or
-`--admin-in <repo>`; its `scaffolding.skip` names that repository. Registering the repository in
+writes the skeleton from `template/` (with an empty `docs/agent-work/` for the items) and the catalog
+from `template-catalog/` (`catalog/astro.config.ts` on the preset with `base: "/<name>"` and the
+port, an example component and story, `stylelint.config.js`, the scripts `dev`, `catalog`, `build`
+and `preview`, the Pages workflow), and pins brand and admin to the newest tag on their remotes, so
+an admin or brand release reaches new repositories without a scaffolding release. A repository whose
+catalog or admin area lives in another repository leaves the catalog and brand out with
+`--catalog-in <repo>`, or admin with `--admin-in <repo>`; its `scaffolding.skip` names that
+repository. Registering the repository in
 the hub's sync list, creating it on GitHub and switching Pages on stay steps for a person.
 
 ## The gate
@@ -432,7 +433,7 @@ hooks run `bun install --frozen-lockfile` when `bun.lock` or `package.json` chan
 `bun run check` starts with the same install. CI only builds and deploys. A
 repository that publishes GitHub Pages calls the reusable workflow, which runs `bun run build` and
 publishes `dist/`. The caller, `.github/workflows/pages.yml`, is owned: where it exists,
-`check-structure` compares it with the skeleton's (`surface/`) with this version filled in, and
+`check-structure` compares it with the skeleton's (`template-catalog/`) with this version filled in, and
 `--fix` writes it, so a pin raise is `bun add` plus `check-structure --fix`:
 
 ```yaml

@@ -444,7 +444,7 @@ describe("scaffold and check-structure", () => {
     expect(r.code).toBe(0);
   });
 
-  test("a full repository has its catalog and admin area, brand and admin on their newest tags", () => {
+  test("a full repository has its catalog, brand and admin on their newest tags", () => {
     const pkg = JSON.parse(readFileSync(join(dir, "package.json"), "utf8"));
     expect(pkg.devDependencies["@hackersandwizards/brand"]).toBe(
       "github:hackersandwizards/brand#v0.10.0",
@@ -465,8 +465,8 @@ describe("scaffold and check-structure", () => {
     expect(readFileSync(join(dir, ".github/workflows/pages.yml"), "utf8")).toContain(
       `uses: hackersandwizards/scaffolding/.github/workflows/pages.yml@v${ownVersion}\n`,
     );
-    expect(readdirSync(join(dir, "docs/agent-work/items"))).toEqual(["goal.md"]);
-    expect(readdirSync(join(dir, "docs/agent-work"))).toEqual(["items"]);
+    // No placeholder item: the hub would list it as the repository's open goal.
+    expect(readdirSync(join(dir, "docs/agent-work"))).toEqual([".gitkeep"]);
     expect(readFileSync(join(dir, "tsconfig.json"), "utf8")).toContain('"catalog/**/*.ts"]');
     const prettier = join(import.meta.dir, "..", "node_modules", ".bin", "prettier");
     const formatted = spawnSync(prettier, ["--check", "."], { cwd: dir, encoding: "utf8" });
@@ -848,6 +848,54 @@ describe("check-confidential", () => {
     write(dir, { "b.md": "x\n" });
     sh(dir, ["add", "b.md"]);
     expect(run(dir, "check-confidential", ["--staged"], env).code).toBe(0);
+  });
+
+  test("each scan reads the allow list of the snapshot it scans", () => {
+    const entry = { check: "confidential", path: "people/jane/*", reason: "her own entry" };
+    const pkg = (allow: object[]) => JSON.stringify({ scaffolding: { allow } });
+    const audit = (dir: string, args = ["--index"]) =>
+      run(dir, "check-confidential", args, env).out;
+    const dir = repo({ "package.json": pkg([]), "a.md": "nothing\n" });
+    // A commit adding a name's folder with its entry: the gate audits the index, HEAD has neither.
+    write(dir, { "package.json": pkg([entry]), "people/jane/a.md": "Jane Q Doe\n" });
+    sh(dir, ["add", "package.json", "people/jane/a.md"]);
+    expect(audit(dir)).toBe("");
+    expect(audit(dir, ["--tree", "HEAD"])).toBe("");
+    // The staged entry covers the staged name while the working tree drops it.
+    write(dir, { "package.json": pkg([]) });
+    expect(audit(dir, ["--staged"])).toBe("");
+    // The entry only in the working tree covers nothing staged.
+    sh(dir, ["add", "package.json"]);
+    write(dir, { "package.json": pkg([entry]) });
+    expect(audit(dir, ["--staged"])).toContain("(Jane Q Doe)");
+    sh(dir, ["add", "package.json"]);
+    sh(dir, ["commit", "-qm", "jane"]);
+    // A commit removing both: the index holds neither, HEAD both.
+    sh(dir, ["rm", "-q", "people/jane/a.md"]);
+    write(dir, { "package.json": pkg([]) });
+    sh(dir, ["add", "package.json"]);
+    expect(audit(dir)).toBe("");
+    expect(audit(dir, ["--tree", "HEAD"])).toBe("");
+    // A name already committed, its entry staged: the commit adding the entry passes the gate.
+    const named = repo({ "package.json": pkg([]), "people/jane/a.md": "Jane Q Doe\n" });
+    expect(audit(named)).toContain("(Jane Q Doe)");
+    write(named, { "package.json": pkg([entry]) });
+    sh(named, ["add", "package.json"]);
+    expect(audit(named)).toBe("");
+    // A bad revision fails rather than read as a package without allow entries.
+    expect(run(named, "check-confidential", ["--tree", "nope"], env).code).not.toBe(0);
+    // An unmerged index has no single file to scan.
+    sh(named, ["commit", "-qm", "entry"]);
+    sh(named, ["checkout", "-qb", "side"]);
+    write(named, { "a.md": "side\n" });
+    sh(named, ["add", "a.md"]);
+    sh(named, ["commit", "-qm", "side"]);
+    sh(named, ["checkout", "-q", "-"]);
+    write(named, { "a.md": "main\n" });
+    sh(named, ["add", "a.md"]);
+    sh(named, ["commit", "-qm", "main"]);
+    spawnSync("git", ["merge", "-q", "side"], { cwd: named });
+    expect(audit(named)).toContain("a.md: unmerged");
   });
 
   test("an entry's text is the whole term in any case; a longer term containing it stays red", () => {
@@ -1389,7 +1437,7 @@ describe("catalog", () => {
     // `nav`: an href from "/" counts from the base, the current item links to /catalog/, which
     // forwards to the home.
     expect(home).toContain(
-      '<header class="fx-header"><a href="/">Fx</a><div class="hw-header-nav hw-catalogue-nav"><nav class="hw-header-nav" aria-label="Main" data-hw-catalogs><a class="hw-header-link" href="/">Site</a><a class="hw-header-link" href="/catalog/" aria-current="page">Fx</a><a class="hw-header-link" href="https://example.com/other/">Other</a><a class="hw-header-link" href="//example.com/far/">Far</a></nav></div></header>',
+      '<header class="fx-header"><a href="/">Fx</a><div class="hw-header-nav hw-catalog-nav"><nav class="hw-header-nav" aria-label="Main" data-hw-catalogs><a class="hw-header-link" href="/">Site</a><a class="hw-header-link" href="/catalog/" aria-current="page">Fx</a><a class="hw-header-link" href="https://example.com/other/">Other</a><a class="hw-header-link" href="//example.com/far/">Far</a></nav></div></header>',
     );
     expect(home).toContain("fx catalog/stories · 3 components · 24 states");
     // The admin hub serves only on this machine: a built page carries no link to it.
@@ -1397,7 +1445,7 @@ describe("catalog", () => {
     expect(home.indexOf(">Types <")).toBeLessThan(home.indexOf(">Parts <"));
     // The rail names every element under its group, linked to the state its tile draws.
     expect(home).toMatch(
-      /<ul class="hw-catalogue-names"><li><a href="\/dashboard\/Parts\/box-parts\/two\/">BoxParts<\/a>/,
+      /<ul class="hw-catalog-names"><li><a href="\/dashboard\/Parts\/box-parts\/two\/">BoxParts<\/a>/,
     );
     // A frame names its page in data-src: the shell's script loads it once the tile nears the view.
     expect(home).toContain('data-src="/stories/Types/box-types/two/"');
@@ -1408,9 +1456,9 @@ describe("catalog", () => {
     expect(home).toContain(
       'data-frame-width="1440" style="aspect-ratio:1440/900"><iframe data-src="/stories/Types/box-types/two/"',
     );
-    expect(home).toMatch(/<span class="hw-catalogue-preview"><iframe data-src="\/stories\/Parts\//);
+    expect(home).toMatch(/<span class="hw-catalog-preview"><iframe data-src="\/stories\/Parts\//);
     // The shell's own card and pill carry data-hw-shell, for brand-elements to skip.
-    expect(home).toContain('<a class="hw-card hw-catalogue-tile" data-hw-shell href=');
+    expect(home).toContain('<a class="hw-card hw-catalog-tile" data-hw-shell href=');
     expect(home).toContain('<span class="hw-pill" data-tone="neutral" data-hw-shell>');
     expect(readFileSync(join(dist, "fx.txt"), "utf8")).toBe("fx\n");
     const page = (p: string) => readFileSync(join(dist, p, "index.html"), "utf8");
@@ -1448,50 +1496,45 @@ describe("catalog", () => {
     const [stateCss, aloneCss, homeCss] = [state, page("stories/Parts/box-parts/two"), home].map(
       styles,
     );
-    for (const rule of [".fx-header{display:flex}", ".hw-catalogue-bar{", ".box{color:teal}"])
+    for (const rule of [".fx-header{display:flex}", ".hw-catalog-bar{", ".box{color:teal}"])
       expect(stateCss).toContain(rule);
     expect(aloneCss).toContain(".box{color:teal}");
-    for (const rule of [
-      ".fx-header{",
-      "hw-catalogue-bar",
-      "hw-catalogue-nav",
-      "astrobook-sidebar,",
-    ])
+    for (const rule of [".fx-header{", "hw-catalog-bar", "hw-catalog-nav", "astrobook-sidebar,"])
       expect(aloneCss).not.toContain(rule);
     expect(homeCss).toContain(".fx-header{display:flex}");
-    expect(homeCss).toContain(".hw-catalogue-grid{");
+    expect(homeCss).toContain(".hw-catalog-grid{");
     expect(homeCss).not.toContain(".box{");
     const barOf = (html: string) =>
-      html.match(/<template id="hw-catalogue-bar">([\s\S]*?)<\/template>/)?.[1] ?? "";
+      html.match(/<template id="hw-catalog-bar">([\s\S]*?)<\/template>/)?.[1] ?? "";
     const bar = barOf(state);
     // A state's page carries the header above the bar, the current item marked as the place, not
     // the page.
     expect(bar).toStartWith(
-      '<div data-hw-catalogue-top><header class="fx-header"><a href="/">Fx</a><div class="hw-header-nav hw-catalogue-nav"><nav class="hw-header-nav" aria-label="Main" data-hw-catalogs><a class="hw-header-link" href="/">Site</a><a class="hw-header-link" href="/catalog/" aria-current="true">Fx</a><a class="hw-header-link" href="https://example.com/other/">Other</a><a class="hw-header-link" href="//example.com/far/">Far</a></nav></div></header></div><nav class="hw-catalogue-bar"',
+      '<div data-hw-catalog-top><header class="fx-header"><a href="/">Fx</a><div class="hw-header-nav hw-catalog-nav"><nav class="hw-header-nav" aria-label="Main" data-hw-catalogs><a class="hw-header-link" href="/">Site</a><a class="hw-header-link" href="/catalog/" aria-current="true">Fx</a><a class="hw-header-link" href="https://example.com/other/">Other</a><a class="hw-header-link" href="//example.com/far/">Far</a></nav></div></header></div><nav class="hw-catalog-bar"',
     );
-    expect(bar).toContain('<nav class="hw-catalogue-bar" aria-label="Catalog">');
+    expect(bar).toContain('<nav class="hw-catalog-bar" aria-label="Catalog">');
     expect(bar).toContain('<a href="/catalog/"><span aria-hidden="true">');
     expect(bar).toMatch(/Parts \/ <strong>BoxParts<\/strong>/);
     expect(bar).toContain('<button type="button" data-hw-theme aria-pressed="false">');
     expect(bar).toMatch(
-      /<a class="hw-catalogue-tool" href="\/stories\/Parts\/box-parts\/two\/">\s*Open this state alone\s*<\/a>/,
+      /<a class="hw-catalog-tool" href="\/stories\/Parts\/box-parts\/two\/">\s*Open this state alone\s*<\/a>/,
     );
     expect(bar).toContain('<ul aria-label="States">');
     expect(bar).toMatch(/href="\/dashboard\/Parts\/box-parts\/one\/">One/);
     expect(bar).toMatch(/href="\/dashboard\/Parts\/box-parts\/two\/" aria-current="page">Two/);
     expect(bar).toContain(
-      '<a class="hw-catalogue-step" rel="prev" href="/dashboard/Parts/box-parts/one/"',
+      '<a class="hw-catalog-step" rel="prev" href="/dashboard/Parts/box-parts/one/"',
     );
     // A step with nowhere to go is no anchor: Lighthouse's crawlable-anchors fails one without href.
     expect(bar).toContain(
-      '<button class="hw-catalogue-step" type="button" disabled aria-label="Next state">',
+      '<button class="hw-catalog-step" type="button" disabled aria-label="Next state">',
     );
     const first = barOf(page("dashboard/Parts/box-parts/one"));
     expect(first).toContain(
-      '<button class="hw-catalogue-step" type="button" disabled aria-label="Previous state">',
+      '<button class="hw-catalog-step" type="button" disabled aria-label="Previous state">',
     );
     expect(first).toContain(
-      '<a class="hw-catalogue-step" rel="next" href="/dashboard/Parts/box-parts/two/"',
+      '<a class="hw-catalog-step" rel="next" href="/dashboard/Parts/box-parts/two/"',
     );
     expect(`${bar}${first}`).not.toMatch(/<a(?![^>]*href)[^>]*>/);
     expect(bar).toContain("2 of 2");
@@ -1519,8 +1562,8 @@ describe("catalog", () => {
     expect(many).toMatch(/many-parts\/two-pd-fs\/">Two PDFs</);
     expect(many).toMatch(/many-parts\/loading-git-hub\/">Loading GitHub</);
     expect(state).toContain("if (top) main.before(top);");
-    expect(page("stories/Parts/box-parts/two")).not.toContain('id="hw-catalogue-bar"');
-    expect(home).not.toContain('id="hw-catalogue-bar"');
+    expect(page("stories/Parts/box-parts/two")).not.toContain('id="hw-catalog-bar"');
+    expect(home).not.toContain('id="hw-catalog-bar"');
     // `serverOnly`: no state's route keeps Astrobook's client:load branch.
     const codegen = join(
       fixture,
@@ -1545,7 +1588,7 @@ describe("catalog", () => {
     expect(build(["--base", "/fx"]).status).toBe(0);
     const based = readFileSync(join(dist, "index.html"), "utf8");
     expect(based).toContain(
-      '<header class="fx-header"><a href="/fx/">Fx</a><div class="hw-header-nav hw-catalogue-nav"><nav class="hw-header-nav" aria-label="Main" data-hw-catalogs><a class="hw-header-link" href="/fx/">Site</a><a class="hw-header-link" href="/fx/catalog/" aria-current="page">Fx</a><a class="hw-header-link" href="https://example.com/other/">Other</a><a class="hw-header-link" href="//example.com/far/">Far</a></nav></div></header>',
+      '<header class="fx-header"><a href="/fx/">Fx</a><div class="hw-header-nav hw-catalog-nav"><nav class="hw-header-nav" aria-label="Main" data-hw-catalogs><a class="hw-header-link" href="/fx/">Site</a><a class="hw-header-link" href="/fx/catalog/" aria-current="page">Fx</a><a class="hw-header-link" href="https://example.com/other/">Other</a><a class="hw-header-link" href="//example.com/far/">Far</a></nav></div></header>',
     );
     expect(based).toContain('data-src="/fx/stories/Types/box-types/two/"');
     expect(page("catalog/stories/Types/box-types/two")).toContain(
@@ -1686,7 +1729,7 @@ describe("catalog", () => {
     expect(build(["--config", "homed.config.mjs"]).status).toBe(0);
     const folderOnly = readFileSync(join(dist, "index.html"), "utf8");
     expect(folderOnly.match(/id="foundations"/g)).toHaveLength(1);
-    expect(folderOnly).not.toContain("hw-catalogue-text");
+    expect(folderOnly).not.toContain("hw-catalog-text");
     rmSync(folder, { recursive: true });
     rmSync(homed);
     rmSync(ownHome);
@@ -1835,12 +1878,12 @@ describe("catalog", () => {
       const { evaluate, until } = page;
       await until(`document.readyState === "complete" && !!document.body.dataset.fxRan`);
       await evaluate(
-        `document.querySelector('.hw-catalogue-bar a[href$="/box-parts/one/"]').click()`,
+        `document.querySelector('.hw-catalog-bar a[href$="/box-parts/one/"]').click()`,
       );
       await until(`location.pathname.endsWith("/one/") && document.readyState === "complete"`);
       await new Promise((r) => setTimeout(r, 500));
       const after = await evaluate(
-        `JSON.stringify([document.documentElement.dataset.fxHead, document.documentElement.dataset.hwScale, document.body.dataset.fxRan, !!document.querySelector("main .hw-catalogue-bar"), document.body.dataset.fxBar])`,
+        `JSON.stringify([document.documentElement.dataset.fxHead, document.documentElement.dataset.hwScale, document.body.dataset.fxRan, !!document.querySelector("main .hw-catalog-bar"), document.body.dataset.fxBar])`,
       );
       expect(JSON.parse(String(after))).toEqual([
         "repository",
@@ -1926,7 +1969,7 @@ describe("catalog", () => {
       await send("Network.enable");
       const frames = (prefix: string) => asked.filter((p) => p.startsWith(prefix)).length;
       await send("Page.navigate", { url: `${server.url}home` });
-      const fitted = `(() => { const f = document.querySelector(".hw-catalogue-preview iframe"); return !!f.contentDocument?.querySelector("[data-hw-preview]") && f.style.transform.includes("scale"); })()`;
+      const fitted = `(() => { const f = document.querySelector(".hw-catalog-preview iframe"); return !!f.contentDocument?.querySelector("[data-hw-preview]") && f.style.transform.includes("scale"); })()`;
       await until(`document.readyState === "complete" && ${fitted}`);
       await new Promise((r) => setTimeout(r, 1000));
       // Only the tiles in or near the view load: four rows of three at 1280 x 800, not all 40.
@@ -1943,7 +1986,7 @@ describe("catalog", () => {
       // around it, white, even where it has a ground of its own; the frame's canvas is cleared.
       const fit = (tile: number) =>
         evaluate(`(() => {
-        const p = document.querySelectorAll(".hw-catalogue-preview")[${tile}], f = p.firstElementChild, d = f.contentDocument;
+        const p = document.querySelectorAll(".hw-catalog-preview")[${tile}], f = p.firstElementChild, d = f.contentDocument;
         const r = d.querySelector(".box").getBoundingClientRect();
         const [tx, ty, s] = f.style.transform.match(/-?[\\d.]+/g).map(Number);
         return { dx: tx + (r.left + r.width / 2) * s - p.clientWidth / 2, dy: ty + (r.top + r.height / 2) * s - p.clientHeight / 2,
@@ -1961,9 +2004,9 @@ describe("catalog", () => {
         ]);
       }
       // Scrolled to the end, the last tile loads.
-      await evaluate(`document.querySelector(".hw-catalogue-grid li:last-child").scrollIntoView()`);
+      await evaluate(`document.querySelector(".hw-catalog-grid li:last-child").scrollIntoView()`);
       await until(
-        `!!document.querySelector(".hw-catalogue-grid li:last-child iframe").contentDocument?.querySelector("[data-hw-preview]")`,
+        `!!document.querySelector(".hw-catalog-grid li:last-child iframe").contentDocument?.querySelector("[data-hw-preview]")`,
       );
       expect(asked).toContain("/story/39");
       expect(failed).toEqual([]);
@@ -1976,7 +2019,7 @@ describe("catalog", () => {
       expect(frames("/deny/")).toBeLessThan(20);
       expect(
         await evaluate(
-          `[...document.querySelectorAll(".hw-catalogue-preview iframe")].some((f) => f.hasAttribute("src"))`,
+          `[...document.querySelectorAll(".hw-catalog-preview iframe")].some((f) => f.hasAttribute("src"))`,
         ),
       ).toBe(false);
       expect(failed).toEqual([]);
@@ -2001,7 +2044,7 @@ describe("catalog", () => {
       '<li><a href="#foundations"><span>Foundations</span></a></li></ul></nav>',
     );
     expect(html).toContain(
-      '</section><section class="hw-catalogue-group" id="foundations"><h2>Foundations</h2><div class="hw-catalogue-text"><p>Tokens</p></div></section></div>',
+      '</section><section class="hw-catalog-group" id="foundations"><h2>Foundations</h2><div class="hw-catalog-text"><p>Tokens</p></div></section></div>',
     );
   });
 

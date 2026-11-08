@@ -7,7 +7,6 @@ import {
   readdirSync,
   readFileSync,
   renameSync,
-  rmSync,
   symlinkSync,
   writeFileSync,
 } from "node:fs";
@@ -67,12 +66,7 @@ if (!catalogIn) pins.brand = newestTag("brand");
 if (!adminIn) pins.admin = newestTag("admin");
 
 cpSync(join(home, "template"), target, { recursive: true });
-if (!catalogIn) cpSync(join(home, "surface"), target, { recursive: true });
-if (!adminIn) {
-  cpSync(join(home, "admin-area"), target, { recursive: true });
-  // admin-check allows only items in docs/agent-work/items, and the goal item keeps the folder.
-  rmSync(join(target, "docs/agent-work/.gitkeep"));
-}
+if (!catalogIn) cpSync(join(home, "template-catalog"), target, { recursive: true });
 // Stored under another name: as eslint.config.js it would lint this package's own template files
 // with an import of this package that only resolves in a repository that installs it; the Astro
 // config holds a placeholder that is no TypeScript until it is filled.

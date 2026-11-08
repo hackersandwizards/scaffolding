@@ -72,35 +72,35 @@ const root = {
   set:html={`Object.assign(document.documentElement.dataset,${JSON.stringify(root)});`}
 />
 {mod && (
-  <template id="hw-catalogue-bar">
+  <template id="hw-catalog-bar">
     {shell.nav && (
-      <div data-hw-catalogue-top>
+      <div data-hw-catalog-top>
         <Top current="true" />
       </div>
     )}
-    <nav class="hw-catalogue-bar" aria-label="Catalog">
+    <nav class="hw-catalog-bar" aria-label="Catalog">
       <a href={shell.link}>
         <span aria-hidden="true">←&nbsp;</span>Catalog
       </a>
-      <span class="hw-catalogue-bar-where">
+      <span class="hw-catalog-bar-where">
         {folder} / <strong>{mod.name}</strong>
       </span>
-      <span class="hw-catalogue-bar-tools">
+      <span class="hw-catalog-bar-tools">
         <button type="button" data-hw-theme aria-pressed="false">
           Dark theme
         </button>
-        <a class="hw-catalogue-tool" href={`${trim(config.storyBase)}/${id}${shell.slash}`}>
+        <a class="hw-catalog-tool" href={`${trim(config.storyBase)}/${id}${shell.slash}`}>
           Open this state alone
         </a>
       </span>
       {states.length > 1 && (
-        <div class="hw-catalogue-states">
+        <div class="hw-catalog-states">
           {prev ? (
-            <a class="hw-catalogue-step" rel="prev" href={href(prev)} aria-label="Previous state">
+            <a class="hw-catalog-step" rel="prev" href={href(prev)} aria-label="Previous state">
               ‹
             </a>
           ) : (
-            <button class="hw-catalogue-step" type="button" disabled aria-label="Previous state">
+            <button class="hw-catalog-step" type="button" disabled aria-label="Previous state">
               ‹
             </button>
           )}
@@ -127,17 +127,17 @@ const root = {
             </ul>
           )}
           {next ? (
-            <a class="hw-catalogue-step" rel="next" href={href(next)} aria-label="Next state">
+            <a class="hw-catalog-step" rel="next" href={href(next)} aria-label="Next state">
               ›
             </a>
           ) : (
-            <button class="hw-catalogue-step" type="button" disabled aria-label="Next state">
+            <button class="hw-catalog-step" type="button" disabled aria-label="Next state">
               ›
             </button>
           )}
           <small>
             {at + 1} of {states.length}
-            <span class="hw-catalogue-keys"> · ← → to step</span>
+            <span class="hw-catalog-keys"> · ← → to step</span>
           </small>
         </div>
       )}
@@ -154,14 +154,14 @@ const root = {
       document
         .querySelector("[data-hw-theme]")
         ?.setAttribute("aria-pressed", String(theme()?.getTheme?.() === "dark"));
-    const bar = document.getElementById("hw-catalogue-bar");
+    const bar = document.getElementById("hw-catalog-bar");
     if (bar)
       new MutationObserver((_, observer) => {
         const main = document.querySelector("main");
         if (!main) return;
         observer.disconnect();
         const parts = bar.content.cloneNode(true);
-        const top = parts.querySelector("[data-hw-catalogue-top]");
+        const top = parts.querySelector("[data-hw-catalog-top]");
         if (top) main.before(top);
         main.prepend(parts);
         pressed();
@@ -188,11 +188,11 @@ const root = {
       const on = event.target.closest?.bind(event.target);
       if (
         on?.("input, select, textarea, [contenteditable]") ||
-        (on?.("main") && !on(".hw-catalogue-bar"))
+        (on?.("main") && !on(".hw-catalog-bar"))
       )
         return;
       const rel = { ArrowLeft: "prev", ArrowRight: "next" }[event.key];
-      const link = rel && document.querySelector(`.hw-catalogue-bar a[rel="${rel}"]`);
+      const link = rel && document.querySelector(`.hw-catalog-bar a[rel="${rel}"]`);
       if (link) setTimeout(() => event.defaultPrevented || (location.href = link.href));
     });
   })();

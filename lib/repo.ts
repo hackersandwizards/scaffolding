@@ -86,10 +86,20 @@ export type Package = {
   [field: string]: unknown;
 };
 
-/** A repository without package.json reads as empty; check-structure reports it missing. */
-export function readPackage(root: string): Package {
-  const file = `${root}/package.json`;
-  return existsSync(file) ? JSON.parse(readFileSync(file, "utf8")) : {};
+/**
+ * A repository without package.json reads as empty; check-structure reports it missing. With `rev`,
+ * the file as that snapshot holds it: `:` the index, else a commit or tree. A bad revision or an
+ * unmerged package.json throws rather than read as empty, which would drop every allow entry.
+ */
+export function readPackage(root: string, rev?: string): Package {
+  if (rev === undefined) {
+    const file = `${root}/package.json`;
+    return existsSync(file) ? JSON.parse(readFileSync(file, "utf8")) : {};
+  }
+  const index = rev === ":";
+  const listed = git(index ? ["ls-files", "package.json"] : ["ls-tree", rev, "package.json"], root);
+  if (!listed.length) return {};
+  return JSON.parse(git(["show", `${index ? "" : rev}:package.json`], root).toString("utf8"));
 }
 
 const glob = (pattern: string) =>
@@ -119,17 +129,18 @@ const covers = (entry: AllowEntry, f: Finding, text = entry.text) =>
   (text === undefined || [text].flat().some((t) => textCovers(t, f)));
 
 /**
- * Drops each finding a `scaffolding.allow` entry of package.json covers, and reports every entry
- * of this check without a reason. With `stale`, a full run also reports every entry that covers
- * nothing, so an exception dies with the case it was written for.
+ * Drops each finding a `scaffolding.allow` entry of `pkg` covers, and reports every entry of this
+ * check without a reason. `pkg` is the package.json of the snapshot the findings come from, so a
+ * commit adding a case and its entry together is judged as one. With `stale`, a full run also
+ * reports every entry that covers nothing, so an exception dies with the case it was written for.
  */
 export function applyAllow(
-  root: string,
+  pkg: Package,
   check: string,
   findings: Finding[],
   stale: boolean,
 ): Finding[] {
-  const allow: AllowEntry[] = readPackage(root).scaffolding?.allow ?? [];
+  const allow: AllowEntry[] = pkg.scaffolding?.allow ?? [];
   const mine = allow.filter((e) => e.check === check);
   const left = findings.filter((f) => !mine.some((e) => covers(e, f)));
   for (const e of mine) {

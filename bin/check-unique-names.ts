@@ -27,7 +27,8 @@ const testFile = /(^|\/)(__tests__|tests?|e2e)\/|\.(test|spec)\.[cm]?[jt]sx?$/;
 
 const sites = new Map<string, string[]>();
 const root = repoRoot();
-const frameworkNames = new Set([readPackage(root).scaffolding?.uniqueNames ?? []].flat());
+const pkg = readPackage(root);
+const frameworkNames = new Set([pkg.scaffolding?.uniqueNames ?? []].flat());
 const files = listFiles(root, false).filter(
   (file) =>
     /\.(?:[cm]?[jt]s|tsx|astro)$/.test(file) &&
@@ -74,7 +75,7 @@ const found: Finding[] = [...sites]
       message: site,
     })),
   );
-const kept = applyAllow(root, "unique-names", found, true);
+const kept = applyAllow(pkg, "unique-names", found, true);
 const entries = kept.filter((f) => f.path === "package.json");
 const left = new Map<string, string[]>();
 for (const f of kept)

@@ -10,6 +10,7 @@ import {
   commentSyntax,
   finish,
   listFiles,
+  readPackage,
   repoRoot,
   type Finding,
 } from "../lib/repo.ts";
@@ -68,4 +69,4 @@ for (const file of files.filter((f) => f.endsWith(".astro"))) {
       });
   });
 }
-finish("spaces", applyAllow(root, "spaces", found, true), started);
+finish("spaces", applyAllow(readPackage(root), "spaces", found, true), started);

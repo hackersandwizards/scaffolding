@@ -119,7 +119,7 @@ for (const [line, kind] of [
 // A repository declaring no files, exports or bin ships nothing another repository reads.
 const pkg = readPackage(root);
 if (!pkg.files && !pkg.exports && !pkg.bin)
-  finish("history", applyAllow(root, "history", found, true), started);
+  finish("history", applyAllow(pkg, "history", found, true), started);
 const pack = spawnSync(process.execPath, ["pm", "pack", "--dry-run", "--ignore-scripts"], {
   cwd: root,
   encoding: "utf8",
@@ -142,4 +142,4 @@ for (const path of shipped) {
         found.push({ check: "history", path, text: text.trim(), message: kind });
       }
 }
-finish("history", applyAllow(root, "history", found, true), started);
+finish("history", applyAllow(pkg, "history", found, true), started);

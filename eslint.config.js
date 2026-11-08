@@ -2,6 +2,6 @@ import base from "./config/eslint.js";
 
 export default [
   ...base,
-  { ignores: ["template/**", "surface/**", "admin-area/**"] },
+  { ignores: ["template/**", "template-catalog/**"] },
   { languageOptions: { parserOptions: { tsconfigRootDir: import.meta.dirname } } },
 ];

@@ -1,8 +1,7 @@
-/* Colours read brand's expert role where a page sets it, else the light token; the class names
-   are the ones brand's catalogue.css used, so pages built on either look the same. */
+/* Colours read brand's expert role where a page sets it, else the light token. */
 
 @layer components {
-  .hw-catalogue {
+  .hw-catalog {
     --hw-cat-fg: var(--foreground, var(--color-ink));
     /* Muted text is the foreground at 70 %, as the expert set dims it: under expert.css
        --color-muted is the muted fill. */
@@ -25,7 +24,7 @@
   }
   /* The names scroll under the search, which stays in view. Short of the bottom padding too, so the
      rail never slides up under the header at the page's end. */
-  .hw-catalogue-rail {
+  .hw-catalog-rail {
     position: sticky;
     top: calc(var(--spacing-app-header, 4rem) + var(--hw-cat-above));
     display: flex;
@@ -35,11 +34,11 @@
       100vh - var(--spacing-app-header, 4rem) - var(--hw-cat-above) - var(--hw-cat-below)
     );
   }
-  .hw-catalogue-rail > nav {
+  .hw-catalog-rail > nav {
     min-height: 0;
     overflow-y: auto;
   }
-  .hw-catalogue-search {
+  .hw-catalog-search {
     box-sizing: border-box;
     width: 100%;
     min-height: var(--hw-control-height, 2.5rem);
@@ -52,15 +51,15 @@
     font: inherit;
     font-size: var(--text-ui, 0.875rem);
   }
-  .hw-catalogue-rail ul,
-  .hw-catalogue-grid {
+  .hw-catalog-rail ul,
+  .hw-catalog-grid {
     margin: 0;
     padding: 0;
     list-style: none;
   }
   /* At least 24 px high, WCAG 2.2's minimum target size, which Lighthouse's target-size audits:
      a name at the UI size measured 21 to 23 px. */
-  .hw-catalogue-rail a {
+  .hw-catalog-rail a {
     display: flex;
     justify-content: space-between;
     box-sizing: border-box;
@@ -75,13 +74,13 @@
     /* brand's focus ring inside the link: outside it, the rail's scroll box clips it. */
     --hw-focus-offset: -3px;
   }
-  .hw-catalogue-rail a:hover {
+  .hw-catalog-rail a:hover {
     background: color-mix(in srgb, var(--hw-cat-fg) 5%, transparent);
   }
   /* The open entry, which a page marks with aria-current: an accent wash and edge, set apart from
      the grey hover. Only the entry; its group's label darkens below (wide) or turns a chip
      (narrow). */
-  .hw-catalogue-rail .hw-catalogue-names a[aria-current] {
+  .hw-catalog-rail .hw-catalog-names a[aria-current] {
     border-radius: 0 var(--hw-corner-sm, var(--radius-sm)) var(--hw-corner-sm, var(--radius-sm)) 0;
     background: var(--hw-cat-wash);
     box-shadow: var(--hw-cat-edge);
@@ -89,11 +88,11 @@
   }
   /* Wide, the rail lists every element by name under its group's label, as a component library's
      sidebar does. */
-  .hw-catalogue-rail .hw-catalogue-names {
+  .hw-catalog-rail .hw-catalog-names {
     margin: 0 0 1rem;
   }
   @media (width > 48rem) {
-    .hw-catalogue-rail > nav > ul > li > a {
+    .hw-catalog-rail > nav > ul > li > a {
       color: var(--hw-cat-muted);
       font-family: var(--font-mono);
       font-size: var(--text-micro, 0.75rem);
@@ -102,25 +101,25 @@
     }
     /* A group's label is a label, never a filled row: hover and an open entry under it only
        darken its text. */
-    .hw-catalogue-rail > nav > ul > li > a:hover {
+    .hw-catalog-rail > nav > ul > li > a:hover {
       background: none;
     }
-    .hw-catalogue-rail > nav > ul > li > a:hover,
-    .hw-catalogue-rail > nav > ul > li:has(a[aria-current]) > a {
+    .hw-catalog-rail > nav > ul > li > a:hover,
+    .hw-catalog-rail > nav > ul > li:has(a[aria-current]) > a {
       color: var(--hw-cat-fg);
     }
     /* The group read now, which the shell's script marks with aria-current="true": the label in
        the accent with the open entry's edge, unfilled. */
-    .hw-catalogue-rail > nav > ul > li:has(> a[aria-current="true"]) > a {
+    .hw-catalog-rail > nav > ul > li:has(> a[aria-current="true"]) > a {
       border-radius: 0;
       box-shadow: var(--hw-cat-edge);
       color: var(--hw-cat-accent);
     }
-    .hw-catalogue-rail > nav > ul > li > a .hw-catalogue-count {
+    .hw-catalog-rail > nav > ul > li > a .hw-catalog-count {
       display: none;
     }
   }
-  .hw-catalogue-count {
+  .hw-catalog-count {
     color: var(--hw-cat-muted);
     font-family: var(--font-mono);
     font-size: var(--text-micro, 0.75rem);
@@ -128,10 +127,10 @@
   }
   /* The tile grid ends a rem further in than the page's container: at its 1rem alone the tiles
      read as running into the right edge. */
-  .hw-catalogue-main {
+  .hw-catalog-main {
     padding-inline-end: 1rem;
   }
-  .hw-catalogue-main h1 {
+  .hw-catalog-main h1 {
     margin: 0;
     font-family: var(--font-mono);
     font-size: var(--text-page, 1.5rem);
@@ -143,9 +142,9 @@
      At no specificity, so a class in this layer or unlayered wins. The provenance line reads in
      the sans at the UI size. */
   :where(
-    :is(.hw-catalogue-main, .hw-catalogue-text) > p,
-    :is(.hw-catalogue-main, .hw-catalogue-text) > :not(section) > p,
-    :is(.hw-catalogue-main, .hw-catalogue-text) > :not(section) > :is(details, section) > p
+    :is(.hw-catalog-main, .hw-catalog-text) > p,
+    :is(.hw-catalog-main, .hw-catalog-text) > :not(section) > p,
+    :is(.hw-catalog-main, .hw-catalog-text) > :not(section) > :is(details, section) > p
   ) {
     max-width: 48rem;
     line-height: 1.5;
@@ -153,43 +152,43 @@
   /* A heading of the home's slot, or of a wrapper element in it: the subheading step in the h2's
      face, 2.5rem between sections. The slot's first element, and a heading opening the first
      wrapper, sit at the h2's own 1rem below. At no specificity, as the paragraphs. */
-  :where(.hw-catalogue-text > h3, .hw-catalogue-text > :not(section) > h3) {
+  :where(.hw-catalog-text > h3, .hw-catalog-text > :not(section) > h3) {
     margin: 2.5rem 0 0.5rem;
     font-family: var(--font-mono);
     font-size: var(--text-subheading, 1rem);
     line-height: var(--text-subheading--line-height, 1.35);
   }
   :where(
-    .hw-catalogue-text > :first-child,
-    .hw-catalogue-text > :first-child:not(section) > h3:first-child
+    .hw-catalog-text > :first-child,
+    .hw-catalog-text > :first-child:not(section) > h3:first-child
   ) {
     margin-top: 0;
   }
-  .hw-catalogue-lead {
+  .hw-catalog-lead {
     margin: 0.5rem 0 0;
     font-size: var(--text-subheading, 1rem);
   }
-  .hw-catalogue-provenance {
+  .hw-catalog-provenance {
     margin: 0.5rem 0 0;
     color: var(--hw-cat-muted);
     font-size: var(--text-ui, 0.875rem);
   }
-  .hw-catalogue-group {
+  .hw-catalog-group {
     margin-top: 2.5rem;
     scroll-margin-top: calc(var(--spacing-app-header, 4rem) + 1rem);
   }
-  .hw-catalogue-group > h2 {
+  .hw-catalog-group > h2 {
     margin: 0 0 1rem;
     font-family: var(--font-mono);
     font-size: var(--text-heading, 1.25rem);
     line-height: 1.3;
   }
-  .hw-catalogue-grid {
+  .hw-catalog-grid {
     display: grid;
     grid-template-columns: repeat(auto-fill, minmax(20rem, 1fr));
     gap: 1rem;
   }
-  .hw-catalogue-tile {
+  .hw-catalog-tile {
     display: flex;
     height: 100%;
     flex-direction: column;
@@ -199,10 +198,10 @@
     text-decoration: none;
     transition: border-color 150ms;
   }
-  .hw-catalogue-tile:hover {
+  .hw-catalog-tile:hover {
     border-color: var(--hw-cat-accent);
   }
-  .hw-catalogue-preview {
+  .hw-catalog-preview {
     position: relative;
     display: block;
     box-sizing: border-box;
@@ -216,7 +215,7 @@
     border-radius: var(--hw-card-corner, var(--radius-brand));
     background: var(--background, var(--color-bg));
   }
-  .hw-catalogue-preview iframe {
+  .hw-catalog-preview iframe {
     position: absolute;
     top: 0;
     left: 0;
@@ -227,44 +226,44 @@
     transform-origin: 0 0;
     pointer-events: none;
   }
-  .hw-catalogue-preview[data-frame-width] {
+  .hw-catalog-preview[data-frame-width] {
     height: auto;
   }
-  .hw-catalogue-preview[data-frame-width] iframe {
+  .hw-catalog-preview[data-frame-width] iframe {
     transform: scale(0.2);
   }
-  .hw-catalogue-preview img {
+  .hw-catalog-preview img {
     width: 100%;
     height: 100%;
     object-fit: contain;
   }
-  .hw-catalogue-name {
+  .hw-catalog-name {
     font-size: var(--text-ui, 0.875rem);
     font-weight: 600;
   }
-  .hw-catalogue-note {
+  .hw-catalog-note {
     color: var(--hw-cat-muted);
     font-size: var(--text-ui, 0.875rem);
   }
-  .hw-catalogue [hidden] {
+  .hw-catalog [hidden] {
     display: none;
   }
   @media (max-width: 48rem) {
-    .hw-catalogue {
+    .hw-catalog {
       grid-template-columns: minmax(0, 1fr);
     }
-    .hw-catalogue-rail {
+    .hw-catalog-rail {
       position: static;
       max-height: none;
     }
-    .hw-catalogue-rail > nav {
+    .hw-catalog-rail > nav {
       overflow: visible;
     }
     /* The phone keeps the groups as one row of chips under the search. */
-    .hw-catalogue-search {
+    .hw-catalog-search {
       margin-bottom: 0.5rem;
     }
-    .hw-catalogue-rail ul {
+    .hw-catalog-rail ul {
       display: flex;
       gap: 0.375rem;
       margin-inline: -1rem;
@@ -272,13 +271,13 @@
       overflow-x: auto;
       scrollbar-width: none;
     }
-    .hw-catalogue-rail li {
+    .hw-catalog-rail li {
       flex: none;
     }
-    .hw-catalogue-rail .hw-catalogue-names {
+    .hw-catalog-rail .hw-catalog-names {
       display: none;
     }
-    .hw-catalogue-rail a {
+    .hw-catalog-rail a {
       align-items: center;
       gap: 0.375rem;
       min-height: 2.75rem;
@@ -287,7 +286,7 @@
       border-radius: var(--radius-pill, 999px);
       white-space: nowrap;
     }
-    .hw-catalogue-rail li:has(a[aria-current]) > a {
+    .hw-catalog-rail li:has(a[aria-current]) > a {
       border-color: var(--hw-cat-accent);
       background: var(--hw-cat-wash);
     }

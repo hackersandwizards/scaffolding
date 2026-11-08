@@ -50,7 +50,8 @@ const shared: Record<string, string> = {
   coupling: bin("check-coupling"),
   "unique-names": bin("check-unique-names"),
   spaces: bin("check-spaces"),
-  confidential: `${bin("check-confidential")} --tree HEAD`,
+  // The index: what the next commit holds, judged by its own allow list.
+  confidential: `${bin("check-confidential")} --index`,
   history: bin("check-history"),
   licenses: bin("check-licenses"),
   // Tests are shared too: a gate without them is a skip someone wrote down, not one that drifted.

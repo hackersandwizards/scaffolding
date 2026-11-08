@@ -2,6 +2,7 @@
 //   check-confidential --staged               pre-commit: added lines, images and PDFs in the index
 //   check-confidential --message-file <file>  commit-msg: the commit message
 //   check-confidential --commit <rev>         one commit: its added lines, images, PDFs and message
+//   check-confidential --index                every file of the index, the gate's audit
 //   check-confidential --tree <rev>           every file of a tree, for an audit
 //   check-confidential prepush                pre-push: refuses commits listed in
 //                                             .confidential-purged.json, then hands the refs to
@@ -269,7 +270,14 @@ if (argv[0] === "fetch") {
   process.exit(loaded.problem ? 1 : 0);
 }
 
+const message = arg("--message-file");
+const commit = arg("--commit");
+const tree = arg("--tree");
+const index = argv.includes("--index");
 if (readPackage(root).scaffolding?.private === true) process.exit(0);
+// The allow list comes from the snapshot scanned, so a commit adding a case and its allow entry
+// together is judged as one. A message belongs to the commit the index makes.
+const pkg = readPackage(root, tree ?? commit ?? ":");
 
 let list: TermList | undefined;
 // Kept out of applyAllow: no allow entry may switch the list requirement off.
@@ -396,6 +404,8 @@ function addedLines(diff: string) {
   return added;
 }
 
+// Set by a scan that reads every file: only that one can call an allow entry stale.
+let full = false;
 const isBinary = (p: string) => IMAGE.test(p) || /\.pdf$/i.test(p);
 const LFS = "version https://git-lfs";
 const blob = (spec: string) => git(["show", spec], root);
@@ -409,9 +419,6 @@ const take = (where: string, data: Buffer) => {
   binaries.push({ where, data });
 };
 
-const message = arg("--message-file");
-const commit = arg("--commit");
-const tree = arg("--tree");
 // Comment lines count: `git commit -m` keeps them. Only the diff below `commit -v`'s scissors goes.
 if (message) scanText("commit message", readFileSync(message, "utf8").split(/^# -+ >8 -+$/m)[0]);
 else if (argv.includes("--staged") || commit) {
@@ -442,18 +449,33 @@ else if (argv.includes("--staged") || commit) {
     take(path, blob(commit ? `${commit}:${path}` : `:${path}`));
   if (commit)
     scanText("commit message", git(["log", "-1", "--format=%B", commit], root).toString());
-} else if (tree) {
-  const entries = git(["ls-tree", "-r", "-z", tree], root)
+} else if (tree || index) {
+  full = true;
+  const listed = git(tree ? ["ls-tree", "-r", "-z", tree] : ["ls-files", "-s", "-z"], root)
     .toString()
     .split("\0")
-    .filter(Boolean)
-    .map((line) => line.match(/^\d+ (\w+) (\w+)\t(.*)$/s)!);
-  scanText("file names", entries.map(([, , , path]) => path).join("\n"));
-  const blobs = entries.filter(([, type]) => type === "blob");
+    .filter(Boolean);
+  const entries = listed.map((line) => {
+    if (tree) {
+      const [, type, sha, path] = line.match(/^\d+ (\w+) (\w+)\t(.*)$/s)!;
+      return { type, sha, path };
+    }
+    // "<mode> <sha> <stage>\t<path>"; mode 160000 is a submodule's commit.
+    const [, mode, sha, stage, path] = line.match(/^(\d+) (\w+) (\d)\t(.*)$/s)!;
+    if (stage !== "0") {
+      console.error(
+        `[check-confidential] ${path}: unmerged; resolve the merge, then scan the index`,
+      );
+      process.exit(1);
+    }
+    return { type: mode === "160000" ? "commit" : "blob", sha, path };
+  });
+  scanText("file names", entries.map((e) => e.path).join("\n"));
+  const blobs = entries.filter((e) => e.type === "blob");
   // One cat-file for every blob: a `git show` per file cost 6.6 ms each.
-  const batch = git(["cat-file", "--batch"], root, blobs.map(([, , sha]) => sha).join("\n") + "\n");
+  const batch = git(["cat-file", "--batch"], root, blobs.map((e) => e.sha).join("\n") + "\n");
   let at = 0;
-  for (const [, , , path] of blobs) {
+  for (const { path } of blobs) {
     const header = batch.indexOf(10, at);
     const [, type, length] = batch.subarray(at, header).toString().split(" ");
     if (type !== "blob") throw new Error(`git cat-file: ${path} not readable (${type})`);
@@ -465,16 +487,17 @@ else if (argv.includes("--staged") || commit) {
   }
 } else {
   console.error(
-    "usage: check-confidential --staged | --message-file <file> | --commit <rev> | --tree <rev> | prepush | fetch | build <terms|-> [--public <file>] | purged <sha>...",
+    "usage: check-confidential --staged | --message-file <file> | --commit <rev> | --index | --tree <rev> | prepush | fetch | build <terms|-> [--public <file>] | purged <sha>...",
   );
   process.exit(2);
 }
 scanBinaries(binaries);
 
-// The tree audit, the gate's step, sees every file, so an allow entry matching nothing there is
-// stale. A partial scan (staged, one commit, a message) or one without the list cannot tell.
+// A full scan (the index, the gate's step, or a tree) sees every file, so an allow entry matching
+// nothing there is stale. A partial scan (staged, one commit, a message) or one without the list
+// cannot tell.
 finish(
   "check-confidential",
-  [...listProblem, ...applyAllow(root, "confidential", findings, Boolean(tree && list))],
+  [...listProblem, ...applyAllow(pkg, "confidential", findings, full && Boolean(list))],
   started,
 );

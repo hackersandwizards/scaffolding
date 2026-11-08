@@ -87,6 +87,8 @@ function publishes(name: string, subpath: string, disk: boolean): boolean {
 }
 
 const own = readPackage(root).name;
+// The pins and the allow list as the commit holds them in a staged run.
+const pkg = readPackage(root, staged ? ":" : undefined);
 const withoutAllow = (json: string) => {
   let pkg;
   try {
@@ -174,7 +176,6 @@ const GIT =
   /^(?:github:|gitlab:|bitbucket:|git\+|git:|git@|https?:\/\/\S+\.git(?:#|$))|^[\w.-]+\/[\w.-]+(?:#|$)/;
 const TAG = /#(?:semver:)?v?\d+\.\d+\.\d+(?:[-+][\w.-]+)?$/;
 if (!staged || listFiles(root, true).includes("package.json")) {
-  const pkg = staged ? JSON.parse(read("package.json").toString("utf8")) : readPackage(root);
   for (const field of [
     "dependencies",
     "devDependencies",
@@ -200,4 +201,4 @@ if (!staged || listFiles(root, true).includes("package.json")) {
     }
 }
 
-finish("check-coupling", applyAllow(root, "coupling", findings, !staged), started);
+finish("check-coupling", applyAllow(pkg, "coupling", findings, !staged), started);

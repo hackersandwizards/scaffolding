@@ -74,7 +74,7 @@ for (const path of (skeleton.same as string[]).filter((p) => !privateAbsent.incl
 }
 for (const path of skeleton.owned as string[]) {
   if (!exists(path)) continue;
-  const template = readFileSync(join(home, "surface", path), "utf8").replaceAll(
+  const template = readFileSync(join(home, "template-catalog", path), "utf8").replaceAll(
     "{{version}}",
     own.version,
   );
@@ -182,6 +182,6 @@ if (hooks !== skeleton.hooksPath)
     () => git(["config", "core.hooksPath", skeleton.hooksPath], root),
   );
 
-const left = applyAllow(root, "structure", findings, true);
+const left = applyAllow(pkg, "structure", findings, true);
 if (fix) for (const f of left) repairs.get(f)?.();
 finish("check-structure", fix ? left.filter((f) => !repairs.has(f)) : left, started);

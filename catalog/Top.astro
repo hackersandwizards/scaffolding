@@ -21,7 +21,7 @@ const nav: { name: string; href: string; current?: true }[] | undefined = shell.
 <Header product={product} href={href}>
   {/* One group at the bar's right, the admin link first: the header spreads its children apart.
   A div, so a nav inside keeps its landmark; chrome.css lays that nav's items into this row. */}
-  <div class="hw-header-nav hw-catalogue-nav">
+  <div class="hw-header-nav hw-catalog-nav">
     {admin && (
       <a class="hw-header-link" href={admin}>
         <span aria-hidden="true">←&nbsp;</span>Admin hub

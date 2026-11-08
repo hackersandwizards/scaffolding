@@ -64,16 +64,16 @@ const tilePreview = (item: CatalogItem) =>
 // data-hw-shell marks the shell's own brand elements, the tile's card and pill, which a check of the
 // repository's own elements skips.
 const catalogTile = (item: CatalogItem, group: string) =>
-  `<li><a class="hw-card hw-catalogue-tile" data-hw-shell href="${escapeCatalog(item.href)}" data-search="${escapeCatalog(`${group} ${item.name} ${item.note ?? ""}`.toLowerCase())}">${
+  `<li><a class="hw-card hw-catalog-tile" data-hw-shell href="${escapeCatalog(item.href)}" data-search="${escapeCatalog(`${group} ${item.name} ${item.note ?? ""}`.toLowerCase())}">${
     item.frame || item.image || item.html
-      ? `<span class="hw-catalogue-preview"${
+      ? `<span class="hw-catalog-preview"${
           item.frame && item.frameSize
             ? ` data-frame-width="${item.frameSize[0]}" style="aspect-ratio:${item.frameSize[0]}/${item.frameSize[1]}"`
             : ""
         }>${tilePreview(item)}</span>`
       : ""
-  }<span class="hw-catalogue-name">${escapeCatalog(item.name)}</span>${
-    item.note ? `<span class="hw-catalogue-note">${escapeCatalog(item.note)}</span>` : ""
+  }<span class="hw-catalog-name">${escapeCatalog(item.name)}</span>${
+    item.note ? `<span class="hw-catalog-note">${escapeCatalog(item.note)}</span>` : ""
   }${item.pill ? `<span class="hw-pill" data-tone="neutral" data-hw-shell>${escapeCatalog(item.pill)}</span>` : ""}</a></li>`;
 
 // Filters the tiles and the rail's names by every word in the search field and hides a group left
@@ -112,31 +112,31 @@ f.style.transform="translate("+((p.clientWidth-r.width*s)/2-r.left*s)+"px,"+((p.
 let ground;for(let e=own?own.parentElement:c;e&&!ground;e=e.parentElement)if(!clear(css(e).backgroundColor))ground=css(e).backgroundColor;
 if(ground)p.style.background=ground;
 if(own&&!d.getElementById("hw-preview-only"))d.head.insertAdjacentHTML("beforeend",'<style id="hw-preview-only">html,body{background:none!important}body{visibility:hidden}[data-hw-preview]{visibility:visible}</style>');};
-const all=()=>document.querySelectorAll(".hw-catalogue-preview").forEach(fit);all();
+const all=()=>document.querySelectorAll(".hw-catalog-preview").forEach(fit);all();
 const load=(f)=>{const u=f.dataset.src;if(!u)return;delete f.dataset.src;if(!f.hasAttribute("data-srcdoc")){f.src=u;return;}
 fetch(new URL(u,location.href)).then((r)=>r.ok&&r.text().then((h)=>{f.srcdoc=h.replace(/<head\b[^>]*>/i,'$&<base href="'+r.url+'">');})).catch(()=>{});};
 let started=0;const start=()=>{if(started++)return;const m=document.querySelector("main"),root=m&&m.scrollHeight>m.clientHeight?m:null;
 const near=new IntersectionObserver((seen)=>{for(const e of seen)if(e.isIntersecting){near.unobserve(e.target);load(e.target);}},{root,rootMargin:"200px 0px"});
-document.querySelectorAll(".hw-catalogue-preview iframe[data-src]").forEach((f)=>near.observe(f));};
+document.querySelectorAll(".hw-catalog-preview iframe[data-src]").forEach((f)=>near.observe(f));};
 if(PerformanceObserver.supportedEntryTypes?.includes("paint"))new PerformanceObserver((_,o)=>{o.disconnect();start();}).observe({type:"paint",buffered:true});
 addEventListener("load",()=>setTimeout(start,2000),{once:true});
-const spy=()=>{for(const root of document.querySelectorAll(".hw-catalogue")){
-const groups=[...root.querySelectorAll(".hw-catalogue-group")].filter((g)=>g.getClientRects().length),last=groups.at(-1);
+const spy=()=>{for(const root of document.querySelectorAll(".hw-catalog")){
+const groups=[...root.querySelectorAll(".hw-catalog-group")].filter((g)=>g.getClientRects().length),last=groups.at(-1);
 let on=groups.findLast((g)=>g.getBoundingClientRect().top<=innerHeight/3);
 const m=document.querySelector("main"),s=m&&m.scrollHeight>m.clientHeight?m:document.scrollingElement;
 if(on&&s.scrollTop+s.clientHeight>=s.scrollHeight-1){const hit=groups.find((g)=>"#"+encodeURIComponent(g.id)===location.hash);if(hit&&hit.getBoundingClientRect().top>=0)on=hit;else if(s.scrollTop>0)on=last;}
-for(const a of root.querySelectorAll(".hw-catalogue-rail > nav > ul > li > a")){const mine=on&&a.getAttribute("href")==="#"+on.id,was=a.getAttribute("aria-current");
+for(const a of root.querySelectorAll(".hw-catalog-rail > nav > ul > li > a")){const mine=on&&a.getAttribute("href")==="#"+on.id,was=a.getAttribute("aria-current");
 if(mine&&!was){const box=a.closest("nav"),r=a.getBoundingClientRect(),b=box.getBoundingClientRect();a.setAttribute("aria-current","true");if(r.top<b.top||r.bottom>b.bottom)box.scrollTop+=r.top-b.top-8;}
 else if(!mine&&was==="true")a.removeAttribute("aria-current");}}};spy();
-if(window.hwCatalogue)return;window.hwCatalogue=1;
+if(window.hwCatalog)return;window.hwCatalog=1;
 let frame=0,tick=0;const later=()=>{cancelAnimationFrame(tick);tick=requestAnimationFrame(spy);};
 addEventListener("resize",()=>{cancelAnimationFrame(frame);frame=requestAnimationFrame(()=>{all();spy();});});document.addEventListener("astro:page-load",()=>{all();spy();});
 document.addEventListener("scroll",later,{capture:true,passive:true});
-document.addEventListener("load",(e)=>{const p=e.target.parentElement;if(e.target instanceof HTMLIFrameElement&&p&&p.matches(".hw-catalogue-preview")){fit(p);e.target.contentDocument?.fonts?.ready.then(()=>fit(p));}},true);
-document.addEventListener("input",(e)=>{const f=e.target;if(!(f instanceof HTMLInputElement)||!f.matches(".hw-catalogue-search"))return;
-const q=f.value.trim().toLowerCase().split(/\\s+/);const typed=q.join("")!=="";const root=f.closest(".hw-catalogue");
-for(const g of root.querySelectorAll(".hw-catalogue-group")){let n=0;const link=root.querySelector('.hw-catalogue-rail a[href="#'+g.id+'"]'),names=link?.nextElementSibling?.children??[];
-g.querySelectorAll(".hw-catalogue-tile").forEach((t,i)=>{const hit=q.every((w)=>t.dataset.search.includes(w));t.parentElement.hidden=!hit;if(names[i])names[i].hidden=!hit;if(hit)n++;});
+document.addEventListener("load",(e)=>{const p=e.target.parentElement;if(e.target instanceof HTMLIFrameElement&&p&&p.matches(".hw-catalog-preview")){fit(p);e.target.contentDocument?.fonts?.ready.then(()=>fit(p));}},true);
+document.addEventListener("input",(e)=>{const f=e.target;if(!(f instanceof HTMLInputElement)||!f.matches(".hw-catalog-search"))return;
+const q=f.value.trim().toLowerCase().split(/\\s+/);const typed=q.join("")!=="";const root=f.closest(".hw-catalog");
+for(const g of root.querySelectorAll(".hw-catalog-group")){let n=0;const link=root.querySelector('.hw-catalog-rail a[href="#'+g.id+'"]'),names=link?.nextElementSibling?.children??[];
+g.querySelectorAll(".hw-catalog-tile").forEach((t,i)=>{const hit=q.every((w)=>t.dataset.search.includes(w));t.parentElement.hidden=!hit;if(names[i])names[i].hidden=!hit;if(hit)n++;});
 const off=n===0&&typed;g.hidden=off;if(link)link.parentElement.hidden=off;}later();});
 })();</script>`;
 
@@ -156,18 +156,18 @@ export function renderCatalog(data: CatalogData): string {
       return { ...g, anchor };
     });
   const count = (g: CatalogGroup) =>
-    g.items.length ? `<span class="hw-catalogue-count">${g.items.length}</span>` : "";
+    g.items.length ? `<span class="hw-catalog-count">${g.items.length}</span>` : "";
   const rail = groups
     .map(
       (g) =>
-        `<li><a href="#${g.anchor}"><span>${escapeCatalog(g.name)}</span>${count(g)}</a>${g.html === undefined ? `<ul class="hw-catalogue-names">${g.items.map((i) => `<li><a href="${escapeCatalog(i.href)}">${escapeCatalog(i.name)}</a></li>`).join("")}</ul>` : ""}</li>`,
+        `<li><a href="#${g.anchor}"><span>${escapeCatalog(g.name)}</span>${count(g)}</a>${g.html === undefined ? `<ul class="hw-catalog-names">${g.items.map((i) => `<li><a href="${escapeCatalog(i.href)}">${escapeCatalog(i.name)}</a></li>`).join("")}</ul>` : ""}</li>`,
     )
     .join("");
   const sections = groups
     .map(
       (g) =>
-        `<section class="hw-catalogue-group" id="${g.anchor}"><h2>${[escapeCatalog(g.name), count(g)].filter(Boolean).join(" ")}</h2>${g.html === undefined ? `<ul class="hw-catalogue-grid">${g.items.map((i) => catalogTile(i, g.name)).join("")}</ul>` : `<div class="hw-catalogue-text">${g.html}</div>`}</section>`,
+        `<section class="hw-catalog-group" id="${g.anchor}"><h2>${[escapeCatalog(g.name), count(g)].filter(Boolean).join(" ")}</h2>${g.html === undefined ? `<ul class="hw-catalog-grid">${g.items.map((i) => catalogTile(i, g.name)).join("")}</ul>` : `<div class="hw-catalog-text">${g.html}</div>`}</section>`,
     )
     .join("");
-  return `<div class="hw-catalogue hw-container"><aside class="hw-catalogue-rail"><input class="hw-catalogue-search" type="search" placeholder="${escapeCatalog(search)}" aria-label="${escapeCatalog(search)}"><nav aria-label="${escapeCatalog(groupsLabel)}"><ul>${rail}</ul></nav></aside><div class="hw-catalogue-main"><h1>${escapeCatalog(data.title)}</h1><p class="hw-catalogue-lead">${escapeCatalog(data.lead)}</p><p class="hw-catalogue-provenance">${escapeCatalog(data.provenance)}</p>${data.intro ?? ""}${sections}</div></div>${SCRIPT}`;
+  return `<div class="hw-catalog hw-container"><aside class="hw-catalog-rail"><input class="hw-catalog-search" type="search" placeholder="${escapeCatalog(search)}" aria-label="${escapeCatalog(search)}"><nav aria-label="${escapeCatalog(groupsLabel)}"><ul>${rail}</ul></nav></aside><div class="hw-catalog-main"><h1>${escapeCatalog(data.title)}</h1><p class="hw-catalog-lead">${escapeCatalog(data.lead)}</p><p class="hw-catalog-provenance">${escapeCatalog(data.provenance)}</p>${data.intro ?? ""}${sections}</div></div>${SCRIPT}`;
 }
