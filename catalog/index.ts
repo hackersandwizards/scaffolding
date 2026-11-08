@@ -37,8 +37,8 @@ export type CatalogOptions = {
    * [1440, 810] for a slide, or one per group, such as { Pages: [1440, 900] }; without one the
    * first state draws at three quarters, centred. */
   previewSize?: [number, number] | Record<string, [number, number]>;
-  /** The "Dark theme" button in a state's bar, default true; false for a site without a dark
-   * theme. */
+  /** The "Dark theme" button in a state's bar and brand's night.css turning a page with it,
+   * default true; false for a site without a dark theme. */
   themeToggle?: boolean;
   /** brand's data-hw-scale on <html> of every page that draws a story (a state's page and the
    * state alone), such as "screen"; without it such a page keeps what the repository's head sets,
@@ -195,8 +195,6 @@ const packageOf = (spec: string) =>
 
 // Astrobook's layout loads Astro's client router; found only when the first page loads, these
 // modules make Vite optimise again and print it after every start whose lockfile has changed.
-const ARGS = /^const \{ decorators, args \} = parseStoryNamedExport\(.*$/m;
-
 const ROUTER = ["events", "router", "swap-functions", "types"].map(
   (m) => `astro/virtual-modules/transitions-${m}.js`,
 );
@@ -346,6 +344,7 @@ export function catalog(options: CatalogOptions): AstroIntegration {
           previews: options.previews ?? true,
           previewSize: options.previewSize,
           themeToggle: options.themeToggle ?? true,
+          onDisk,
           storyScale: options.storyScale,
           groupOrder: options.groupOrder ?? [],
           previewStates: options.previewStates ?? [],
@@ -368,7 +367,7 @@ export function catalog(options: CatalogOptions): AstroIntegration {
           [HEADER]: `export { default } from ${spec(header.component)};`,
           [HEAD]: `export { default } from ${spec(options.head ?? "astrobook/components/head.astro")};`,
           [ICON]: fromBrand(() => require.resolve(BRAND_ICON))
-            ? `export { default } from "${BRAND_ICON}?url&no-inline";`
+            ? `export { default } from ${spec(`${BRAND_ICON}?url&no-inline`)};`
             : "export default undefined;",
           [`${CSS}home`]: imports([...around, ...(options.homeCss ?? options.css)]),
           [`${CSS}dashboard`]: imports([...around, ...options.css]),
@@ -410,6 +409,7 @@ export function catalog(options: CatalogOptions): AstroIntegration {
         // Astrobook whose routes read otherwise fails the build rather than drop every page's CSS.
         const dir = fileURLToPath(params.createCodegenDir());
         const anchor = "from 'astrobook/client';\n";
+        const lead = /^const \{[^}]*\bargs\b[^}]*\} = parseStoryNamedExport\(.*$/m;
         for (const file of globSync("**/*.astro", { cwd: dir })) {
           const path = join(dir, file);
           const kind = file.split(/[\\/]/)[0];
@@ -419,14 +419,14 @@ export function catalog(options: CatalogOptions): AstroIntegration {
           if (
             !(kind === "dashboard" || kind === "stories") ||
             !source.includes(anchor) ||
-            !ARGS.test(source)
+            !lead.test(source)
           )
             throw new Error(
               `catalog: Astrobook's route ${file} has no place for its CSS import or its lead`,
             );
           const code = source
             .replace(anchor, `$&import "${CSS}${kind}";\n`)
-            .replace(ARGS, "$&\nAstro.locals.hwCatalogLead = args?.lead;");
+            .replace(lead, "$&\nAstro.locals.hwCatalogLead = args?.lead;");
           writeFileSync(path, options.serverOnly ? code.replace(" client:load />", " />") : code);
         }
       },

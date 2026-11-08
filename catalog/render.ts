@@ -104,18 +104,19 @@ const catalogTile = (item: CatalogItem, group: string) =>
 // the capture phase since Astrobook scrolls <main> rather than the window, so it holds across
 // Astro's client router swaps and runs once.
 const SCRIPT = `<script>(()=>{
+const part=(m,s)=>{let e;try{e=m.querySelector(s);}catch{}if(!e)console.error("data-hw-preview: "+s+" selects nothing, drawing the whole mark");return e||m;};
 const fit=(p)=>{const f=p.firstElementChild;if(!(f instanceof HTMLIFrameElement))return;
-const d=f.contentDocument,mark=d&&d.querySelector("[data-hw-preview]"),own=mark&&(mark.dataset.hwPreview&&mark.querySelector(mark.dataset.hwPreview)||mark),css=(e)=>d.defaultView.getComputedStyle(e),clear=(b)=>/^(transparent|rgba\\(.*, 0\\))$/.test(b);
-const around=(c)=>{let ground;for(let e=c;e&&!ground;e=e.parentElement)if(!clear(css(e).backgroundColor))ground=css(e).backgroundColor;
+const d=f.contentDocument,mark=d&&d.querySelector("[data-hw-preview]"),own=mark&&(mark.dataset.hwPreview?part(mark,mark.dataset.hwPreview):mark),css=(e)=>d.defaultView.getComputedStyle(e),clear=(b)=>/^(transparent|rgba\\(.*, 0\\))$/.test(b);
+const around=(c)=>{if(own&&d.getElementById("hw-preview-only"))return;let ground;for(let e=c;e&&!ground;e=e.parentElement)if(!clear(css(e).backgroundColor))ground=css(e).backgroundColor;
 if(ground)p.style.background=ground;
-if(own&&!d.getElementById("hw-preview-only")){own.setAttribute("data-hw-preview-part","");d.head.insertAdjacentHTML("beforeend",'<style id="hw-preview-only">html,body{background:none!important}body{visibility:hidden}[data-hw-preview=""],[data-hw-preview-part]{visibility:visible}</style>');}};
+if(own){own.setAttribute("data-hw-preview-part","");d.head.insertAdjacentHTML("beforeend",'<style id="hw-preview-only">html,body{background:none!important}body{visibility:hidden}[data-hw-preview=""],[data-hw-preview-part]{visibility:visible}</style>');}};
 if(p.dataset.frameWidth){f.style.transform="scale("+p.clientWidth/p.dataset.frameWidth+")";if(own)around(own.parentElement);return;}
 const m=d&&(d.querySelector("main")||d.body);if(!m||!m.firstElementChild)return;f.style.height=f.style.transform="";
 const paints=(e,k)=>!clear(k.backgroundColor)||k.backgroundImage!=="none"||parseFloat(k.borderTopWidth)||parseFloat(k.borderLeftWidth)||k.boxShadow!=="none"||/^(IMG|svg|VIDEO|CANVAS|INPUT|SELECT|TEXTAREA|BUTTON)$/.test(e.tagName);
-const clip=(q,b,k)=>{const x=k.overflowX==="visible",y=k.overflowY==="visible",l=x?q.left:Math.max(q.left,b.left),t=y?q.top:Math.max(q.top,b.top);return new DOMRect(l,t,(x?q.right:Math.min(q.right,b.right))-l,(y?q.bottom:Math.min(q.bottom,b.bottom))-t);};
-const drawn=(e,k)=>paints(e,k)?[e.getBoundingClientRect()]:[...e.childNodes].flatMap((n)=>{if(n.nodeType===3&&n.textContent.trim()){const g=d.createRange();g.selectNodeContents(n);return [...g.getClientRects()];}const nk=n.nodeType===1&&css(n);return nk&&nk.display!=="none"?drawn(n,nk):[];}).map((q)=>clip(q,e.getBoundingClientRect(),k)).filter((q)=>q.width>0&&q.height>0);
+const clip=(rs,e,k)=>{const x=k.overflowX==="visible",y=k.overflowY==="visible",b=e.getBoundingClientRect();return x&&y?rs:rs.map((q)=>{const l=x?q.left:Math.max(q.left,b.left),t=y?q.top:Math.max(q.top,b.top);return new DOMRect(l,t,(x?q.right:Math.min(q.right,b.right))-l,(y?q.bottom:Math.min(q.bottom,b.bottom))-t);}).filter((q)=>q.width>0&&q.height>0);};
+const drawn=(e,k)=>paints(e,k)?[e.getBoundingClientRect()]:clip([...e.childNodes].flatMap((n)=>{if(n.nodeType===3&&n.textContent.trim()){const g=d.createRange();g.selectNodeContents(n);return [...g.getClientRects()];}const nk=n.nodeType===1&&css(n);return nk&&nk.display!=="none"?drawn(n,nk):[];}).filter((q)=>q.width&&q.height),e,k);
 const c=own||(m.childElementCount===1?m.firstElementChild:m);let r=c.getBoundingClientRect();
-if(own){const rs=drawn(own,css(own));if(rs.length){const x=Math.min(...rs.map((q)=>q.left)),y=Math.min(...rs.map((q)=>q.top));r=new DOMRect(x,y,Math.max(...rs.map((q)=>q.right))-x,Math.max(...rs.map((q)=>q.bottom))-y);}}
+if(own){let rs=drawn(own,css(own));for(let e=own;e!==mark;){e=e.parentElement;rs=clip(rs,e,css(e));}if(rs.length){const x=Math.min(...rs.map((q)=>q.left)),y=Math.min(...rs.map((q)=>q.top));r=new DOMRect(x,y,Math.max(...rs.map((q)=>q.right))-x,Math.max(...rs.map((q)=>q.bottom))-y);}}
 if(!r.height)return;
 const s=Math.min(0.75,(p.clientHeight-16)/r.height,(p.clientWidth-16)/r.width);
 if(r.bottom>f.clientHeight)f.style.height=r.bottom+"px";

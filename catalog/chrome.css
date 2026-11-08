@@ -1,10 +1,9 @@
 /* The shell's styles around a story: on the home and a state's page, never on a state alone. */
 
-@layer properties, theme, base, components, utilities;
-/* In brand's base layer, as its app-base.css paints the ground: a home whose `homeCss` is tokens
-   alone keeps it, and any story's own stylesheet still wins. */
-@layer base {
-  body {
+/* On the canvas and in a layer of its own, below any layer the page declares after it: a home
+   whose `homeCss` is tokens alone keeps its ground, and a story's ground on html or body wins. */
+@layer hw-catalog-ground {
+  html {
     background: var(--background, var(--color-bg));
   }
 }

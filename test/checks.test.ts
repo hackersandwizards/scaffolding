@@ -1510,11 +1510,11 @@ describe("catalog", () => {
     for (const p of ["dashboard/Parts/box-parts/one", "stories/Parts/box-parts/one"])
       expect(page(p)).toContain('<meta name="description" content="The first box.">');
     // Without a `site` the canonical URL is root-relative; a state alone names the state's page.
-    const canonical = (html: string) =>
-      [...html.matchAll(/<link rel="canonical" href="([^"]*)"/g)].map((m) => m[1]);
-    expect(canonical(home)).toEqual(["/"]);
+    const links = (html: string, rel: string) =>
+      [...html.matchAll(new RegExp(`<link rel="${rel}" href="([^"]*)"`, "g"))].map((m) => m[1]);
+    expect(links(home, "canonical")).toEqual(["/"]);
     for (const p of ["dashboard/Parts/box-parts/two", "stories/Parts/box-parts/two"])
-      expect(canonical(page(p))).toEqual(["/dashboard/Parts/box-parts/two/"]);
+      expect(links(page(p), "canonical")).toEqual(["/dashboard/Parts/box-parts/two/"]);
     // The shell paints the ground from brand's role or token; the fixture's home loads no token,
     // so the page sets them. A story's own stylesheet still wins on a state's page.
     const served = Bun.serve({
@@ -1532,20 +1532,26 @@ describe("catalog", () => {
       await painted.until(
         `document.readyState === "complete" && !!document.querySelector(".hw-catalog")`,
       );
-      const ground = () => painted.evaluate(`getComputedStyle(document.body).backgroundColor`);
+      const ground = () =>
+        painted.evaluate(`getComputedStyle(document.documentElement).backgroundColor`);
       expect(await ground()).toBe("rgba(0, 0, 0, 0)");
-      await painted.evaluate(
-        `document.documentElement.style.setProperty("--color-bg", "rgb(1, 2, 3)")`,
-      );
-      expect(await ground()).toBe("rgb(1, 2, 3)");
-      await painted.evaluate(
-        `document.documentElement.style.setProperty("--background", "rgb(4, 5, 6)")`,
-      );
-      expect(await ground()).toBe("rgb(4, 5, 6)");
-      await painted.evaluate(
-        `document.head.insertAdjacentHTML("beforeend", "<style>@layer base { body { background: rgb(7, 8, 9); } }</style>")`,
-      );
-      expect(await ground()).toBe("rgb(7, 8, 9)");
+      for (const [step, colour] of [
+        [
+          `document.documentElement.style.setProperty("--color-bg", "rgb(1, 2, 3)")`,
+          "rgb(1, 2, 3)",
+        ],
+        [
+          `document.documentElement.style.setProperty("--background", "rgb(4, 5, 6)")`,
+          "rgb(4, 5, 6)",
+        ],
+        [
+          `document.head.insertAdjacentHTML("beforeend", "<style>@layer base { html { background: rgb(7, 8, 9); } }</style>")`,
+          "rgb(7, 8, 9)",
+        ],
+      ] as const) {
+        await painted.evaluate(step);
+        expect(await ground()).toBe(colour);
+      }
     } finally {
       painted.close();
       void served.stop(true);
@@ -1734,6 +1740,8 @@ describe("catalog", () => {
       `href="${at("stories/Parts/box-parts/two/index.html")}">Open this state alone`,
     );
     expect(onDisk).toContain(`<link rel="icon" href="${at("assets/logo.svg")}">`);
+    // A build opened from disk is never published, and a file URL names the build machine.
+    expect(onDisk).not.toContain('rel="canonical"');
     expect(page("dashboard/Parts/many-parts/block-image")).toContain(
       `<option value="${at("dashboard/Parts/many-parts/block-code/index.html")}">Block code</option>`,
     );
@@ -1798,6 +1806,7 @@ describe("catalog", () => {
     expect(page("dashboard/Parts/box-parts/two")).not.toContain(
       '<button type="button" data-hw-theme',
     );
+    expect(root(page("dashboard/Parts/box-parts/two"))).toBe("{}");
     // With a `site` the canonical URL is absolute, under the base.
     expect(build(["--site", "https://fx.example", "--base", "/fx"]).status).toBe(0);
     expect(page("stories/Parts/box-parts/two")).toContain(
@@ -1806,10 +1815,8 @@ describe("catalog", () => {
     expect(page("")).toContain('<link rel="canonical" href="https://fx.example/fx/"');
     // Where the repository resolves brand, every page carries brand's favicon ahead of the
     // repository's head, whose own link then wins; without brand the shell writes none.
-    const icons = (html: string) =>
-      [...html.matchAll(/<link rel="icon" href="([^"]*)"/g)].map((m) => m[1]);
     expect(build().status).toBe(0);
-    expect(icons(page(""))).toEqual(["/assets/logo.svg"]);
+    expect(links(page(""), "icon")).toEqual(["/assets/logo.svg"]);
     // The shell's home holds no foundations: no group of its own. A home with some draws them as
     // Foundations; beside a stories folder of that name the build fails, and a home of whitespace
     // and a comment leaves the folder the one group (compressHTML off, as in the repositories).
@@ -1870,8 +1877,10 @@ describe("catalog", () => {
     rmSync(navless);
     expect(build().status).toBe(0);
     for (const p of ["", "stories/Parts/box-parts/two"]) {
-      expect(icons(page(p))[0]).toMatch(/^\/_astro\/favicon\..*\.svg$/);
-      expect(icons(page(p))[1]).toBe("/assets/logo.svg");
+      expect(links(page(p), "icon")).toEqual([
+        expect.stringMatching(/^\/_astro\/favicon\..*\.svg$/),
+        "/assets/logo.svg",
+      ]);
     }
     rmSync(join(fixture, "node_modules"), { recursive: true });
     // The build adds no robots tag to a page of the repository's own; one with a tag of its own and
@@ -2163,17 +2172,16 @@ describe("catalog", () => {
     const shellCss = readFileSync(join(import.meta.dir, "..", "catalog", "catalog.css"), "utf8");
     const part =
       '<span class="part" style="display:inline-block;width:200px;height:100px;background:rgb(1, 2, 3)">x</span><span class="other">y</span>';
-    const stories = [
-      `<div data-hw-preview>${part}</div>`,
-      `<div data-hw-preview=".part">${part}</div>`,
-      `<div data-hw-preview=".part">${part}</div>`,
-      '<div data-hw-preview style="overflow:hidden;width:300px"><div class="wide"><div style="width:5000px;height:100px;background:rgb(1, 2, 3)"></div></div></div>',
-    ];
-    const sizes: ([number, number] | undefined)[] = [
-      [1440, 900],
-      [1440, 900],
-      undefined,
-      undefined,
+    const wide = 'style="width:5000px;height:100px;background:rgb(1, 2, 3)"';
+    const clipping = 'style="overflow:hidden;width:300px"';
+    const stories: { html: string; size?: [number, number] }[] = [
+      { html: `<div data-hw-preview>${part}</div>`, size: [1440, 900] },
+      { html: `<div data-hw-preview=".part">${part}</div>`, size: [1440, 900] },
+      { html: `<div data-hw-preview=".part">${part}</div>` },
+      { html: `<div data-hw-preview ${clipping}><div><div ${wide}></div></div></div>` },
+      { html: `<div data-hw-preview=".part" ${clipping}><div class="part" ${wide}></div></div>` },
+      { html: `<div data-hw-preview="1">${part}</div>` },
+      { html: `<div data-hw-preview=".none">${part}</div>` },
     ];
     const home = `<!doctype html><html><head><style>${shellCss}</style></head><body>${renderCatalog(
       {
@@ -2183,11 +2191,11 @@ describe("catalog", () => {
         groups: [
           {
             name: "Parts",
-            items: stories.map((_, i) => ({
+            items: stories.map(({ size }, i) => ({
               name: `x${i}`,
               href: `/x${i}`,
               frame: `/story/${i}`,
-              frameSize: sizes[i],
+              frameSize: size,
             })),
           },
         ],
@@ -2201,17 +2209,16 @@ describe("catalog", () => {
         const body =
           pathname === "/home"
             ? home
-            : `<!doctype html><html style="background:rgb(9, 9, 9)"><body><main><p class="spec">Spec text</p>${stories[Number(pathname.split("/").pop())]}</main></body></html>`;
+            : `<!doctype html><html style="background:rgb(9, 9, 9)"><body><main><p class="spec">Spec text</p>${stories[Number(pathname.split("/").pop())]?.html}</main></body></html>`;
         return new Response(body, { headers: { "Content-Type": "text/html" } });
       },
     });
-    const page = await browse(`${server.url}home`, ["--window-size=1280,800"]);
+    const page = await browse(`${server.url}home`, ["--window-size=1280,1400"]);
     try {
       const { evaluate, until } = page;
       await until(
-        `document.readyState === "complete" && document.querySelectorAll(".hw-catalog-preview iframe").length === 4 && [...document.querySelectorAll(".hw-catalog-preview iframe")].every((f) => f.contentDocument?.querySelector("[data-hw-preview]") && f.contentDocument.readyState === "complete")`,
+        `document.readyState === "complete" && document.querySelectorAll(".hw-catalog-preview iframe").length === ${stories.length} && [...document.querySelectorAll(".hw-catalog-preview iframe")].every((f) => f.contentDocument?.getElementById("hw-preview-only"))`,
       );
-      await new Promise((r) => setTimeout(r, 500));
       const tile = (i: number) =>
         evaluate(`(() => {
         const p = document.querySelectorAll(".hw-catalog-preview")[${i}], f = p.firstElementChild, d = f.contentDocument;
@@ -2235,13 +2242,20 @@ describe("catalog", () => {
         const at = await tile(i);
         expect([at.spec, at.part, at.other]).toEqual(["hidden", "visible", "hidden"]);
       }
-      // The clipping box bounds what the mark paints: 300 px wide, not 5000.
-      const clipped = await tile(3);
-      const scale = Number(String(clipped.t).match(/scale\(([\d.]+)\)/)?.[1]);
-      expect(scale).toBeCloseTo(
-        Math.min(0.75, ((clipped.ph as number) - 16) / 100, ((clipped.pw as number) - 16) / 300),
-        2,
-      );
+      // A value that is no selector, or selects nothing, draws the whole mark.
+      for (const i of [5, 6]) {
+        const at = await tile(i);
+        expect([at.spec, at.part, at.other]).toEqual(["hidden", "visible", "visible"]);
+      }
+      // A clipping box bounds what the mark paints, inside it or around the part: 300 px, not 5000.
+      for (const i of [3, 4]) {
+        const clipped = await tile(i);
+        const scale = Number(String(clipped.t).match(/scale\(([\d.]+)\)/)?.[1]);
+        expect(scale).toBeCloseTo(
+          Math.min(0.75, ((clipped.ph as number) - 16) / 100, ((clipped.pw as number) - 16) / 300),
+          2,
+        );
+      }
     } finally {
       page.close();
       void server.stop(true);

@@ -48,9 +48,8 @@ const storyBase = trim(config.storyBase);
 const alone = path.startsWith(`${storyBase}/`);
 // A state alone is the frame a tile draws, so the state's page is the one a reader lands on. An
 // absolute URL needs Astro's `site`.
-const page = encodeURI(
-  `${alone ? base + path.slice(storyBase.length) : path}${shell.slash}` || "/",
-);
+const url = trim(Astro.url.pathname);
+const page = `${alone ? base + url.slice(storyBase.length) : url}${shell.slash}` || "/";
 const canonical = Astro.site ? new URL(page, Astro.site).href : page;
 const { hwCatalogLead: lead } = Astro.locals as { hwCatalogLead?: unknown };
 // brand's scale and night on <html>, set before the body draws: the home at the dense scale, a
@@ -59,12 +58,12 @@ const { hwCatalogLead: lead } = Astro.locals as { hwCatalogLead?: unknown };
 // state's own theme.
 const root = {
   hwScale: mod || alone ? shell.storyScale : "dense",
-  hwNight: alone ? undefined : "",
+  hwNight: alone || !shell.themeToggle ? undefined : "",
 };
 ---
 
 <meta name="description" content={typeof lead === "string" && lead.trim() ? lead : shell.lead} />
-<link rel="canonical" href={canonical} />
+{!shell.onDisk && <link rel="canonical" href={canonical} />}
 {/* Ahead of the repository's head: of two icons a browser takes the last. */}
 {icon && <link rel="icon" href={icon} type="image/svg+xml" />}
 <RepositoryHead />
