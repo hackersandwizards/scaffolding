@@ -40,7 +40,12 @@ export const stylelintFlags = (root: string) => [
 
 /** `term`: the text is a bare term, which an allow entry names whole. */
 export type Finding = { check: string; path: string; text: string; message: string; term?: true };
-type AllowEntry = { check?: string; path?: string; text?: string | string[]; reason?: unknown };
+type AllowEntry = {
+  check?: string;
+  path?: string | string[];
+  text?: string | string[];
+  reason?: unknown;
+};
 
 export function git(args: string[], cwd = process.cwd(), input?: string): Buffer {
   const r = spawnSync("git", args, { cwd, input, maxBuffer: Infinity });
@@ -125,7 +130,7 @@ const textCovers = (text: string, f: Finding) =>
 
 const covers = (entry: AllowEntry, f: Finding, text = entry.text) =>
   entry.check === f.check &&
-  (entry.path === undefined || glob(entry.path).test(f.path)) &&
+  (entry.path === undefined || [entry.path].flat().some((p) => glob(p).test(f.path))) &&
   (text === undefined || [text].flat().some((t) => textCovers(t, f)));
 
 /**

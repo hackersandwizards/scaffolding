@@ -932,6 +932,30 @@ describe("check-confidential", () => {
     ]);
   });
 
+  test("one entry's path list covers a person's folder, file names and package.json", () => {
+    const allow = [
+      {
+        check: "confidential",
+        path: ["people/jane-q-doe/**", "file names", "package.json"],
+        text: "Jane Q Doe",
+        reason: "test",
+      },
+    ];
+    const out = run(
+      repo({
+        "package.json": JSON.stringify({ scaffolding: { allow } }),
+        "people/jane-q-doe/index.md": "Jane Q Doe\n",
+        "other.md": "Jane Q Doe\n",
+      }),
+      "check-confidential",
+      ["--tree", "HEAD"],
+      env,
+    ).out;
+    expect(lines(out, "check-confidential")).toEqual([
+      "[check-confidential] other.md: confidential term from the company records (Jane Q Doe)",
+    ]);
+  });
+
   test.if(process.platform === "darwin")("an image that cannot be decoded is refused", () => {
     const dir = repo({ "package.json": "{}" });
     write(dir, { "bad.png": "not an image at all" });
