@@ -1858,9 +1858,22 @@ describe("catalog", () => {
     made.push(join(fixture, "node_modules"), navless);
     write(brand, {
       "package.json": JSON.stringify({
-        exports: { "./catalogs.json": "./expert/catalogs.json", "./logos/*": "./logos/*" },
+        exports: {
+          "./catalogs.json": "./expert/catalogs.json",
+          "./logos/*": "./logos/*",
+          "./header.css": "./header.css",
+          "./night.css": "./night.css",
+          "./expert/components/*": "./expert/components/*",
+        },
       }),
       "logos/favicon.svg": '<svg xmlns="http://www.w3.org/2000/svg"/>',
+      // Over Vite's 4 KB inlining limit, so `?url` gives a file as with brand's own logo.
+      "logos/lockup-screen.svg": `<svg xmlns="http://www.w3.org/2000/svg"><!--${"x".repeat(5000)}--></svg>`,
+      "logos/night-logo.svg": `<svg xmlns="http://www.w3.org/2000/svg"><!--${"y".repeat(5000)}--></svg>`,
+      "header.css": "",
+      "night.css": "",
+      "expert/components/AppHeader.astro":
+        '---\nimport lockup from "../../logos/lockup-screen.svg?url";\nimport night from "../../logos/night-logo.svg?url";\n---\n\n<header class="hw-header"><img class="hw-header-logo" src={lockup} alt="" /><img src={night} alt="" loading="lazy" /><slot /></header>\n',
       "expert/catalogs.json": JSON.stringify([
         { name: "Other", href: "https://example.com/other/" },
         { name: "Fx", href: "https://example.com/fx/" },
@@ -1868,12 +1881,45 @@ describe("catalog", () => {
     });
     writeFileSync(
       navless,
-      'import config from "./astro.config.mjs";\nimport { catalog } from "../../../catalog/index.ts";\nexport default { ...config, integrations: [catalog({ product: "Fx", css: [], lead: "", header: { component: "./Header.astro" } })] };\n',
+      'import config from "./astro.config.mjs";\nimport { catalog } from "../../../catalog/index.ts";\nexport default { ...config, integrations: [catalog({ product: "Fx", css: [], lead: "" })] };\n',
     );
     expect(build(["--config", "navless.config.mjs"]).status).toBe(0);
     expect(readFileSync(join(dist, "index.html"), "utf8")).toContain(
       '<nav class="hw-header-nav" aria-label="Main" data-hw-catalogs><a class="hw-header-link" href="https://example.com/other/">Other</a><a class="hw-header-link" href="/catalog/" aria-current="page">Fx</a></nav>',
     );
+    // A state's page holds its header in a <template> the preload scanner skips, and only puts it
+    // into <main> once the parser has waited out the stylesheets: the page fetches its logo before
+    // they arrive, and leaves a logo marked lazy to the browser. The CSS answers once the logo is
+    // asked for, 8 s at most, so a loaded machine cannot reorder the two.
+    const order: string[] = [];
+    let logoAsked = () => {};
+    const asked = new Promise<void>((done) => (logoAsked = done));
+    const slow = Bun.serve({
+      port: 0,
+      hostname: "127.0.0.1",
+      async fetch(req) {
+        const { pathname } = new URL(req.url);
+        order.push(pathname);
+        if (pathname.includes("lockup-screen")) logoAsked();
+        if (pathname.endsWith(".css")) {
+          await Promise.race([asked, Bun.sleep(8000)]);
+          order.push("css arrived");
+        }
+        const path = join(dist, decodeURIComponent(pathname));
+        return new Response(Bun.file(pathname.endsWith("/") ? join(path, "index.html") : path));
+      },
+    });
+    const browsing = await browse(`${slow.url}dashboard/Parts/box-parts/two/`);
+    try {
+      await browsing.until(`document.querySelector("img.hw-header-logo")?.complete`);
+      expect(order).toContain("css arrived");
+      const early = order.slice(0, order.indexOf("css arrived")).join();
+      expect(early).toContain("lockup-screen");
+      expect(early).not.toContain("night-logo");
+    } finally {
+      browsing.close();
+      void slow.stop(true);
+    }
     rmSync(navless);
     expect(build().status).toBe(0);
     for (const p of ["", "stories/Parts/box-parts/two"]) {
