@@ -1899,11 +1899,12 @@ describe("catalog", () => {
       'import config from "./astro.config.mjs";\nimport { catalog } from "../../../catalog/index.ts";\nexport default { ...config, integrations: [catalog({ product: "Fx", css: [], lead: "" })] };\n',
     );
     expect(build(["--config", "navless.config.mjs"]).status).toBe(0);
-    // brand's layer order follows the ground's, ahead of the repository's head.
-    expect(readFileSync(join(dist, "index.html"), "utf8")).toContain(
+    const branded = readFileSync(join(dist, "index.html"), "utf8");
+    // brand's layer order follows the ground's.
+    expect(branded).toContain(
       "<style>@layer hw-catalog-ground;@layer properties, theme, base, components, utilities;</style>",
     );
-    expect(readFileSync(join(dist, "index.html"), "utf8")).toContain(
+    expect(branded).toContain(
       '<nav class="hw-header-nav" aria-label="Main" data-hw-catalogs><a class="hw-header-link" href="https://example.com/other/">Other</a><a class="hw-header-link" href="/catalog/" aria-current="page">Fx</a></nav>',
     );
     // A state's page holds its header in a <template> the preload scanner skips, and only puts it

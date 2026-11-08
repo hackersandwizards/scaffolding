@@ -363,15 +363,10 @@ export function catalog(options: CatalogOptions): AstroIntegration {
           groupOrder: options.groupOrder ?? [],
           previewStates: options.previewStates ?? [],
           provenance,
-          // Head.astro declares the layer order ahead of the repository's head and every
-          // stylesheet, which the build puts at the head's end: the shell's ground first, so it
-          // sorts below every layer, then brand's order.
-          layers: [
-            "@layer hw-catalog-ground;",
-            fromBrand(() => readFileSync(require.resolve(BRAND_LAYERS), "utf8").trim()),
-          ]
-            .filter(Boolean)
-            .join(""),
+          // Ahead of every stylesheet, which the build puts at the head's end.
+          layers:
+            "@layer hw-catalog-ground;" +
+            (fromBrand(() => readFileSync(require.resolve(BRAND_LAYERS), "utf8").trim()) ?? ""),
           // A story link ends in a slash where the site asks for one, or leaves it open and Astro
           // writes each page as a folder's index.html, which a static host serves only there.
           slash:
