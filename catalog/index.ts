@@ -96,9 +96,7 @@ const BRAND_HEADER = {
 const OPTIONS = "virtual:scaffolding/catalog";
 const HEADER = "virtual:scaffolding/catalog-header";
 const HEAD = "virtual:scaffolding/catalog-head";
-// The stylesheets of the home, of a state's page and of a state alone, each route importing its own
-// rather than Astrobook's one list for every page: a state alone carries no header or bar, and the
-// home, whose tiles frame each state, needs none of the stories' CSS.
+// The stylesheets of the home, of a state's page (dashboard) and of a state alone (stories).
 const CSS = "virtual:scaffolding/catalog-css/";
 
 /** The nearest folder at or above `from` holding a package.json. */
@@ -320,11 +318,7 @@ export function catalog(options: CatalogOptions): AstroIntegration {
         const spec = (s: string) => JSON.stringify(s.startsWith(".") ? join(root, s) : s);
         const nav = options.nav ?? brandNav(require, options.product);
         const around = [...(header.css ?? []), join(import.meta.dirname, "chrome.css")];
-        const styles = {
-          home: [...around, ...(options.homeCss ?? options.css)],
-          dashboard: [...around, ...options.css],
-          stories: options.css,
-        };
+        const imports = (list: string[]) => list.map((c) => `import ${spec(c)};`).join("");
         // A misspelt or renamed `current` would link this catalog's entry to the published site.
         if (nav?.current !== undefined && !nav.items.some(({ name }) => name === nav.current))
           throw new Error(`catalog nav: current "${nav.current}" names no item`);
@@ -358,6 +352,14 @@ export function catalog(options: CatalogOptions): AstroIntegration {
               ? `http://admin.localhost:4329/${encodeURIComponent(pkg.admin?.name ?? checkout(repo))}/dashboard`
               : undefined,
         };
+        const modules: Record<string, string> = {
+          [OPTIONS]: `export default ${JSON.stringify(shared)};`,
+          [HEADER]: `export { default } from ${spec(header.component)};`,
+          [HEAD]: `export { default } from ${spec(options.head ?? "astrobook/components/head.astro")};`,
+          [`${CSS}home`]: imports([...around, ...(options.homeCss ?? options.css)]),
+          [`${CSS}dashboard`]: imports([...around, ...options.css]),
+          [`${CSS}stories`]: imports(options.css),
+        };
         params.updateConfig({
           // Astro's own default only: an outDir the config sets stays.
           ...(own &&
@@ -373,22 +375,8 @@ export function catalog(options: CatalogOptions): AstroIntegration {
             plugins: [
               {
                 name: "scaffolding-catalog",
-                resolveId: (id: string) =>
-                  id === OPTIONS || id === HEADER || id === HEAD || id.startsWith(CSS)
-                    ? `\0${id}`
-                    : undefined,
-                load: (id: string) =>
-                  id === `\0${OPTIONS}`
-                    ? `export default ${JSON.stringify(shared)};`
-                    : id === `\0${HEADER}`
-                      ? `export { default } from ${spec(header.component)};`
-                      : id === `\0${HEAD}`
-                        ? `export { default } from ${spec(options.head ?? "astrobook/components/head.astro")};`
-                        : id.startsWith(`\0${CSS}`)
-                          ? styles[id.slice(CSS.length + 1) as keyof typeof styles]
-                              .map((c) => `import ${spec(c)};`)
-                              .join("")
-                          : undefined,
+                resolveId: (id: string) => (Object.hasOwn(modules, id) ? `\0${id}` : undefined),
+                load: (id: string) => (id.startsWith("\0") ? modules[id.slice(1)] : undefined),
               },
             ],
           },
@@ -403,16 +391,18 @@ export function catalog(options: CatalogOptions): AstroIntegration {
         });
         await inner.hooks["astro:config:setup"]?.(params);
         // Astrobook writes one route per state into this integration's codegen folder, under
-        // dashboard/ and stories/. Each imports its stylesheets after Astrobook's own and before
-        // the story's, where Astrobook's layout imported the list; `serverOnly` drops the
-        // client:load branch.
+        // dashboard/ and stories/: each imports its route's CSS after Astrobook's client import,
+        // before the story's. An Astrobook whose routes read otherwise fails the build rather than
+        // drop every page's CSS.
         const dir = fileURLToPath(params.createCodegenDir());
-        for (const file of globSync("{dashboard,stories}/**/*.astro", { cwd: dir })) {
+        const anchor = "from 'astrobook/client';\n";
+        for (const file of globSync("**/*.astro", { cwd: dir })) {
           const path = join(dir, file);
-          const code = readFileSync(path, "utf8").replace(
-            "from 'astrobook/client';\n",
-            `$&import "${CSS}${file.split("/")[0]}";\n`,
-          );
+          const kind = file.split("/")[0];
+          const source = readFileSync(path, "utf8");
+          if (!(kind === "dashboard" || kind === "stories") || !source.includes(anchor))
+            throw new Error(`catalog: Astrobook's route ${file} has no place for its CSS import`);
+          const code = source.replace(anchor, `$&import "${CSS}${kind}";\n`);
           writeFileSync(path, options.serverOnly ? code.replace(" client:load />", " />") : code);
         }
       },

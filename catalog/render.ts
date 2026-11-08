@@ -86,7 +86,8 @@ const catalogTile = (item: CatalogItem, group: string) =>
 // shrunk where it is taller than the tile and measured afresh each time, so a refit never shrinks
 // it again, as Storybook's "centered" layout does, 8 px clear of each side: the element marked
 // data-hw-preview alone, everything else and the page's canvas hidden once the ground is read, fitted
-// to what it paints (its own box where it has a ground, border, shadow or is a control or image, else
+// to what it paints (its own box where it has a ground, background image, border, shadow or is a
+// control or image, else
 // its text and such boxes inside, so a full-width wrapper centres its button rather than its own
 // box), else <main>'s only child or <main>. Marks the rail's label of the group read now with
 // aria-current="true": the last group whose top has passed a third of the viewport; once one has
@@ -101,10 +102,10 @@ const fit=(p)=>{const f=p.firstElementChild;if(!(f instanceof HTMLIFrameElement)
 if(p.dataset.frameWidth){f.style.transform="scale("+p.clientWidth/p.dataset.frameWidth+")";return;}
 const d=f.contentDocument,m=d&&(d.querySelector("main")||d.body);if(!m||!m.firstElementChild)return;f.style.height=f.style.transform="";
 const own=d.querySelector("[data-hw-preview]"),css=(e)=>d.defaultView.getComputedStyle(e),clear=(b)=>/^(transparent|rgba\\(.*, 0\\))$/.test(b);
-const paints=(e)=>{const k=css(e);return !clear(k.backgroundColor)||parseFloat(k.borderTopWidth)||parseFloat(k.borderLeftWidth)||k.boxShadow!=="none"||/^(IMG|svg|VIDEO|CANVAS|INPUT|SELECT|TEXTAREA|BUTTON)$/.test(e.tagName);};
-const drawn=(e)=>paints(e)?[e.getBoundingClientRect()]:[...e.childNodes].flatMap((n)=>{if(n.nodeType===3&&n.textContent.trim()){const g=d.createRange();g.selectNodeContents(n);return [...g.getClientRects()];}return n.nodeType===1&&css(n).display!=="none"?drawn(n):[];}).filter((q)=>q.width&&q.height);
-const c=own||(m.childElementCount===1?m.firstElementChild:m),rs=own?drawn(own):[];let r=c.getBoundingClientRect();
-if(rs.length){const x=Math.min(...rs.map((q)=>q.left)),y=Math.min(...rs.map((q)=>q.top));r=new DOMRect(x,y,Math.max(...rs.map((q)=>q.right))-x,Math.max(...rs.map((q)=>q.bottom))-y);}
+const paints=(e,k)=>!clear(k.backgroundColor)||k.backgroundImage!=="none"||parseFloat(k.borderTopWidth)||parseFloat(k.borderLeftWidth)||k.boxShadow!=="none"||/^(IMG|svg|VIDEO|CANVAS|INPUT|SELECT|TEXTAREA|BUTTON)$/.test(e.tagName);
+const drawn=(e,k)=>paints(e,k)?[e.getBoundingClientRect()]:[...e.childNodes].flatMap((n)=>{if(n.nodeType===3&&n.textContent.trim()){const g=d.createRange();g.selectNodeContents(n);return [...g.getClientRects()];}const nk=n.nodeType===1&&css(n);return nk&&nk.display!=="none"?drawn(n,nk):[];}).filter((q)=>q.width&&q.height);
+const c=own||(m.childElementCount===1?m.firstElementChild:m);let r=c.getBoundingClientRect();
+if(own){const rs=drawn(own,css(own));if(rs.length){const x=Math.min(...rs.map((q)=>q.left)),y=Math.min(...rs.map((q)=>q.top));r=new DOMRect(x,y,Math.max(...rs.map((q)=>q.right))-x,Math.max(...rs.map((q)=>q.bottom))-y);}}
 if(!r.height)return;
 const s=Math.min(0.75,(p.clientHeight-16)/r.height,(p.clientWidth-16)/r.width);
 if(r.bottom>f.clientHeight)f.style.height=r.bottom+"px";
@@ -114,7 +115,7 @@ if(ground)p.style.background=ground;
 if(own&&!d.getElementById("hw-preview-only"))d.head.insertAdjacentHTML("beforeend",'<style id="hw-preview-only">html,body{background:none!important}body{visibility:hidden}[data-hw-preview]{visibility:visible}</style>');};
 const all=()=>document.querySelectorAll(".hw-catalogue-preview").forEach(fit);all();
 const load=(f)=>{const u=f.dataset.src;delete f.dataset.src;if(!f.hasAttribute("data-srcdoc")){f.src=u;return;}
-const at=new URL(u,location.href).href;fetch(at).then((r)=>r.text()).then((h)=>{f.srcdoc=h.replace(/<head\b[^>]*>/i,'$&<base href="'+at+'">');});};
+const at=new URL(u,location.href).href;fetch(at).then((r)=>r.ok?r.text():"").then((h)=>{f.srcdoc=h.replace(/<head\b[^>]*>/i,'$&<base href="'+at+'">');});};
 const near=new IntersectionObserver((seen)=>{for(const e of seen)if(e.isIntersecting){near.unobserve(e.target);load(e.target);}},{rootMargin:"200px 0px",scrollMargin:"200px 0px"});
 const start=()=>document.querySelectorAll(".hw-catalogue-preview iframe[data-src]").forEach((f)=>near.observe(f));
 if(PerformanceObserver.supportedEntryTypes?.includes("paint"))new PerformanceObserver((_,o)=>{o.disconnect();start();}).observe({type:"paint",buffered:true});else addEventListener("load",start,{once:true});

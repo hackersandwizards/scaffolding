@@ -27,6 +27,53 @@ function temp() {
   made.push(dir);
   return dir;
 }
+/** A headless Chrome on a free debugging port with one tab open at `url`, driven over CDP. */
+async function browse(url: string, args: string[] = []) {
+  const { chromeArgs, chromeBinary, INSTALL_HINT } = await import("../lib/chrome.ts");
+  const { freePort } = await import("../lib/serve.ts");
+  const chrome = chromeBinary();
+  if (!chrome) throw new Error(INSTALL_HINT);
+  const port = await freePort();
+  const browser = Bun.spawn(
+    [chrome, ...chromeArgs(temp()), `--remote-debugging-port=${port}`, ...args],
+    { stderr: "ignore" },
+  );
+  let target: { webSocketDebuggerUrl: string } | undefined;
+  for (let i = 0; i < 100 && !target; i++)
+    target = await fetch(`http://127.0.0.1:${port}/json/new?${url}`, { method: "PUT" })
+      .then((r) => r.json())
+      .catch(() => new Promise((r) => setTimeout(r, 100)));
+  const ws = new WebSocket(target!.webSocketDebuggerUrl);
+  await new Promise((r) => ws.addEventListener("open", r, { once: true }));
+  let id = 0;
+  const send = (method: string, params: object = {}) =>
+    new Promise<{ value?: unknown }>((done) => {
+      const call = ++id;
+      const on = (event: MessageEvent) => {
+        const message = JSON.parse(String(event.data));
+        if (message.id !== call) return;
+        ws.removeEventListener("message", on);
+        done(message.result?.result ?? {});
+      };
+      ws.addEventListener("message", on);
+      ws.send(JSON.stringify({ id: call, method, params }));
+    });
+  const evaluate = async (expression: string) =>
+    (await send("Runtime.evaluate", { expression, returnByValue: true })).value;
+  const until = async (expression: string) => {
+    for (const end = Date.now() + 20_000; Date.now() < end;) {
+      if (await evaluate(expression)) return;
+      await new Promise((r) => setTimeout(r, 100));
+    }
+    throw new Error(`timed out: ${expression}`);
+  };
+  const close = () => {
+    ws.close();
+    browser.kill();
+  };
+  return { ws, send, evaluate, until, close };
+}
+
 const sh = (cwd: string, args: string[], input?: string) =>
   spawnSync("git", ["-c", "user.email=t@t", "-c", "user.name=t", ...args], { cwd, input });
 
@@ -1722,8 +1769,7 @@ describe("catalog", () => {
   // A repository's head sets attributes on <html> and runs page scripts: Astrobook's client router
   // swaps pages in place, which drops both until a reload.
   test("dev serves `copy`, and a click in the bar loads the next state in full", async () => {
-    const { serve, freePort } = await import("../lib/serve.ts");
-    const { chromeArgs, chromeBinary, INSTALL_HINT } = await import("../lib/chrome.ts");
+    const { serve } = await import("../lib/serve.ts");
     const fixture = join(import.meta.dir, "fixture");
     made.push(join(fixture, "catalog", ".astro"), join(fixture, "catalog", "node_modules"));
     // Modules at paths a forward would take, as a site whose Astro root holds catalog/ serves its
@@ -1744,12 +1790,7 @@ describe("catalog", () => {
       ],
       { env: { ASTRO_DEV_BACKGROUND: "1" }, timeoutMs: 30_000 },
     );
-    const chrome = chromeBinary();
-    if (!chrome) throw new Error(INSTALL_HINT);
-    const port = await freePort();
-    const browser = Bun.spawn([chrome, ...chromeArgs(temp()), `--remote-debugging-port=${port}`], {
-      stderr: "ignore",
-    });
+    let page: Awaited<ReturnType<typeof browse>> | undefined;
     try {
       const logo = await fetch(`${server.url}/assets/logo.svg`);
       expect(logo.status).toBe(200);
@@ -1784,34 +1825,8 @@ describe("catalog", () => {
       expect((await fetch(`${server.url}/catalog/print/`, { redirect: "manual" })).status).not.toBe(
         307,
       );
-      const start = `${server.url}/dashboard/Parts/box-parts/two`;
-      let target: { webSocketDebuggerUrl: string } | undefined;
-      for (let i = 0; i < 100 && !target; i++)
-        target = await fetch(`http://127.0.0.1:${port}/json/new?${start}`, { method: "PUT" })
-          .then((r) => r.json())
-          .catch(() => new Promise((r) => setTimeout(r, 100)));
-      const ws = new WebSocket(target!.webSocketDebuggerUrl);
-      await new Promise((r) => ws.addEventListener("open", r, { once: true }));
-      let id = 0;
-      const evaluate = (expression: string) =>
-        new Promise<unknown>((done) => {
-          const call = ++id;
-          const on = (event: MessageEvent) => {
-            const message = JSON.parse(String(event.data));
-            if (message.id !== call) return;
-            ws.removeEventListener("message", on);
-            done(message.result?.result?.value);
-          };
-          ws.addEventListener("message", on);
-          ws.send(JSON.stringify({ id: call, method: "Runtime.evaluate", params: { expression } }));
-        });
-      const until = async (expression: string) => {
-        for (const end = Date.now() + 20_000; Date.now() < end;) {
-          if (await evaluate(expression)) return;
-          await new Promise((r) => setTimeout(r, 100));
-        }
-        throw new Error(`timed out: ${expression}`);
-      };
+      page = await browse(`${server.url}/dashboard/Parts/box-parts/two`);
+      const { evaluate, until } = page;
       await until(`document.readyState === "complete" && !!document.body.dataset.fxRan`);
       await evaluate(
         `document.querySelector('.hw-catalogue-bar a[href$="/box-parts/one/"]').click()`,
@@ -1840,9 +1855,8 @@ describe("catalog", () => {
         `document.dispatchEvent(new KeyboardEvent("keydown", { key: "ArrowRight", bubbles: true }))`,
       );
       await until(`location.pathname.endsWith("/two/") && document.readyState === "complete"`);
-      ws.close();
     } finally {
-      browser.kill();
+      page?.close();
       server.stop();
     }
   }, 90_000);
@@ -1850,8 +1864,6 @@ describe("catalog", () => {
   // 40 tiles, each framing a page whose spec text sits above the element it marks as its preview.
   test("tile frames load after the first paint and near the view, and draw only the marked preview", async () => {
     const { renderCatalog } = await import("../catalog/render.ts");
-    const { chromeArgs, chromeBinary, INSTALL_HINT } = await import("../lib/chrome.ts");
-    const { freePort } = await import("../lib/serve.ts");
     const shellCss = readFileSync(join(import.meta.dir, "..", "catalog", "catalog.css"), "utf8");
     // An even tile marks a full-width wrapper of its own ground around a smaller box, an odd one a
     // box with a ground of its own.
@@ -1897,48 +1909,14 @@ describe("catalog", () => {
         });
       },
     });
-    const chrome = chromeBinary();
-    if (!chrome) throw new Error(INSTALL_HINT);
-    const port = await freePort();
-    const browser = Bun.spawn(
-      [chrome, ...chromeArgs(temp()), `--remote-debugging-port=${port}`, "--window-size=1280,800"],
-      { stderr: "ignore" },
-    );
+    const page = await browse("about:blank", ["--window-size=1280,800"]);
     try {
-      let target: { webSocketDebuggerUrl: string } | undefined;
-      for (let i = 0; i < 100 && !target; i++)
-        target = await fetch(`http://127.0.0.1:${port}/json/new?about:blank`, { method: "PUT" })
-          .then((r) => r.json())
-          .catch(() => new Promise((r) => setTimeout(r, 100)));
-      const ws = new WebSocket(target!.webSocketDebuggerUrl);
-      await new Promise((r) => ws.addEventListener("open", r, { once: true }));
+      const { ws, send, evaluate, until } = page;
       const failed: string[] = [];
       ws.addEventListener("message", (event) => {
         const m = JSON.parse(String(event.data));
         if (m.method === "Network.loadingFailed") failed.push(m.params.errorText);
       });
-      let id = 0;
-      const send = (method: string, params: object = {}) =>
-        new Promise<{ value?: unknown }>((done) => {
-          const call = ++id;
-          const on = (event: MessageEvent) => {
-            const message = JSON.parse(String(event.data));
-            if (message.id !== call) return;
-            ws.removeEventListener("message", on);
-            done(message.result?.result ?? {});
-          };
-          ws.addEventListener("message", on);
-          ws.send(JSON.stringify({ id: call, method, params }));
-        });
-      const evaluate = async (expression: string) =>
-        (await send("Runtime.evaluate", { expression, returnByValue: true })).value;
-      const until = async (expression: string) => {
-        for (const end = Date.now() + 20_000; Date.now() < end;) {
-          if (await evaluate(expression)) return;
-          await new Promise((r) => setTimeout(r, 100));
-        }
-        throw new Error(`timed out: ${expression}`);
-      };
       await send("Network.enable");
       const frames = (prefix: string) => asked.filter((p) => p.startsWith(prefix)).length;
       await send("Page.navigate", { url: `${server.url}home` });
@@ -1999,9 +1977,8 @@ describe("catalog", () => {
         ),
       ).toBe(false);
       expect(failed).toEqual([]);
-      ws.close();
     } finally {
-      browser.kill();
+      page.close();
       void server.stop(true);
     }
   }, 60_000);
