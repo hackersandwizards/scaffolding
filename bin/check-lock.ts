@@ -2,7 +2,7 @@
 
 import { type ChildProcess, spawn } from "node:child_process";
 import { createHash } from "node:crypto";
-import { linkSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { linkSync, readFileSync, renameSync, rmSync, writeFileSync } from "node:fs";
 import { constants } from "node:os";
 import { resolve } from "node:path";
 
@@ -30,6 +30,8 @@ const SPEAK_MS = 30_000;
 interface Holder {
   pid: number;
   startedAt: number;
+  /** The command's process group, which outlives a holder killed together with its caller's group. */
+  group?: number;
 }
 
 const sleep = (ms: number): Promise<void> => new Promise((done) => setTimeout(done, ms));
@@ -45,13 +47,23 @@ function readLock(): string | undefined {
 function parseHolder(raw: string | undefined): Holder | undefined {
   try {
     const holder = JSON.parse(raw ?? "") as Holder;
-    return typeof holder.pid === "number" ? holder : undefined;
+    if (typeof holder.pid !== "number") return undefined;
+    // kill(-1) and kill(0) address every process or this one's group, never the command's.
+    if (!(Number.isInteger(holder.group) && holder.group! > 1)) delete holder.group;
+    return holder;
   } catch {
     return undefined;
   }
 }
 
 const readHolder = (): Holder | undefined => parseHolder(readLock());
+const holderName = (): string => {
+  const holder = readHolder();
+  if (!holder) return "pid unknown";
+  return holder.group && !running(holder.pid)
+    ? `process group ${holder.group} of dead pid ${holder.pid}`
+    : `pid ${holder.pid}`;
+};
 
 function running(pid: number): boolean {
   try {
@@ -92,7 +104,7 @@ function dropIfStale(): void {
   // An unreadable lock is a half-written or corrupt one, and nobody can prove it is live. A live
   // holder is never reclaimed on age: a slow run under load outlasted any bound and a second check
   // ran beside it. A reused pid reads as live too, which ends in the wait timeout, not an overlap.
-  if (holder && running(holder.pid)) return;
+  if (holder && (running(holder.pid) || (holder.group && running(-holder.group)))) return;
   // Deleting by name after the read deleted a fresh lock another waiter wrote in between. A claim,
   // named for these exact contents, lets one waiter delete them, and while they sit at the lock path
   // no acquire can replace them, so the re-read under the claim stays true until the delete.
@@ -133,14 +145,14 @@ async function waitForLock(): Promise<boolean> {
     const waited = Date.now() - started;
     if (waited > WAIT_MS) {
       console.error(
-        `[check-lock] pid ${readHolder()?.pid ?? "unknown"} still holds ${LOCK} after ${Math.round(waited / 1000)}s; not running "${command.join(" ")}" beside it. Retry once it finishes.`,
+        `[check-lock] ${holderName()} still holds ${LOCK} after ${Math.round(waited / 1000)}s; not running "${command.join(" ")}" beside it. Retry once it finishes.`,
       );
       process.exit(1);
     }
     if (waited - spokeAt >= SPEAK_MS) {
       spokeAt = waited;
       console.warn(
-        `[check-lock] waiting ${Math.round(waited / 1000)}s for pid ${readHolder()?.pid ?? "unknown"} to finish`,
+        `[check-lock] waiting ${Math.round(waited / 1000)}s for ${holderName()} to finish`,
       );
     }
     await sleep(POLL_MS);
@@ -199,6 +211,19 @@ const spawned = spawn(command[0], command.slice(1), {
   detached: true,
 });
 child = spawned;
+// The command's own group escapes a SIGKILL to the caller's group, so the lock names that group
+// too, and a waiter reads it as live until the group is empty. A rename replaces the contents
+// whole, as create() writes them.
+const holder = held ? readHolder() : undefined;
+if (holder?.pid === process.pid && spawned.pid)
+  try {
+    writeFileSync(`${LOCK}.${process.pid}`, JSON.stringify({ ...holder, group: spawned.pid }));
+    renameSync(`${LOCK}.${process.pid}`, LOCK);
+  } catch {
+    /* the lock still names this pid, which covers every case but a kill of the caller's group */
+  } finally {
+    rmSync(`${LOCK}.${process.pid}`, { force: true });
+  }
 const result = await new Promise<{
   status: number | null;
   signal: NodeJS.Signals | null;

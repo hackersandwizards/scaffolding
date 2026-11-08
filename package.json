@@ -1,6 +1,6 @@
 {
   "name": "@hackersandwizards/scaffolding",
-  "version": "2.21.1",
+  "version": "2.21.2",
   "description": "Repository skeleton, gate commands, shared configs and the catalog shell: scaffold, scaffolding check, check-structure, check-confidential, check-staged, check-lock, and the catalog preset.",
   "keywords": [
     "astro-component"

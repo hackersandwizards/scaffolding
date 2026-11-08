@@ -337,6 +337,29 @@ describe("check-lock wraps a consumer's build", () => {
       expect(existsSync(lock)).toBe(false);
     }, 30_000);
 
+  // A CI cancel or a harness timeout SIGKILLs the caller's group, which the command's own group
+  // escapes: the next run must wait for that group, not read the dead holder as stale.
+  it("holds a build back while the command of a SIGKILLed holder still runs", async () => {
+    const lock = lockPath();
+    const done = `${lock}.build-done`;
+    const check = spawn("bun", [SCRIPT, "sh", "-c", `sleep 3; : > ${done}`], {
+      env: { ...process.env, CHECK_LOCK: lock },
+      stdio: "ignore",
+      detached: true,
+    });
+    await until(() => existsSync(lock) && readFileSync(lock, "utf8").includes("group"), 5_000);
+    expect(readFileSync(lock, "utf8")).toContain('"group"');
+    // Reaped first: a zombie holder would read as live through its pid alone.
+    const reaped = new Promise((go) => check.on("close", go));
+    process.kill(-check.pid!, "SIGKILL");
+    await reaped;
+    const next = run(lock, ["sh", "-c", `test -e ${done} && echo built`], {
+      CHECK_LOCK_WAIT_MS: "15000",
+    });
+    expect(next.status).toBe(0);
+    expect(next.stdout).toBe("built\n");
+  }, 30_000);
+
   it("names a command that cannot start", () => {
     const result = run(lockPath(), ["no-such-command-here"]);
     expect(result.status).toBe(1);

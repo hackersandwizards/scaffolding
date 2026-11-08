@@ -1172,16 +1172,27 @@ describe("scaffolding check", () => {
     expect(r.code).toBe(1);
   });
 
-  test("the catalog build starts once the typecheck has finished", () => {
+  test("the catalog build starts once a typecheck running Astro has finished", () => {
     const { catalog: _, typecheck: __, ...rest } = skip;
     const dir = gate(
-      { skip: rest, typecheck: "tc" },
-      { tc: "sleep 1 && touch tc-done", build: "test -f tc-done" },
+      { skip: rest, typecheck: "check:types" },
+      // A script name whose body runs Astro counts as Astro.
+      { "check:types": "sleep 1 && touch tc-done && echo astro", build: "test -f tc-done" },
     );
     const r = run(dir, "scaffolding", ["check"], { CHECK_LOCK: join(dir, ".lock") });
     expect(r.out).toContain("ok   catalog");
     expect(r.code).toBe(0);
-    const failed = gate({ skip: rest, typecheck: "tc" }, { tc: "exit 1", build: "echo built" });
+    // A typecheck without Astro shares no cache with the build, which starts beside it.
+    const beside = gate(
+      { skip: rest, typecheck: "tc" },
+      { tc: "sleep 3 && touch tc-done", build: "test ! -f tc-done" },
+    );
+    const b = run(beside, "scaffolding", ["check"], { CHECK_LOCK: join(beside, ".lock") });
+    expect(b.out).toContain("ok   catalog");
+    const failed = gate(
+      { skip: rest, typecheck: "astro" },
+      { astro: "exit 1", build: "echo built" },
+    );
     const f = run(failed, "scaffolding", ["check"], { CHECK_LOCK: join(failed, ".lock") });
     expect(f.out).toContain("FAIL typecheck");
     expect(f.out).toContain("ok   catalog");

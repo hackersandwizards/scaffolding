@@ -125,8 +125,11 @@ let ok = await group([["install", "bun install --frozen-lockfile"]]);
 // A typecheck of `astro check` and the catalog's `astro build` both run Astro's sync, whose Vite
 // server optimizes dependencies into one folder (node_modules/.astro/vite-sync). On a cache an
 // install invalidated, two at once race on its rename and one fails with ENOTEMPTY, so the catalog
-// build waits for the typecheck.
-if (ok) ok = await group(Object.entries(shared), { catalog: "typecheck" });
+// build waits for a typecheck that runs Astro. A plain tsc shares no folder with it.
+// `bun --bun <name>` runs a package script of that name before a binary.
+const typecheck = config.typecheck ?? "";
+const sync = /\bastro\b/.test(`${typecheck} ${pkg.scripts?.[typecheck] ?? ""}`);
+if (ok) ok = await group(Object.entries(shared), sync ? { catalog: "typecheck" } : {});
 for (const entry of config.check ?? []) {
   if (!ok) break;
   const steps = (Array.isArray(entry) ? entry : [entry]).map((s): [string, string] => [
