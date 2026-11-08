@@ -46,7 +46,7 @@ deleting it changes nothing for the gate.
 `scaffold <dir> [--port <port>] [--name <package>]` (port 4600 and the folder's name by default)
 writes the skeleton, the catalog (`catalog/astro.config.ts` on the
 preset with `base: "/<name>"` and the port, an example component and story, `stylelint.config.js`,
-the scripts `dev`, `catalog` and `build`, the Pages workflow) and the admin area
+the scripts `dev`, `catalog`, `build` and `preview`, the Pages workflow) and the admin area
 (`docs/agent-work/items/goal.md`), and pins brand and admin to the newest tag on their remotes, so an
 admin or brand release reaches new repositories without a scaffolding release. A repository whose
 catalog or admin area lives in another repository leaves either out with `--catalog-in <repo>` or
@@ -198,7 +198,8 @@ The options beyond those above:
 - `previewSize`: the tile preview's viewport in CSS px, drawn whole and scaled to the tile, for
   every group (`[794, 1123]`) or per group (`{ Pages: [1440, 900] }`); a tile without one draws its
   state at three quarters, centred on the state's own ground and shrunk where it is taller than the
-  tile.
+  tile: the element the state marks `data-hw-preview` alone, the rest of the page hidden, such as a
+  specimen under its spec text, else the only child of `<main>`, else `<main>`.
 - `storyScale`: brand's `data-hw-scale` on every page that draws a story, a state's page and the
   state alone, such as `"screen"`; without it such a page keeps what the repository's `head` sets,
   else brand's default. The home is always `"dense"`.
@@ -207,8 +208,16 @@ The options beyond those above:
 - `admin`: under `astro dev`, a header link to the repository's page in the local admin hub,
   `http://admin.localhost:4329/<repo>/dashboard`, `<repo>` named as the hub names it (`admin.name`
   in `package.json`, else the checkout's folder). A built page carries none.
-- `previews`: draw each tile's first state; `false` for states that load slowly or may not be
-  framed.
+- `previews`: draw each tile's first state; `false` for states that load slowly. A tile's frame
+  loads once the home reports its first paint and the tile comes within 200 px of the view, so the
+  frames neither hold the first paint back nor load all at once; without script none loads.
+  `"srcdoc"` is for a site whose pages refuse framing, such as by `X-Frame-Options: DENY`: each tile
+  fetches its state's page and draws its HTML, so no frame load starts that the header would block
+  and a script would cancel. It needs HTTP, not a build opened from disk.
+- `homeCss`: the stylesheets the home loads, default `css`. The tiles frame each state, so the home
+  needs only the tokens its header and shell read and what its foundations draw, such as
+  `["@hackersandwizards/brand/tokens.root.css"]`. `css` loads on a state's page and a state alone;
+  the header's CSS and the shell's own on the home and a state's page, never on a state alone.
 - `previewStates`: the states a tile draws and links first, each the story's export name in kebab
   case, such as `["light", "loaded-dark"]` for `Light` and `LoadedDark`.
 - `head`: the repository's own `<head>` component, rendered on every page.
@@ -281,14 +290,16 @@ an `optimizeDeps` list of its own, found none late.
 Vite still says "Re-optimizing dependencies because lockfile has changed" once after each change to
 `bun.lock`; a dependency the scan cannot reach goes into the repository's `optimizeDeps.include`.
 
-Under an agent, `astro dev` moves itself into the background, and with `--root catalog` that
-background server resolves `catalog` from inside `catalog/`, so the command waits 30 s for it and
-fails. `ASTRO_DEV_BACKGROUND=1` keeps it in the foreground and changes nothing for a person:
+Under an agent, `astro dev` and `astro preview` move themselves into the background, and with
+`--root catalog` that background server resolves `catalog` from inside `catalog/`: dev waits 30 s
+for it and fails, preview finds no `catalog/catalog/dist`. `ASTRO_DEV_BACKGROUND=1` and
+`ASTRO_PREVIEW_BACKGROUND=1` keep each in the foreground and change nothing for a person:
 
 ```json
 {
   "dev": "ASTRO_DEV_BACKGROUND=1 bun --bun astro dev --root catalog",
-  "catalog": "bun run dev"
+  "catalog": "bun run dev",
+  "preview": "ASTRO_PREVIEW_BACKGROUND=1 bun --bun astro preview --root catalog"
 }
 ```
 

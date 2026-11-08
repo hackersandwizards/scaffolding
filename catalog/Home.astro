@@ -13,7 +13,7 @@ interface Props {
   admin?: string;
   title?: string;
   lead?: string;
-  previews?: boolean;
+  previews?: CatalogOptions["previews"];
   previewSize?: CatalogOptions["previewSize"];
   groupOrder?: string[];
   previewStates?: string[];
@@ -34,7 +34,14 @@ const rank = (g: string) => (groupOrder.includes(g) ? groupOrder.indexOf(g) : gr
 const url = (base: string, id: string) => `${base.replace(/\/$/, "")}/${id}${options.slash}`;
 const groups = new Map<
   string,
-  { name: string; href: string; pill: string; frame?: string; frameSize?: [number, number] }[]
+  {
+    name: string;
+    href: string;
+    pill: string;
+    frame?: string;
+    frameSrcdoc?: boolean;
+    frameSize?: [number, number];
+  }[]
 >();
 let states = 0;
 for (const m of [...(modules as StoryModule[])].sort((a, b) => a.name.localeCompare(b.name))) {
@@ -51,6 +58,7 @@ for (const m of [...(modules as StoryModule[])].sort((a, b) => a.name.localeComp
     href: url(config.dashboardBase, first.id),
     pill: m.stories.length === 1 ? "1 state" : `${m.stories.length} states`,
     frame: previews ? url(config.storyBase, first.id) : undefined,
+    frameSrcdoc: previews === "srcdoc",
     frameSize: Array.isArray(previewSize)
       ? previewSize
       : previewSize && Object.hasOwn(previewSize, group)

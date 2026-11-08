@@ -128,6 +128,7 @@ if (catalogIn) {
     dev: "ASTRO_DEV_BACKGROUND=1 bun --bun astro dev --root catalog",
     catalog: "bun run dev",
     build: "check-lock bun --bun astro build --root catalog",
+    preview: "ASTRO_PREVIEW_BACKGROUND=1 bun --bun astro preview --root catalog",
   });
 if (adminIn) pkg.scaffolding.skip.admin = `the admin area lives in ${adminIn}`;
 writeFileSync(pkgPath, `${JSON.stringify(pkg, null, 2)}\n`);

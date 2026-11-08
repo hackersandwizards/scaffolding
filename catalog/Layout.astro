@@ -1,6 +1,7 @@
 ---
 import Top from "./Top.astro";
 import { renderCatalog, type CatalogData } from "./render.ts";
+import "virtual:scaffolding/catalog-css/home";
 import "./catalog.css";
 
 type Props = Omit<CatalogData, "intro"> & { product: string; href?: string; admin?: string };

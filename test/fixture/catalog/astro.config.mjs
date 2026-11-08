@@ -11,7 +11,9 @@ export default defineConfig({
       previewStates: ["missing", "two"],
       previewSize: { Types: [1440, 900] },
       storyScale: "screen",
-      header: { component: "./Header.astro" },
+      header: { component: "./Header.astro", css: ["./header.css"] },
+      // The tiles frame each state: the home takes none of the stories' CSS.
+      homeCss: [],
       nav: {
         items: [
           { name: "Site", href: "/" },

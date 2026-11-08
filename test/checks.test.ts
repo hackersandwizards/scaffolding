@@ -401,6 +401,11 @@ describe("scaffold and check-structure", () => {
     );
     expect(pkg.scaffolding.skip).toEqual({ test: "new repository: no tests yet" });
     expect(pkg.scripts.build).toBe("check-lock bun --bun astro build --root catalog");
+    // Under an agent `astro preview` moves into the background, which resolves --root catalog from
+    // inside catalog/ and finds no catalog/catalog/dist.
+    expect(pkg.scripts.preview).toBe(
+      "ASTRO_PREVIEW_BACKGROUND=1 bun --bun astro preview --root catalog",
+    );
     const config = readFileSync(join(dir, "catalog/astro.config.ts"), "utf8");
     expect(config).toContain('base: "/demo"');
     expect(config).toContain("port: 4655 }");
@@ -1341,14 +1346,16 @@ describe("catalog", () => {
     expect(home).toMatch(
       /<ul class="hw-catalogue-names"><li><a href="\/dashboard\/Parts\/box-parts\/two\/">BoxParts<\/a>/,
     );
-    expect(home).toContain('src="/stories/Types/box-types/two/"');
+    // A frame names its page in data-src: the shell's script loads it once the tile nears the view.
+    expect(home).toContain('data-src="/stories/Types/box-types/two/"');
+    expect(home).not.toMatch(/<iframe[^>]* src=/);
     expect(readdirSync(join(dist, "stories/Parts/box-parts"))).toEqual(["one", "two"]);
     // `previewSize` per group: a Types tile draws its frame whole at 1440 x 900, a Parts tile at
     // three quarters.
     expect(home).toContain(
-      'data-frame-width="1440" style="aspect-ratio:1440/900"><iframe src="/stories/Types/box-types/two/"',
+      'data-frame-width="1440" style="aspect-ratio:1440/900"><iframe data-src="/stories/Types/box-types/two/"',
     );
-    expect(home).toMatch(/<span class="hw-catalogue-preview"><iframe src="\/stories\/Parts\//);
+    expect(home).toMatch(/<span class="hw-catalogue-preview"><iframe data-src="\/stories\/Parts\//);
     // The shell's own card and pill carry data-hw-shell, for brand-elements to skip.
     expect(home).toContain('<a class="hw-card hw-catalogue-tile" data-hw-shell href=');
     expect(home).toContain('<span class="hw-pill" data-tone="neutral" data-hw-shell>');
@@ -1371,14 +1378,36 @@ describe("catalog", () => {
     );
     expect(page("catalog")).toContain('content="0; url=/"');
     const state = page("dashboard/Parts/box-parts/two");
-    const css = readdirSync(join(dist, "_astro"))
-      .filter((f) => f.endsWith(".css"))
-      .map((f) => readFileSync(join(dist, "_astro", f), "utf8"))
-      .join("");
+    // Each page's own styles: its <style> blocks and the stylesheets it links.
+    const styles = (html: string) =>
+      [
+        ...html.matchAll(/<style[^>]*>([\s\S]*?)<\/style>/g).map((m) => m[1]),
+        ...html
+          .matchAll(/<link rel="stylesheet" href="\/_astro\/([^"]+)"/g)
+          .map((m) => readFileSync(join(dist, "_astro", m[1]!), "utf8")),
+      ].join("");
     expect(state).toContain('<meta name="fx-head" content="repository">');
-    expect(`${state}${css}`).toMatch(
+    expect(styles(state)).toMatch(
       /#astrobook-sidebar,\s*astrobook-sidebar-resize-handle\s*\{\s*display:\s*none\s*!important/,
     );
+    // A state's page takes the header's, the bar's and the repository's CSS; a state alone only the
+    // repository's; the home the header's and the shell's, and of the repository's only `homeCss`.
+    const [stateCss, aloneCss, homeCss] = [state, page("stories/Parts/box-parts/two"), home].map(
+      styles,
+    );
+    for (const rule of [".fx-header{display:flex}", ".hw-catalogue-bar{", ".box{color:teal}"])
+      expect(stateCss).toContain(rule);
+    expect(aloneCss).toContain(".box{color:teal}");
+    for (const rule of [
+      ".fx-header{",
+      "hw-catalogue-bar",
+      "hw-catalogue-nav",
+      "astrobook-sidebar,",
+    ])
+      expect(aloneCss).not.toContain(rule);
+    expect(homeCss).toContain(".fx-header{display:flex}");
+    expect(homeCss).toContain(".hw-catalogue-grid{");
+    expect(homeCss).not.toContain(".box{");
     const barOf = (html: string) =>
       html.match(/<template id="hw-catalogue-bar">([\s\S]*?)<\/template>/)?.[1] ?? "";
     const bar = barOf(state);
@@ -1465,7 +1494,7 @@ describe("catalog", () => {
     expect(based).toContain(
       '<header class="fx-header"><a href="/fx/">Fx</a><div class="hw-header-nav hw-catalogue-nav"><nav class="hw-header-nav" aria-label="Main" data-hw-catalogs><a class="hw-header-link" href="/fx/">Site</a><a class="hw-header-link" href="/fx/catalog/" aria-current="page">Fx</a><a class="hw-header-link" href="https://example.com/other/">Other</a><a class="hw-header-link" href="//example.com/far/">Far</a></nav></div></header>',
     );
-    expect(based).toContain('src="/fx/stories/Types/box-types/two/"');
+    expect(based).toContain('data-src="/fx/stories/Types/box-types/two/"');
     expect(page("catalog/stories/Types/box-types/two")).toContain(
       'url=/fx/stories/Types/box-types/two/"',
     );
@@ -1473,7 +1502,7 @@ describe("catalog", () => {
     // pages and no public/, which the host serves.
     expect(build(["--base", "/catalog"]).status).toBe(0);
     const mountedHome = readFileSync(join(dist, "index.html"), "utf8");
-    expect(mountedHome).toContain('src="/catalog/stories/Types/box-types/two/"');
+    expect(mountedHome).toContain('data-src="/catalog/stories/Types/box-types/two/"');
     // Its home reads /catalog/ already: the current item links there, not to /catalog/catalog/.
     expect(mountedHome).toContain(
       '<a class="hw-header-link" href="/catalog/" aria-current="page">Fx</a>',
@@ -1518,7 +1547,7 @@ describe("catalog", () => {
     expect(build(["--config", "disk.config.mjs"]).status).toBe(0);
     const onDisk = readFileSync(join(dist, "index.html"), "utf8");
     const at = (p: string) => pathToFileURL(join(dist, p)).href;
-    expect(onDisk).toContain(`<iframe src="${at("stories/Types/box-types/two/index.html")}"`);
+    expect(onDisk).toContain(`<iframe data-src="${at("stories/Types/box-types/two/index.html")}"`);
     expect(onDisk).toContain(
       `<li><a href="${at("dashboard/Parts/box-parts/two/index.html")}">BoxParts</a>`,
     );
@@ -1527,7 +1556,7 @@ describe("catalog", () => {
       `<a class="hw-header-link" href="${at("index.html")}" aria-current="page">Fx</a>`,
     );
     expect(onDisk).toContain('href="https://example.com/other/"');
-    expect(onDisk).not.toMatch(/\s(href|src)="\/(?!\/)/);
+    expect(onDisk).not.toMatch(/\s(href|src|data-src)="\/(?!\/)/);
     expect(page("dashboard/Parts/box-parts/two")).toContain(
       `href="${at("stories/Parts/box-parts/two/index.html")}">Open this state alone`,
     );
@@ -1817,6 +1846,165 @@ describe("catalog", () => {
       server.stop();
     }
   }, 90_000);
+
+  // 40 tiles, each framing a page whose spec text sits above the element it marks as its preview.
+  test("tile frames load after the first paint and near the view, and draw only the marked preview", async () => {
+    const { renderCatalog } = await import("../catalog/render.ts");
+    const { chromeArgs, chromeBinary, INSTALL_HINT } = await import("../lib/chrome.ts");
+    const { freePort } = await import("../lib/serve.ts");
+    const shellCss = readFileSync(join(import.meta.dir, "..", "catalog", "catalog.css"), "utf8");
+    // An even tile marks a full-width wrapper of its own ground around a smaller box, an odd one a
+    // box with a ground of its own.
+    const box =
+      '<span class="box" style="display:inline-block;width:200px;height:100px;background:rgb(1, 2, 3)">x</span>';
+    const story = (i: number) =>
+      `<!doctype html><html style="background:#fff"><body><main><p class="spec">Spec text</p>${
+        i % 2
+          ? box.replace('class="box"', 'class="box" data-hw-preview')
+          : `<div data-hw-preview><div>${box}</div></div>`
+      }</main></body></html>`;
+    const home = (path: string, srcdoc: boolean) =>
+      `<!doctype html><html><head><style>${shellCss}</style></head><body>${renderCatalog({
+        title: "t",
+        lead: "l",
+        provenance: "p",
+        groups: [
+          {
+            name: "Parts",
+            items: Array.from({ length: 40 }, (_, i) => ({
+              name: `x${i}`,
+              href: `/x${i}`,
+              frame: `/${path}/${i}`,
+              frameSrcdoc: srcdoc,
+            })),
+          },
+        ],
+      })}</body></html>`;
+    const asked: string[] = [];
+    const server = Bun.serve({
+      port: 0,
+      hostname: "127.0.0.1",
+      fetch(req) {
+        const { pathname } = new URL(req.url);
+        asked.push(pathname);
+        const html = { headers: { "Content-Type": "text/html" } };
+        if (pathname === "/home") return new Response(home("story", false), html);
+        if (pathname === "/inline") return new Response(home("deny", true), html);
+        // A site that refuses to be framed, as one sending X-Frame-Options DENY.
+        const deny = pathname.startsWith("/deny/");
+        return new Response(story(Number(pathname.split("/").pop())), {
+          headers: { ...html.headers, ...(deny && { "X-Frame-Options": "DENY" }) },
+        });
+      },
+    });
+    const chrome = chromeBinary();
+    if (!chrome) throw new Error(INSTALL_HINT);
+    const port = await freePort();
+    const browser = Bun.spawn(
+      [chrome, ...chromeArgs(temp()), `--remote-debugging-port=${port}`, "--window-size=1280,800"],
+      { stderr: "ignore" },
+    );
+    try {
+      let target: { webSocketDebuggerUrl: string } | undefined;
+      for (let i = 0; i < 100 && !target; i++)
+        target = await fetch(`http://127.0.0.1:${port}/json/new?about:blank`, { method: "PUT" })
+          .then((r) => r.json())
+          .catch(() => new Promise((r) => setTimeout(r, 100)));
+      const ws = new WebSocket(target!.webSocketDebuggerUrl);
+      await new Promise((r) => ws.addEventListener("open", r, { once: true }));
+      const failed: string[] = [];
+      ws.addEventListener("message", (event) => {
+        const m = JSON.parse(String(event.data));
+        if (m.method === "Network.loadingFailed") failed.push(m.params.errorText);
+      });
+      let id = 0;
+      const send = (method: string, params: object = {}) =>
+        new Promise<{ value?: unknown }>((done) => {
+          const call = ++id;
+          const on = (event: MessageEvent) => {
+            const message = JSON.parse(String(event.data));
+            if (message.id !== call) return;
+            ws.removeEventListener("message", on);
+            done(message.result?.result ?? {});
+          };
+          ws.addEventListener("message", on);
+          ws.send(JSON.stringify({ id: call, method, params }));
+        });
+      const evaluate = async (expression: string) =>
+        (await send("Runtime.evaluate", { expression, returnByValue: true })).value;
+      const until = async (expression: string) => {
+        for (const end = Date.now() + 20_000; Date.now() < end;) {
+          if (await evaluate(expression)) return;
+          await new Promise((r) => setTimeout(r, 100));
+        }
+        throw new Error(`timed out: ${expression}`);
+      };
+      await send("Network.enable");
+      const frames = (prefix: string) => asked.filter((p) => p.startsWith(prefix)).length;
+      await send("Page.navigate", { url: `${server.url}home` });
+      const fitted = `(() => { const f = document.querySelector(".hw-catalogue-preview iframe"); return !!f.contentDocument?.querySelector("[data-hw-preview]") && f.style.transform.includes("scale"); })()`;
+      await until(`document.readyState === "complete" && ${fitted}`);
+      await new Promise((r) => setTimeout(r, 1000));
+      // Only the tiles in or near the view load: four rows of three at 1280 x 800, not all 40.
+      const near = frames("/story/");
+      expect(near).toBeGreaterThan(0);
+      expect(near).toBeLessThan(20);
+      // No frame starts before the first paint.
+      const [paint, firstFrame] = (await evaluate(
+        `[performance.getEntriesByName("first-paint")[0]?.startTime, Math.min(...performance.getEntriesByType("resource").filter((e) => e.initiatorType === "iframe").map((e) => e.startTime))]`,
+      )) as [number, number];
+      expect(paint).toBeGreaterThan(0);
+      expect(firstFrame).toBeGreaterThanOrEqual(paint);
+      // The marked element alone shows, centred in its tile on what it paints, on its own ground;
+      // the page's canvas, white, would show around a box with a ground of its own.
+      const fit = (tile: number) =>
+        evaluate(`(() => {
+        const p = document.querySelectorAll(".hw-catalogue-preview")[${tile}], f = p.firstElementChild, d = f.contentDocument;
+        const r = d.querySelector(".box").getBoundingClientRect();
+        const [tx, ty, s] = f.style.transform.match(/-?[\\d.]+/g).map(Number);
+        return { dx: tx + (r.left + r.width / 2) * s - p.clientWidth / 2, dy: ty + (r.top + r.height / 2) * s - p.clientHeight / 2,
+          spec: getComputedStyle(d.querySelector(".spec")).visibility, preview: getComputedStyle(d.querySelector("[data-hw-preview]")).visibility, ground: p.style.background, canvas: getComputedStyle(d.documentElement).backgroundColor };
+      })()`) as Promise<Record<string, number | string>>;
+      for (const [tile, ground] of [
+        [0, "rgb(255, 255, 255)"],
+        [1, "rgb(1, 2, 3)"],
+      ] as const) {
+        const at = await fit(tile);
+        expect(Math.abs(at.dx as number)).toBeLessThan(1);
+        expect(Math.abs(at.dy as number)).toBeLessThan(1);
+        expect([at.spec, at.preview, at.ground, at.canvas]).toEqual([
+          "hidden",
+          "visible",
+          ground,
+          "rgba(0, 0, 0, 0)",
+        ]);
+      }
+      // Scrolled to the end, the last tile loads.
+      await evaluate(`document.querySelector(".hw-catalogue-grid li:last-child").scrollIntoView()`);
+      await until(
+        `!!document.querySelector(".hw-catalogue-grid li:last-child iframe").contentDocument?.querySelector("[data-hw-preview]")`,
+      );
+      expect(asked).toContain("/story/39");
+      expect(failed).toEqual([]);
+      // `frameSrcdoc`: a page that refuses framing draws from its HTML; no frame load starts, so
+      // none is cancelled.
+      await send("Page.navigate", { url: `${server.url}inline` });
+      await until(`document.readyState === "complete" && ${fitted}`);
+      await new Promise((r) => setTimeout(r, 1000));
+      expect(frames("/deny/")).toBeGreaterThan(0);
+      expect(frames("/deny/")).toBeLessThan(20);
+      expect(
+        await evaluate(
+          `[...document.querySelectorAll(".hw-catalogue-preview iframe")].some((f) => f.hasAttribute("src"))`,
+        ),
+      ).toBe(false);
+      expect(failed).toEqual([]);
+      ws.close();
+    } finally {
+      browser.kill();
+      void server.stop(true);
+    }
+  }, 60_000);
 
   test("a group of markup draws it in place of tiles, without a count", async () => {
     const { renderCatalog } = await import("../catalog/render.ts");

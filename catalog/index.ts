@@ -26,8 +26,12 @@ export type { CatalogData, CatalogGroup, CatalogItem } from "./render.ts";
 export type CatalogOptions = {
   /** The product name in the header, such as "Dokumente". */
   product: string;
-  /** The stylesheets every catalog page loads, in order: brand's exports and the repository's own. */
+  /** The stylesheets every page drawing a story loads, in order: brand's exports and the
+   * repository's own. */
   css: string[];
+  /** The stylesheets the home loads, default `css`: its tiles frame each state, so it needs only
+   * the tokens its header and shell read and what its foundations draw. */
+  homeCss?: string[];
   /** One or two sentences under the title. */
   lead: string;
   /** The tile preview's viewport in CSS px, drawn whole and scaled to the tile, such as
@@ -57,8 +61,10 @@ export type CatalogOptions = {
   /** Under `astro dev`, a header link to the repository's page in the local admin hub,
    * http://admin.localhost:4329/<repo>/dashboard, the repo named as the hub names it. */
   admin?: boolean;
-  /** Draw each tile's first state; off for states that load slowly or may not be framed. */
-  previews?: boolean;
+  /** Draw each tile's first state; off for states that load slowly or may not be framed, and
+   * "srcdoc" for a site whose pages refuse framing (X-Frame-Options): each tile draws its page's
+   * HTML, fetched once the tile nears the view. */
+  previews?: boolean | "srcdoc";
   /** The repository's <head> component, relative to the Astro root, rendered on every page inside
    * the shell's Head.astro. */
   head?: string;
@@ -90,6 +96,10 @@ const BRAND_HEADER = {
 const OPTIONS = "virtual:scaffolding/catalog";
 const HEADER = "virtual:scaffolding/catalog-header";
 const HEAD = "virtual:scaffolding/catalog-head";
+// The stylesheets of the home, of a state's page and of a state alone, each route importing its own
+// rather than Astrobook's one list for every page: a state alone carries no header or bar, and the
+// home, whose tiles frame each state, needs none of the stories' CSS.
+const CSS = "virtual:scaffolding/catalog-css/";
 
 /** The nearest folder at or above `from` holding a package.json. */
 function packageDir(from: string): string {
@@ -309,6 +319,12 @@ export function catalog(options: CatalogOptions): AstroIntegration {
         // A relative specifier counts from the Astro root, as Astrobook reads `head` and `home`.
         const spec = (s: string) => JSON.stringify(s.startsWith(".") ? join(root, s) : s);
         const nav = options.nav ?? brandNav(require, options.product);
+        const around = [...(header.css ?? []), join(import.meta.dirname, "chrome.css")];
+        const styles = {
+          home: [...around, ...(options.homeCss ?? options.css)],
+          dashboard: [...around, ...options.css],
+          stories: options.css,
+        };
         // A misspelt or renamed `current` would link this catalog's entry to the published site.
         if (nav?.current !== undefined && !nav.items.some(({ name }) => name === nav.current))
           throw new Error(`catalog nav: current "${nav.current}" names no item`);
@@ -358,15 +374,21 @@ export function catalog(options: CatalogOptions): AstroIntegration {
               {
                 name: "scaffolding-catalog",
                 resolveId: (id: string) =>
-                  id === OPTIONS || id === HEADER || id === HEAD ? `\0${id}` : undefined,
+                  id === OPTIONS || id === HEADER || id === HEAD || id.startsWith(CSS)
+                    ? `\0${id}`
+                    : undefined,
                 load: (id: string) =>
                   id === `\0${OPTIONS}`
                     ? `export default ${JSON.stringify(shared)};`
                     : id === `\0${HEADER}`
-                      ? `${(header.css ?? []).map((c) => `import ${spec(c)};`).join("")}export { default } from ${spec(header.component)};`
+                      ? `export { default } from ${spec(header.component)};`
                       : id === `\0${HEAD}`
                         ? `export { default } from ${spec(options.head ?? "astrobook/components/head.astro")};`
-                        : undefined,
+                        : id.startsWith(`\0${CSS}`)
+                          ? styles[id.slice(CSS.length + 1) as keyof typeof styles]
+                              .map((c) => `import ${spec(c)};`)
+                              .join("")
+                          : undefined,
               },
             ],
           },
@@ -375,18 +397,23 @@ export function catalog(options: CatalogOptions): AstroIntegration {
           directory: relative(root, stories),
           subpath: atRoot ? "" : "/catalog",
           title: `${options.product} catalog`,
-          css: options.css,
+          css: [],
           head: join(import.meta.dirname, "Head.astro"),
           home: options.home ?? join(import.meta.dirname, "Home.astro"),
         });
         await inner.hooks["astro:config:setup"]?.(params);
-        if (options.serverOnly) {
-          // Astrobook writes one route per state into this integration's codegen folder.
-          const dir = fileURLToPath(params.createCodegenDir());
-          for (const file of globSync("**/*.astro", { cwd: dir })) {
-            const path = join(dir, file);
-            writeFileSync(path, readFileSync(path, "utf8").replace(" client:load />", " />"));
-          }
+        // Astrobook writes one route per state into this integration's codegen folder, under
+        // dashboard/ and stories/. Each imports its stylesheets after Astrobook's own and before
+        // the story's, where Astrobook's layout imported the list; `serverOnly` drops the
+        // client:load branch.
+        const dir = fileURLToPath(params.createCodegenDir());
+        for (const file of globSync("{dashboard,stories}/**/*.astro", { cwd: dir })) {
+          const path = join(dir, file);
+          const code = readFileSync(path, "utf8").replace(
+            "from 'astrobook/client';\n",
+            `$&import "${CSS}${file.split("/")[0]}";\n`,
+          );
+          writeFileSync(path, options.serverOnly ? code.replace(" client:load />", " />") : code);
         }
       },
       "astro:routes:resolved": ({ routes }) => {
@@ -495,7 +522,7 @@ export function catalog(options: CatalogOptions): AstroIntegration {
               const file = fileURLToPath(url);
               const html = readFileSync(file, "utf8");
               const linked = html.replace(
-                /(\s(?:href|src|value)=")(\/(?!\/)[^"?#]*)([^"]*")/g,
+                /(\s(?:href|src|data-src|value)=")(\/(?!\/)[^"?#]*)([^"]*")/g,
                 (all, attr: string, path: string, rest: string) => {
                   if (path !== base && !path.startsWith(`${base}/`)) return all;
                   const at = decoded(path.slice(base.length + 1));
