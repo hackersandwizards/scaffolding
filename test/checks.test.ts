@@ -27,7 +27,9 @@ function temp() {
   made.push(dir);
   return dir;
 }
-/** A headless Chrome on a free debugging port with one tab open at `url`, driven over CDP. */
+/** A headless Chrome on a free debugging port with one tab open at `url`, driven over CDP. The
+ * unused debugging pipe on fds 3 and 4 closes when this process dies, killed by a signal included,
+ * where no `finally` runs, and Chrome quits on that. */
 async function browse(url: string, args: string[] = []) {
   const { chromeArgs, chromeBinary, INSTALL_HINT } = await import("../lib/chrome.ts");
   const { freePort } = await import("../lib/serve.ts");
@@ -35,8 +37,14 @@ async function browse(url: string, args: string[] = []) {
   if (!chrome) throw new Error(INSTALL_HINT);
   const port = await freePort();
   const browser = Bun.spawn(
-    [chrome, ...chromeArgs(temp()), `--remote-debugging-port=${port}`, ...args],
-    { stderr: "ignore" },
+    [
+      chrome,
+      ...chromeArgs(temp()),
+      `--remote-debugging-port=${port}`,
+      "--remote-debugging-pipe",
+      ...args,
+    ],
+    { stdio: ["ignore", "ignore", "ignore", "pipe", "pipe"] },
   );
   let ws: WebSocket;
   try {
