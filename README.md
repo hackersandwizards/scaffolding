@@ -99,6 +99,11 @@ one that does needs a `version` for `bun pm pack`. A
 date that is an example of a format, or a comparison of plain decimals such as `1.5 against 1.25`,
 gets an allow entry with `text`, which reads the comment without its marks.
 
+A repository that pins `@hackersandwizards/brand` lists `check:retired` in `scaffolding.check`, brand's
+`brand-retired` over the folders its build writes (`"check:retired": "brand-retired dist"`), or
+gives `skip.retired` a reason; the gate goes red otherwise. `scaffold` writes that step for a
+repository with its catalog.
+
 `uniqueNames` lists names the framework dictates, which the unique-names step lets repeat. Every
 step in `scaffolding.check` is a script named `check:<what>`. `"private": true` skips the
 confidential and history steps.

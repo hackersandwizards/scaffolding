@@ -462,6 +462,8 @@ describe("scaffold and check-structure", () => {
     );
     expect(pkg.scaffolding.skip).toEqual({ test: "new repository: no tests yet" });
     expect(pkg.scripts.build).toBe("check-lock bun --bun astro build --root catalog");
+    expect(pkg.scripts["check:retired"]).toBe("brand-retired dist");
+    expect(pkg.scaffolding.check).toEqual(["check:retired"]);
     // Under an agent `astro preview` moves into the background, which resolves --root catalog from
     // inside catalog/ and finds no catalog/catalog/dist.
     expect(pkg.scripts.preview).toBe(
@@ -500,6 +502,8 @@ describe("scaffold and check-structure", () => {
     expect(
       Object.keys(pkg.devDependencies).filter((d) => d.startsWith("@hackersandwizards/")),
     ).toEqual(["@hackersandwizards/scaffolding"]);
+    expect(pkg.scaffolding.check).toEqual([]);
+    expect(pkg.scripts["check:retired"]).toBeUndefined();
     expect(pkg.scaffolding.skip).toEqual({
       test: "new repository: no tests yet",
       catalog: "the catalog lives in acme-private",
@@ -1236,8 +1240,16 @@ describe("check-confidential list source", () => {
 });
 
 describe("scaffolding check", () => {
-  const gate = (scaffolding: object, scripts: Record<string, string> = {}) =>
-    repo({ "package.json": JSON.stringify({ name: "fx", type: "module", scripts, scaffolding }) });
+  const gate = (scaffolding: object, scripts: Record<string, string> = {}, extra: object = {}) =>
+    repo({
+      "package.json": JSON.stringify({
+        name: "fx",
+        type: "module",
+        scripts,
+        scaffolding,
+        ...extra,
+      }),
+    });
   // Every shared step skipped, so only the runner's own logic is under test.
   const all = {
     format: "t",
@@ -1285,6 +1297,34 @@ describe("scaffolding check", () => {
     expect(r.code).toBe(1);
     expect(r.out).toContain("FAIL false");
     expect(r.out).not.toContain("never-ran");
+  });
+
+  test("a gate pinning brand goes red without check:retired unless the skip gives a reason", () => {
+    const pin = {
+      devDependencies: { "@hackersandwizards/brand": "github:hackersandwizards/brand#v1.0.0" },
+    };
+    const branded = (scaffolding: object, scripts: Record<string, string> = {}) =>
+      gate(scaffolding, scripts, pin);
+    const lock = (d: string) => ({ CHECK_LOCK: join(d, ".lock") });
+    const bare = branded({ skip });
+    const r = run(bare, "scaffolding", ["check"], lock(bare));
+    expect(r.code).toBe(1);
+    expect(r.out).toContain("scaffolding.check runs no check:retired");
+    const listed = branded(
+      { skip, check: [["check:retired", "true"]] },
+      { "check:retired": "echo ran-retired" },
+    );
+    const ok = run(listed, "scaffolding", ["check"], lock(listed));
+    expect(ok.out).toContain("ran-retired");
+    expect(ok.code).toBe(0);
+    const skipped = branded({ skip: { ...skip, retired: "brand only in tests" } });
+    expect(run(skipped, "scaffolding", ["check"], lock(skipped)).code).toBe(0);
+    const blank = branded({ skip: { ...skip, retired: " " } });
+    expect(run(blank, "scaffolding", ["check"], lock(blank)).out).toContain("no check:retired");
+    const unpinned = gate({ skip: { ...skip, retired: "brand only in tests" } });
+    expect(run(unpinned, "scaffolding", ["check"], lock(unpinned)).out).toContain(
+      "scaffolding.skip names no shared step: retired",
+    );
   });
 
   test("a gate without tests goes red unless the skip gives a reason", () => {

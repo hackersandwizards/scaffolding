@@ -117,13 +117,16 @@ pkg.devDependencies = Object.fromEntries(
 if (catalogIn) {
   const reason = `the catalog lives in ${catalogIn}`;
   Object.assign(pkg.scaffolding.skip, { catalog: reason, styles: reason });
-} else
+} else {
   Object.assign(pkg.scripts, {
     dev: "ASTRO_DEV_BACKGROUND=1 bun --bun astro dev --root catalog",
     catalog: "bun run dev",
     build: "check-lock bun --bun astro build --root catalog",
     preview: "ASTRO_PREVIEW_BACKGROUND=1 bun --bun astro preview --root catalog",
+    "check:retired": "brand-retired dist",
   });
+  pkg.scaffolding.check.push("check:retired");
+}
 if (adminIn) pkg.scaffolding.skip.admin = `the admin area lives in ${adminIn}`;
 writeFileSync(pkgPath, `${JSON.stringify(pkg, null, 2)}\n`);
 if (!catalogIn) {

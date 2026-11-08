@@ -65,6 +65,16 @@ if (!config.test && !isReason(config.skip?.test))
 const declared = { ...(pkg.dependencies as object), ...(pkg.devDependencies as object) };
 if (!("@hackersandwizards/admin" in declared) && !isReason(config.skip?.admin))
   fail("@hackersandwizards/admin is not pinned: pin it, or skip.admin with a reason");
+// The build is the repository's own, so its step names the folders: brand-retired over what it writes.
+const branded = "@hackersandwizards/brand" in declared;
+if (
+  branded &&
+  !(config.check ?? []).flat().includes("check:retired") &&
+  !isReason(config.skip?.retired)
+)
+  fail(
+    "@hackersandwizards/brand is pinned and scaffolding.check runs no check:retired: add it (brand-retired <build folders>), or skip.retired with a reason",
+  );
 const skip = { ...config.skip };
 // A private repository's shipped files reach only company readers.
 if (config.private === true) {
@@ -72,7 +82,8 @@ if (config.private === true) {
   skip.history ??= "scaffolding.private";
 }
 for (const [step, reason] of Object.entries(skip)) {
-  if (!(step in shared)) fail(`scaffolding.skip names no shared step: ${step}`);
+  if (!(step in shared) && !(step === "retired" && branded))
+    fail(`scaffolding.skip names no shared step: ${step}`);
   if (!isReason(reason)) fail(`scaffolding.skip.${step} has no reason`);
   delete shared[step];
 }
