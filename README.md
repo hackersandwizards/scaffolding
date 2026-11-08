@@ -233,7 +233,9 @@ The options beyond those above:
   the header's CSS and the shell's own on the home and a state's page, never on a state alone.
 - `previewStates`: the states a tile draws and links first, each the story's export name in kebab
   case, such as `["light", "loaded-dark"]` for `Light` and `LoadedDark`.
-- `head`: the repository's own `<head>` component, rendered on every page.
+- `head`: the repository's own `<head>` component, rendered on every page. Ahead of it every page
+  declares the cascade layer order: the shell's ground first, then, where the repository resolves
+  brand v1.52.0 or later, brand's `layers.css`, so a head declares no order of its own.
 - `header`: default brand's `AppHeader`, `header.css` and `night.css`. The admin link, the `nav`
   option's links and whatever the home's `nav` slot holds sit in that order in one `hw-header-nav`
   group at the bar's right; a `nav` of class `hw-header-nav` passed there lays its items into that

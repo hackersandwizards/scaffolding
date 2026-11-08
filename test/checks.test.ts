@@ -1875,6 +1875,7 @@ describe("catalog", () => {
           "./catalogs.json": "./expert/catalogs.json",
           "./logos/*": "./logos/*",
           "./header.css": "./header.css",
+          "./layers.css": "./tokens/layers.css",
           "./night.css": "./night.css",
           "./expert/components/*": "./expert/components/*",
         },
@@ -1884,6 +1885,7 @@ describe("catalog", () => {
       "logos/lockup-screen.svg": `<svg xmlns="http://www.w3.org/2000/svg"><!--${"x".repeat(5000)}--></svg>`,
       "logos/night-logo.svg": `<svg xmlns="http://www.w3.org/2000/svg"><!--${"y".repeat(5000)}--></svg>`,
       "header.css": "",
+      "tokens/layers.css": "@layer properties, theme, base, components, utilities;\n",
       "night.css": "",
       "expert/components/AppHeader.astro":
         '---\nimport lockup from "../../logos/lockup-screen.svg?url";\nimport night from "../../logos/night-logo.svg?url";\n---\n\n<header class="hw-header"><img class="hw-header-logo" src={lockup} alt="" /><img src={night} alt="" loading="lazy" /><slot /></header>\n',
@@ -1897,6 +1899,10 @@ describe("catalog", () => {
       'import config from "./astro.config.mjs";\nimport { catalog } from "../../../catalog/index.ts";\nexport default { ...config, integrations: [catalog({ product: "Fx", css: [], lead: "" })] };\n',
     );
     expect(build(["--config", "navless.config.mjs"]).status).toBe(0);
+    // brand's layer order follows the ground's, ahead of the repository's head.
+    expect(readFileSync(join(dist, "index.html"), "utf8")).toContain(
+      "<style>@layer hw-catalog-ground;@layer properties, theme, base, components, utilities;</style>",
+    );
     expect(readFileSync(join(dist, "index.html"), "utf8")).toContain(
       '<nav class="hw-header-nav" aria-label="Main" data-hw-catalogs><a class="hw-header-link" href="https://example.com/other/">Other</a><a class="hw-header-link" href="/catalog/" aria-current="page">Fx</a></nav>',
     );

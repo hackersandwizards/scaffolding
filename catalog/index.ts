@@ -101,6 +101,8 @@ const HEADER = "virtual:scaffolding/catalog-header";
 const HEAD = "virtual:scaffolding/catalog-head";
 const ICON = "virtual:scaffolding/catalog-icon";
 const BRAND_ICON = "@hackersandwizards/brand/logos/favicon.svg";
+// The cascade layer order alone, exported since brand v1.52.0.
+const BRAND_LAYERS = "@hackersandwizards/brand/layers.css";
 // The stylesheets of the home, of a state's page (dashboard) and of a state alone (stories).
 const CSS = "virtual:scaffolding/catalog-css/";
 
@@ -361,6 +363,15 @@ export function catalog(options: CatalogOptions): AstroIntegration {
           groupOrder: options.groupOrder ?? [],
           previewStates: options.previewStates ?? [],
           provenance,
+          // Head.astro declares the layer order ahead of the repository's head and every
+          // stylesheet, which the build puts at the head's end: the shell's ground first, so it
+          // sorts below every layer, then brand's order.
+          layers: [
+            "@layer hw-catalog-ground;",
+            fromBrand(() => readFileSync(require.resolve(BRAND_LAYERS), "utf8").trim()),
+          ]
+            .filter(Boolean)
+            .join(""),
           // A story link ends in a slash where the site asks for one, or leaves it open and Astro
           // writes each page as a folder's index.html, which a static host serves only there.
           slash:

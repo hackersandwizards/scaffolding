@@ -63,6 +63,7 @@ const root = {
 };
 ---
 
+<style is:inline set:html={shell.layers} />
 <meta name="description" content={typeof lead === "string" && lead.trim() ? lead : shell.lead} />
 {!shell.onDisk && <link rel="canonical" href={canonical} />}
 {/* Ahead of the repository's head: of two icons a browser takes the last. */}
