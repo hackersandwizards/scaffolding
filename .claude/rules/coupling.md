@@ -1,8 +1,12 @@
 # Coupling
 
 Keep repositories as loosely coupled as the job allows: each builds, tests and runs from its own
-checkout and the packages it pins.
+checkout and the packages it pins, and its tools write no file outside the checkout: built helpers
+and fetched data go to a git-ignored folder inside it, such as `node_modules/.cache/<tool>/`.
 
+- A defect a review of one deck, page or document finds in its engine or in the brand is fixed in
+  the engine, or in the brand where every surface reviews better with the change, never worked
+  around in that one artifact, which stays in brand form until the fix lands.
 - Take what another repository owns from what it publishes: a package installed from a version tag,
   used only through its `bin` commands, run as `bun run <name>`, and the files its `exports` names,
   or a URL its owner publishes. A sibling path (`../<repo>`), a package path outside `exports` and

@@ -22,7 +22,7 @@ handling that prevents data loss, security measures, or accessibility basics.
 - Repairing a record that read as absent does not re-run the jobs that skipped it, and those jobs
   left no trace of the skip. Find the window between the corruption and the repair, then check the
   repaired records against their untouched siblings.
-- Write no comment except for a fact neither the code nor a doc file states, such as an ordering constraint, an external quirk or the bug a guard exists for. Keep directive comments.
+- Write no comment except for a fact neither the code nor a doc file states, such as an ordering constraint, an external quirk or the bug a guard exists for. Keep directive comments. A comment cites a commit, never a dated report, which a later report replaces.
 - Verify each change with the checks that fit it, from the commands the repository's CLAUDE.md
   lists. You choose which; nothing requires the full gate every time, and your run is the only
   full one before the deploy.
@@ -46,11 +46,9 @@ handling that prevents data loss, security measures, or accessibility basics.
   repositories install carries no `preinstall`: a consumer's install-script check rejects it.
 - Remove or replace a dependency with a known vulnerability before excusing it. An audit
   exception names the advisory ID.
-- A browser that code, a script or an MCP server starts is Chrome for Testing, the build puppeteer or
-  Playwright installs, never `/Applications/Google Chrome.app`: macOS hands the person's Dock click to
-  a headless instance of that app, and no window opens. Give it a profile from `mkdtemp` under the OS
-  temp folder, removed after the run, and `--use-mock-keychain --password-store=basic`, or each
-  launch raises a keychain dialog. Puppeteer and Playwright pass both flags; a direct launch adds them.
+- A browser that code or an MCP server starts is Chrome for Testing with a profile from `mkdtemp`
+  under the OS temp folder, removed after the run, and `--use-mock-keychain --password-store=basic`,
+  which puppeteer and Playwright pass themselves and a direct launch adds.
 - A run that needs a running app starts its own on a free port and stops it by PID when done. It
   never stops or restarts a server it did not start.
 - A trial of a forward-looking automation over past items gives each item only the data that

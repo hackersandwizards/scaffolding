@@ -28,8 +28,10 @@ prompts) and in any document. Say the least that fully does the job, then stop.
   only exact paths your own run created, never by prefix, and never a scratch file that is the only
   copy of a deliverable. Never quit or restart an app the person runs, Claude Desktop included: an
   edit that needs it closed waits for their quit. Open their desktop apps, such as Word, only after
-  they agree, and run browsers headless while they work, every Chrome you launch yourself with
-  `--use-mock-keychain --password-store=basic`, or macOS asks them for the keychain password. The
+  they agree, and run browsers headless while they work. Every Chrome you launch yourself, a scratch
+  script's included, is Chrome for Testing, the build puppeteer or Playwright installs, never
+  `/Applications/Google Chrome.app`, whose headless instance takes the person's Dock click, and runs
+  with `--use-mock-keychain --password-store=basic`, or macOS asks them for the keychain password. The
   Mac's Trash is emptied within hours: before moving a folder there, list its untracked and ignored
   files, and leave it where any holds state or secrets until the person confirms.
 - No interface, factory or config for a single case, and no scaffolding for later.

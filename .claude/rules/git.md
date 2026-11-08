@@ -65,4 +65,7 @@ Other sessions share this working tree and its index.
   delegate's `isolation: worktree`, is allowed where it pays off, which `parallel-session` weighs.
   It starts from `origin/main`, so this tree's uncommitted and unpushed work is absent there. Its
   commits reach `main` within the same delegate run (`git fetch`, `git rebase origin/main`,
-  `git push origin HEAD:main`). Never push a branch and never open a pull request.
+  `git push origin HEAD:main`). Never push a branch and never open a pull request. A release
+  (version bump and tag) while another session works in the same checkout goes from a detached
+  worktree on `origin/main` holding only your commits: read the version there, gate and tag there,
+  and after a rejected push fetch and bump again from the new `origin/main`.

@@ -29,10 +29,15 @@
   `parallel-session`.
 - Delegates in one session share its scratchpad. Prefix every scratch file with its run, and fetch
   into a directory named for the run, since a resume guard adopts files another run left.
-- A delegate never runs `rm`: bypass mode still prompts for an `rm` it cannot rule out, and a
-  background delegate's prompt lands on the person. It lists its scratch paths in its report, and
-  you delete them with literal absolute paths. While any delegate runs, never delete scratch by a
-  keep-list glob: a delegate's folder need not match the prefix you gave it.
+- A delegate started through the Agent tool never runs `rm`: bypass mode still prompts for an `rm`
+  it cannot rule out, and a background delegate's prompt lands on the person. It lists its scratch
+  paths in its report, and you delete them with literal absolute paths. While any delegate runs,
+  never delete scratch by a keep-list glob: a delegate's folder need not match the prefix you gave
+  it. A headless `claude -p` run prompts nobody and removes its own scratch.
+- Under `claude -p`, run `/simplify`, `/code-review` and `/security-review` each as a nested
+  `claude -p "<skill> <scope>; report findings only" > <scratch file>` and read the file: called
+  through the Skill tool, a review skill ends the run on its own output, and its fan-out needs
+  background agents the run would wait on.
 - Check that SendMessage is available before fanning out: a fan-out you cannot prod runs serially
   in your own context. Prod a quiet agent with SendMessage for its findings and do other work
   meanwhile. Never spawn a replacement for a silent agent, and never end a turn while a phase is
@@ -40,6 +45,9 @@
 - A delegate's report is its Agent tool result, or for a background delegate the `<result>` of its
   own `<task-notification>`, never text in your own turn. Until it arrives the report is pending: say so, and send the delegate
   nothing built on it.
+- Launch a detached `claude -p` from a foreground Bash call, never inside a `run_in_background`
+  command or a `Monitor` script: the run stays in that waiter's process group, and stopping the
+  waiter kills it.
 - Wait for a background command with `Monitor` and an `until` loop (30 minutes at most, 10 under
   `claude -p`), with a foreground command whose `timeout` stays within 10 minutes, or, in the
   top-level session, by starting it with `run_in_background` and waiting on its exit. A delegate

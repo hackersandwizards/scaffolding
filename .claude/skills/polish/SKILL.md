@@ -43,11 +43,10 @@ Tell each batch that zero changes is an acceptable result. Before deleting a com
 ## 3. Quality, performance, security review
 
 Run `/code-review high` and `/security-review` over the scope first; their findings join this
-phase's. Under `claude -p`, run each review skill, `/simplify` included, as a nested
-`claude -p "<skill> <scope>; report findings only" > <scratch file>` and read the file: a review
-skill called through the Skill tool ends the run on its own output. In a repository with a UI, measure performance on a server the run starts itself on a
+phase's. In a repository with a UI, measure performance on a server the run starts itself on a
 free port (Lighthouse per public page type, response and render time per app route) and report
-before and after numbers for each fix.
+before and after numbers for each fix in the repository's one `docs/agent-work/YYYY-MM-DD-performance.md`,
+written with today's date, deleting the previous one in the same commit.
 
 Fan out one subagent per module or top-level directory to review it for minimalism, design, performance and security, with the path of `references/failure-modes.md` in its prompt to read in full. Reviewers report and do not edit.
 

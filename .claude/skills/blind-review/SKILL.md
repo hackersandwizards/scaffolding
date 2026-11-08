@@ -4,7 +4,8 @@ description: >-
   Decide how much review a result a person will see deserves, from none to a large blind panel, and
   run it blind (personas, criteria, scoring, noise, stop rules, screenshots, the Claude and Codex
   reviewer commands). Use before handing over or shipping anything a person will read or see: copy,
-  mail, a page, a document, slides, a logo or other brand element, a design variant, a report, and
+  mail, a page, a document, slides, a logo or other brand element, a value one surface or scale sets
+  for a shared element (a brief's request included), a design variant, a report, and
   for "blind review", "review this", "panel", "score the variants", "which version is better".
 ---
 
@@ -50,6 +51,12 @@ none, because receipt".
    legibility, typography or logo detail at full size or as a full-resolution crop of that detail.
    An image costs `⌈width / 28⌉ × ⌈height / 28⌉` tokens, up to 4,784 at a 2,576 px long edge.
    Check: every image is at its real display size in context, at 1000 px or at full resolution.
+   Score a design that depends on a platform's settings (a device background, a lock screen) in
+   the platform's default state, each default taken from the vendor's documentation. Check: the
+   report names the default state and its source.
+   Where the artifact is one step on a reader's path, show the step before it and the one after (the
+   link and the page it opens, the post and the profile behind it), and ask each reviewer which
+   question the artifact leaves open. Check: the brief names the steps shown.
    A change to how a control is operated is judged on measured task runs (clicks, keystrokes,
    pointer travel per typical task) beside the screenshots. Check: the brief carries those numbers.
    Build every candidate to the system's current rules for that ground and surface (the asset cut,
@@ -67,7 +74,10 @@ none, because receipt".
    shared standard only where its lead stands outside the noise in both runs and with both models
    (a lead of 0.75 at noise 0.58 on a 10-point scale counted); that exception goes to the person
    as the recommended option. A second-best variant that needs no exception may beat a best one
-   that does. Check: the report gives the noise next to the lead, or says it was not measured.
+   that does. A value a brief or a consumer's override sets for one surface or scale of a shared
+   element is such an exception, scored as in step 5 before it is built. Check: the report gives the
+   noise next to the lead, or says it was not measured, and a per-surface value has its
+   cross-surface score.
 9. Stop on a plateau and report it instead of starting another round. Once a review says ship with
    no must-fix, order no confirming review. For long prose, stop after two consecutive rounds
    without a finding in classes named before round one (contradiction, counts, a statement against
