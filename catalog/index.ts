@@ -37,6 +37,9 @@ export type CatalogOptions = {
    * [1440, 810] for a slide, or one per group, such as { Pages: [1440, 900] }; without one the
    * first state draws at three quarters, centred. */
   previewSize?: [number, number] | Record<string, [number, number]>;
+  /** The "Dark theme" button in a state's bar, default true; false for a site without a dark
+   * theme. */
+  themeToggle?: boolean;
   /** brand's data-hw-scale on <html> of every page that draws a story (a state's page and the
    * state alone), such as "screen"; without it such a page keeps what the repository's head sets,
    * else brand's default. The home draws at "dense". */
@@ -95,6 +98,8 @@ const BRAND_HEADER = {
 const OPTIONS = "virtual:scaffolding/catalog";
 const HEADER = "virtual:scaffolding/catalog-header";
 const HEAD = "virtual:scaffolding/catalog-head";
+const ICON = "virtual:scaffolding/catalog-icon";
+const BRAND_ICON = "@hackersandwizards/brand/logos/favicon.svg";
 // The stylesheets of the home, of a state's page (dashboard) and of a state alone (stories).
 const CSS = "virtual:scaffolding/catalog-css/";
 
@@ -127,22 +132,29 @@ function installed(name: string, from: string): string | undefined {
   }
 }
 
+/** What `read` takes from brand; undefined only where brand is missing or older than the file. */
+function fromBrand<T>(read: () => T): T | undefined {
+  try {
+    return read();
+  } catch (e) {
+    const code = (e as { code?: string }).code;
+    if (code === "MODULE_NOT_FOUND" || code === "ERR_PACKAGE_PATH_NOT_EXPORTED") return undefined;
+    throw e;
+  }
+}
+
 /** brand's list of catalogs as the header's nav, the one named `product` current; none where the
  * repository cannot resolve it. */
 function brandNav(
   require: ReturnType<typeof createRequire>,
   product: string,
 ): CatalogOptions["nav"] {
-  let items: { name: string; href: string }[];
-  try {
-    items = require("@hackersandwizards/brand/catalogs.json");
-  } catch (e) {
-    // Only a brand that is missing or older than the list leaves the header without it.
-    const code = (e as { code?: string }).code;
-    if (code === "MODULE_NOT_FOUND" || code === "ERR_PACKAGE_PATH_NOT_EXPORTED") return undefined;
-    throw e;
-  }
-  return { items, current: items.some(({ name }) => name === product) ? product : undefined };
+  const items = fromBrand<{ name: string; href: string }[]>(() =>
+    require("@hackersandwizards/brand/catalogs.json"),
+  );
+  return (
+    items && { items, current: items.some(({ name }) => name === product) ? product : undefined }
+  );
 }
 
 const POINTER = "version https://git-lfs.github.com/spec/";
@@ -183,6 +195,8 @@ const packageOf = (spec: string) =>
 
 // Astrobook's layout loads Astro's client router; found only when the first page loads, these
 // modules make Vite optimise again and print it after every start whose lockfile has changed.
+const ARGS = /^const \{ decorators, args \} = parseStoryNamedExport\(.*$/m;
+
 const ROUTER = ["events", "router", "swap-functions", "types"].map(
   (m) => `astro/virtual-modules/transitions-${m}.js`,
 );
@@ -331,6 +345,7 @@ export function catalog(options: CatalogOptions): AstroIntegration {
           lead: options.lead,
           previews: options.previews ?? true,
           previewSize: options.previewSize,
+          themeToggle: options.themeToggle ?? true,
           storyScale: options.storyScale,
           groupOrder: options.groupOrder ?? [],
           previewStates: options.previewStates ?? [],
@@ -352,6 +367,9 @@ export function catalog(options: CatalogOptions): AstroIntegration {
           [OPTIONS]: `export default ${JSON.stringify(shared)};`,
           [HEADER]: `export { default } from ${spec(header.component)};`,
           [HEAD]: `export { default } from ${spec(options.head ?? "astrobook/components/head.astro")};`,
+          [ICON]: fromBrand(() => require.resolve(BRAND_ICON))
+            ? `export { default } from "${BRAND_ICON}?url&no-inline";`
+            : "export default undefined;",
           [`${CSS}home`]: imports([...around, ...(options.homeCss ?? options.css)]),
           [`${CSS}dashboard`]: imports([...around, ...options.css]),
           [`${CSS}stories`]: imports(options.css),
@@ -388,8 +406,8 @@ export function catalog(options: CatalogOptions): AstroIntegration {
         await inner.hooks["astro:config:setup"]?.(params);
         // Astrobook writes one route per state into this integration's codegen folder, under
         // dashboard/ and stories/: each imports its route's CSS after Astrobook's client import,
-        // before the story's. An Astrobook whose routes read otherwise fails the build rather than
-        // drop every page's CSS.
+        // before the story's, and hands the state's args.lead to Head.astro, which renders later. An
+        // Astrobook whose routes read otherwise fails the build rather than drop every page's CSS.
         const dir = fileURLToPath(params.createCodegenDir());
         const anchor = "from 'astrobook/client';\n";
         for (const file of globSync("**/*.astro", { cwd: dir })) {
@@ -398,9 +416,17 @@ export function catalog(options: CatalogOptions): AstroIntegration {
           const source = readFileSync(path, "utf8");
           // A route of a deleted story, which Astrobook leaves, keeps the import it has.
           if (source.includes(`import "${CSS}`)) continue;
-          if (!(kind === "dashboard" || kind === "stories") || !source.includes(anchor))
-            throw new Error(`catalog: Astrobook's route ${file} has no place for its CSS import`);
-          const code = source.replace(anchor, `$&import "${CSS}${kind}";\n`);
+          if (
+            !(kind === "dashboard" || kind === "stories") ||
+            !source.includes(anchor) ||
+            !ARGS.test(source)
+          )
+            throw new Error(
+              `catalog: Astrobook's route ${file} has no place for its CSS import or its lead`,
+            );
+          const code = source
+            .replace(anchor, `$&import "${CSS}${kind}";\n`)
+            .replace(ARGS, "$&\nAstro.locals.hwCatalogLead = args?.lead;");
           writeFileSync(path, options.serverOnly ? code.replace(" client:load />", " />") : code);
         }
       },

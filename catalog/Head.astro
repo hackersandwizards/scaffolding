@@ -4,6 +4,7 @@
 import modules from "virtual:astrobook/story-modules.mjs";
 import config from "virtual:astrobook/global-config.mjs";
 import RepositoryHead from "virtual:scaffolding/catalog-head";
+import icon from "virtual:scaffolding/catalog-icon";
 import shell from "virtual:scaffolding/catalog";
 import Top from "./Top.astro";
 import { label, wordsOf } from "./words.ts";
@@ -43,7 +44,15 @@ const states = menu ? [...[...groups.values()].flat(), ...rest] : all;
 const at = states.findIndex((s) => s.id === id);
 const href = (s: Story) => `${base}/${s.id}${shell.slash}`;
 const [prev, next] = [states[at - 1], states[at + 1]];
-const alone = path.startsWith(`${trim(config.storyBase)}/`);
+const storyBase = trim(config.storyBase);
+const alone = path.startsWith(`${storyBase}/`);
+// A state alone is the frame a tile draws, so the state's page is the one a reader lands on. An
+// absolute URL needs Astro's `site`.
+const page = encodeURI(
+  `${alone ? base + path.slice(storyBase.length) : path}${shell.slash}` || "/",
+);
+const canonical = Astro.site ? new URL(page, Astro.site).href : page;
+const { hwCatalogLead: lead } = Astro.locals as { hwCatalogLead?: unknown };
 // brand's scale and night on <html>, set before the body draws: the home at the dense scale, a
 // page drawing a story at `storyScale`; night.css turns only a subtree marked data-hw-night under the
 // theme toggle's data-theme, which is every page but a state alone, so a tile's preview keeps the
@@ -54,7 +63,10 @@ const root = {
 };
 ---
 
-<meta name="description" content={shell.lead} />
+<meta name="description" content={typeof lead === "string" && lead.trim() ? lead : shell.lead} />
+<link rel="canonical" href={canonical} />
+{/* Ahead of the repository's head: of two icons a browser takes the last. */}
+{icon && <link rel="icon" href={icon} type="image/svg+xml" />}
 <RepositoryHead />
 <script
   is:inline
@@ -75,10 +87,12 @@ const root = {
         {folder} / <strong>{label(mod.name)}</strong>
       </span>
       <span class="hw-catalog-bar-tools">
-        <button type="button" data-hw-theme aria-pressed="false">
-          Dark theme
-        </button>
-        <a class="hw-catalog-tool" href={`${trim(config.storyBase)}/${id}${shell.slash}`}>
+        {shell.themeToggle && (
+          <button type="button" data-hw-theme aria-pressed="false">
+            Dark theme
+          </button>
+        )}
+        <a class="hw-catalog-tool" href={`${storyBase}/${id}${shell.slash}`}>
           Open this state alone
         </a>
       </span>

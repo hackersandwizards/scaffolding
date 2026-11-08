@@ -11,7 +11,8 @@ export type CatalogItem = {
   /** A short count or kind in a neutral pill, such as "3 states". */
   pill?: string;
   /** A page drawn in the tile at three quarters, centred, loaded once the page has painted and the
-   * tile nears the view; an element the page marks `data-hw-preview` is drawn alone. */
+   * tile nears the view; an element the page marks `data-hw-preview` is drawn alone, or the part
+   * inside it a non-empty value selects. */
   frame?: string;
   /** Draw the frame from the page's HTML (`srcdoc`), for a site whose pages refuse framing, such as
    * by `X-Frame-Options: DENY`. Over HTTP only. */
@@ -89,11 +90,12 @@ const catalogTile = (item: CatalogItem, group: string) =>
 // page's HTML, a <base> keeping its relative links. Draws each sized frame whole at its tile's
 // width, and centres every other frame's content, shrunk where it is taller than the tile and
 // measured afresh each time, so a refit never shrinks it again, as Storybook's "centered" layout
-// does, 8 px clear of each side, on the ground around it: the element marked data-hw-preview alone,
-// everything else and the page's canvas hidden once the ground is read, fitted to what it paints
-// (its own box where it has a ground, background image, border, shadow or is a control or image,
-// else its text and such boxes inside, so a full-width wrapper centres its button rather than its
-// own box); else <main>'s only child or <main>. Marks the rail's label of the group read now with
+// does, 8 px clear of each side, on the ground around it. A frame of either kind draws the element
+// marked data-hw-preview alone, or the part inside it a non-empty value selects, everything else
+// and the page's canvas hidden once the ground is read. A centred frame fits what that element
+// paints (its own box where it has a ground, background image, border, shadow or is a control or
+// image, else its text and such boxes inside, so a full-width wrapper centres its button rather
+// than its own box), each cut to the boxes clipping it; else <main>'s only child or <main>. Marks the rail's label of the group read now with
 // aria-current="true": the last group whose top has passed a third of the viewport; once one has
 // and the page can scroll no further, the group the address names where its top shows, else, once
 // the page has scrolled, the last group, so a click on a group the page cannot scroll up to that
@@ -103,20 +105,22 @@ const catalogTile = (item: CatalogItem, group: string) =>
 // Astro's client router swaps and runs once.
 const SCRIPT = `<script>(()=>{
 const fit=(p)=>{const f=p.firstElementChild;if(!(f instanceof HTMLIFrameElement))return;
-if(p.dataset.frameWidth){f.style.transform="scale("+p.clientWidth/p.dataset.frameWidth+")";return;}
-const d=f.contentDocument,m=d&&(d.querySelector("main")||d.body);if(!m||!m.firstElementChild)return;f.style.height=f.style.transform="";
-const own=d.querySelector("[data-hw-preview]"),css=(e)=>d.defaultView.getComputedStyle(e),clear=(b)=>/^(transparent|rgba\\(.*, 0\\))$/.test(b);
+const d=f.contentDocument,mark=d&&d.querySelector("[data-hw-preview]"),own=mark&&(mark.dataset.hwPreview&&mark.querySelector(mark.dataset.hwPreview)||mark),css=(e)=>d.defaultView.getComputedStyle(e),clear=(b)=>/^(transparent|rgba\\(.*, 0\\))$/.test(b);
+const around=(c)=>{let ground;for(let e=c;e&&!ground;e=e.parentElement)if(!clear(css(e).backgroundColor))ground=css(e).backgroundColor;
+if(ground)p.style.background=ground;
+if(own&&!d.getElementById("hw-preview-only")){own.setAttribute("data-hw-preview-part","");d.head.insertAdjacentHTML("beforeend",'<style id="hw-preview-only">html,body{background:none!important}body{visibility:hidden}[data-hw-preview=""],[data-hw-preview-part]{visibility:visible}</style>');}};
+if(p.dataset.frameWidth){f.style.transform="scale("+p.clientWidth/p.dataset.frameWidth+")";if(own)around(own.parentElement);return;}
+const m=d&&(d.querySelector("main")||d.body);if(!m||!m.firstElementChild)return;f.style.height=f.style.transform="";
 const paints=(e,k)=>!clear(k.backgroundColor)||k.backgroundImage!=="none"||parseFloat(k.borderTopWidth)||parseFloat(k.borderLeftWidth)||k.boxShadow!=="none"||/^(IMG|svg|VIDEO|CANVAS|INPUT|SELECT|TEXTAREA|BUTTON)$/.test(e.tagName);
-const drawn=(e,k)=>paints(e,k)?[e.getBoundingClientRect()]:[...e.childNodes].flatMap((n)=>{if(n.nodeType===3&&n.textContent.trim()){const g=d.createRange();g.selectNodeContents(n);return [...g.getClientRects()];}const nk=n.nodeType===1&&css(n);return nk&&nk.display!=="none"?drawn(n,nk):[];}).filter((q)=>q.width&&q.height);
+const clip=(q,b,k)=>{const x=k.overflowX==="visible",y=k.overflowY==="visible",l=x?q.left:Math.max(q.left,b.left),t=y?q.top:Math.max(q.top,b.top);return new DOMRect(l,t,(x?q.right:Math.min(q.right,b.right))-l,(y?q.bottom:Math.min(q.bottom,b.bottom))-t);};
+const drawn=(e,k)=>paints(e,k)?[e.getBoundingClientRect()]:[...e.childNodes].flatMap((n)=>{if(n.nodeType===3&&n.textContent.trim()){const g=d.createRange();g.selectNodeContents(n);return [...g.getClientRects()];}const nk=n.nodeType===1&&css(n);return nk&&nk.display!=="none"?drawn(n,nk):[];}).map((q)=>clip(q,e.getBoundingClientRect(),k)).filter((q)=>q.width>0&&q.height>0);
 const c=own||(m.childElementCount===1?m.firstElementChild:m);let r=c.getBoundingClientRect();
 if(own){const rs=drawn(own,css(own));if(rs.length){const x=Math.min(...rs.map((q)=>q.left)),y=Math.min(...rs.map((q)=>q.top));r=new DOMRect(x,y,Math.max(...rs.map((q)=>q.right))-x,Math.max(...rs.map((q)=>q.bottom))-y);}}
 if(!r.height)return;
 const s=Math.min(0.75,(p.clientHeight-16)/r.height,(p.clientWidth-16)/r.width);
 if(r.bottom>f.clientHeight)f.style.height=r.bottom+"px";
 f.style.transform="translate("+((p.clientWidth-r.width*s)/2-r.left*s)+"px,"+((p.clientHeight-r.height*s)/2-r.top*s)+"px) scale("+s+")";
-let ground;for(let e=own?own.parentElement:c;e&&!ground;e=e.parentElement)if(!clear(css(e).backgroundColor))ground=css(e).backgroundColor;
-if(ground)p.style.background=ground;
-if(own&&!d.getElementById("hw-preview-only"))d.head.insertAdjacentHTML("beforeend",'<style id="hw-preview-only">html,body{background:none!important}body{visibility:hidden}[data-hw-preview]{visibility:visible}</style>');};
+around(own?own.parentElement:c);};
 const all=()=>document.querySelectorAll(".hw-catalog-preview").forEach(fit);all();
 const load=(f)=>{const u=f.dataset.src;if(!u)return;delete f.dataset.src;if(!f.hasAttribute("data-srcdoc")){f.src=u;return;}
 fetch(new URL(u,location.href)).then((r)=>r.ok&&r.text().then((h)=>{f.srcdoc=h.replace(/<head\b[^>]*>/i,'$&<base href="'+r.url+'">');})).catch(()=>{});};

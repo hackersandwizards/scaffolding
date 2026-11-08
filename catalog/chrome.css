@@ -1,5 +1,14 @@
 /* The shell's styles around a story: on the home and a state's page, never on a state alone. */
 
+@layer properties, theme, base, components, utilities;
+/* In brand's base layer, as its app-base.css paints the ground: a home whose `homeCss` is tokens
+   alone keeps it, and any story's own stylesheet still wins. */
+@layer base {
+  body {
+    background: var(--background, var(--color-bg));
+  }
+}
+
 #astrobook-sidebar,
 astrobook-sidebar-resize-handle {
   display: none !important;

@@ -200,8 +200,13 @@ The options beyond those above:
   every group (`[794, 1123]`) or per group (`{ Pages: [1440, 900] }`); a tile without one draws its
   state at three quarters, centred on the state's own ground and shrunk where it is taller than the
   tile: the element the state marks `data-hw-preview` alone, such as a specimen under its spec text,
-  fitted to what it paints, on the ground around it, the rest of the page hidden; else the only child
-  of `<main>`, else `<main>`.
+  fitted to what it paints and cut to any box clipping it, on the ground around it, the rest of the
+  page hidden; else the only child of `<main>`, else `<main>`. A sized tile draws the mark alone too
+  and keeps its window size. A non-empty value is a selector for the part inside the marked element
+  to draw (`data-hw-preview=".part"`); one matching nothing draws the whole mark. A key naming no
+  story group fails the build.
+- `themeToggle`: `false` leaves the "Dark theme" button out of a state's bar, for a site without a
+  dark theme.
 - `storyScale`: brand's `data-hw-scale` on every page that draws a story, a state's page and the
   state alone, such as `"screen"`; without it such a page keeps what the repository's `head` sets,
   else brand's default. The home is always `"dense"`.
@@ -276,8 +281,13 @@ this rule as a pure function, for a reader such as the admin hub: `pages` are th
 `srcDir/pages`, and it returns the catalog's path, `/` or `/catalog/` after the base, which `dev`
 drops. The preset calls it too.
 
-Every catalog page carries the `lead` as its `<meta name="description">`, so a repository's head
-adds none. The shell writes no robots tag, so search engines may index the catalog. A repository
+Every catalog page carries the `lead` as its `<meta name="description">`, or a state's own where
+its story sets `args.lead`, so a repository's head adds none. Every page carries a
+`<link rel="canonical">`, so a repository's head adds none either: its own URL, and for a state
+alone the state's page under `/dashboard/`. It is absolute where Astro's `site` is set and
+root-relative otherwise, so a published catalog sets `site`. Where the repository resolves
+`@hackersandwizards/brand`, every page carries brand's favicon; a `<link rel="icon">` in the
+repository's `head` comes later and wins. The shell writes no robots tag, so search engines may index the catalog. A repository
 that wants the whole catalog out of the index sets the tag in its `head`; a single page of its own
 sets it in that page. Every page but a state alone carries `data-hw-night`, so brand's `night.css`
 turns it under the theme toggle while a tile's preview keeps its own theme. The shell's own card and pill on the home carry `data-hw-shell`, for a

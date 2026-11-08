@@ -69,6 +69,13 @@ for (const m of named.sort((a, b) => a.label.localeCompare(b.label))) {
         : undefined,
   });
 }
+// A renamed group would otherwise draw its tiles at the small fitted size unseen.
+if (previewSize && !Array.isArray(previewSize))
+  for (const key of Object.keys(previewSize))
+    if (!groups.has(key))
+      throw new Error(
+        `catalog previewSize: "${key}" names no story group (${[...groups.keys()].sort().join(", ")})`,
+      );
 const data = {
   title,
   lead,
