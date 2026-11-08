@@ -41,7 +41,7 @@ none, because receipt".
    criteria list is written before any score exists.
 3. Brief unprimed: each reviewer gets only its role, the artifacts and the same criteria, with no
    score, rationale, hypothesis, preference, rule text under test, or hint of which version is current, new or whose.
-   Use neutral labels and a shuffled order per reviewer. Score the unchanged current state
+   Use neutral labels, in file paths and names too, and a shuffled order per reviewer. Score the unchanged current state
    alongside, where one exists. Quote one reviewer prompt verbatim in the report. Check: no prompt names an author or
    a version's age.
 4. Show each visual at its real display size in its real context and at full size. A candidate on a
