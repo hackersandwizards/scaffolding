@@ -51,6 +51,11 @@
     font: inherit;
     font-size: var(--text-ui, 0.875rem);
   }
+  /* The muted text, not the browser's grey. */
+  .hw-catalog-search::placeholder {
+    color: var(--hw-cat-muted);
+    opacity: 1;
+  }
   .hw-catalog-rail ul,
   .hw-catalog-grid {
     margin: 0;
