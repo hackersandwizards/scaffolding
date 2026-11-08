@@ -1488,7 +1488,7 @@ describe("catalog", () => {
     expect(home).toContain('<span class="hw-pill" data-tone="neutral" data-hw-shell>');
     expect(readFileSync(join(dist, "fx.txt"), "utf8")).toBe("fx\n");
     const page = (p: string) => readFileSync(join(dist, p, "index.html"), "utf8");
-    // Every page says noindex; the shell draws dense, a story at `storyScale`, and every page but a
+    // No page carries a robots tag; the shell draws dense, a story at `storyScale`, and every page but a
     // state alone turns with the theme toggle.
     const root = (html: string) =>
       html.match(/Object\.assign\(document\.documentElement\.dataset,(\{.*?\})\);/)?.[1];
@@ -1496,7 +1496,7 @@ describe("catalog", () => {
     expect(root(page("dashboard/Parts/box-parts/two"))).toBe('{"hwScale":"screen","hwNight":""}');
     expect(root(page("stories/Parts/box-parts/two"))).toBe('{"hwScale":"screen"}');
     for (const p of ["", "dashboard/Parts/box-parts/two", "stories/Parts/box-parts/two", "catalog"])
-      expect(page(p)).toContain('<meta name="robots" content="noindex">');
+      expect(page(p)).not.toContain('name="robots"');
     for (const p of ["", "dashboard/Parts/box-parts/two", "stories/Parts/box-parts/two"])
       expect(page(p)).toContain('<meta name="description" content="Lead.">');
     // Every page of the catalog's former place forwards to its page at the root.
@@ -1780,8 +1780,8 @@ describe("catalog", () => {
     );
     rmSync(navless);
     rmSync(join(fixture, "node_modules"), { recursive: true });
-    // A page of the repository's own gets noindex where it has none; one with a robots tag of its
-    // own and an endpoint's file stay as written.
+    // The build adds no robots tag to a page of the repository's own; one with a tag of its own and
+    // an endpoint's file stay as written.
     const src = join(fixture, "catalog", "src");
     const pages = join(src, "pages");
     made.push(src);
@@ -1794,25 +1794,25 @@ describe("catalog", () => {
       join(pages, "raw.html.ts"),
       'export const GET = () => new Response("<html><head></head></html>");\n',
     );
-    // An endpoint whose page should not be indexed adds the shell's own tag.
+    // An endpoint whose page should not be indexed writes its own tag.
     writeFileSync(
       join(pages, "tagged.html.ts"),
-      'import { NOINDEX } from "../../../../../catalog/robots.ts";\n' +
-        "export const GET = () => new Response(`<html><head>${NOINDEX}</head></html>`);\n",
+      `export const GET = () => new Response('<html><head><meta name="robots" content="noindex"></head></html>');\n`,
     );
     expect(build().status).toBe(0);
     expect(readFileSync(join(dist, "tagged.html"), "utf8")).toBe(
       '<html><head><meta name="robots" content="noindex"></head></html>',
     );
-    expect(page("own")).toContain('<head><meta name="robots" content="noindex"><title>');
+    expect(page("own")).toContain("<head><title>");
+    expect(page("own")).not.toContain('name="robots"');
+    expect(page("kept")).toContain('<meta name="robots" content="index">');
     expect(page("kept")).not.toContain("noindex");
     expect(readFileSync(join(dist, "raw.html"), "utf8")).toBe("<html><head></head></html>");
     writeFileSync(join(pages, "headless.astro"), "<p>no head</p>\n");
-    const headless = build();
-    expect(headless.status).not.toBe(0);
-    expect(`${headless.stdout}${headless.stderr}`).toContain(
-      "catalog: headless/index.html has no <head> for its noindex",
-    );
+    // A page without <head> builds: the build no longer needs one to write into.
+    expect(build().status).toBe(0);
+    expect(page("headless")).toContain("no head");
+    expect(page("headless")).not.toContain('name="robots"');
     rmSync(join(pages, "headless.astro"));
     // A page of the site's own at /catalog/ beside a root catalog keeps its place: the catalog
     // links its home.
@@ -1821,15 +1821,14 @@ describe("catalog", () => {
     expect(page("catalog")).toContain("site catalog page");
     expect(page("")).toContain('<a class="hw-header-link" href="/" aria-current="page">Fx</a>');
     rmSync(join(pages, "catalog", "index.astro"));
-    // A site with a home page of its own keeps the catalog at /catalog/; only the catalog's pages
-    // get noindex.
+    // A site with a home page of its own keeps the catalog at /catalog/; no page gets a robots tag.
     writeFileSync(join(pages, "index.astro"), head("<p>site home</p>"));
     writeFileSync(join(pages, "catalog", "extra.astro"), head(""));
     expect(build().status).toBe(0);
     expect(page("").includes("site home")).toBe(true);
-    expect(page("")).not.toContain("noindex");
-    expect(page("own")).not.toContain("noindex");
-    expect(page("catalog/extra")).toContain('<meta name="robots" content="noindex">');
+    expect(page("")).not.toContain('name="robots"');
+    expect(page("own")).not.toContain('name="robots"');
+    expect(page("catalog/extra")).not.toContain('name="robots"');
     expect(page("catalog")).toContain("fx catalog/stories");
     expect(page("catalog/dashboard/Parts/box-parts/two")).toContain('href="/catalog/"');
     rmSync(src, { recursive: true });

@@ -18,7 +18,6 @@ import { createRequire } from "node:module";
 import { basename, dirname, join, posix, relative } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { catalogPath, storiesDir } from "./path.ts";
-import { NOINDEX } from "./robots.ts";
 
 export { renderCatalog } from "./render.ts";
 export type { CatalogData, CatalogGroup, CatalogItem } from "./render.ts";
@@ -198,9 +197,6 @@ export function catalog(options: CatalogOptions): AstroIntegration {
   let mounted = false;
   // A build writes forwarding pages at /catalog/ for a catalog at the site's root.
   let forwards = false;
-  // The patterns of the repository's own routes Astro renders as pages: an endpoint writes its
-  // bytes as it means them, such as a mail as sent, and the shell's pages carry noindex already.
-  const pageRoutes = new Set<string>();
   // Every route Astro renders as a page, the shell's and Astrobook's included.
   const allPages = new Set<string>();
   // A build whose assetsPrefix is a file URL is opened from disk, where a root-relative link
@@ -409,12 +405,9 @@ export function catalog(options: CatalogOptions): AstroIntegration {
         }
       },
       "astro:routes:resolved": ({ routes }) => {
-        pageRoutes.clear();
         allPages.clear();
         for (const route of routes) {
-          if (route.type !== "page") continue;
-          allPages.add(route.pattern);
-          if (route.origin === "project") pageRoutes.add(route.pattern);
+          if (route.type === "page") allPages.add(route.pattern);
         }
       },
       "astro:server:setup": ({ server }) => {
@@ -455,22 +448,6 @@ export function catalog(options: CatalogOptions): AstroIntegration {
       },
       "astro:build:done": ({ dir, assets }) => {
         const out = fileURLToPath(dir);
-        // A page of the repository's own under the catalog's path carries noindex too.
-        const under = atRoot ? "" : "catalog/";
-        for (const [pattern, urls] of assets) {
-          if (!pageRoutes.has(pattern)) continue;
-          for (const url of urls) {
-            const page = url.pathname.slice(dir.pathname.length);
-            if (!page.endsWith(".html") || !page.startsWith(under)) continue;
-            const file = fileURLToPath(url);
-            const html = readFileSync(file, "utf8");
-            const head = html.slice(0, html.search(/<\/head>/i));
-            if (/<meta\s[^>]*\bname\s*=\s*["']?robots["'\s/>]/i.test(head)) continue;
-            const tagged = html.replace(/<head\b[^>]*>/i, `$&${NOINDEX}`);
-            if (tagged === html) throw new Error(`catalog: ${page} has no <head> for its noindex`);
-            writeFileSync(file, tagged);
-          }
-        }
         // The catalog lived under /catalog/ until v2.0.0: each of its published pages forwards. A
         // build opened from disk was never published there.
         if (forwards)
@@ -483,7 +460,7 @@ export function catalog(options: CatalogOptions): AstroIntegration {
             mkdirSync(dirname(stub), { recursive: true });
             writeFileSync(
               stub,
-              `<!doctype html><meta charset="utf-8"><title>Moved</title>${NOINDEX}<link rel="canonical" href="${to}"><meta http-equiv="refresh" content="0; url=${to}"><script>location.replace(${JSON.stringify(to)}+location.search+location.hash)</script><a href="${to}">${to}</a>\n`,
+              `<!doctype html><meta charset="utf-8"><title>Moved</title><link rel="canonical" href="${to}"><meta http-equiv="refresh" content="0; url=${to}"><script>location.replace(${JSON.stringify(to)}+location.search+location.hash)</script><a href="${to}">${to}</a>\n`,
             );
           }
         const pointers: string[] = [];

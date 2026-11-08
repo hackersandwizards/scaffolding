@@ -276,13 +276,9 @@ this rule as a pure function, for a reader such as the admin hub: `pages` are th
 `srcDir/pages`, and it returns the catalog's path, `/` or `/catalog/` after the base, which `dev`
 drops. The preset calls it too.
 
-Every catalog page carries `<meta name="robots" content="noindex">` and the `lead` as its
-`<meta name="description">`, so a repository's head adds neither. The build adds the noindex tag, right
-after `<head>`, to the repository's own pages under the catalog's path too: every page of the site
-where the catalog is its home, else every page under `/catalog/`. A page with a robots tag of its
-own keeps it, a page without `<head>` fails the build, and a file an endpoint writes, such as a
-mail as sent, stays as written; an endpoint that wants the tag imports it as `NOINDEX` from
-`@hackersandwizards/scaffolding/catalog/robots.ts`. Every page but a state alone
+Every catalog page carries the `lead` as its `<meta name="description">`, so a repository's head
+adds none. The shell writes no robots tag, so search engines may index the catalog; a page of the
+repository's own that should stay out of the index sets the tag itself. Every page but a state alone
 carries `data-hw-night`, so brand's `night.css` turns it under the theme toggle while a tile's
 preview keeps its own theme. The shell's own card and pill on the home carry `data-hw-shell`, for a
 check of the repository's elements to skip.
