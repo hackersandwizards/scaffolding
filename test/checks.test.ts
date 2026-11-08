@@ -1483,7 +1483,12 @@ describe("catalog", () => {
       'data-frame-width="1440" style="aspect-ratio:1440/900"><iframe data-src="/stories/Types/box-types/two/"',
     );
     expect(home).toMatch(/<span class="hw-catalog-preview"><iframe data-src="\/stories\/Parts\//);
-    // The shell's own card and pill carry data-hw-shell, for brand-elements to skip.
+    // The shell's own card, pill and rail (brand's search field and navigation list) carry
+    // data-hw-shell, for brand-elements to skip.
+    expect(home).toContain(
+      '<aside class="hw-catalog-rail" data-hw-shell><div class="hw-search"><input class="hw-field hw-catalog-search" type="search"',
+    );
+    expect(home).toContain('<nav class="hw-nav" aria-label="Groups">');
     expect(home).toContain('<a class="hw-card hw-catalog-tile" data-hw-shell href=');
     expect(home).toContain('<span class="hw-pill" data-tone="neutral" data-hw-shell>');
     expect(readFileSync(join(dist, "fx.txt"), "utf8")).toBe("fx\n");

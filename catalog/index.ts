@@ -29,7 +29,8 @@ export type CatalogOptions = {
    * repository's own. */
   css: string[];
   /** The stylesheets the home loads, default `css`: its tiles frame each state, so it needs only
-   * the tokens its header and shell read and what its foundations draw. */
+   * the tokens and brand's elements.css its header, rail and tiles read and what its foundations
+   * draw. */
   homeCss?: string[];
   /** One or two sentences under the title. */
   lead: string;
@@ -315,6 +316,13 @@ export function catalog(options: CatalogOptions): AstroIntegration {
             throw new Error(`catalog copy: ${pattern} is no file in the exports of ${owner}`);
           }
         }
+        // The home's rail is brand's hw-search over its hw-nav, released in brand v1.47.0: an older
+        // brand draws it unstyled, with no error of its own.
+        const brand = installed("@hackersandwizards/brand", root)?.split(".").map(Number);
+        if (brand && (brand[0] ?? 0) * 1000 + (brand[1] ?? 0) < 1047)
+          throw new Error(
+            `catalog: the home's rail needs @hackersandwizards/brand v1.47.0 or later, installed is v${brand.join(".")}`,
+          );
         const versions = [...new Set(options.css.map(packageOf).filter((p) => p !== undefined))]
           .map((p) => `${p} v${installed(p, root) ?? "?"}`)
           .join(" · ");

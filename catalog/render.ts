@@ -166,12 +166,12 @@ export function renderCatalog(data: CatalogData): string {
       anchors.set(anchor, g.name);
       return { ...g, anchor };
     });
-  const count = (g: CatalogGroup) =>
-    g.items.length ? `<span class="hw-catalog-count">${g.items.length}</span>` : "";
+  const count = (g: CatalogGroup, cls = "hw-catalog-count") =>
+    g.items.length ? `<span class="${cls}">${g.items.length}</span>` : "";
   const rail = groups
     .map(
       (g) =>
-        `<li><a href="#${g.anchor}"><span>${escapeCatalog(g.name)}</span>${g.items.length ? `<span class="hw-nav-count">${g.items.length}</span>` : ""}</a>${g.html === undefined ? `<ul class="hw-catalog-names">${g.items.map((i) => `<li><a href="${escapeCatalog(i.href)}">${escapeCatalog(i.name)}</a></li>`).join("")}</ul>` : ""}</li>`,
+        `<li><a href="#${g.anchor}"><span>${escapeCatalog(g.name)}</span>${count(g, "hw-nav-count")}</a>${g.html === undefined ? `<ul class="hw-catalog-names">${g.items.map((i) => `<li><a href="${escapeCatalog(i.href)}">${escapeCatalog(i.name)}</a></li>`).join("")}</ul>` : ""}</li>`,
     )
     .join("");
   const sections = groups

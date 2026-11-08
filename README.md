@@ -193,7 +193,7 @@ the rail and tiles, and `catalog.css`) reads brand's token roles by name only, a
 `css` supplies them.
 The home's rail is brand's search field (`hw-search`) over its navigation list (`hw-nav`), so the
 home's stylesheets need brand v1.47.0 or later with its `elements.css`, as its tiles need brand's
-card and pill.
+card and pill; an older brand installed fails the build.
 The shapes the shell draws itself follow brand's rule: the brand corner for a preview, the small
 corner for the state menu, the theme toggle and the link to a state alone, round for the phone's
 group chips, the state chips and the arrows.
@@ -227,8 +227,9 @@ The options beyond those above:
   fetches its state's page and draws its HTML, so no frame load starts that the header would block
   and a script would cancel. It needs HTTP, not a build opened from disk.
 - `homeCss`: the stylesheets the home loads, default `css`. The tiles frame each state, so the home
-  needs only the tokens its header and shell read and what its foundations draw, such as
-  `["@hackersandwizards/brand/tokens.root.css"]`. `css` loads on a state's page and a state alone;
+  needs only the tokens and brand's elements its header, rail and tiles read and what its
+  foundations draw, such as
+  `["@hackersandwizards/brand/tokens.root.css", "@hackersandwizards/brand/elements.css"]`. `css` loads on a state's page and a state alone;
   the header's CSS and the shell's own on the home and a state's page, never on a state alone.
 - `previewStates`: the states a tile draws and links first, each the story's export name in kebab
   case, such as `["light", "loaded-dark"]` for `Light` and `LoadedDark`.

@@ -196,8 +196,8 @@
     .hw-catalog-rail > .hw-search {
       margin-bottom: 0.5rem;
     }
-    .hw-catalog-rail ul {
-      display: flex;
+    /* Past brand's .hw-nav rules, whatever order the stylesheets load in. */
+    .hw-catalog-rail .hw-nav ul {
       flex-direction: row;
       gap: 0.375rem;
       margin-inline: -1rem;
@@ -211,7 +211,8 @@
     .hw-catalog-rail .hw-catalog-names {
       display: none;
     }
-    .hw-catalog-rail a {
+    .hw-catalog-rail .hw-nav a {
+      box-sizing: border-box;
       align-items: center;
       gap: 0.375rem;
       min-height: 2.75rem;
