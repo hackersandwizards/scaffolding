@@ -43,7 +43,9 @@ Tell each batch that zero changes is an acceptable result. Before deleting a com
 ## 3. Quality, performance, security review
 
 Run `/code-review high` and `/security-review` over the scope first; their findings join this
-phase's. In a repository with a UI, measure performance on a server the run starts itself on a
+phase's. Under `claude -p`, run each review skill, `/simplify` included, as a nested
+`claude -p "<skill> <scope>; report findings only" > <scratch file>` and read the file: a review
+skill called through the Skill tool ends the run on its own output. In a repository with a UI, measure performance on a server the run starts itself on a
 free port (Lighthouse per public page type, response and render time per app route) and report
 before and after numbers for each fix.
 

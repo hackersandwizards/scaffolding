@@ -31,8 +31,9 @@ handling that prevents data loss, security measures, or accessibility basics.
   `check-staged` set or a repository's own `validate:skills` when `.claude/` is staged. CI builds, runs the integration tests a deploy needs, deploys and applies Terraform after
   a plan. A schedule runs only to notice an absence no commit reveals, such as a new advisory
   against an unchanged lockfile.
-- Start every script and tool through `bun run`: a package.json script where one fits, else the
-  project's own binary (`bun run vitest run <file>`), never `bunx`, `npx` or `node_modules/.bin` for a tool the project installs.
+- Start every tool the project installs through `bun run`: a package.json script where one fits,
+  else the project's own binary (`bun run vitest run <file>`), never `bunx`, `npx` or
+  `node_modules/.bin`. A repository script runs as `bun <path>`.
   A repository pinning `@hackersandwizards/scaffolding` takes its hooks from scaffolding's skeleton
   (`check-structure --fix`). Elsewhere a hook is one line in `.githooks/` calling a script:
   `check:staged` runs `check-staged.ts` from this folder, `lfs:pre-push` runs `git lfs pre-push`

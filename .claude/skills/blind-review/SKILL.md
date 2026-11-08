@@ -78,7 +78,9 @@ none, because receipt".
 Run each reviewer headless and read-only, the prompt naming each artifact by absolute path. Codex
 takes images with `-i <file>`, placed after the prompt: `-i` is variadic, and a prompt after it is
 read as an image and Codex answers "No prompt provided via stdin". Check: every Codex output file
-is non-empty.
+is non-empty. A `claude -p` started inside a repository runs its session-start hook there, which
+can merge `origin/main` and reinstall: start reviewers from a directory outside the checkout under
+review, or read `git reflog -3` afterwards and rebuild a before baseline whose `HEAD` moved.
 
 ```bash
 claude -p --model opus --strict-mcp-config --no-session-persistence --allowedTools=Read "<prompt>"

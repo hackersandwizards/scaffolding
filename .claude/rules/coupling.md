@@ -12,7 +12,9 @@ checkout and the packages it pins.
   change.
 - Write only into your own repository. Work another repository owns goes there as a brief for a
   session in that repository: a session started elsewhere misses its `paths:` rules, even after
-  `/add-dir`. The hub's rule and skill sync is the one sync between repositories.
+  `/add-dir`. The hub's rule and skill sync is the one sync between repositories. A repository
+  holding another as a git submodule whose rules it carries, because the submodule is kept free of
+  them, writes into that submodule from inside it.
 - Take a fact another repository owns, such as a brand value, a price or a product fact, from its
   package, never retyped or copied. The one copy allowed is a file the repository serves while it
   cannot install the package, recorded beside the copy with its origin and version.
