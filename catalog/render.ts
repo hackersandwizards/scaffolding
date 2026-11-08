@@ -80,7 +80,10 @@ const catalogTile = (item: CatalogItem, group: string) =>
 // empty, a group of markup while the field holds a word. Loads a frame once the page reports its
 // first paint (2 s after load where none comes; two animation frames still started before it) and
 // the tile comes within 200 px of the view, so the frames neither delay the first paint nor load
-// all at once (Chrome's loading="lazy" loaded 30 of 40 frames up front); with data-srcdoc from the
+// all at once (Chrome's loading="lazy" loaded 30 of 40 frames up front). A hidden page, such as a
+// headless check's tab without focus, never paints and its observer never reports (0 of 39 tiles
+// in 10 s): with no first paint to protect and nobody scrolling, it loads every tile at once, so
+// a check reads them all; with data-srcdoc from the
 // page's HTML, a <base> keeping its relative links. Draws each sized frame whole at its tile's
 // width, and centres every other frame's content, shrunk where it is taller than the tile and
 // measured afresh each time, so a refit never shrinks it again, as Storybook's "centered" layout
@@ -117,7 +120,8 @@ const load=(f)=>{const u=f.dataset.src;if(!u)return;delete f.dataset.src;if(!f.h
 fetch(new URL(u,location.href)).then((r)=>r.ok&&r.text().then((h)=>{f.srcdoc=h.replace(/<head\b[^>]*>/i,'$&<base href="'+r.url+'">');})).catch(()=>{});};
 let started=0;const start=()=>{if(started++)return;const m=document.querySelector("main"),root=m&&m.scrollHeight>m.clientHeight?m:null;
 const near=new IntersectionObserver((seen)=>{for(const e of seen)if(e.isIntersecting){near.unobserve(e.target);load(e.target);}},{root,rootMargin:"200px 0px"});
-document.querySelectorAll(".hw-catalog-preview iframe[data-src]").forEach((f)=>near.observe(f));};
+document.querySelectorAll(".hw-catalog-preview iframe[data-src]").forEach((f)=>document.hidden?load(f):near.observe(f));};
+if(document.hidden)start();
 if(PerformanceObserver.supportedEntryTypes?.includes("paint"))new PerformanceObserver((_,o)=>{o.disconnect();start();}).observe({type:"paint",buffered:true});
 addEventListener("load",()=>setTimeout(start,2000),{once:true});
 const spy=()=>{for(const root of document.querySelectorAll(".hw-catalog")){

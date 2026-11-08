@@ -212,7 +212,9 @@ The options beyond those above:
   in `package.json`, else the checkout's folder). A built page carries none.
 - `previews`: draw each tile's first state; `false` for states that load slowly. A tile's frame
   loads once the home reports its first paint and the tile comes within 200 px of the view, so the
-  frames neither hold the first paint back nor load all at once; without script none loads.
+  frames neither hold the first paint back nor load all at once; without script none loads. A
+  hidden page, such as a headless check's tab without focus, never paints: it loads every frame at
+  once.
   `"srcdoc"` is for a site whose pages refuse framing, such as by `X-Frame-Options: DENY`: each tile
   fetches its state's page and draws its HTML, so no frame load starts that the header would block
   and a script would cancel. It needs HTTP, not a build opened from disk.
