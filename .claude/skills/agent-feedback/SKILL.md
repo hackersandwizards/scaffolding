@@ -121,7 +121,7 @@ a reference and stays.
 
 ## Mirrors and sync
 
-The training repositories under `internal/trainings/` carry no rules, `CLAUDE.md` or skills:
+The training repositories under `trainings/` carry no rules, `CLAUDE.md` or skills:
 participants build them in the training. Their harness settings stay, and a sweep across every
 repository leaves them out and says so. `training-environment`, the infrastructure no participant
 clones, keeps its `CLAUDE.md` and `AGENTS.md`.

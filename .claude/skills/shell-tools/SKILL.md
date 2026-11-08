@@ -67,7 +67,7 @@ Prefer these over their classic equivalents.
 **JavaScript/TypeScript:**
 - bun is the package manager in every repository of ours: `bun install`, `bun run`, `bun.lock`,
   `"packageManager": "bun@<version>"`, and those lines in its README and CLAUDE.md. The training
-  repositories under `internal/trainings/` use npm and node instead, in commands, lockfile,
+  repositories under `trainings/` use npm and node instead, in commands, lockfile,
   `packageManager`, README and MCP config, because most participants have no bun.
 - `bun` instead of `node` for running scripts, and `bunx` instead of `npx` for a package the project
   does not install, outside a training repository
