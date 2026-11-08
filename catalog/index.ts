@@ -197,8 +197,8 @@ export function catalog(options: CatalogOptions): AstroIntegration {
   let mounted = false;
   // A build writes forwarding pages at /catalog/ for a catalog at the site's root.
   let forwards = false;
-  // Every route Astro renders as a page, the shell's and Astrobook's included.
-  const allPages = new Set<string>();
+  // Every route Astro renders as a page.
+  const pageRoutes = new Set<string>();
   // A build whose assetsPrefix is a file URL is opened from disk, where a root-relative link
   // resolves to the disk's root.
   let onDisk = false;
@@ -405,9 +405,9 @@ export function catalog(options: CatalogOptions): AstroIntegration {
         }
       },
       "astro:routes:resolved": ({ routes }) => {
-        allPages.clear();
+        pageRoutes.clear();
         for (const route of routes) {
-          if (route.type === "page") allPages.add(route.pattern);
+          if (route.type === "page") pageRoutes.add(route.pattern);
         }
       },
       "astro:server:setup": ({ server }) => {
@@ -485,7 +485,7 @@ export function catalog(options: CatalogOptions): AstroIntegration {
         // listing, not its index.html. Last, once every `copy` entry is in place.
         if (onDisk)
           for (const [pattern, urls] of assets) {
-            if (!allPages.has(pattern)) continue;
+            if (!pageRoutes.has(pattern)) continue;
             for (const url of urls) {
               if (!url.pathname.endsWith(".html")) continue;
               const file = fileURLToPath(url);

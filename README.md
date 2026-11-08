@@ -277,10 +277,10 @@ this rule as a pure function, for a reader such as the admin hub: `pages` are th
 drops. The preset calls it too.
 
 Every catalog page carries the `lead` as its `<meta name="description">`, so a repository's head
-adds none. The shell writes no robots tag, so search engines may index the catalog; a page of the
-repository's own that should stay out of the index sets the tag itself. Every page but a state alone
-carries `data-hw-night`, so brand's `night.css` turns it under the theme toggle while a tile's
-preview keeps its own theme. The shell's own card and pill on the home carry `data-hw-shell`, for a
+adds none. The shell writes no robots tag, so search engines may index the catalog. A repository
+that wants the whole catalog out of the index sets the tag in its `head`; a single page of its own
+sets it in that page. Every page but a state alone carries `data-hw-night`, so brand's `night.css`
+turns it under the theme toggle while a tile's preview keeps its own theme. The shell's own card and pill on the home carry `data-hw-shell`, for a
 check of the repository's elements to skip.
 
 `astro dev` starts quietly: Vite's start-up scan reads the stories and the components they import,

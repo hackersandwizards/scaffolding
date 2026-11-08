@@ -1495,8 +1495,15 @@ describe("catalog", () => {
     expect(root(home)).toBe('{"hwScale":"dense","hwNight":""}');
     expect(root(page("dashboard/Parts/box-parts/two"))).toBe('{"hwScale":"screen","hwNight":""}');
     expect(root(page("stories/Parts/box-parts/two"))).toBe('{"hwScale":"screen"}');
-    for (const p of ["", "dashboard/Parts/box-parts/two", "stories/Parts/box-parts/two", "catalog"])
-      expect(page(p)).not.toContain('name="robots"');
+    const robots = /<meta\b[^>]*\bname\s*=\s*["']?robots\b/i;
+    for (const p of [
+      "",
+      "dashboard/Parts/box-parts/two",
+      "stories/Parts/box-parts/two",
+      "catalog",
+      "catalog/dashboard/Parts/box-parts/two",
+    ])
+      expect(page(p)).not.toMatch(robots);
     for (const p of ["", "dashboard/Parts/box-parts/two", "stories/Parts/box-parts/two"])
       expect(page(p)).toContain('<meta name="description" content="Lead.">');
     // Every page of the catalog's former place forwards to its page at the root.
@@ -1804,15 +1811,16 @@ describe("catalog", () => {
       '<html><head><meta name="robots" content="noindex"></head></html>',
     );
     expect(page("own")).toContain("<head><title>");
-    expect(page("own")).not.toContain('name="robots"');
+    expect(page("own")).not.toMatch(robots);
+    expect(page("kept")).toMatch(robots);
     expect(page("kept")).toContain('<meta name="robots" content="index">');
     expect(page("kept")).not.toContain("noindex");
     expect(readFileSync(join(dist, "raw.html"), "utf8")).toBe("<html><head></head></html>");
     writeFileSync(join(pages, "headless.astro"), "<p>no head</p>\n");
-    // A page without <head> builds: the build no longer needs one to write into.
+    // A page without <head> builds.
     expect(build().status).toBe(0);
     expect(page("headless")).toContain("no head");
-    expect(page("headless")).not.toContain('name="robots"');
+    expect(page("headless")).not.toMatch(robots);
     rmSync(join(pages, "headless.astro"));
     // A page of the site's own at /catalog/ beside a root catalog keeps its place: the catalog
     // links its home.
@@ -1826,9 +1834,9 @@ describe("catalog", () => {
     writeFileSync(join(pages, "catalog", "extra.astro"), head(""));
     expect(build().status).toBe(0);
     expect(page("").includes("site home")).toBe(true);
-    expect(page("")).not.toContain('name="robots"');
-    expect(page("own")).not.toContain('name="robots"');
-    expect(page("catalog/extra")).not.toContain('name="robots"');
+    expect(page("")).not.toMatch(robots);
+    expect(page("own")).not.toMatch(robots);
+    expect(page("catalog/extra")).not.toMatch(robots);
     expect(page("catalog")).toContain("fx catalog/stories");
     expect(page("catalog/dashboard/Parts/box-parts/two")).toContain('href="/catalog/"');
     rmSync(src, { recursive: true });
