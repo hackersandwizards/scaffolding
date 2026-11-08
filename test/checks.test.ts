@@ -1445,7 +1445,7 @@ describe("catalog", () => {
     expect(home.indexOf(">Types <")).toBeLessThan(home.indexOf(">Parts <"));
     // The rail names every element under its group, linked to the state its tile draws.
     expect(home).toMatch(
-      /<ul class="hw-catalog-names"><li><a href="\/dashboard\/Parts\/box-parts\/two\/">BoxParts<\/a>/,
+      /<ul class="hw-catalog-names"><li><a href="\/dashboard\/Parts\/box-parts\/two\/">Box parts<\/a>/,
     );
     // A frame names its page in data-src: the shell's script loads it once the tile nears the view.
     expect(home).toContain('data-src="/stories/Types/box-types/two/"');
@@ -1514,7 +1514,7 @@ describe("catalog", () => {
     );
     expect(bar).toContain('<nav class="hw-catalog-bar" aria-label="Catalog">');
     expect(bar).toContain('<a href="/catalog/"><span aria-hidden="true">');
-    expect(bar).toMatch(/Parts \/ <strong>BoxParts<\/strong>/);
+    expect(bar).toMatch(/Parts \/ <strong>Box parts<\/strong>/);
     expect(bar).toContain('<button type="button" data-hw-theme aria-pressed="false">');
     expect(bar).toMatch(
       /<a class="hw-catalog-tool" href="\/stories\/Parts\/box-parts\/two\/">\s*Open this state alone\s*<\/a>/,
@@ -1627,7 +1627,7 @@ describe("catalog", () => {
       );
       expect(build(["--config", "files.config.mjs"]).status).toBe(0);
       expect(readFileSync(join(dist, "index.html"), "utf8")).toContain(
-        `<li><a href="/dashboard/Parts/box-parts/two${end}">BoxParts</a>`,
+        `<li><a href="/dashboard/Parts/box-parts/two${end}">Box parts</a>`,
       );
     }
     rmSync(files);
@@ -1645,7 +1645,7 @@ describe("catalog", () => {
     const at = (p: string) => pathToFileURL(join(dist, p)).href;
     expect(onDisk).toContain(`<iframe data-src="${at("stories/Types/box-types/two/index.html")}"`);
     expect(onDisk).toContain(
-      `<li><a href="${at("dashboard/Parts/box-parts/two/index.html")}">BoxParts</a>`,
+      `<li><a href="${at("dashboard/Parts/box-parts/two/index.html")}">Box parts</a>`,
     );
     expect(onDisk).toContain(`<a href="${at("index.html")}">Fx</a>`);
     expect(onDisk).toContain(

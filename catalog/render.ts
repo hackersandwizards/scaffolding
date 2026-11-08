@@ -4,7 +4,8 @@
 export type CatalogItem = {
   name: string;
   href: string;
-  /** Words under the name, searched with it and the group's name. */
+  /** Words under the name, searched with it, the name without its spaces ("GridSlide") and the
+   * group's name. */
   note?: string;
   /** A short count or kind in a neutral pill, such as "3 states". */
   pill?: string;
@@ -64,7 +65,7 @@ const tilePreview = (item: CatalogItem) =>
 // data-hw-shell marks the shell's own brand elements, the tile's card and pill, which a check of the
 // repository's own elements skips.
 const catalogTile = (item: CatalogItem, group: string) =>
-  `<li><a class="hw-card hw-catalog-tile" data-hw-shell href="${escapeCatalog(item.href)}" data-search="${escapeCatalog(`${group} ${item.name} ${item.note ?? ""}`.toLowerCase())}">${
+  `<li><a class="hw-card hw-catalog-tile" data-hw-shell href="${escapeCatalog(item.href)}" data-search="${escapeCatalog(`${group} ${item.name} ${item.name.replace(/\s+/g, "")} ${item.note ?? ""}`.toLowerCase())}">${
     item.frame || item.image || item.html
       ? `<span class="hw-catalog-preview"${
           item.frame && item.frameSize
