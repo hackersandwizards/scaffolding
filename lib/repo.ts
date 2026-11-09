@@ -22,7 +22,9 @@ export function withoutEnvFile(name: string) {
     console.error(`[${name}] run it as its bin or with \`bun --no-env-file\`, so .env stays out`);
     process.exit(2);
   }
-  process.env.BUN_OPTIONS = `--no-env-file ${process.env.BUN_OPTIONS ?? ""}`.trim();
+  const options = process.env.BUN_OPTIONS ?? "";
+  if (!options.split(/\s+/).includes("--no-env-file"))
+    process.env.BUN_OPTIONS = `--no-env-file ${options}`.trim();
 }
 
 /** A reason is a non-blank string, so `false`, `0` or `{}` in package.json gives none. */

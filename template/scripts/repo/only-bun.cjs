@@ -1,6 +1,6 @@
-// The `preinstall` guard: a stray `npm install` writes a package-lock.json and resolves differently
-// than bun.lock. Reads only the user agent the package manager sets. Through `globalThis`, because
-// the repositories' lint configs disagree on whether Node's globals are declared.
+// Fails an install by any package manager but bun, whose lockfile would resolve differently than
+// bun.lock. Reads only the user agent the package manager sets. Through `globalThis`, because the
+// repositories' lint configs disagree on whether Node's globals are declared.
 const { process: proc, console: out } = globalThis;
 const pm = (proc.env.npm_config_user_agent || "").split("/")[0];
 

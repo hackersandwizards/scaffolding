@@ -484,6 +484,23 @@ describe("scaffold and check-structure", () => {
     expect(formatted.status).toBe(0);
   });
 
+  test("the skeleton has no preinstall, and its prepare guards the top level only", () => {
+    const { scripts } = JSON.parse(readFileSync(join(dir, "package.json"), "utf8"));
+    expect(scripts.preinstall).toBeUndefined();
+    const prepare = (cwd: string, agent: string) =>
+      spawnSync("sh", ["-c", scripts.prepare], {
+        cwd,
+        env: { ...process.env, npm_config_user_agent: agent },
+        encoding: "utf8",
+      });
+    expect(prepare(dir, "bun/1.4.4").status).toBe(0);
+    const refused = prepare(dir, "pnpm/10.0.0");
+    expect(refused.status).toBe(1);
+    expect(refused.stderr).toContain("bun only");
+    // In a folder that is no repository's top level, as a dependency's is, it does nothing.
+    expect(prepare(join(dir, "scripts"), "pnpm/10.0.0").status).toBe(0);
+  });
+
   test("--catalog-in and --admin-in leave both out and the skips name where they live", () => {
     const minimal = join(parent, "minimal");
     const r = run(
@@ -1292,7 +1309,7 @@ describe("scaffolding check", () => {
   });
 
   test("no step sees a variable only .env set, a nested bun included", () => {
-    const probe = `sh -c 'echo sh=\${SCAF_TEST_SECRET:-none}' && bun probe.ts`;
+    const probe = `sh -c 'echo sh=\${SCAF_TEST_SECRET:-none}' && bun probe.ts && echo options=[$BUN_OPTIONS]`;
     const dir = gate({ skip, check: ["check:probe"] }, { "check:probe": probe });
     write(dir, {
       ".env": "SCAF_TEST_SECRET=x\n",
@@ -1312,6 +1329,8 @@ describe("scaffolding check", () => {
       const out = `${r.stdout}${r.stderr}`;
       expect(out).toContain("sh=none");
       expect(out).toContain("bun=none");
+      // Once, though the gate re-runs itself under check-lock.
+      expect(out).toContain("options=[--no-env-file]\n");
       expect(r.status).toBe(0);
     }
     for (const name of ["scaffolding", "check-staged"]) {
