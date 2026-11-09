@@ -94,10 +94,11 @@ bracket, a quote, a dash or one expression that draws no element (`{name}.`, `{n
 the `{" "}` prettier itself writes, or joining the lines. A line of expressions alone counts for
 neither: most lay out sibling elements. A break no space belongs in, such as an
 icon in a flex row, gets an allow entry with `text`. Where every `astro.config.*` in the repository
-sets `compressHTML` to `true` or `false`, the step reads only the `.astro` files that `files` or
-`exports` in package.json name, since a consumer compiles a shipped component under its own setting.
-There it also flags an inline closing tag whose next line holds one expression that draws an inline
-element (`{n > 0 && <span>{n}</span>}`): the package's pages show that space, a consumer's do not. It
+sets `compressHTML` to `true` or `false`, the step reads only the `.astro` files a consumer can compile under its own setting: those
+`bun pm pack` lists, as History below, and where package.json has `exports`, of those only the ones an
+exported path names and the files they import by a relative path. There it also
+flags an inline closing tag or text whose next line holds one expression whose first element is
+inline (`{n > 0 && <span>{n}</span>}`): the package's pages show that space, a consumer's do not. It
 reads every file again once one config returns to `"jsx"`.
 
 **History.** What a package ships is public wherever a consumer serves or bundles it, so a comment

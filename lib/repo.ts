@@ -190,3 +190,23 @@ export function finish(check: string, findings: Finding[], started: number): nev
   if (findings.length) console.error(`[${check}] ${findings.length} findings, ${ms} ms`);
   process.exit(findings.length ? 1 : 0);
 }
+
+/** The files a consumer installs, as `bun pm pack` lists them; none where package.json declares no
+ * files, exports or bin, since such a repository ships nothing another repository reads. Exits 1
+ * where pack fails. */
+export function shippedFiles(root: string, pkg: Package, check: string): string[] {
+  if (!pkg.files && !pkg.exports && !pkg.bin) return [];
+  const pack = spawnSync(process.execPath, ["pm", "pack", "--dry-run", "--ignore-scripts"], {
+    cwd: root,
+    encoding: "utf8",
+  });
+  const shipped = (pack.stdout ?? "")
+    .split("\n")
+    .flatMap((l) => l.match(/^packed \S+ (.+)$/)?.[1] ?? []);
+  // package.json always ships, so an empty list means pack failed or changed its output.
+  if (pack.status !== 0 || !shipped.length) {
+    console.error(`[${check}] bun pm pack listed no files: ${pack.stderr ?? pack.error}`);
+    process.exit(1);
+  }
+  return shipped;
+}

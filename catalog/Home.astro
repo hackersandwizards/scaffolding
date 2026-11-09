@@ -71,7 +71,7 @@ const data = {
   lead,
   provenance: states
     ? `${options.provenance} · ${modules.length} components · ${states} states`
-    : "",
+    : undefined,
   groups: [...groups]
     .sort(([a], [b]) => rank(a) - rank(b) || a.localeCompare(b))
     .map(([name, items]) => ({ name, items })),

@@ -168,8 +168,7 @@ if (existsSync(at("package.json"))) {
     const { configs, preset } = skeleton.catalog;
     const uses = new RegExp(`from\\s*["']${preset.replace(/[/.]/g, "\\$&")}["']`);
     const found = listFiles(root, false).filter((p) => configs.includes(basename(p)));
-    const apps = found.filter((path) => uses.test(readFileSync(at(path), "utf8")));
-    if (!apps.length)
+    if (!found.some((path) => uses.test(readFileSync(at(path), "utf8"))))
       add(
         found[0] ?? `catalog/${configs[0]}`,
         `the Astro config must use the catalog preset from ${preset}`,

@@ -3100,54 +3100,56 @@ describe("check-spaces", () => {
 
   test("reads the components a package ships whatever its own compressHTML, as consumers compile them at jsx", () => {
     const off = { "astro.config.mjs": "export default { compressHTML: false };\n" };
-    const bad = "<p>\n  <span>label</span>\n  {text}\n</p>\n";
-    const flaggedIn = (pkg: object) =>
+    const flagged = (
+      pkg: object,
+      body = "  <span>label</span>\n  {text}",
+      configs: Record<string, string> = off,
+    ) =>
       lines(
         run(
           repo({
-            ...off,
-            "components/A.astro": bad,
-            "lib/B.astro": bad,
-            "src/C.astro": bad,
-            "package.json": JSON.stringify(pkg),
+            ...configs,
+            "components/A.astro": `---\nimport B from "../lib/B.astro";\n---\n<p>\n${body}\n</p>\n`,
+            "lib/B.astro": `<p>\n${body}\n</p>\n`,
+            "src/C.astro": `<p>\n${body}\n</p>\n`,
+            "package.json": JSON.stringify({ name: "fx", version: "1.0.0", ...pkg }),
           }),
           "check-spaces",
         ).out,
         "spaces",
       ).map((l) => l.match(/\] ([^:]+):/)![1]);
-    expect(flaggedIn({})).toEqual([]);
-    expect(flaggedIn({ files: ["components", "README.md"] })).toEqual(["components/A.astro"]);
-    expect(
-      flaggedIn({ exports: { "./A": "./components/A.astro", "./lib/*": { default: "./lib/*" } } }),
-    ).toEqual(["components/A.astro", "lib/B.astro"]);
-    // There a line holding one expression that draws an inline element counts after a closing
-    // tag too: the package's pages show the space; at jsx its own pages show it gone.
-    const shipped = (body: string, configs: Record<string, string> = off) =>
-      lines(
-        run(
-          repo({
-            ...configs,
-            "components/A.astro": `<p>\n${body}\n</p>\n`,
-            "package.json": '{"files":["components"]}',
-          }),
-          "check-spaces",
-        ).out,
-        "spaces",
-      ).length;
+    // What ships is what bun pm pack lists, which a package declaring none of files, exports or
+    // bin keeps from consumers; with exports, what an exported path names and that imports.
+    expect(flagged({})).toEqual([]);
+    expect(flagged({ files: ["components", "README.md"] })).toEqual(["components/A.astro"]);
+    expect(flagged({ exports: { "./A": { default: "./components/A.astro" } } })).toEqual([
+      "components/A.astro",
+      "lib/B.astro",
+    ]);
+    expect(flagged({ exports: { "./parts/*": "./components/*" } })).toEqual([
+      "components/A.astro",
+      "lib/B.astro",
+    ]);
+    expect(flagged({ exports: { "./x": "./x.ts" } })).toEqual([]);
+    // There a line holding one expression whose first element is inline counts after a closing
+    // tag or text too: the package's pages show the space; at jsx its own pages show it gone.
+    const files = { files: ["components"] };
     for (const body of [
       "  <a>x</a>\n  {cond && <b>y</b>}",
       '  <span>{chapter.title}</span>\n  {toc[i] > 0 && <span class="page">{toc[i]}</span>}',
       "  <a>x</a>\n  {cond && <b t={{ a: 1 }}>y</b>}",
+      "  contents\n  {n > 0 && <span>{n}</span>}",
     ]) {
-      expect([body, shipped(body)]).toEqual([body, 1]);
-      expect([body, shipped(body, {})]).toEqual([body, 0]);
+      expect([body, flagged(files, body)]).toEqual([body, ["components/A.astro"]]);
+      expect([body, flagged(files, body, {})]).toEqual([body, []]);
     }
     for (const body of [
       "  <a>x</a>\n  {cond && <div>y</div>}",
+      "  <a>x</a>\n  {cond && <div><span>y</span></div>}",
       "  <a>x</a>\n  {cond && (\n    <b>y</b>\n  )}",
       "  {cond && <b>y</b>}\n  <a>x</a>",
     ])
-      expect([body, shipped(body)]).toEqual([body, 0]);
+      expect([body, flagged(files, body)]).toEqual([body, []]);
   });
 
   test("an allow entry keeps a flex case; a stale one is red", () => {

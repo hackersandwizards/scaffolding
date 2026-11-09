@@ -34,9 +34,8 @@ export type CatalogData = {
   title: string;
   lead: string;
   /** One line: where the shown values come from, such as the brand version, and how many
-   * entries the page holds, in words ("26 components"): the title carries no count. Empty draws no
-   * line. */
-  provenance: string;
+   * entries the page holds, in words ("26 components"): the title carries no count. */
+  provenance?: string;
   groups: CatalogGroup[];
   /** Markup between the provenance line and the first group, trusted. */
   intro?: string;

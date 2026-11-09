@@ -3,7 +3,6 @@
 // What a package ships is public wherever a consumer serves or bundles it: a comment in a shipped
 // file states how to use the code and why, never the history behind it. Review scores, dates,
 // decision and item ids, pointers to review notes and names go to the commit message.
-import { spawnSync } from "node:child_process";
 import { existsSync, readdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import {
@@ -12,6 +11,7 @@ import {
   finish,
   readPackage,
   repoRoot,
+  shippedFiles,
   type Finding,
 } from "../lib/repo.ts";
 
@@ -117,23 +117,8 @@ for (const [line, kind] of [
   if (kinds(line).includes(kind))
     found.push({ check: "history", path: import.meta.path, text: line, message: `hits ${kind}` });
 
-// A repository declaring no files, exports or bin ships nothing another repository reads.
 const pkg = readPackage(root);
-if (!pkg.files && !pkg.exports && !pkg.bin)
-  finish("history", applyAllow(pkg, "history", found, true), started);
-const pack = spawnSync(process.execPath, ["pm", "pack", "--dry-run", "--ignore-scripts"], {
-  cwd: root,
-  encoding: "utf8",
-});
-const shipped = (pack.stdout ?? "")
-  .split("\n")
-  .flatMap((l) => l.match(/^packed \S+ (.+)$/)?.[1] ?? []);
-// package.json always ships, so an empty list means pack failed or changed its output.
-if (pack.status !== 0 || !shipped.length) {
-  console.error(`[history] bun pm pack listed no files: ${pack.stderr ?? pack.error}`);
-  process.exit(1);
-}
-for (const path of shipped) {
+for (const path of shippedFiles(root, pkg, "history")) {
   const bytes = readFileSync(join(root, path));
   if (bytes.includes(0)) continue;
   for (const comment of readComments(path, bytes.toString("utf8")))

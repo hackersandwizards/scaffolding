@@ -6,7 +6,7 @@
 // and false keep the break as a space, so where every Astro config sets one of them the check reads
 // only the components the package ships, which a consumer compiles under its own setting.
 import { readFileSync } from "node:fs";
-import { join } from "node:path";
+import { join, posix } from "node:path";
 import {
   applyAllow,
   commentSyntax,
@@ -14,6 +14,7 @@ import {
   listFiles,
   readPackage,
   repoRoot,
+  shippedFiles,
   type Finding,
   type Package,
 } from "../lib/repo.ts";
@@ -29,24 +30,31 @@ const closes = new RegExp(`</(${INLINE})>\\s*$`);
 // in an expression after words of its own ("by {name}"). A line of expressions alone, like the
 // close of a multi-line one, mostly lays out sibling elements, where a break needs no space.
 const endsInText = /[^\s>}{([=&|]\s*$/;
-const holdsWords = (line: string) => {
+/** The line without its expressions, innermost first: the attributes of a tag inside one nest. */
+const withoutExpressions = (line: string) => {
   let text = line;
-  // Innermost braces first: the attributes of a tag inside an expression nest.
   for (let inner; (inner = text.replace(/\{[^{}]*\}/g, "")) !== text;) text = inner;
+  return text;
+};
+const holdsWords = (line: string) => {
+  const text = withoutExpressions(line);
   // A brace left over closes an expression an earlier line opened.
   return !text.includes("}") && /[\p{L}\p{N}]/u.test(text.replace(/<[^>]*>/g, ""));
 };
 const endsInExpression = /(?<!\{\s*(?:" "|' ')\s*)\}\s*$/;
+// A line of one expression that closes on it and whose first element is inline: jsx drops the break
+// before it as it drops every whitespace-only text node. Mostly it lays out a sibling, so it counts
+// only where the package's own pages keep the break and a consumer's jsx drops a space its author saw.
+const firstTag = /<([a-z][\w-]*)/;
+const inline = new RegExp(`^(?:${INLINE})$`);
+const drawsInline = (line: string) => {
+  const tag = line.match(firstTag)?.[1];
+  return /^\s*\{/.test(line) && withoutExpressions(line).trim() === "" && tag && inline.test(tag)
+    ? tag
+    : undefined;
+};
 // A word, opening punctuation, a dash, or an expression that draws no element and closes on the
 // line (one level of braces inside), alone or before text or an inline tag.
-// An expression that closes on its line and draws an inline element: jsx drops the break before it
-// as it drops every whitespace-only text node. Mostly it lays out a sibling, so it counts only where
-// the package's own pages keep the break and a consumer's jsx drops a space its author saw.
-const drawsInline = (line: string) => {
-  let rest = line;
-  for (let inner; (inner = rest.replace(/\{[^{}]*\}/g, "")) !== rest;) rest = inner;
-  return /^\s*\{/.test(line) && rest.trim() === "" && new RegExp(inlineTag).test(line);
-};
 const startsInText = new RegExp(
   `^\\s*(?:[\\p{L}\\p{N}(["'“‘—–-]|\\{(?!\\s*(?:" "|' ')\\s*\\})(?:[^<{}]|\\{[^<{}]*\\})*\\}\\s*(?:$|[^\\s<{]|${inlineTag}))`,
   "u",
@@ -69,21 +77,39 @@ function template(text: string): string[] {
   );
 }
 
-/** The paths `files` and `exports` of package.json name, as a test of a repository path. */
-function shippedBy(pkg: Package) {
+/** The files a consumer can compile: those `bun pm pack` lists, and where package.json has
+ * `exports`, only the ones an exported path names and the files they import by a relative path. */
+function consumable(root: string, pkg: Package): Set<string> {
+  const packed = new Set(shippedFiles(root, pkg, "spaces"));
+  if (!pkg.exports) return packed;
   const targets = (value: unknown): string[] =>
     typeof value === "string"
       ? [value]
       : value && typeof value === "object"
         ? Object.values(value).flatMap(targets)
         : [];
-  const patterns = [...(Array.isArray(pkg.files) ? pkg.files : []), ...targets(pkg.exports)]
-    .filter((p): p is string => typeof p === "string" && !p.startsWith("!"))
-    .map((p) => p.replace(/^\.\//, "").replace(/\/$/, ""))
-    .map(
-      (p) => new RegExp(`^${p.replace(/[.+?^${}()|[\]\\]/g, "\\$&").replaceAll("*", ".*")}(?:/|$)`),
-    );
-  return (path: string) => patterns.some((p) => p.test(path));
+  // A * in an exported path matches across folders.
+  const exported = targets(pkg.exports).map(
+    (t) =>
+      new RegExp(
+        `^${posix
+          .normalize(t)
+          .replace(/[.+?^${}()|[\]\\]/g, "\\$&")
+          .replaceAll("*", ".*")}$`,
+      ),
+  );
+  const queue = [...packed].filter((f) => exported.some((e) => e.test(f)));
+  const reached = new Set(queue);
+  for (const file of queue)
+    for (const [, spec] of readFileSync(join(root, file), "utf8").matchAll(
+      /(?:from|import)\s*["'](\.{1,2}\/[^"']+)["']/g,
+    )) {
+      const dep = posix.join(posix.dirname(file), spec!);
+      if (!packed.has(dep) || reached.has(dep)) continue;
+      reached.add(dep);
+      queue.push(dep);
+    }
+  return reached;
 }
 
 const started = performance.now();
@@ -97,7 +123,8 @@ const keeps = (config: string) =>
     readFileSync(join(root, config), "utf8").replace(commentSyntax(config), "$1"),
   );
 const kept = configs.length > 0 && configs.every(keeps);
-const reads = kept ? shippedBy(pkg) : () => true;
+const shipped = kept ? consumable(root, pkg) : new Set<string>();
+const reads = (file: string) => !kept || shipped.has(file);
 const found: Finding[] = [];
 for (const file of files.filter((f) => f.endsWith(".astro") && reads(f))) {
   const lines = template(readFileSync(join(root, file), "utf8"));
@@ -107,7 +134,7 @@ for (const file of files.filter((f) => f.endsWith(".astro") && reads(f))) {
     const closing = /^\s*>\s*$/.test(line) ? `${lines[i - 1]}>` : line;
     const tag =
       ((endsInText.test(line) || (endsInExpression.test(line) && holdsWords(line))) &&
-        next.match(opens)?.[1]) ||
+        (next.match(opens)?.[1] || (kept && drawsInline(next)))) ||
       ((startsInText.test(next) || (kept && drawsInline(next))) && closing.match(closes)?.[1]);
     if (tag)
       found.push({
