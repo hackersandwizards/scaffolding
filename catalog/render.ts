@@ -35,7 +35,7 @@ export type CatalogData = {
   lead: string;
   /** One line of parts joined by " · ": where the shown values come from, such as the brand
    * version, and how many entries the page holds, in words ("26 components"): the title carries no
-   * count. A line wraps only between parts. */
+   * count. A line wraps between parts, inside one only where it alone is wider than the line. */
   provenance?: string;
   groups: CatalogGroup[];
   /** Markup between the provenance line and the first group, trusted. */
@@ -49,12 +49,9 @@ const escapeCatalog = (s: string) =>
     /[&<>"']/g,
     (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[c]!,
   );
-// Each part unbroken with the separator after it, so a line breaks only between parts.
+// Each part one box with the separator after it, so a line breaks between parts.
 const provenanceParts = (line: string) =>
-  line
-    .split(" · ")
-    .map((part, i, all) => `<span>${escapeCatalog(part)}${i < all.length - 1 ? " ·" : ""}</span>`)
-    .join(" ");
+  `<span>${line.split(" · ").filter(Boolean).map(escapeCatalog).join(" ·</span> <span>")}</span>`;
 const anchorOf = (s: string) =>
   s
     .normalize("NFC")

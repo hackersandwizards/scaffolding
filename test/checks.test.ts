@@ -2630,9 +2630,10 @@ describe("catalog", () => {
       fetch: () => new Response(html, { headers: { "Content-Type": "text/html" } }),
     });
     const page = await browse("about:blank");
-    // The line's text grouped by the top of each character's box.
-    const lines = `(() => {
-      const p = document.querySelector(".hw-catalog-provenance");
+    const provenance = `document.querySelector(".hw-catalog-provenance")`;
+    // The line's text grouped by the top of each character's box, a pixel apart counting as one.
+    const rows = `(() => {
+      const p = ${provenance};
       const walk = document.createTreeWalker(p, NodeFilter.SHOW_TEXT);
       const rows = new Map();
       for (let node; (node = walk.nextNode()); )
@@ -2642,15 +2643,15 @@ describe("catalog", () => {
           range.setEnd(node, i + 1);
           const rect = range.getClientRects()[0];
           if (!rect) continue;
-          const top = Math.round(rect.top);
+          const top = [...rows.keys()].find((t) => Math.abs(t - rect.top) < 1) ?? rect.top;
           rows.set(top, (rows.get(top) ?? "") + node.data[i]);
         }
       return [...rows].sort(([a], [b]) => a - b).map(([, text]) => text.trim());
     })()`;
     try {
-      const { send, evaluate } = page;
+      const { send, evaluate, until } = page;
       await send("Page.navigate", { url: server.url.href });
-      await page.until(`document.readyState === "complete"`);
+      await until(`document.readyState === "complete"`);
       const bad: string[] = [];
       let wrapped = 0;
       for (let width = 280; width <= 900; width += 10) {
@@ -2660,12 +2661,12 @@ describe("catalog", () => {
           deviceScaleFactor: 1,
           mobile: false,
         });
-        const shown = (await evaluate(lines)) as string[];
+        const shown = (await evaluate(rows)) as string[];
         if (shown.length > 1) wrapped++;
         if (
-          shown.some((l) => l.startsWith("·") || /(^|\s)\d+$/.test(l)) ||
+          shown.some((l) => l.startsWith("·")) ||
           parts.some((part) => !shown.some((l) => l.includes(part))) ||
-          !(await evaluate("document.documentElement.scrollWidth <= innerWidth"))
+          !(await evaluate(`(${provenance}).scrollWidth <= (${provenance}).clientWidth`))
         )
           bad.push(`${width}: ${shown.join(" / ")}`);
       }
