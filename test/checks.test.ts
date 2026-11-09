@@ -2553,6 +2553,61 @@ describe("catalog", () => {
     }
   }, 60_000);
 
+  // os at 1440 x 913 after v5.7.1: the lead at brand's measure pushed the first group's top below a
+  // third of the window, so the rail marked nothing on load.
+  test("the rail marks the first group at the top of the page, however tall the lead", async () => {
+    const { renderCatalog } = await import("../catalog/render.ts");
+    const shellCss = readFileSync(join(import.meta.dir, "..", "catalog", "catalog.css"), "utf8");
+    const html = `<!doctype html><html><head><style>${shellCss}</style></head><body>${renderCatalog(
+      {
+        title: "t",
+        lead: "word ".repeat(200),
+        provenance: "p",
+        groups: ["A", "B", "C", "D", "E"].map((name) => ({
+          name,
+          items: Array.from({ length: 12 }, (_, i) => ({
+            name: `${name}${i}`,
+            href: `/${name}${i}`,
+          })),
+        })),
+      },
+    )}</body></html>`;
+    const server = Bun.serve({
+      port: 0,
+      hostname: "127.0.0.1",
+      fetch: () => new Response(html, { headers: { "Content-Type": "text/html" } }),
+    });
+    const page = await browse("about:blank");
+    try {
+      const { send, evaluate, until } = page;
+      await send("Emulation.setDeviceMetricsOverride", {
+        width: 1440,
+        height: 913,
+        deviceScaleFactor: 1,
+        mobile: false,
+      });
+      await send("Page.navigate", { url: server.url.href });
+      await until(`document.readyState === "complete"`);
+      const scroller = `(() => { const m = document.querySelector("main"); return m && m.scrollHeight > m.clientHeight ? m : document.scrollingElement; })()`;
+      const top = (g: string) => `document.getElementById("${g}").getBoundingClientRect().top`;
+      const marked = `[...document.querySelectorAll(".hw-catalog-rail a[aria-current]")].map((a) => a.getAttribute("href")).join()`;
+      expect(await evaluate(`${top("a")} > innerHeight / 3`)).toBe(true);
+      await until(`${marked} === "#a"`);
+      // Scrolled within the lead, no group has passed the third: the first stays marked.
+      await evaluate(`${scroller}.scrollTop = 5`);
+      await new Promise((r) => setTimeout(r, 300));
+      expect(await evaluate(`${top("a")} > innerHeight / 3 && ${marked} === "#a"`)).toBe(true);
+      // Scrolled, a group counts once its top passes a third of the window.
+      await evaluate(`${scroller}.scrollTop += ${top("b")} - innerHeight / 3 + 2`);
+      await until(`${marked} === "#b"`);
+      await evaluate(`${scroller}.scrollTop = 0`);
+      await until(`${marked} === "#a"`);
+    } finally {
+      page.close();
+      void server.stop(true);
+    }
+  }, 60_000);
+
   test("a sized tile honours the marked preview, a mark may name a part, a clipped box fits as clipped", async () => {
     const { renderCatalog } = await import("../catalog/render.ts");
     const shellCss = readFileSync(join(import.meta.dir, "..", "catalog", "catalog.css"), "utf8");

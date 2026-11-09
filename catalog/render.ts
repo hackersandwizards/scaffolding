@@ -96,8 +96,8 @@ const catalogTile = (item: CatalogItem, group: string) =>
 // background image, border, shadow or is a control or image, else its text and such boxes inside,
 // so a full-width wrapper centres its button rather than its own box), each cut to the boxes
 // clipping it; else <main>'s only child or <main>. Marks the rail's label of the group read now
-// with aria-current="true": the last group whose top has passed a third of the viewport; once one
-// has and the page can scroll no further, the group the address names where its top shows, else,
+// with aria-current="true": the last group whose top has passed a third of the viewport, else the
+// first group, however tall the lead above it; where the page can scroll no further, the group the address names where its top shows, else,
 // once the page has scrolled, the last group, so a click on a group the page cannot scroll up to
 // that third marks that group; a mark another script set, such as "page", stays. The rail's names
 // scroll, never the page, to keep that label in view. Delegated on the document, scroll caught in
@@ -133,7 +133,7 @@ if(PerformanceObserver.supportedEntryTypes?.includes("paint"))new PerformanceObs
 addEventListener("load",()=>setTimeout(start,2000),{once:true});
 const spy=()=>{for(const root of document.querySelectorAll(".hw-catalog")){
 const groups=[...root.querySelectorAll(".hw-catalog-group")].filter((g)=>g.getClientRects().length),last=groups.at(-1);
-let on=groups.findLast((g)=>g.getBoundingClientRect().top<=innerHeight/3);
+let on=groups.findLast((g)=>g.getBoundingClientRect().top<=innerHeight/3)??groups[0];
 const m=document.querySelector("main"),s=m&&m.scrollHeight>m.clientHeight?m:document.scrollingElement;
 if(on&&s.scrollTop+s.clientHeight>=s.scrollHeight-1){const hit=groups.find((g)=>"#"+encodeURIComponent(g.id)===location.hash);if(hit&&hit.getBoundingClientRect().top>=0)on=hit;else if(s.scrollTop>0)on=last;}
 for(const a of root.querySelectorAll(".hw-catalog-rail > nav > ul > li > a")){const mine=on&&a.getAttribute("href")==="#"+on.id,was=a.getAttribute("aria-current");
