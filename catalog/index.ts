@@ -396,6 +396,7 @@ export function catalog(options: CatalogOptions): AstroIntegration {
           [`${CSS}dashboard`]: imports([...around, ...(options.dashboardCss ?? options.css)]),
           [`${CSS}stories`]: imports(options.css),
         };
+        const limit = params.config.vite.build?.assetsInlineLimit;
         params.updateConfig({
           // Astro's own default only: an outDir the config sets stays.
           ...(own &&
@@ -404,6 +405,17 @@ export function catalog(options: CatalogOptions): AstroIntegration {
             }),
           vite: {
             ...(mounted && !dev && { publicDir: false as const }),
+            // The chunk Rollup names after chrome.css, the last of the shell's stylesheets, inlines
+            // at any size: linked, it is one more render-blocking request on every state's page.
+            build: {
+              assetsInlineLimit: (file: string, content: Buffer) =>
+                /(?:^|\/)chrome\.[^/]*\.css$/.test(file) ||
+                (typeof limit === "function"
+                  ? limit(file, content)
+                  : limit === undefined
+                    ? undefined
+                    : content.length < limit),
+            },
             optimizeDeps: {
               entries: [`${relative(root, stories)}/**/*.stories.*`],
               include: ROUTER,

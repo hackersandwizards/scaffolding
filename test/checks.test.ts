@@ -1775,6 +1775,12 @@ describe("catalog", () => {
     // `htmlClass` on every page, before the body draws.
     for (const p of ["", "dashboard/Parts/box-parts/two", "stories/Parts/box-parts/two"])
       expect(page(p)).toContain('document.documentElement.classList.add(...["fx-root","fx-two"]);');
+    // The shell's stylesheet inlines: a linked one is one more render-blocking request.
+    for (const p of ["", "dashboard/Parts/box-parts/two"]) {
+      expect(page(p)).not.toMatch(/<link[^>]+href="[^"]*chrome\.[^"]*\.css"/);
+      expect(page(p)).toContain("#astrobook-sidebar");
+    }
+    expect(page("stories/Parts/box-parts/two")).not.toContain("#astrobook-sidebar");
     // The skeleton's preview script, as a repository's root runs it; Bun's own `node` shim on PATH
     // would run Astro's preview under Bun, which fails on Astrobook's routes.
     const { serve } = await import("../lib/serve.ts");

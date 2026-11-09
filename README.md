@@ -247,6 +247,7 @@ The options beyond those above:
   `["@hackersandwizards/brand/tokens.root.css", "@hackersandwizards/brand/elements.css"]`. `css` loads on a state alone and, without
   `dashboardCss`, on a state's page; the header's CSS and the shell's own on the home and a state's
   page, never on a state alone.
+- The chunk of the shell's own styles (`chrome.css`, the header's CSS) inlines into a page at any size, so it costs no render-blocking request; a repository's `assetsInlineLimit` keeps governing the rest.
 - `dashboardCss`: the stylesheets a state's page loads, default `css`. The page draws its story
   inline; where a repository's stories draw their state alone in an iframe there, which loads `css`,
   the page needs only the tokens its header and bar read and what it draws around the frame, such as
