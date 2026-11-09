@@ -1746,6 +1746,9 @@ describe("catalog", () => {
     expect(out).toContain("Astro.locals.hwCatalogLead = args?.lead;");
     expect(out).not.toContain("client:load");
     expect(rewriteRoute("dashboard/a.astro", route, false)).toContain("client:load");
+    expect(rewriteRoute("stories/a.astro", `${route}${route.split("---")[1]}`, true)).not.toContain(
+      "client:load",
+    );
     expect(rewriteRoute("stories/a.astro", out!, true)).toBeUndefined();
     const drifted = route.replace(" client:load />", " client:visible />");
     expect(rewriteRoute("stories/a.astro", drifted, false)).toContain("client:visible");

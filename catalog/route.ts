@@ -34,5 +34,5 @@ export function rewriteRoute(
   const code = source
     .replace(anchor, `$&import "${CSS}${kind}";\n`)
     .replace(lead, "$&\nAstro.locals.hwCatalogLead = args?.lead;");
-  return serverOnly ? code.replace(client, " />") : code;
+  return serverOnly ? code.replaceAll(client, " />") : code;
 }

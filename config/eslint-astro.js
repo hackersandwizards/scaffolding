@@ -15,6 +15,5 @@ export default [
     languageOptions: { parserOptions: { parser: tseslint.parser } },
     rules: { "@typescript-eslint/no-unused-vars": "off" },
   },
-  { files: ["**/*.astro/*.ts"], languageOptions: { parser: tseslint.parser } },
   prettier,
 ];

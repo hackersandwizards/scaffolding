@@ -304,7 +304,7 @@ The options beyond those above:
   build, and so does, with `CI=true`, a copied file that is still a Git LFS pointer.
 - `serverOnly`: every story is an Astro component, so each state renders on the server only;
   Astrobook's `client:load` branch for framework components, which bundles every story module for
-  the browser, Node imports included, is dropped.
+  the browser, Node imports included, is dropped. A route without that branch fails the build.
 
 A project Pages site, published under `/<repo>/`, sets Astro's `base: "/<repo>"` in its
 `defineConfig`; the catalog's links and the header's default link follow it in the build. `astro
