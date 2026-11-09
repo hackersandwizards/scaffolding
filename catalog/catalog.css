@@ -68,13 +68,15 @@
      such as the foundations, of a wrapper the home's slot puts there, or of a details or section in that
      wrapper. A paragraph deeper down sits in a repository's own grid or tile and keeps its width.
      At no specificity, so a class in this layer or unlayered wins. The provenance line reads in
-     the sans at the UI size. */
+     the sans at the UI size. The measure is brand's, in em so a line keeps about 65 characters
+     at any size; Tailwind emits the token only where a page's own CSS uses it, hence brand's value
+     as the fallback. */
   :where(
     :is(.hw-catalog-main, .hw-catalog-text) > p,
     :is(.hw-catalog-main, .hw-catalog-text) > :not(section) > p,
     :is(.hw-catalog-main, .hw-catalog-text) > :not(section) > :is(details, section) > p
   ) {
-    max-width: 48rem;
+    max-width: var(--container-measure, 33em);
     line-height: 1.5;
   }
   /* A heading of the home's slot, or of a wrapper element in it: the subheading step in the h2's
