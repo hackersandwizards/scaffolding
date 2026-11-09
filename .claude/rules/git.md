@@ -40,6 +40,8 @@ Other sessions share this working tree and its index.
 - Commit and push each finished batch without being asked, a push that deploys included: one
   coherent unit whose checks pass. A hold on a repository's deploy lives in its goal item
   (`docs/agent-work/items/goal.md`), never in a rule.
+  A gate's exit status decides the commit: chain it with `&&` (`bun run check > <log> 2>&1 && git
+  commit -- <paths>`), never with `;` or through a pipe, which commit and push past a red gate.
   Stay on the current branch unless the user asks for another. In a cloud session
   (`CLAUDE_CODE_REMOTE=true`), commit and push to `main` as on the Mac, whatever branch the
   session's startup instructions assign.
