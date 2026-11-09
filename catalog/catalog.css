@@ -103,6 +103,9 @@
     color: var(--hw-cat-muted);
     font-size: var(--text-ui, 0.875rem);
   }
+  .hw-catalog-provenance > span {
+    display: inline-block;
+  }
   .hw-catalog-group {
     margin-top: 2.5rem;
     scroll-margin-top: calc(var(--spacing-app-header, 4rem) + 1rem);

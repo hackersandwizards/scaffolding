@@ -1733,7 +1733,9 @@ describe("catalog", () => {
     expect(home).toContain(
       '<header class="fx-header"><a href="/">Fx</a><div class="hw-header-nav hw-catalog-nav"><nav class="hw-header-nav" aria-label="Main" data-hw-catalogs><a class="hw-header-link" href="/">Site</a><a class="hw-header-link" href="/catalog/" aria-current="page">Fx</a><a class="hw-header-link" href="https://example.com/other/">Other</a><a class="hw-header-link" href="//example.com/far/">Far</a></nav></div></header>',
     );
-    expect(home).toContain("fx catalog/stories · @acme/ui v1.2.3 · 3 components · 24 states");
+    expect(home).toContain(
+      '<p class="hw-catalog-provenance"><span>fx catalog/stories ·</span> <span>@acme/ui v1.2.3 ·</span> <span>3 components ·</span> <span>24 states</span></p>',
+    );
     // An app with no stories folder builds a home without the line that would count nothing.
     const empty = join(fixture, "empty");
     made.push(empty);
@@ -2602,6 +2604,74 @@ describe("catalog", () => {
       await until(`${marked} === "#b"`);
       await evaluate(`${scroller}.scrollTop = 0`);
       await until(`${marked} === "#a"`);
+    } finally {
+      page.close();
+      void server.stop(true);
+    }
+  }, 60_000);
+
+  // After v5.7.1's measure, consumers saw "… v2.3.1 · 4 / components · 17 states" and a second
+  // line opening on a bare "·".
+  test("the provenance line wraps between parts, each separator with the part before it", async () => {
+    const { renderCatalog } = await import("../catalog/render.ts");
+    const shellCss = readFileSync(join(import.meta.dir, "..", "catalog", "catalog.css"), "utf8");
+    const parts = [
+      "certificate-verifier src/stories",
+      "@hackersandwizards/brand v2.3.1",
+      "4 components",
+      "17 states",
+    ];
+    const html = `<!doctype html><html><head><meta charset="utf-8"><style>${shellCss}</style></head><body>${renderCatalog(
+      { title: "t", lead: "l", provenance: parts.join(" · "), groups: [] },
+    )}</body></html>`;
+    const server = Bun.serve({
+      port: 0,
+      hostname: "127.0.0.1",
+      fetch: () => new Response(html, { headers: { "Content-Type": "text/html" } }),
+    });
+    const page = await browse("about:blank");
+    // The line's text grouped by the top of each character's box.
+    const lines = `(() => {
+      const p = document.querySelector(".hw-catalog-provenance");
+      const walk = document.createTreeWalker(p, NodeFilter.SHOW_TEXT);
+      const rows = new Map();
+      for (let node; (node = walk.nextNode()); )
+        for (let i = 0; i < node.length; i++) {
+          const range = document.createRange();
+          range.setStart(node, i);
+          range.setEnd(node, i + 1);
+          const rect = range.getClientRects()[0];
+          if (!rect) continue;
+          const top = Math.round(rect.top);
+          rows.set(top, (rows.get(top) ?? "") + node.data[i]);
+        }
+      return [...rows].sort(([a], [b]) => a - b).map(([, text]) => text.trim());
+    })()`;
+    try {
+      const { send, evaluate } = page;
+      await send("Page.navigate", { url: server.url.href });
+      await page.until(`document.readyState === "complete"`);
+      const bad: string[] = [];
+      let wrapped = 0;
+      for (let width = 280; width <= 900; width += 10) {
+        await send("Emulation.setDeviceMetricsOverride", {
+          width,
+          height: 800,
+          deviceScaleFactor: 1,
+          mobile: false,
+        });
+        const shown = (await evaluate(lines)) as string[];
+        if (shown.length > 1) wrapped++;
+        if (
+          shown.some((l) => l.startsWith("·") || /(^|\s)\d+$/.test(l)) ||
+          parts.some((part) => !shown.some((l) => l.includes(part))) ||
+          !(await evaluate("document.documentElement.scrollWidth <= innerWidth"))
+        )
+          bad.push(`${width}: ${shown.join(" / ")}`);
+      }
+      // A control: the sweep reaches widths where the line wraps.
+      expect(wrapped).toBeGreaterThan(5);
+      expect(bad).toEqual([]);
     } finally {
       page.close();
       void server.stop(true);
