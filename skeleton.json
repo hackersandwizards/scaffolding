@@ -38,7 +38,8 @@
     "vitest.config.mts",
     "package-lock.json",
     "yarn.lock",
-    "pnpm-lock.yaml"
+    "pnpm-lock.yaml",
+    "scripts/repo/only-bun.cjs"
   ],
   "symlinks": {
     ".agents/skills": "../.claude/skills"

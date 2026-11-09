@@ -446,6 +446,27 @@ describe("scaffold and check-structure", () => {
   install(dir);
   write(dir, { "bun.lock": "" });
   sh(dir, ["config", "core.hooksPath", ".githooks"]);
+  const hooksPath = (root: string) =>
+    sh(root, ["config", "--local", "core.hooksPath"]).stdout.toString().trim();
+  const fixture = (
+    name: string,
+    config: Record<string, unknown>,
+    files: Record<string, string> = {},
+    gone: string[] = [],
+  ) => {
+    const other = join(parent, name);
+    cpSync(dir, other, {
+      recursive: true,
+      verbatimSymlinks: true,
+      filter: (path) => !path.endsWith("/node_modules"),
+    });
+    const pkg = JSON.parse(readFileSync(join(other, "package.json"), "utf8"));
+    Object.assign(pkg.scaffolding, config);
+    write(other, { "package.json": JSON.stringify(pkg, null, 2), ...files });
+    for (const path of gone) rmSync(join(other, path));
+    install(other);
+    return other;
+  };
 
   test("a scaffolded repository passes", () => {
     expect(made.code).toBe(0);
@@ -488,17 +509,16 @@ describe("scaffold and check-structure", () => {
   });
 
   test("the skeleton has no preinstall, and its prepare sets the hooks path at the top level only", () => {
-    const { scripts } = JSON.parse(readFileSync(join(dir, "package.json"), "utf8"));
+    const other = fixture("prepare", {});
+    const { scripts } = JSON.parse(readFileSync(join(other, "package.json"), "utf8"));
     expect(scripts.preinstall).toBeUndefined();
     const prepare = (cwd: string) => spawnSync("sh", ["-c", scripts.prepare], { cwd });
-    const hooks = () =>
-      spawnSync("git", ["config", "core.hooksPath"], { cwd: dir, encoding: "utf8" }).stdout.trim();
-    sh(dir, ["config", "--unset", "core.hooksPath"]);
+    sh(other, ["config", "--unset", "core.hooksPath"]);
     // In a folder that is no repository's top level, as a dependency's is, it does nothing.
-    expect(prepare(join(dir, ".githooks")).status).toBe(0);
-    expect(hooks()).toBe("");
-    expect(prepare(dir).status).toBe(0);
-    expect(hooks()).toBe(".githooks");
+    expect(prepare(join(other, ".githooks")).status).toBe(0);
+    expect(hooksPath(other)).toBe("");
+    expect(prepare(other).status).toBe(0);
+    expect(hooksPath(other)).toBe(".githooks");
   });
 
   test("--catalog-in and --admin-in leave both out and the skips name where they live", () => {
@@ -574,47 +594,23 @@ describe("scaffold and check-structure", () => {
   });
 
   describe("--fix writes nothing an opt-out covers", () => {
-    const fixture = (
-      name: string,
-      config: Record<string, unknown>,
-      files: Record<string, string> = {},
-      gone: string[] = [],
-    ) => {
-      const other = join(parent, name);
-      cpSync(dir, other, {
-        recursive: true,
-        verbatimSymlinks: true,
-        filter: (path) => !path.endsWith("/node_modules"),
-      });
-      const pkg = JSON.parse(readFileSync(join(other, "package.json"), "utf8"));
-      Object.assign(pkg.scaffolding, config);
-      write(other, { "package.json": JSON.stringify(pkg, null, 2), ...files });
-      for (const path of gone) rmSync(join(other, path), { recursive: true, force: true });
-      return other;
-    };
     /** Every path with its mode and content or link target, the index and the hooks path. */
-    const state = (root: string) => {
-      const seen: string[] = [];
-      const walk = (folder: string) => {
-        for (const name of readdirSync(join(root, folder)).sort()) {
-          if (name === ".git" || name === "node_modules") continue;
-          const path = join(folder, name);
+    const state = (root: string) => ({
+      seen: (readdirSync(root, { recursive: true, encoding: "utf8" }) as string[])
+        .filter((path) => !/^(\.git|node_modules)(\/|$)/.test(path))
+        .sort()
+        .map((path) => {
           const stat = lstatSync(join(root, path));
-          if (stat.isDirectory()) walk(path);
-          else
-            seen.push(
-              `${path} ${stat.mode} ${
-                stat.isSymbolicLink()
-                  ? readlinkSync(join(root, path))
-                  : readFileSync(join(root, path), "utf8")
-              }`,
-            );
-        }
-      };
-      walk("");
-      const hooks = spawnSync("git", ["config", "core.hooksPath"], { cwd: root, encoding: "utf8" });
-      return { seen, hooks: hooks.stdout, index: sh(root, ["ls-files", "-s"]).stdout.toString() };
-    };
+          const body = stat.isSymbolicLink()
+            ? readlinkSync(join(root, path))
+            : stat.isFile()
+              ? readFileSync(join(root, path), "utf8")
+              : "";
+          return `${path} ${stat.mode} ${body}`;
+        }),
+      hooks: hooksPath(root),
+      index: sh(root, ["ls-files", "-s"]).stdout.toString(),
+    });
     const skip = { structure: "custom skeleton files" };
 
     test("skip.structure with a custom hook, missing files and a stale hooks path and mode", () => {
@@ -643,27 +639,21 @@ describe("scaffold and check-structure", () => {
       expect(state(other)).toEqual(before);
     });
 
-    test("skip.structure in a private repository keeps its commit-msg and older hook", () => {
-      const other = fixture(
-        "skip-private",
-        { skip, private: true },
-        { ".githooks/post-checkout": "#!/bin/sh\nolder\n" },
-        ["bunfig.toml", ".agents/skills"],
-      );
-      const before = state(other);
-      expect(run(other, "check-structure", ["--fix"]).code).toBe(0);
-      expect(state(other)).toEqual(before);
-    });
-
-    test("a skip without a reason writes nothing either, and the gate reports the reason", () => {
-      const other = fixture(
-        "skip-blank",
-        { skip: { structure: "" } },
-        { ".githooks/pre-commit": "custom\n" },
-      );
-      run(other, "check-structure", ["--fix"]);
-      expect(readFileSync(join(other, ".githooks/pre-commit"), "utf8")).toBe("custom\n");
-    });
+    for (const [shape, reason] of [
+      ["with a reason", "custom skeleton files"],
+      ["without a reason", ""],
+    ])
+      test(`skip.structure ${shape} keeps a private repository's commit-msg and older hook`, () => {
+        const other = fixture(
+          `skip-private-${reason ? "reason" : "blank"}`,
+          { skip: { structure: reason }, private: true },
+          { ".githooks/post-checkout": "#!/bin/sh\nolder\n" },
+          ["bunfig.toml", ".agents/skills"],
+        );
+        const before = state(other);
+        expect(run(other, "check-structure", ["--fix"]).code).toBe(0);
+        expect(state(other)).toEqual(before);
+      });
 
     for (const [shape, path] of [
       ["one path", ".githooks/pre-push"],
@@ -675,7 +665,7 @@ describe("scaffold and check-structure", () => {
           `allow-${shape.replace(" ", "-")}`,
           { private: true, allow: [{ check: "structure", path, reason: "own hook" }] },
           { ".githooks/pre-push": "#!/bin/sh\ncustom\n", ".editorconfig": "root = true\n" },
-          Array.isArray(path) ? ["bunfig.toml"] : [],
+          ["bunfig.toml"],
         );
         run(other, "check-structure", ["--fix"]);
         expect(readFileSync(join(other, ".githooks/pre-push"), "utf8")).toBe("#!/bin/sh\ncustom\n");
@@ -1621,7 +1611,7 @@ describe("scaffolding check", () => {
   });
 
   test("a skip whose value is no text gives no reason", () => {
-    for (const lint of [false, 0, {}, true]) {
+    for (const lint of [false, 0, {}, true, ""]) {
       const dir = gate({ skip: { ...skip, lint } });
       const r = run(dir, "scaffolding", ["check"], { CHECK_LOCK: join(dir, ".lock") });
       expect(r.out).toContain("scaffolding.skip.lint has no reason");
