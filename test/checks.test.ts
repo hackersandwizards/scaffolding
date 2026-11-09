@@ -576,21 +576,23 @@ describe("scaffold and check-structure", () => {
   });
 
   test("--fix leaves a file an allow entry keeps", () => {
-    const pkgPath = join(dir, "package.json");
-    const pkgText = readFileSync(pkgPath, "utf8");
-    const original = readFileSync(join(dir, ".github/workflows/pages.yml"), "utf8");
-    const pkg = JSON.parse(pkgText);
-    pkg.scaffolding.allow = [
-      { check: "structure", path: ".github/workflows/pages.yml", reason: "own workflow" },
-    ];
-    write(dir, {
-      "package.json": JSON.stringify(pkg, null, 2),
-      ".github/workflows/pages.yml": "custom\n",
-    });
-    run(dir, "check-structure", ["--fix"]);
-    expect(readFileSync(join(dir, ".github/workflows/pages.yml"), "utf8")).toBe("custom\n");
-    expect(run(dir, "check-structure").code).toBe(0);
-    write(dir, { "package.json": pkgText, ".github/workflows/pages.yml": original });
+    const path = ".github/workflows/pages.yml";
+    const other = fixture(
+      "allow-owned",
+      { allow: [{ check: "structure", path, reason: "own workflow" }] },
+      { [path]: "custom\n" },
+    );
+    run(other, "check-structure", ["--fix"]);
+    expect(readFileSync(join(other, path), "utf8")).toBe("custom\n");
+    expect(run(other, "check-structure").code).toBe(0);
+  });
+
+  test("the retired install guard goes red", () => {
+    const guard = "scripts/repo/only-bun.cjs";
+    const other = fixture("only-bun", {}, { [guard]: "\n" });
+    expect(lines(run(other, "check-structure").out, "check-structure")).toEqual([
+      `[check-structure] ${guard}: not allowed by the skeleton`,
+    ]);
   });
 
   describe("--fix writes nothing an opt-out covers", () => {
@@ -753,14 +755,7 @@ describe("scaffold and check-structure", () => {
   });
 
   test("a private repository keeps no commit-msg hook", () => {
-    const other = join(parent, "private");
-    run(parent, "scaffold", ["private", "--catalog-in", "x", "--admin-in", "x"]);
-    install(other);
-    write(other, { "bun.lock": "" });
-    sh(other, ["config", "core.hooksPath", ".githooks"]);
-    const pkg = JSON.parse(readFileSync(join(other, "package.json"), "utf8"));
-    pkg.scaffolding.private = true;
-    write(other, { "package.json": JSON.stringify(pkg) });
+    const other = fixture("private", { private: true });
     expect(lines(run(other, "check-structure").out, "check-structure").sort()).toEqual([
       "[check-structure] .githooks/commit-msg: not kept in a private repository (check-structure --fix)",
     ]);
