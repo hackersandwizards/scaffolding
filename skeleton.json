@@ -7,8 +7,7 @@
     ".githooks/commit-msg",
     ".githooks/pre-push",
     ".githooks/post-merge",
-    ".githooks/post-checkout",
-    "scripts/repo/only-bun.cjs"
+    ".githooks/post-checkout"
   ],
   "owned": [".github/workflows/pages.yml"],
   "present": [

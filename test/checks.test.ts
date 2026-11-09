@@ -2,11 +2,14 @@ import { afterAll, describe, expect, test } from "bun:test";
 import { spawnSync } from "node:child_process";
 import {
   chmodSync,
+  cpSync,
   existsSync,
+  lstatSync,
   mkdirSync,
   mkdtempSync,
   readdirSync,
   readFileSync,
+  readlinkSync,
   renameSync,
   rmSync,
   symlinkSync,
@@ -484,21 +487,18 @@ describe("scaffold and check-structure", () => {
     expect(formatted.status).toBe(0);
   });
 
-  test("the skeleton has no preinstall, and its prepare guards the top level only", () => {
+  test("the skeleton has no preinstall, and its prepare sets the hooks path at the top level only", () => {
     const { scripts } = JSON.parse(readFileSync(join(dir, "package.json"), "utf8"));
     expect(scripts.preinstall).toBeUndefined();
-    const prepare = (cwd: string, agent: string) =>
-      spawnSync("sh", ["-c", scripts.prepare], {
-        cwd,
-        env: { ...process.env, npm_config_user_agent: agent },
-        encoding: "utf8",
-      });
-    expect(prepare(dir, "bun/1.4.4").status).toBe(0);
-    const refused = prepare(dir, "pnpm/10.0.0");
-    expect(refused.status).toBe(1);
-    expect(refused.stderr).toContain("bun only");
+    const prepare = (cwd: string) => spawnSync("sh", ["-c", scripts.prepare], { cwd });
+    const hooks = () =>
+      spawnSync("git", ["config", "core.hooksPath"], { cwd: dir, encoding: "utf8" }).stdout.trim();
+    sh(dir, ["config", "--unset", "core.hooksPath"]);
     // In a folder that is no repository's top level, as a dependency's is, it does nothing.
-    expect(prepare(join(dir, "scripts"), "pnpm/10.0.0").status).toBe(0);
+    expect(prepare(join(dir, ".githooks")).status).toBe(0);
+    expect(hooks()).toBe("");
+    expect(prepare(dir).status).toBe(0);
+    expect(hooks()).toBe(".githooks");
   });
 
   test("--catalog-in and --admin-in leave both out and the skips name where they live", () => {
@@ -571,6 +571,118 @@ describe("scaffold and check-structure", () => {
     expect(readFileSync(join(dir, ".github/workflows/pages.yml"), "utf8")).toBe("custom\n");
     expect(run(dir, "check-structure").code).toBe(0);
     write(dir, { "package.json": pkgText, ".github/workflows/pages.yml": original });
+  });
+
+  describe("--fix writes nothing an opt-out covers", () => {
+    const fixture = (
+      name: string,
+      config: Record<string, unknown>,
+      files: Record<string, string> = {},
+      gone: string[] = [],
+    ) => {
+      const other = join(parent, name);
+      cpSync(dir, other, {
+        recursive: true,
+        verbatimSymlinks: true,
+        filter: (path) => !path.endsWith("/node_modules"),
+      });
+      const pkg = JSON.parse(readFileSync(join(other, "package.json"), "utf8"));
+      Object.assign(pkg.scaffolding, config);
+      write(other, { "package.json": JSON.stringify(pkg, null, 2), ...files });
+      for (const path of gone) rmSync(join(other, path), { recursive: true, force: true });
+      return other;
+    };
+    /** Every path with its mode and content or link target, the index and the hooks path. */
+    const state = (root: string) => {
+      const seen: string[] = [];
+      const walk = (folder: string) => {
+        for (const name of readdirSync(join(root, folder)).sort()) {
+          if (name === ".git" || name === "node_modules") continue;
+          const path = join(folder, name);
+          const stat = lstatSync(join(root, path));
+          if (stat.isDirectory()) walk(path);
+          else
+            seen.push(
+              `${path} ${stat.mode} ${
+                stat.isSymbolicLink()
+                  ? readlinkSync(join(root, path))
+                  : readFileSync(join(root, path), "utf8")
+              }`,
+            );
+        }
+      };
+      walk("");
+      const hooks = spawnSync("git", ["config", "core.hooksPath"], { cwd: root, encoding: "utf8" });
+      return { seen, hooks: hooks.stdout, index: sh(root, ["ls-files", "-s"]).stdout.toString() };
+    };
+    const skip = { structure: "custom skeleton files" };
+
+    test("skip.structure with a custom hook, missing files and a stale hooks path and mode", () => {
+      const other = fixture(
+        "skip-public",
+        { skip },
+        { ".githooks/pre-commit": "#!/bin/sh\ncustom\n", "bin/x.ts": "export {};\n" },
+        [
+          ".editorconfig",
+          ".npmrc",
+          "bunfig.toml",
+          ".githooks/commit-msg",
+          ".githooks/post-merge",
+          ".agents/skills",
+        ],
+      );
+      const pkg = JSON.parse(readFileSync(join(other, "package.json"), "utf8"));
+      write(other, { "package.json": JSON.stringify({ ...pkg, bin: { x: "bin/x.ts" } }) });
+      sh(other, ["config", "--unset", "core.hooksPath"]);
+      sh(other, ["add", "bin/x.ts"]);
+      const before = state(other);
+      expect(run(other, "check-structure").code).toBe(1);
+      const fixed = run(other, "check-structure", ["--fix"]);
+      expect(fixed.code).toBe(0);
+      expect(fixed.out).toContain("--fix writes nothing: scaffolding.skip.structure");
+      expect(state(other)).toEqual(before);
+    });
+
+    test("skip.structure in a private repository keeps its commit-msg and older hook", () => {
+      const other = fixture(
+        "skip-private",
+        { skip, private: true },
+        { ".githooks/post-checkout": "#!/bin/sh\nolder\n" },
+        ["bunfig.toml", ".agents/skills"],
+      );
+      const before = state(other);
+      expect(run(other, "check-structure", ["--fix"]).code).toBe(0);
+      expect(state(other)).toEqual(before);
+    });
+
+    test("a skip without a reason writes nothing either, and the gate reports the reason", () => {
+      const other = fixture(
+        "skip-blank",
+        { skip: { structure: "" } },
+        { ".githooks/pre-commit": "custom\n" },
+      );
+      run(other, "check-structure", ["--fix"]);
+      expect(readFileSync(join(other, ".githooks/pre-commit"), "utf8")).toBe("custom\n");
+    });
+
+    for (const [shape, path] of [
+      ["one path", ".githooks/pre-push"],
+      ["a glob", ".githooks/pre-p*"],
+      ["a list", [".githooks/pre-push", "bunfig.toml"]],
+    ] as const)
+      test(`an allow entry naming ${shape} keeps the file and --fix still repairs the rest`, () => {
+        const other = fixture(
+          `allow-${shape.replace(" ", "-")}`,
+          { private: true, allow: [{ check: "structure", path, reason: "own hook" }] },
+          { ".githooks/pre-push": "#!/bin/sh\ncustom\n", ".editorconfig": "root = true\n" },
+          Array.isArray(path) ? ["bunfig.toml"] : [],
+        );
+        run(other, "check-structure", ["--fix"]);
+        expect(readFileSync(join(other, ".githooks/pre-push"), "utf8")).toBe("#!/bin/sh\ncustom\n");
+        expect(existsSync(join(other, "bunfig.toml"))).toBe(!Array.isArray(path));
+        expect(readFileSync(join(other, ".editorconfig"), "utf8")).not.toBe("root = true\n");
+        expect(existsSync(join(other, ".githooks/commit-msg"))).toBe(false);
+      });
   });
 
   test("a drifted file goes red and --fix restores it", () => {

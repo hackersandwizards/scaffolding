@@ -49,8 +49,13 @@ const exists = (path: string) => {
   }
 };
 
-// A private repository runs no confidential check, so it keeps no commit-msg hook.
 const pkg = readPackage(root);
+// The key alone counts: a skip without a reason is the gate's to report, and --fix cannot undo a write.
+if (fix && pkg.scaffolding?.skip?.structure !== undefined) {
+  console.error("[check-structure] --fix writes nothing: scaffolding.skip.structure is set");
+  process.exit(0);
+}
+// A private repository runs no confidential check, so it keeps no commit-msg hook.
 const privateAbsent: string[] = pkg.scaffolding?.private === true ? skeleton.private.absent : [];
 for (const path of privateAbsent)
   if (exists(path))
