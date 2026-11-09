@@ -18,6 +18,7 @@ import { createRequire } from "node:module";
 import { basename, dirname, join, posix, relative } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { catalogPath, storiesDir } from "./path.ts";
+import { CSS, rewriteRoute } from "./route.ts";
 
 export { renderCatalog } from "./render.ts";
 export type { CatalogData, CatalogGroup, CatalogItem } from "./render.ts";
@@ -110,8 +111,6 @@ const ICON = "virtual:scaffolding/catalog-icon";
 const BRAND_ICON = "@hackersandwizards/brand/logos/favicon.svg";
 // The cascade layer order alone, exported since brand v1.52.0.
 const BRAND_LAYERS = "@hackersandwizards/brand/layers.css";
-// The stylesheets of the home, of a state's page (dashboard) and of a state alone (stories).
-const CSS = "virtual:scaffolding/catalog-css/";
 
 /** The nearest folder at or above `from` holding a package.json. */
 function packageDir(from: string): string {
@@ -438,31 +437,12 @@ export function catalog(options: CatalogOptions): AstroIntegration {
           home: options.home ?? join(import.meta.dirname, "Home.astro"),
         });
         await inner.hooks["astro:config:setup"]?.(params);
-        // Astrobook writes one route per state into this integration's codegen folder, under
-        // dashboard/ and stories/: each imports its route's CSS after Astrobook's client import,
-        // before the story's, and hands the state's args.lead to Head.astro, which renders later. An
-        // Astrobook whose routes read otherwise fails the build rather than drop every page's CSS.
+        // Astrobook writes one route per state into this integration's codegen folder.
         const dir = fileURLToPath(params.createCodegenDir());
-        const anchor = "from 'astrobook/client';\n";
-        const lead = /^const \{[^}:]*\bargs\b[^}:]*\} = parseStoryNamedExport\([^\n]*\);$/m;
         for (const file of globSync("**/*.astro", { cwd: dir })) {
           const path = join(dir, file);
-          const kind = file.split(/[\\/]/)[0];
-          const source = readFileSync(path, "utf8");
-          // A route of a deleted story, which Astrobook leaves, keeps the import it has.
-          if (source.includes(`import "${CSS}`)) continue;
-          if (
-            !(kind === "dashboard" || kind === "stories") ||
-            !source.includes(anchor) ||
-            !lead.test(source)
-          )
-            throw new Error(
-              `catalog: Astrobook's route ${file} has no place for its CSS import or its lead`,
-            );
-          const code = source
-            .replace(anchor, `$&import "${CSS}${kind}";\n`)
-            .replace(lead, "$&\nAstro.locals.hwCatalogLead = args?.lead;");
-          writeFileSync(path, options.serverOnly ? code.replace(" client:load />", " />") : code);
+          const code = rewriteRoute(file, readFileSync(path, "utf8"), options.serverOnly ?? false);
+          if (code !== undefined) writeFileSync(path, code);
         }
       },
       "astro:routes:resolved": ({ routes }) => {

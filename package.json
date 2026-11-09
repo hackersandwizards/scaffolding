@@ -86,6 +86,7 @@
     "astro": "7.4.7",
     "astrobook": "0.13.3",
     "eslint": "10.14.0",
+    "eslint-plugin-astro": "3.2.1",
     "prettier": "3.9.10",
     "stylelint": "18.0.0",
     "typescript": "npm:@typescript/typescript6@6.0.2"

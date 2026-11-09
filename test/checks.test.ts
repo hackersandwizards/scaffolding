@@ -20,6 +20,7 @@ import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { pathToFileURL } from "node:url";
 import { catalogPath } from "../catalog/path.ts";
+import { rewriteRoute } from "../catalog/route.ts";
 
 const bin = (name: string) => join(import.meta.dir, "..", "bin", `${name}.ts`);
 const PREVIEW = 'ASTRO_PREVIEW_BACKGROUND=1 bun --bun astro preview --root "$PWD/catalog"';
@@ -1689,6 +1690,25 @@ describe("shared eslint config", () => {
     expect(r.stdout).toContain("a.test.ts");
     expect(r.stdout).not.toContain("b.test.ts");
   });
+
+  test("the astro preset parses an .astro file's TypeScript with its own typescript-eslint", () => {
+    // A folder with no node_modules: eslint-plugin-astro looks for the parser from the working
+    // directory, where an isolated install of the consumer holds none.
+    const dir = temp();
+    write(dir, {
+      "eslint.config.js": `export { default } from "${join(import.meta.dir, "..", "config", "eslint-astro.js")}";\n`,
+      "a.astro":
+        "---\nconst a: number = 1;\n---\n<p>{a}</p>\n<script>\n  const b: number = 2;\n  console.log(b);\n</script>\n",
+    });
+    const eslint = join(import.meta.dir, "..", "node_modules", ".bin", "eslint");
+    const r = spawnSync(eslint, ["a.astro"], { cwd: dir, encoding: "utf8" });
+    expect(r.stdout + r.stderr).toBe("");
+    expect(r.status).toBe(0);
+    const config = JSON.parse(
+      spawnSync(eslint, ["--print-config", "a.astro"], { cwd: dir, encoding: "utf8" }).stdout,
+    );
+    expect(config.processor).toBe("astro/client-side-ts");
+  });
 });
 
 describe("catalog", () => {
@@ -1711,6 +1731,29 @@ describe("catalog", () => {
       expect(catalogPath({ base: "/s/", pages: [page] })).toBe("/s/catalog/");
     expect(catalogPath({ base: "/s", pages: ["[slug].astro", "indexes"], dev: true })).toBe("/");
     expect(catalogPath({ base: "/s", pages: ["index.astro"], dev: true })).toBe("/catalog/");
+  });
+
+  test("rewriteRoute: an Astrobook route without a place for an edit fails rather than skip it", () => {
+    const route = [
+      "import { parseStoryDefaultExport, parseStoryNamedExport } from 'astrobook/client';",
+      "const { decorators, args } = parseStoryNamedExport(m, './a.stories.ts', 'One');",
+      "---",
+      "{isAstroComponent ? <m.default.component {...args} /> : <m.default.component {...args} client:load />}",
+      "",
+    ].join("\n");
+    const out = rewriteRoute("stories/a.astro", route, true);
+    expect(out).toContain('import "virtual:scaffolding/catalog-css/stories";');
+    expect(out).toContain("Astro.locals.hwCatalogLead = args?.lead;");
+    expect(out).not.toContain("client:load");
+    expect(rewriteRoute("dashboard/a.astro", route, false)).toContain("client:load");
+    expect(rewriteRoute("stories/a.astro", out!, true)).toBeUndefined();
+    const drifted = route.replace(" client:load />", " client:visible />");
+    expect(rewriteRoute("stories/a.astro", drifted, false)).toContain("client:visible");
+    expect(() => rewriteRoute("stories/a.astro", drifted, true)).toThrow(/client:load/);
+    expect(() =>
+      rewriteRoute("stories/a.astro", route.replace("'astrobook/client'", "'x'"), false),
+    ).toThrow(/CSS import/);
+    expect(() => rewriteRoute("other/a.astro", route, false)).toThrow(/CSS import/);
   });
 
   test("the preset builds the shell's home into the repository's dist/", async () => {
