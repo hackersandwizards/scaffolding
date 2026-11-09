@@ -1845,28 +1845,21 @@ describe("catalog", () => {
         await painted.evaluate(step);
         expect(await ground()).toBe(colour);
       }
-      // The shell's text reads brand's role or token whatever the repository's CSS resets: a
-      // state's page loading no reset still draws the bar in the ink and its controls 28 px high.
-      await painted.evaluate(
-        `document.documentElement.style.setProperty("--color-ink", "rgb(1, 2, 3)")`,
-      );
+      const ink = `document.documentElement.style.setProperty("--color-ink", "rgb(1, 2, 3)")`;
+      // The shell's text reads brand's role or token, and a state's page whose CSS holds no reset
+      // still draws the bar in the ink and its controls 28 px high.
+      await painted.evaluate(ink);
       expect(await painted.evaluate(`getComputedStyle(document.body).color`)).toBe("rgb(1, 2, 3)");
       await painted.evaluate(`location.href = "/dashboard/Parts/box-parts/two/"`);
       await painted.until(
         `location.pathname.startsWith("/dashboard/") && document.readyState === "complete" && !!document.querySelector(".hw-catalog-bar")`,
       );
-      await painted.evaluate(
-        `document.documentElement.style.setProperty("--color-ink", "rgb(1, 2, 3)")`,
-      );
+      await painted.evaluate(ink);
       expect(
         await painted.evaluate(
-          `[".hw-catalog-bar > a", ".hw-catalog-bar button", ".hw-catalog-states li a"].map((s) => { const e = document.querySelector(s); return [getComputedStyle(e).color, e.getBoundingClientRect().height]; })`,
+          `[".hw-catalog-bar > a", ".hw-catalog-bar button", ".hw-catalog-tool", ".hw-catalog-step", ".hw-catalog-states li a"].map((s) => { const e = document.querySelector(s); return [getComputedStyle(e).color, e.getBoundingClientRect().height]; })`,
         ),
-      ).toEqual([
-        ["rgb(1, 2, 3)", 28],
-        ["rgb(1, 2, 3)", 28],
-        ["rgb(1, 2, 3)", 28],
-      ]);
+      ).toEqual(Array(5).fill(["rgb(1, 2, 3)", 28]));
     } finally {
       painted.close();
       void served.stop(true);
