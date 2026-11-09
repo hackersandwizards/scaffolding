@@ -3,7 +3,8 @@
 // Astro's default compressHTML, "jsx", drops a line break where text meets an inline tag, so "drawn
 // by" on one line and "<code>brand</code>" on the next render as "drawn bybrand". Prettier writes
 // {" "} where a space is meant; this finds the line breaks that still carry one. compressHTML true
-// and false keep the break as a space, so where every Astro config sets one of them the check passes.
+// and false keep the break as a space, so where every Astro config sets one of them the check reads
+// only the components the package ships, which a consumer compiles under its own setting.
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import {
@@ -14,6 +15,7 @@ import {
   readPackage,
   repoRoot,
   type Finding,
+  type Package,
 } from "../lib/repo.ts";
 
 // HTML's inline elements that sit in running text: the jsx mode drops the break before each.
@@ -37,6 +39,14 @@ const holdsWords = (line: string) => {
 const endsInExpression = /(?<!\{\s*(?:" "|' ')\s*)\}\s*$/;
 // A word, opening punctuation, a dash, or an expression that draws no element and closes on the
 // line (one level of braces inside), alone or before text or an inline tag.
+// An expression that closes on its line and draws an inline element: jsx drops the break before it
+// as it drops every whitespace-only text node. Mostly it lays out a sibling, so it counts only where
+// the package's own pages keep the break and a consumer's jsx drops a space its author saw.
+const drawsInline = (line: string) => {
+  let rest = line;
+  for (let inner; (inner = rest.replace(/\{[^{}]*\}/g, "")) !== rest;) rest = inner;
+  return /^\s*\{/.test(line) && rest.trim() === "" && new RegExp(inlineTag).test(line);
+};
 const startsInText = new RegExp(
   `^\\s*(?:[\\p{L}\\p{N}(["'“‘—–-]|\\{(?!\\s*(?:" "|' ')\\s*\\})(?:[^<{}]|\\{[^<{}]*\\})*\\}\\s*(?:$|[^\\s<{]|${inlineTag}))`,
   "u",
@@ -59,8 +69,26 @@ function template(text: string): string[] {
   );
 }
 
+/** The paths `files` and `exports` of package.json name, as a test of a repository path. */
+function shippedBy(pkg: Package) {
+  const targets = (value: unknown): string[] =>
+    typeof value === "string"
+      ? [value]
+      : value && typeof value === "object"
+        ? Object.values(value).flatMap(targets)
+        : [];
+  const patterns = [...(Array.isArray(pkg.files) ? pkg.files : []), ...targets(pkg.exports)]
+    .filter((p): p is string => typeof p === "string" && !p.startsWith("!"))
+    .map((p) => p.replace(/^\.\//, "").replace(/\/$/, ""))
+    .map(
+      (p) => new RegExp(`^${p.replace(/[.+?^${}()|[\]\\]/g, "\\$&").replaceAll("*", ".*")}(?:/|$)`),
+    );
+  return (path: string) => patterns.some((p) => p.test(path));
+}
+
 const started = performance.now();
 const root = repoRoot();
+const pkg = readPackage(root);
 const files = listFiles(root, false);
 // The config names Astro looks for.
 const configs = files.filter((f) => /(?:^|\/)astro\.config\.m?[jt]s$/.test(f));
@@ -68,9 +96,10 @@ const keeps = (config: string) =>
   /\bcompressHTML\s*:\s*(?:false|true)\b/.test(
     readFileSync(join(root, config), "utf8").replace(commentSyntax(config), "$1"),
   );
-if (configs.length && configs.every(keeps)) finish("spaces", [], started);
+const kept = configs.length > 0 && configs.every(keeps);
+const reads = kept ? shippedBy(pkg) : () => true;
 const found: Finding[] = [];
-for (const file of files.filter((f) => f.endsWith(".astro"))) {
+for (const file of files.filter((f) => f.endsWith(".astro") && reads(f))) {
   const lines = template(readFileSync(join(root, file), "utf8"));
   lines.forEach((line, i) => {
     const next = lines[i + 1] ?? "";
@@ -79,7 +108,7 @@ for (const file of files.filter((f) => f.endsWith(".astro"))) {
     const tag =
       ((endsInText.test(line) || (endsInExpression.test(line) && holdsWords(line))) &&
         next.match(opens)?.[1]) ||
-      (startsInText.test(next) && closing.match(closes)?.[1]);
+      ((startsInText.test(next) || (kept && drawsInline(next))) && closing.match(closes)?.[1]);
     if (tag)
       found.push({
         check: "spaces",
@@ -89,4 +118,4 @@ for (const file of files.filter((f) => f.endsWith(".astro"))) {
       });
   });
 }
-finish("spaces", applyAllow(readPackage(root), "spaces", found, true), started);
+finish("spaces", applyAllow(pkg, "spaces", found, true), started);

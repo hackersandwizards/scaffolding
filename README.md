@@ -94,8 +94,11 @@ bracket, a quote, a dash or one expression that draws no element (`{name}.`, `{n
 the `{" "}` prettier itself writes, or joining the lines. A line of expressions alone counts for
 neither: most lay out sibling elements. A break no space belongs in, such as an
 icon in a flex row, gets an allow entry with `text`. Where every `astro.config.*` in the repository
-sets `compressHTML` to `true` or `false`, the step passes, and it reads the files again once one
-returns to `"jsx"`.
+sets `compressHTML` to `true` or `false`, the step reads only the `.astro` files that `files` or
+`exports` in package.json name, since a consumer compiles a shipped component under its own setting.
+There it also flags an inline closing tag whose next line holds one expression that draws an inline
+element (`{n > 0 && <span>{n}</span>}`): the package's pages show that space, a consumer's do not. It
+reads every file again once one config returns to `"jsx"`.
 
 **History.** What a package ships is public wherever a consumer serves or bundles it, so a comment
 in a shipped file says how to use the code and why, and the history behind it goes to the commit
@@ -143,7 +146,7 @@ attribute) is read with a fallback, `var(--accent, transparent)`.
 ## The catalog
 
 Every repository with a surface has a catalog: the scripts `dev`, `catalog` and
-`build`, its stories in `catalog/stories/` of the Astro app, and an Astro config using the preset. In a
+`build`, its stories, once it has any, in `catalog/stories/` of the Astro app, and an Astro config using the preset. In a
 repository whose only Astro app is the catalog, that config is `catalog/astro.config.ts`, its stories
 are in `catalog/stories/` and the build lands in the repository's `dist/` unless the config sets an
 `outDir` other than Astro's default `./dist`; in an Astro app it is the app's own config,
@@ -251,7 +254,7 @@ The options beyond those above:
   chrome's ground and text colour, read from brand's tokens in a layer below every other, and its
   box sizing, so it draws the same with or without a reset in the lists; its faces come only from
   the lists. The home's version line names each package that `css`, `homeCss` and `dashboardCss`
-  load a stylesheet from.
+  load a stylesheet from; a home without stories draws no such line.
 - The shell's own styles (its `chrome.css` and the header's CSS) sit inline on the home and every state's page, so they cost no render-blocking request.
 - `dashboardCss`: the stylesheets a state's page loads, default `css`. The page draws its story
   inline; where a repository's stories draw their state alone in an iframe there, which loads `css`,

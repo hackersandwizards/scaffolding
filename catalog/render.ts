@@ -34,7 +34,8 @@ export type CatalogData = {
   title: string;
   lead: string;
   /** One line: where the shown values come from, such as the brand version, and how many
-   * entries the page holds, in words ("26 components"): the title carries no count. */
+   * entries the page holds, in words ("26 components"): the title carries no count. Empty draws no
+   * line. */
   provenance: string;
   groups: CatalogGroup[];
   /** Markup between the provenance line and the first group, trusted. */
@@ -180,5 +181,5 @@ export function renderCatalog(data: CatalogData): string {
         `<section class="hw-catalog-group" id="${g.anchor}"><h2>${[escapeCatalog(g.name), count(g)].filter(Boolean).join(" ")}</h2>${g.html === undefined ? `<ul class="hw-catalog-grid">${g.items.map((i) => catalogTile(i, g.name)).join("")}</ul>` : `<div class="hw-catalog-text">${g.html}</div>`}</section>`,
     )
     .join("");
-  return `<div class="hw-catalog hw-container"><aside class="hw-catalog-rail" data-hw-shell><div class="hw-search"><input class="hw-field hw-catalog-search" type="search" placeholder="${escapeCatalog(search)}" aria-label="${escapeCatalog(search)}"></div><nav class="hw-nav" aria-label="${escapeCatalog(groupsLabel)}"><ul>${rail}</ul></nav></aside><div class="hw-catalog-main"><h1>${escapeCatalog(data.title)}</h1><p class="hw-catalog-lead">${escapeCatalog(data.lead)}</p><p class="hw-catalog-provenance">${escapeCatalog(data.provenance)}</p>${data.intro ?? ""}${sections}</div></div>${SCRIPT}`;
+  return `<div class="hw-catalog hw-container"><aside class="hw-catalog-rail" data-hw-shell><div class="hw-search"><input class="hw-field hw-catalog-search" type="search" placeholder="${escapeCatalog(search)}" aria-label="${escapeCatalog(search)}"></div><nav class="hw-nav" aria-label="${escapeCatalog(groupsLabel)}"><ul>${rail}</ul></nav></aside><div class="hw-catalog-main"><h1>${escapeCatalog(data.title)}</h1><p class="hw-catalog-lead">${escapeCatalog(data.lead)}</p>${data.provenance ? `<p class="hw-catalog-provenance">${escapeCatalog(data.provenance)}</p>` : ""}${data.intro ?? ""}${sections}</div></div>${SCRIPT}`;
 }

@@ -770,7 +770,6 @@ describe("scaffold and check-structure", () => {
     Object.assign(pkg.scripts, { dev: "x", catalog: "x", build: "x" });
     write(other, {
       "package.json": JSON.stringify(pkg),
-      "catalog/stories/.gitkeep": "",
       // A comment naming the preset is not a use of it.
       "catalog/astro.config.ts": "// @hackersandwizards/scaffolding/catalog\n",
     });
@@ -782,13 +781,9 @@ describe("scaffold and check-structure", () => {
         'import { catalog } from "@hackersandwizards/scaffolding/catalog";\nexport default { integrations: [catalog] };\n',
     });
     expect(run(other, "check-structure").code).toBe(0);
-    // An Astro app in a subfolder keeps its stories under its own root.
+    // A catalog with no stories yet needs no folder for them, which git cannot keep empty.
     mkdirSync(join(other, "talks"));
     renameSync(join(other, "catalog/astro.config.ts"), join(other, "talks/astro.config.ts"));
-    expect(lines(run(other, "check-structure").out, "check-structure")).toEqual([
-      "[check-structure] talks/catalog/stories: missing: the catalog's stories live here",
-    ]);
-    write(other, { "talks/catalog/stories/.gitkeep": "" });
     expect(run(other, "check-structure").code).toBe(0);
   });
 
@@ -1498,11 +1493,13 @@ describe("scaffolding check", () => {
   });
 
   test("a gate pinning brand goes red without check:retired unless the skip gives a reason", () => {
-    const pin = {
-      devDependencies: { "@hackersandwizards/brand": "github:hackersandwizards/brand#v1.0.0" },
+    // A local pin: a github: one downloads brand on every install the gate runs.
+    const pin = { devDependencies: { "@hackersandwizards/brand": "file:brand" } };
+    const branded = (scaffolding: object, scripts: Record<string, string> = {}) => {
+      const dir = gate(scaffolding, scripts, pin);
+      write(dir, { "brand/package.json": '{"name":"@hackersandwizards/brand","version":"1.0.0"}' });
+      return dir;
     };
-    const branded = (scaffolding: object, scripts: Record<string, string> = {}) =>
-      gate(scaffolding, scripts, pin);
     const lock = (d: string) => ({ CHECK_LOCK: join(d, ".lock") });
     const bare = branded({ skip });
     const r = run(bare, "scaffolding", ["check"], lock(bare));
@@ -1560,12 +1557,17 @@ describe("scaffolding check", () => {
     const r = run(dir, "scaffolding", ["check"], { CHECK_LOCK: join(dir, ".lock") });
     expect(r.out).toContain("ok   catalog");
     expect(r.code).toBe(0);
-    // A typecheck without Astro shares no cache with the build, which starts beside it.
+    // A typecheck without Astro shares no cache with the build, which starts beside it: the
+    // typecheck passes only once the build has run, within 3 s.
     const beside = gate(
       { skip: rest, typecheck: "tc" },
-      { tc: "sleep 3 && touch tc-done", build: "test ! -f tc-done" },
+      {
+        tc: "for i in $(seq 60); do test -f built && exit 0; sleep 0.05; done; exit 1",
+        build: "touch built",
+      },
     );
     const b = run(beside, "scaffolding", ["check"], { CHECK_LOCK: join(beside, ".lock") });
+    expect(b.out).toContain("ok   typecheck");
     expect(b.out).toContain("ok   catalog");
     const failed = gate(
       { skip: rest, typecheck: "astro" },
@@ -1716,8 +1718,8 @@ describe("catalog", () => {
     const dist = join(fixture, "dist");
     made.push(dist, join(fixture, "catalog", ".astro"), join(fixture, "catalog", "node_modules"));
     const astro = join(import.meta.dir, "..", "node_modules", ".bin", "astro");
-    const build = (args: string[] = [], env: Record<string, string> = {}) =>
-      spawnSync(astro, ["build", "--root", "catalog", ...args], {
+    const build = (args: string[] = [], env: Record<string, string> = {}, root = "catalog") =>
+      spawnSync(astro, ["build", "--root", root, ...args], {
         cwd: fixture,
         encoding: "utf8",
         env: { ...process.env, CI: "", ...env },
@@ -1732,6 +1734,17 @@ describe("catalog", () => {
       '<header class="fx-header"><a href="/">Fx</a><div class="hw-header-nav hw-catalog-nav"><nav class="hw-header-nav" aria-label="Main" data-hw-catalogs><a class="hw-header-link" href="/">Site</a><a class="hw-header-link" href="/catalog/" aria-current="page">Fx</a><a class="hw-header-link" href="https://example.com/other/">Other</a><a class="hw-header-link" href="//example.com/far/">Far</a></nav></div></header>',
     );
     expect(home).toContain("fx catalog/stories · @acme/ui v1.2.3 · 3 components · 24 states");
+    // An app with no stories folder builds a home without the line that would count nothing.
+    const empty = join(fixture, "empty");
+    made.push(empty);
+    write(empty, {
+      "astro.config.mjs":
+        'import { catalog } from "../../../catalog/index.ts";\nexport default { integrations: [catalog({ product: "Fx", css: [], lead: "", header: { component: "../catalog/Header.astro" } })] };\n',
+    });
+    expect(build([], {}, "empty").status).toBe(0);
+    const emptyHome = readFileSync(join(empty, "dist", "index.html"), "utf8");
+    expect(emptyHome).toContain('class="hw-catalog-lead"');
+    expect(emptyHome).not.toContain("hw-catalog-provenance");
     // The admin hub serves only on this machine: a built page carries no link to it.
     expect(home).not.toContain("admin.localhost");
     expect(home.indexOf(">Types <")).toBeLessThan(home.indexOf(">Parts <"));
@@ -3083,6 +3096,58 @@ describe("check-spaces", () => {
       code({ "astro.config.mjs": off, "catalog/astro.config.ts": "export default {};\n" }),
     ).toBe(1);
     expect(code({ "astro.config.mts": "// compressHTML: false\nexport default {};\n" })).toBe(1);
+  });
+
+  test("reads the components a package ships whatever its own compressHTML, as consumers compile them at jsx", () => {
+    const off = { "astro.config.mjs": "export default { compressHTML: false };\n" };
+    const bad = "<p>\n  <span>label</span>\n  {text}\n</p>\n";
+    const flaggedIn = (pkg: object) =>
+      lines(
+        run(
+          repo({
+            ...off,
+            "components/A.astro": bad,
+            "lib/B.astro": bad,
+            "src/C.astro": bad,
+            "package.json": JSON.stringify(pkg),
+          }),
+          "check-spaces",
+        ).out,
+        "spaces",
+      ).map((l) => l.match(/\] ([^:]+):/)![1]);
+    expect(flaggedIn({})).toEqual([]);
+    expect(flaggedIn({ files: ["components", "README.md"] })).toEqual(["components/A.astro"]);
+    expect(
+      flaggedIn({ exports: { "./A": "./components/A.astro", "./lib/*": { default: "./lib/*" } } }),
+    ).toEqual(["components/A.astro", "lib/B.astro"]);
+    // There a line holding one expression that draws an inline element counts after a closing
+    // tag too: the package's pages show the space; at jsx its own pages show it gone.
+    const shipped = (body: string, configs: Record<string, string> = off) =>
+      lines(
+        run(
+          repo({
+            ...configs,
+            "components/A.astro": `<p>\n${body}\n</p>\n`,
+            "package.json": '{"files":["components"]}',
+          }),
+          "check-spaces",
+        ).out,
+        "spaces",
+      ).length;
+    for (const body of [
+      "  <a>x</a>\n  {cond && <b>y</b>}",
+      '  <span>{chapter.title}</span>\n  {toc[i] > 0 && <span class="page">{toc[i]}</span>}',
+      "  <a>x</a>\n  {cond && <b t={{ a: 1 }}>y</b>}",
+    ]) {
+      expect([body, shipped(body)]).toEqual([body, 1]);
+      expect([body, shipped(body, {})]).toEqual([body, 0]);
+    }
+    for (const body of [
+      "  <a>x</a>\n  {cond && <div>y</div>}",
+      "  <a>x</a>\n  {cond && (\n    <b>y</b>\n  )}",
+      "  {cond && <b>y</b>}\n  <a>x</a>",
+    ])
+      expect([body, shipped(body)]).toEqual([body, 0]);
   });
 
   test("an allow entry keeps a flex case; a stale one is red", () => {

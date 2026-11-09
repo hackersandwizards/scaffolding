@@ -24,7 +24,6 @@ import {
   repoRoot,
   type Finding,
 } from "../lib/repo.ts";
-import { storiesDir } from "../catalog/path.ts";
 
 const started = performance.now();
 const fix = process.argv.includes("--fix");
@@ -175,8 +174,6 @@ if (existsSync(at("package.json"))) {
         found[0] ?? `catalog/${configs[0]}`,
         `the Astro config must use the catalog preset from ${preset}`,
       );
-    for (const path of apps.map((app) => storiesDir(dirname(app))))
-      if (!exists(path)) add(path, "missing: the catalog's stories live here");
   }
 }
 

@@ -69,7 +69,9 @@ if (previewSize && !Array.isArray(previewSize))
 const data = {
   title,
   lead,
-  provenance: `${options.provenance} · ${modules.length} components · ${states} states`,
+  provenance: states
+    ? `${options.provenance} · ${modules.length} components · ${states} states`
+    : "",
   groups: [...groups]
     .sort(([a], [b]) => rank(a) - rank(b) || a.localeCompare(b))
     .map(([name, items]) => ({ name, items })),
