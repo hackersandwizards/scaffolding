@@ -29,11 +29,12 @@ export type CatalogOptions = {
    * repository's own. */
   css: string[];
   /** The stylesheets the home loads, default `css`: its tiles frame each state, so it needs only
-   * the tokens and brand's elements.css its header, rail and tiles read and what its foundations
-   * draw. */
+   * the tokens, brand's fonts.css and elements.css its header, rail and tiles read and what its
+   * foundations draw. */
   homeCss?: string[];
   /** The stylesheets a state's page loads, default `css`; less for stories that frame their state
-   * alone there, which loads `css`: the tokens the header and bar read and what the page draws. */
+   * alone there, which loads `css`: the tokens and fonts.css the header and bar read and what the
+   * page draws. */
   dashboardCss?: string[];
   /** One or two sentences under the title. */
   lead: string;

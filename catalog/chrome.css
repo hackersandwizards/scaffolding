@@ -23,6 +23,7 @@ body:has(> [data-hw-catalog-top]) {
 }
 .hw-catalog-bar :is(a, button, select) {
   display: inline-flex;
+  box-sizing: border-box;
   align-items: center;
   min-height: 1.75rem;
   color: inherit;
@@ -49,7 +50,6 @@ body:has(> [data-hw-catalog-top]) {
   cursor: pointer;
 }
 .hw-catalog-bar .hw-catalog-step {
-  box-sizing: border-box;
   justify-content: center;
   min-width: 1.75rem;
   padding: 0;

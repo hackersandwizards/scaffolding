@@ -243,17 +243,20 @@ The options beyond those above:
   fetches its state's page and draws its HTML, so no frame load starts that the header would block
   and a script would cancel. It needs HTTP, not a build opened from disk.
 - `homeCss`: the stylesheets the home loads, default `css`. The tiles frame each state, so the home
-  needs only the tokens and brand's elements its header, rail and tiles read and what its
+  needs only the tokens, faces and brand's elements its header, rail and tiles read and what its
   foundations draw, such as
-  `["@hackersandwizards/brand/tokens.root.css", "@hackersandwizards/brand/elements.css"]`. `css` loads on a state alone and, without
-  `dashboardCss`, on a state's page; the header's CSS and the shell's own on the home and a state's
-  page, never on a state alone. The home's version line names each package that `css`, `homeCss` and
-  `dashboardCss` load a stylesheet from.
+  `["@hackersandwizards/brand/tokens.root.css", "@hackersandwizards/brand/fonts.css", "@hackersandwizards/brand/elements.css"]`.
+  `css` loads on a state alone and, without `dashboardCss`, on a state's page; the header's CSS and
+  the shell's own on the home and a state's page, never on a state alone. The shell brings its
+  chrome's ground and text colour, read from brand's tokens in a layer below every other, and its
+  box sizing, so it draws the same with or without a reset in the lists; its faces come only from
+  the lists. The home's version line names each package that `css`, `homeCss` and `dashboardCss`
+  load a stylesheet from.
 - The shell's own styles (its `chrome.css` and the header's CSS) sit inline on the home and every state's page, so they cost no render-blocking request.
 - `dashboardCss`: the stylesheets a state's page loads, default `css`. The page draws its story
   inline; where a repository's stories draw their state alone in an iframe there, which loads `css`,
-  the page needs only the tokens its header and bar read and what it draws around the frame, such as
-  `["@hackersandwizards/brand/tokens.root.css"]`.
+  the page needs only the tokens and faces its header and bar read and what it draws around the
+  frame, such as `["@hackersandwizards/brand/tokens.root.css", "@hackersandwizards/brand/fonts.css"]`.
 - `htmlClass`: classes on `<html>` of every page, set before the body draws, such as
   `["hw-focus-ring"]` for brand's focus ring.
 - `previewStates`: the states a tile draws and links first, each the story's export name in kebab

@@ -1,7 +1,11 @@
 /* Head.astro declares this layer first, so it sorts below every layer a page declares: a home
-   whose `homeCss` is tokens alone keeps its ground, and a story's ground on html or body wins. */
+   whose `homeCss` is tokens alone keeps its ground and its ink, and a story's ground and colour on
+   html or body win. */
 @layer hw-catalog-ground {
   html {
     background: var(--background, var(--color-bg));
+  }
+  body {
+    color: var(--foreground, var(--color-ink));
   }
 }
