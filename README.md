@@ -83,18 +83,19 @@ into every `bun` process it starts, so every bin here starts `bun --no-env-file`
 Vite, still does. Run them as their bins (`bun run check`); `bun bin/scaffolding.ts` without
 `--no-env-file` exits 2. A step that needs a value gets it from the environment that starts the gate.
 
-**Spaces.** Astro's default `compressHTML` drops a line break where text meets an inline tag
+**Spaces.** Astro's default `compressHTML`, `"jsx"`, drops a line break where text meets an inline tag
 (HTML's inline elements, such as `small` or `time`): "drawn by" on one line and `<code>brand</code>` on
-the next render as "drawn bybrand". Turned off instead, it keeps every break the formatter writes,
-so a wrapped link carries a space inside its underline and a bare break before punctuation shows as
-a space. The template keeps compression on, and the step flags a line ending in text, or in an
+the next render as "drawn bybrand". `true` and `false` keep each such break as a space, so a wrapped
+link carries a space inside its underline and a bare break before punctuation shows as a space. The
+template keeps the default, and the step flags a line ending in text, or in an
 expression after words of its own (`by {name}`), whose next line starts with an inline tag, and an
 inline closing tag, wrapped before its `>` too, whose next line starts with a word, an opening
-bracket, a quote, a dash or one expression that draws no element. The fix is
+bracket, a quote, a dash or one expression that draws no element (`{name}.`, `{name} <em>`). The fix is
 the `{" "}` prettier itself writes, or joining the lines. A line of expressions alone counts for
 neither: most lay out sibling elements. A break no space belongs in, such as an
 icon in a flex row, gets an allow entry with `text`. Where every `astro.config.*` in the repository
-sets `compressHTML: false`, the step passes, and it reads the files again once one turns it back on.
+sets `compressHTML` to `true` or `false`, the step passes, and it reads the files again once one
+returns to `"jsx"`.
 
 **History.** What a package ships is public wherever a consumer serves or bundles it, so a comment
 in a shipped file says how to use the code and why, and the history behind it goes to the commit
@@ -246,7 +247,8 @@ The options beyond those above:
   foundations draw, such as
   `["@hackersandwizards/brand/tokens.root.css", "@hackersandwizards/brand/elements.css"]`. `css` loads on a state alone and, without
   `dashboardCss`, on a state's page; the header's CSS and the shell's own on the home and a state's
-  page, never on a state alone.
+  page, never on a state alone. The home's version line names each package that `css`, `homeCss` and
+  `dashboardCss` load a stylesheet from.
 - The shell's own styles (its `chrome.css` and the header's CSS) sit inline on the home and every state's page, so they cost no render-blocking request.
 - `dashboardCss`: the stylesheets a state's page loads, default `css`. The page draws its story
   inline; where a repository's stories draw their state alone in an iframe there, which loads `css`,

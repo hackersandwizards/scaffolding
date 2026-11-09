@@ -1,9 +1,9 @@
 #!/bin/sh
 // 2>/dev/null; exec bun --no-env-file "$0" "$@"
-// Astro's default compressHTML drops a line break where text meets an inline tag, so "drawn by" on
-// one line and "<code>brand</code>" on the next render as "drawn bybrand". Prettier writes {" "}
-// where a space is meant; this finds the line breaks that still carry one. Where every Astro config
-// turns compressHTML off, every break renders as written and the check passes.
+// Astro's default compressHTML, "jsx", drops a line break where text meets an inline tag, so "drawn
+// by" on one line and "<code>brand</code>" on the next render as "drawn bybrand". Prettier writes
+// {" "} where a space is meant; this finds the line breaks that still carry one. compressHTML true
+// and false keep the break as a space, so where every Astro config sets one of them the check passes.
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import {
@@ -16,7 +16,7 @@ import {
   type Finding,
 } from "../lib/repo.ts";
 
-// HTML's inline elements that sit in running text: compressHTML drops the break before each.
+// HTML's inline elements that sit in running text: the jsx mode drops the break before each.
 const INLINE =
   "a|abbr|b|bdi|bdo|button|cite|code|data|del|dfn|em|i|img|input|ins|kbd|label|mark|meter|output|progress|q|s|samp|select|small|span|strong|sub|sup|svg|time|u|var";
 const opens = new RegExp(`^\\s*<(${INLINE})(?:[\\s>/]|$)`);
@@ -34,9 +34,11 @@ const holdsWords = (line: string) => {
 };
 const endsInExpression = /(?<!\{\s*(?:" "|' ')\s*)\}\s*$/;
 // A word, opening punctuation, a dash, or an expression that draws no element, alone on the line
-// or before words.
-const startsInText =
-  /^\s*(?:[\p{L}\p{N}(["'“‘—–-]|\{(?!\s*(?:" "|' ')\s*\})[^<]*\}(?:\s*$|\s*[\p{L}\p{N}]))/u;
+// or before text or an inline tag.
+const startsInText = new RegExp(
+  `^\\s*(?:[\\p{L}\\p{N}(["'“‘—–-]|\\{(?!\\s*(?:" "|' ')\\s*\\})[^<]*\\}(?:\\s*$|\\s*[^\\s<{]|\\s*<(?:${INLINE})[\\s>/]))`,
+  "u",
+);
 
 /** The template's lines, with frontmatter, comments (a // line in an expression too) and every
  * element whose line breaks are not template whitespace (script, style, pre, textarea) blanked. */
@@ -60,11 +62,11 @@ const root = repoRoot();
 const files = listFiles(root, false);
 // The config names Astro looks for.
 const configs = files.filter((f) => /(?:^|\/)astro\.config\.m?[jt]s$/.test(f));
-const off = (config: string) =>
-  /\bcompressHTML\s*:\s*false\b/.test(
+const keeps = (config: string) =>
+  /\bcompressHTML\s*:\s*(?:false|true)\b/.test(
     readFileSync(join(root, config), "utf8").replace(commentSyntax(config), "$1"),
   );
-if (configs.length && configs.every(off)) finish("spaces", [], started);
+if (configs.length && configs.every(keeps)) finish("spaces", [], started);
 const found: Finding[] = [];
 for (const file of files.filter((f) => f.endsWith(".astro"))) {
   const lines = template(readFileSync(join(root, file), "utf8"));
@@ -81,7 +83,7 @@ for (const file of files.filter((f) => f.endsWith(".astro"))) {
         check: "spaces",
         path: file,
         text: line.trim(),
-        message: `line ${i + 1}: the line break before line ${i + 2} meets <${tag}> and compressHTML drops it; end the line in {" "} or join the lines`,
+        message: `line ${i + 1}: the line break before line ${i + 2} meets <${tag}> and compressHTML "jsx" drops it; end the line in {" "} or join the lines`,
       });
   });
 }

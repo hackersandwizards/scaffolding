@@ -330,7 +330,12 @@ export function catalog(options: CatalogOptions): AstroIntegration {
           throw new Error(
             `catalog: the home's rail needs @hackersandwizards/brand v1.47.0 or later, installed is v${brand.join(".")}`,
           );
-        const versions = [...new Set(options.css.map(packageOf).filter((p) => p !== undefined))]
+        const sheets = [
+          ...options.css,
+          ...(options.homeCss ?? []),
+          ...(options.dashboardCss ?? []),
+        ];
+        const versions = [...new Set(sheets.map(packageOf).filter((p) => p !== undefined))]
           .map((p) => `${p} v${installed(p, root) ?? "?"}`)
           .join(" · ");
         const provenance = [`${name} ${relative(repo, stories)}`, versions]

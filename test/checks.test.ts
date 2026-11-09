@@ -1702,6 +1702,15 @@ describe("catalog", () => {
     const fixture = join(import.meta.dir, "fixture");
     const dist = join(fixture, "dist");
     made.push(dist, join(fixture, "catalog", ".astro"), join(fixture, "catalog", "node_modules"));
+    // The package the fixture's homeCss names.
+    write(join(fixture, "catalog", "node_modules", "@acme", "ui"), {
+      "package.json": JSON.stringify({
+        name: "@acme/ui",
+        version: "1.2.3",
+        exports: { "./ui.css": "./ui.css" },
+      }),
+      "ui.css": ".acme-ui{color:red}\n",
+    });
     const astro = join(import.meta.dir, "..", "node_modules", ".bin", "astro");
     const build = (args: string[] = [], env: Record<string, string> = {}) =>
       spawnSync(astro, ["build", "--root", "catalog", ...args], {
@@ -1718,7 +1727,7 @@ describe("catalog", () => {
     expect(home).toContain(
       '<header class="fx-header"><a href="/">Fx</a><div class="hw-header-nav hw-catalog-nav"><nav class="hw-header-nav" aria-label="Main" data-hw-catalogs><a class="hw-header-link" href="/">Site</a><a class="hw-header-link" href="/catalog/" aria-current="page">Fx</a><a class="hw-header-link" href="https://example.com/other/">Other</a><a class="hw-header-link" href="//example.com/far/">Far</a></nav></div></header>',
     );
-    expect(home).toContain("fx catalog/stories · 3 components · 24 states");
+    expect(home).toContain("fx catalog/stories · @acme/ui v1.2.3 · 3 components · 24 states");
     // The admin hub serves only on this machine: a built page carries no link to it.
     expect(home).not.toContain("admin.localhost");
     expect(home.indexOf(">Types <")).toBeLessThan(home.indexOf(">Parts <"));
@@ -1868,6 +1877,7 @@ describe("catalog", () => {
     expect(homeCss).toContain(".fx-header{display:flex}");
     expect(homeCss).toContain(".hw-catalog-grid{");
     expect(homeCss).not.toContain(".box{");
+    expect(homeCss).toContain(".acme-ui{");
     const barOf = (html: string) =>
       html.match(/<template id="hw-catalog-bar">([\s\S]*?)<\/template>/)?.[1] ?? "";
     const bar = barOf(state);
@@ -3015,6 +3025,8 @@ describe("check-spaces", () => {
       "  {count} items by {name}\n  <a>x</a>",
       "  <a>x</a>\n  [see]",
       '  <a>x</a>\n  {cond ? "a" : "b"} more',
+      "  <a>x</a>\n  {name}.",
+      "  <a>x</a>\n  {name} <em>y</em>",
     ])
       expect([body, flagged(body)]).toEqual([body, 1]);
     for (const body of [
@@ -3033,11 +3045,18 @@ describe("check-spaces", () => {
       expect([body, flagged(body)]).toEqual([body, 0]);
   });
 
-  test("passes where every Astro config turns compressHTML off; one on, or commented out, reads", () => {
+  test("passes where every Astro config sets compressHTML to true or false; the default jsx, or a commented setting, reads", () => {
     const off = "export default {\n  compressHTML: false,\n};\n";
     const code = (configs: Record<string, string>) =>
       run(repo({ "src/A.astro": page, "package.json": "{}", ...configs }), "check-spaces").code;
     expect(code({ "astro.config.mjs": off, "catalog/astro.config.ts": off })).toBe(0);
+    expect(
+      code({
+        "astro.config.mjs": off,
+        "catalog/astro.config.ts": "export default { compressHTML: true };\n",
+      }),
+    ).toBe(0);
+    expect(code({ "astro.config.mjs": 'export default { compressHTML: "jsx" };\n' })).toBe(1);
     expect(
       code({ "astro.config.mjs": off, "catalog/astro.config.ts": "export default {};\n" }),
     ).toBe(1);

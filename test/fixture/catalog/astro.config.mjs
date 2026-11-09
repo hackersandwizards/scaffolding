@@ -13,8 +13,9 @@ export default defineConfig({
       storyScale: "screen",
       htmlClass: ["fx-root", "fx-two"],
       header: { component: "./Header.astro", css: ["./header.css"] },
-      // The tiles frame each state: the home takes none of the stories' CSS.
-      homeCss: [],
+      // The tiles frame each state: the home takes none of the stories' CSS, only a package's,
+      // whose version the home's version line names.
+      homeCss: ["@acme/ui/ui.css"],
       nav: {
         items: [
           { name: "Site", href: "/" },
