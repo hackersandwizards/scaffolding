@@ -48,8 +48,8 @@ Tell each batch that zero changes is an acceptable result. Before deleting a com
 Run `/code-review high` and `/security-review` over the scope first; their findings join this
 phase's. In a repository with a UI, measure performance on a server the run starts itself on a
 free port (Lighthouse per public page type, response and render time per app route) and report
-before and after numbers for each fix in the repository's one `docs/agent-work/YYYY-MM-DD-performance.md`,
-written with today's date, deleting the previous one in the same commit. Serve the before state
+before and after numbers for each fix in the repository's one `YYYY-MM-DD-performance.md`, in the
+folder its `CLAUDE.md` names for documents, written with today's date, deleting the previous one in the same commit. Serve the before state
 from a detached worktree on the commit before the fix, measure before and after back to back so each
 pair shares its load, and write the 1-minute load average beside each series. Before each batch,
 wait up to five minutes while that load exceeds the core count (`getconf _NPROCESSORS_ONLN`), then
