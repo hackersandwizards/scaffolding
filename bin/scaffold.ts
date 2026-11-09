@@ -123,7 +123,7 @@ if (catalogIn) {
     dev: "ASTRO_DEV_BACKGROUND=1 bun --bun astro dev --root catalog",
     catalog: "bun run dev",
     build: "check-lock bun --bun astro build --root catalog",
-    preview: "ASTRO_PREVIEW_BACKGROUND=1 astro preview --root catalog",
+    preview: 'ASTRO_PREVIEW_BACKGROUND=1 bun --bun astro preview --root "$PWD/catalog"',
     "check:retired": "brand-retired dist",
   });
   pkg.scaffolding.check.push("check:retired");

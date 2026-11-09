@@ -12,7 +12,7 @@ export default defineConfig({
       previewSize: { Types: [1440, 900] },
       storyScale: "screen",
       htmlClass: ["fx-root", "fx-two"],
-      header: { component: "./Header.astro", css: ["./header.css", "./pad.css"] },
+      header: { component: "./Header.astro", css: ["./header.css"] },
       // The tiles frame each state: the home takes none of the stories' CSS.
       homeCss: [],
       nav: {

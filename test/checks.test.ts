@@ -22,7 +22,7 @@ import { pathToFileURL } from "node:url";
 import { catalogPath } from "../catalog/path.ts";
 
 const bin = (name: string) => join(import.meta.dir, "..", "bin", `${name}.ts`);
-const PREVIEW = "ASTRO_PREVIEW_BACKGROUND=1 astro preview --root catalog";
+const PREVIEW = 'ASTRO_PREVIEW_BACKGROUND=1 bun --bun astro preview --root "$PWD/catalog"';
 const made: string[] = [];
 afterAll(() => made.forEach((dir) => rmSync(dir, { recursive: true, force: true })));
 
@@ -437,6 +437,12 @@ test("every bin target and every file in bin/ is stored executable", () => {
   stored.delete("README.md");
   const { bin } = JSON.parse(readFileSync(join(root, "package.json"), "utf8"));
   expect(Object.values<string>(bin).filter((path) => !stored.has(path))).toEqual([]);
+  // No `env -S`: BusyBox `env`, as on Alpine, refuses it.
+  for (const path of Object.values<string>(bin))
+    expect([path, readFileSync(join(root, path), "utf8").split("\n").slice(0, 2)]).toEqual([
+      path,
+      ["#!/bin/sh", '// 2>/dev/null; exec bun --no-env-file "$0" "$@"'],
+    ]);
   expect([...stored].filter(([, mode]) => mode !== "100755")).toEqual([]);
 });
 
@@ -607,6 +613,12 @@ describe("scaffold and check-structure", () => {
     ]);
     run(skills, "check-structure", ["--fix"]);
     expect(run(skills, "check-structure").code).toBe(0);
+    // A link that is wrong stays red where .claude/skills is absent too.
+    const wrong = fixture("wrong-link", {}, { "keep/x": "x\n" }, [".agents/skills"]);
+    symlinkSync("../keep", join(wrong, ".agents/skills"));
+    expect(lines(run(wrong, "check-structure").out, "check-structure")).toEqual([
+      "[check-structure] .agents/skills: must be a symlink to ../.claude/skills",
+    ]);
   });
 
   test("the retired install guard goes red", () => {
@@ -1477,17 +1489,6 @@ describe("scaffolding check", () => {
     }
   });
 
-  test("every bin starts through sh, so no `env -S` is needed", () => {
-    const { bin: bins } = JSON.parse(
-      readFileSync(join(import.meta.dir, "..", "package.json"), "utf8"),
-    );
-    for (const path of Object.values<string>(bins)) {
-      const [shebang, launch] = readFileSync(join(import.meta.dir, "..", path), "utf8").split("\n");
-      expect([path, shebang]).toEqual([path, "#!/bin/sh"]);
-      expect([path, launch]).toEqual([path, '// 2>/dev/null; exec bun --no-env-file "$0" "$@"']);
-    }
-  });
-
   test("a failing step fails the gate and stops the later ones", () => {
     const dir = gate({ skip, check: ["false", "echo never-ran"] });
     const r = run(dir, "scaffolding", ["check"], { CHECK_LOCK: join(dir, ".lock") });
@@ -1776,22 +1777,16 @@ describe("catalog", () => {
     for (const p of ["", "dashboard/Parts/box-parts/two", "stories/Parts/box-parts/two"])
       expect(page(p)).toContain('document.documentElement.classList.add(...["fx-root","fx-two"]);');
     // The shell's stylesheet inlines: a linked one is one more render-blocking request.
-    for (const p of ["", "dashboard/Parts/box-parts/two"]) {
-      expect(page(p)).not.toMatch(/<link[^>]+href="[^"]*chrome\.[^"]*\.css"/);
+    for (const p of ["", "dashboard/Parts/box-parts/two"])
       expect(page(p)).toContain("#astrobook-sidebar");
-    }
     expect(page("stories/Parts/box-parts/two")).not.toContain("#astrobook-sidebar");
-    // The skeleton's preview script, as a repository's root runs it; Bun's own `node` shim on PATH
-    // would run Astro's preview under Bun, which fails on Astrobook's routes.
+    // The skeleton's preview script, as a repository's root runs it.
     const { serve } = await import("../lib/serve.ts");
     const preview = await serve(
       ["sh", "-c", `cd ${fixture} && ${PREVIEW} --host "$HOST" --port "$PORT"`],
       {
         env: {
-          PATH: [
-            join(import.meta.dir, "..", "node_modules", ".bin"),
-            ...process.env.PATH!.split(":").filter((dir) => !dir.includes("/bun-node-")),
-          ].join(":"),
+          PATH: `${join(import.meta.dir, "..", "node_modules", ".bin")}:${process.env.PATH}`,
         },
       },
     );
@@ -3017,6 +3012,9 @@ describe("check-spaces", () => {
       '  <a>x</a>\n  "quoted"',
       "  <a>x</a>\n  - dash",
       "  by\n  <img/>",
+      "  {count} items by {name}\n  <a>x</a>",
+      "  <a>x</a>\n  [see]",
+      '  <a>x</a>\n  {cond ? "a" : "b"} more',
     ])
       expect([body, flagged(body)]).toEqual([body, 1]);
     for (const body of [
@@ -3025,6 +3023,7 @@ describe("check-spaces", () => {
       '  <a>x</a>\n  {" "}\n  word',
       '  <a>x</a\n  >{" "}\n  word',
       "  <a\n    href={x}\n  >x</a>",
+      "  {items\n    .filter((i) => i)\n    .map((i) => <b>{i}</b>)}\n  <a>x</a>",
       "  {name}\n  <a>x</a>",
       "  {cond && (\n    <b>y</b>\n  )}\n  <a>x</a>",
       "  {cond && <b t={{ a: 1 }}>y</b>}\n  <a>x</a>",

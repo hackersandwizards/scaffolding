@@ -247,7 +247,7 @@ The options beyond those above:
   `["@hackersandwizards/brand/tokens.root.css", "@hackersandwizards/brand/elements.css"]`. `css` loads on a state alone and, without
   `dashboardCss`, on a state's page; the header's CSS and the shell's own on the home and a state's
   page, never on a state alone.
-- The chunk of the shell's own styles (`chrome.css`, the header's CSS) inlines into a page at any size, so it costs no render-blocking request; a repository's `assetsInlineLimit` keeps governing the rest.
+- The shell's own styles (its `chrome.css` and the header's CSS) sit inline on the home and every state's page, so they cost no render-blocking request.
 - `dashboardCss`: the stylesheets a state's page loads, default `css`. The page draws its story
   inline; where a repository's stories draw their state alone in an iframe there, which loads `css`,
   the page needs only the tokens its header and bar read and what it draws around the frame, such as
@@ -331,17 +331,16 @@ an `optimizeDeps` list of its own, found none late.
 Vite still says "Re-optimizing dependencies because lockfile has changed" once after each change to
 `bun.lock`; a dependency the scan cannot reach goes into the repository's `optimizeDeps.include`.
 
-`astro preview` runs under Node, so `node` has to be on the path: under Bun 1.4.4 it fails resolving
-Astrobook's routes (`ENOENT` for `catalog/astrobook/pages/app.astro`). Under an agent, `astro dev` and `astro preview` move themselves into the background, and with
+Under an agent, `astro dev` and `astro preview` move themselves into the background, and with
 `--root catalog` that background server resolves `catalog` from inside `catalog/`: dev waits 30 s
 for it and fails, preview finds no `catalog/catalog/dist`. `ASTRO_DEV_BACKGROUND=1` and
-`ASTRO_PREVIEW_BACKGROUND=1` keep each in the foreground and change nothing for a person:
+`ASTRO_PREVIEW_BACKGROUND=1` keep each in the foreground and change nothing for a person. Under Bun 1.4.4 a relative `--root` makes preview look for Astrobook's routes under the root (`ENOENT` for `catalog/astrobook/pages/app.astro`), and with `"$PWD/catalog"` it serves:
 
 ```json
 {
   "dev": "ASTRO_DEV_BACKGROUND=1 bun --bun astro dev --root catalog",
   "catalog": "bun run dev",
-  "preview": "ASTRO_PREVIEW_BACKGROUND=1 astro preview --root catalog"
+  "preview": "ASTRO_PREVIEW_BACKGROUND=1 bun --bun astro preview --root \"$PWD/catalog\""
 }
 ```
 

@@ -56,14 +56,16 @@ if (fix && pkg.scaffolding?.skip?.structure !== undefined) {
   console.error("[check-structure] --fix writes nothing: scaffolding.skip.structure is set");
   process.exit(0);
 }
-// A private repository runs no confidential check, so it keeps no commit-msg hook.
-const privateAbsent: string[] = pkg.scaffolding?.private === true ? skeleton.private.absent : [];
-for (const path of privateAbsent)
+// A private repository runs no confidential check, so it keeps no commit-msg hook, and is granted
+// no licence, so it may have no LICENSE.
+const exempt: { absent: string[]; optional: string[] } =
+  pkg.scaffolding?.private === true ? skeleton.private : { absent: [], optional: [] };
+for (const path of exempt.absent)
   if (exists(path))
     add(path, "not kept in a private repository (check-structure --fix)", "", () =>
       rmSync(at(path)),
     );
-for (const path of (skeleton.same as string[]).filter((p) => !privateAbsent.includes(p))) {
+for (const path of (skeleton.same as string[]).filter((p) => !exempt.absent.includes(p))) {
   const template = join(home, "template", path);
   if (exists(path) && readFileSync(at(path)).equals(readFileSync(template))) continue;
   add(
@@ -89,15 +91,13 @@ for (const path of skeleton.owned as string[]) {
     writeFileSync(at(path), template),
   );
 }
-const privateOptional: string[] =
-  pkg.scaffolding?.private === true ? skeleton.private.optional : [];
-for (const path of (skeleton.present as string[]).filter((p) => !privateOptional.includes(p)))
-  if (!exists(path)) add(path, "missing");
+for (const path of skeleton.present as string[])
+  if (!exists(path) && !exempt.optional.includes(path)) add(path, "missing");
 for (const path of skeleton.absent as string[])
   if (exists(path)) add(path, "not allowed by the skeleton");
 
 for (const [path, target] of Object.entries<string>(skeleton.symlinks)) {
-  if (!exists(posix.join(posix.dirname(path), target))) continue;
+  if (!exists(path) && !exists(posix.join(posix.dirname(path), target))) continue;
   if (exists(path) && lstatSync(at(path)).isSymbolicLink() && readlinkSync(at(path)) === target)
     continue;
   add(

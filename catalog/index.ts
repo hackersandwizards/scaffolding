@@ -104,6 +104,7 @@ const BRAND_HEADER = {
 const OPTIONS = "virtual:scaffolding/catalog";
 const HEADER = "virtual:scaffolding/catalog-header";
 const HEAD = "virtual:scaffolding/catalog-head";
+const AROUND = "virtual:scaffolding/catalog-around";
 const ICON = "virtual:scaffolding/catalog-icon";
 const BRAND_ICON = "@hackersandwizards/brand/logos/favicon.svg";
 // The cascade layer order alone, exported since brand v1.52.0.
@@ -345,6 +346,9 @@ export function catalog(options: CatalogOptions): AstroIntegration {
           join(import.meta.dirname, "chrome.css"),
         ];
         const imports = (list: string[]) => list.map((c) => `import ${spec(c)};`).join("");
+        // classList.add throws on one of these, in the head of every page.
+        if (options.htmlClass?.some((c) => !/^\S+$/.test(c)))
+          throw new Error("catalog htmlClass: one class per entry, without spaces");
         // A misspelt or renamed `current` would link this catalog's entry to the published site.
         if (nav?.current !== undefined && !nav.items.some(({ name }) => name === nav.current))
           throw new Error(`catalog nav: current "${nav.current}" names no item`);
@@ -392,11 +396,12 @@ export function catalog(options: CatalogOptions): AstroIntegration {
           [ICON]: fromBrand(() => require.resolve(BRAND_ICON))
             ? `export { default } from ${spec(`${BRAND_ICON}?url&no-inline`)};`
             : "export default undefined;",
-          [`${CSS}home`]: imports([...around, ...(options.homeCss ?? options.css)]),
-          [`${CSS}dashboard`]: imports([...around, ...(options.dashboardCss ?? options.css)]),
+          // Inlined on the home and a state's page: linked, one more render-blocking request.
+          [AROUND]: `${around.map((c, i) => `import c${i} from ${spec(`${c}?inline`)};`).join("")}export default ${around.map((_, i) => `c${i}`).join("+")};`,
+          [`${CSS}home`]: imports(options.homeCss ?? options.css),
+          [`${CSS}dashboard`]: imports(options.dashboardCss ?? options.css),
           [`${CSS}stories`]: imports(options.css),
         };
-        const limit = params.config.vite.build?.assetsInlineLimit;
         params.updateConfig({
           // Astro's own default only: an outDir the config sets stays.
           ...(own &&
@@ -405,17 +410,6 @@ export function catalog(options: CatalogOptions): AstroIntegration {
             }),
           vite: {
             ...(mounted && !dev && { publicDir: false as const }),
-            // The chunk Rollup names after chrome.css, the last of the shell's stylesheets, inlines
-            // at any size: linked, it is one more render-blocking request on every state's page.
-            build: {
-              assetsInlineLimit: (file: string, content: Buffer) =>
-                /(?:^|\/)chrome\.[^/]*\.css$/.test(file) ||
-                (typeof limit === "function"
-                  ? limit(file, content)
-                  : limit === undefined
-                    ? undefined
-                    : content.length < limit),
-            },
             optimizeDeps: {
               entries: [`${relative(root, stories)}/**/*.stories.*`],
               include: ROUTER,

@@ -25,11 +25,18 @@ const closes = new RegExp(`</(${INLINE})>\\s*$`);
 // in an expression after words of its own ("by {name}"). A line of expressions alone, like the
 // close of a multi-line one, mostly lays out sibling elements, where a break needs no space.
 const endsInText = /[^\s>}{([=&|]\s*$/;
-const holdsWords = (line: string) =>
-  !/^\s*\{/.test(line) && /[\p{L}\p{N}]/u.test(line.replace(/<[^>]*>|\{[^}]*\}/g, ""));
+const holdsWords = (line: string) => {
+  let text = line;
+  // Innermost braces first: the attributes of a tag inside an expression nest.
+  for (let inner; (inner = text.replace(/\{[^{}]*\}/g, "")) !== text;) text = inner;
+  // A brace left over closes an expression an earlier line opened.
+  return !text.includes("}") && /[\p{L}\p{N}]/u.test(text.replace(/<[^>]*>/g, ""));
+};
 const endsInExpression = /(?<!\{\s*(?:" "|' ')\s*)\}\s*$/;
-// A word, opening punctuation, a dash, or one expression on its line that draws no element.
-const startsInText = /^\s*(?:[\p{L}\p{N}("'“‘—–-]|\{(?!\s*(?:" "|' ')\s*\})[^<]*\}\s*$)/u;
+// A word, opening punctuation, a dash, or an expression that draws no element, alone on the line
+// or before words.
+const startsInText =
+  /^\s*(?:[\p{L}\p{N}(["'“‘—–-]|\{(?!\s*(?:" "|' ')\s*\})[^<]*\}(?:\s*$|\s*[\p{L}\p{N}]))/u;
 
 /** The template's lines, with frontmatter, comments (a // line in an expression too) and every
  * element whose line breaks are not template whitespace (script, style, pre, textarea) blanked. */

@@ -4,6 +4,7 @@
 import modules from "virtual:astrobook/story-modules.mjs";
 import config from "virtual:astrobook/global-config.mjs";
 import RepositoryHead from "virtual:scaffolding/catalog-head";
+import around from "virtual:scaffolding/catalog-around";
 import icon from "virtual:scaffolding/catalog-icon";
 import shell from "virtual:scaffolding/catalog";
 import Top from "./Top.astro";
@@ -64,6 +65,7 @@ const root = {
 ---
 
 <style is:inline set:html={shell.layers} />
+{!alone && <style is:inline set:html={around} />}
 <meta name="description" content={typeof lead === "string" && lead.trim() ? lead : shell.lead} />
 {!shell.onDisk && <link rel="canonical" href={canonical} />}
 {/* Ahead of the repository's head: of two icons a browser takes the last. */}
@@ -71,11 +73,7 @@ const root = {
 <RepositoryHead />
 <script
   is:inline
-  set:html={`Object.assign(document.documentElement.dataset,${JSON.stringify(root)});${
-    shell.htmlClass.length
-      ? `document.documentElement.classList.add(...${JSON.stringify(shell.htmlClass)});`
-      : ""
-  }`}
+  set:html={`Object.assign(document.documentElement.dataset,${JSON.stringify(root)});document.documentElement.classList.add(...${JSON.stringify(shell.htmlClass)});`}
 />
 {mod && (
   <template id="hw-catalog-bar">
