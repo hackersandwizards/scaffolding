@@ -48,6 +48,8 @@ export type CatalogOptions = {
    * state alone), such as "screen"; without it such a page keeps what the repository's head sets,
    * else brand's default. The home draws at "dense". */
   storyScale?: string;
+  /** Classes on <html> of every page, set before the body draws, such as ["hw-focus-ring"]. */
+  htmlClass?: string[];
   /** Groups shown first, in this order; the rest follow alphabetically. */
   groupOrder?: string[];
   /** The states a tile draws and links, in order of preference, each the story's export name in
@@ -362,6 +364,7 @@ export function catalog(options: CatalogOptions): AstroIntegration {
           themeToggle: options.themeToggle ?? true,
           onDisk,
           storyScale: options.storyScale,
+          htmlClass: options.htmlClass ?? [],
           groupOrder: options.groupOrder ?? [],
           previewStates: options.previewStates ?? [],
           provenance,

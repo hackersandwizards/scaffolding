@@ -1,4 +1,5 @@
-#!/usr/bin/env -S bun --no-env-file
+#!/bin/sh
+// 2>/dev/null; exec bun --no-env-file "$0" "$@"
 // Every module-scope function name is defined once, so a grep for its definition finds one site.
 import { readFileSync } from "node:fs";
 import { join } from "node:path";

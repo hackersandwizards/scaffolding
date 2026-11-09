@@ -1,4 +1,5 @@
-#!/usr/bin/env -S bun --no-env-file
+#!/bin/sh
+// 2>/dev/null; exec bun --no-env-file "$0" "$@"
 import { spawnSync } from "node:child_process";
 import {
   chmodSync,
@@ -88,11 +89,15 @@ for (const path of skeleton.owned as string[]) {
     writeFileSync(at(path), template),
   );
 }
-for (const path of skeleton.present as string[]) if (!exists(path)) add(path, "missing");
+const privateOptional: string[] =
+  pkg.scaffolding?.private === true ? skeleton.private.optional : [];
+for (const path of (skeleton.present as string[]).filter((p) => !privateOptional.includes(p)))
+  if (!exists(path)) add(path, "missing");
 for (const path of skeleton.absent as string[])
   if (exists(path)) add(path, "not allowed by the skeleton");
 
 for (const [path, target] of Object.entries<string>(skeleton.symlinks)) {
+  if (!exists(posix.join(posix.dirname(path), target))) continue;
   if (exists(path) && lstatSync(at(path)).isSymbolicLink() && readlinkSync(at(path)) === target)
     continue;
   add(

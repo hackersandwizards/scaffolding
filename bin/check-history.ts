@@ -1,4 +1,5 @@
-#!/usr/bin/env -S bun --no-env-file
+#!/bin/sh
+// 2>/dev/null; exec bun --no-env-file "$0" "$@"
 // What a package ships is public wherever a consumer serves or bundles it: a comment in a shipped
 // file states how to use the code and why, never the history behind it. Review scores, dates,
 // decision and item ids, pointers to review notes and names go to the commit message.

@@ -57,7 +57,8 @@
   },
   "hooksPath": ".githooks",
   "private": {
-    "absent": [".githooks/commit-msg"]
+    "absent": [".githooks/commit-msg"],
+    "optional": ["LICENSE"]
   },
   "catalog": {
     "scripts": ["dev", "catalog", "build"],

@@ -1,4 +1,5 @@
-#!/usr/bin/env -S bun --no-env-file
+#!/bin/sh
+// 2>/dev/null; exec bun --no-env-file "$0" "$@"
 // Check, never write: re-staging a rewritten file would sweep another session's unstaged lines in
 // that file into this commit. A file whose working tree differs from the index is checked from the
 // index on stdin, so those unstaged lines neither pass nor block this commit.

@@ -71,7 +71,11 @@ const root = {
 <RepositoryHead />
 <script
   is:inline
-  set:html={`Object.assign(document.documentElement.dataset,${JSON.stringify(root)});`}
+  set:html={`Object.assign(document.documentElement.dataset,${JSON.stringify(root)});${
+    shell.htmlClass.length
+      ? `document.documentElement.classList.add(...${JSON.stringify(shell.htmlClass)});`
+      : ""
+  }`}
 />
 {mod && (
   <template id="hw-catalog-bar">

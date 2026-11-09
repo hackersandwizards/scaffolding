@@ -22,6 +22,7 @@ import { pathToFileURL } from "node:url";
 import { catalogPath } from "../catalog/path.ts";
 
 const bin = (name: string) => join(import.meta.dir, "..", "bin", `${name}.ts`);
+const PREVIEW = "ASTRO_PREVIEW_BACKGROUND=1 astro preview --root catalog";
 const made: string[] = [];
 afterAll(() => made.forEach((dir) => rmSync(dir, { recursive: true, force: true })));
 
@@ -490,9 +491,7 @@ describe("scaffold and check-structure", () => {
     expect(pkg.scaffolding.check).toEqual(["check:retired"]);
     // Under an agent `astro preview` moves into the background, which resolves --root catalog from
     // inside catalog/ and finds no catalog/catalog/dist.
-    expect(pkg.scripts.preview).toBe(
-      "ASTRO_PREVIEW_BACKGROUND=1 bun --bun astro preview --root catalog",
-    );
+    expect(pkg.scripts.preview).toBe(PREVIEW);
     const config = readFileSync(join(dir, "catalog/astro.config.ts"), "utf8");
     expect(config).toContain('base: "/demo"');
     expect(config).toContain("port: 4655 }");
@@ -587,6 +586,29 @@ describe("scaffold and check-structure", () => {
     expect(run(other, "check-structure").code).toBe(0);
   });
 
+  test("LICENSE is required where the repository is public; a private one may have none", () => {
+    const missing = (config: Record<string, unknown>, name: string) =>
+      lines(
+        run(fixture(name, config, {}, ["LICENSE"]), "check-structure").out,
+        "check-structure",
+      ).filter((l) => l.includes("LICENSE"));
+    expect(missing({}, "public-no-license")).toEqual(["[check-structure] LICENSE: missing"]);
+    expect(missing({ private: true }, "private-no-license")).toEqual([]);
+  });
+
+  test("the .agents/skills link is required where .claude/skills exists", () => {
+    const none = fixture("no-skills", {}, {}, [".agents/skills"]);
+    expect(lines(run(none, "check-structure").out, "check-structure")).toEqual([]);
+    const skills = fixture("skills", {}, { ".claude/skills/a/SKILL.md": "x\n" }, [
+      ".agents/skills",
+    ]);
+    expect(lines(run(skills, "check-structure").out, "check-structure")).toEqual([
+      "[check-structure] .agents/skills: must be a symlink to ../.claude/skills",
+    ]);
+    run(skills, "check-structure", ["--fix"]);
+    expect(run(skills, "check-structure").code).toBe(0);
+  });
+
   test("the retired install guard goes red", () => {
     const guard = "scripts/repo/only-bun.cjs";
     const other = fixture("only-bun", {}, { [guard]: "\n" });
@@ -619,7 +641,11 @@ describe("scaffold and check-structure", () => {
       const other = fixture(
         "skip-public",
         { skip },
-        { ".githooks/pre-commit": "#!/bin/sh\ncustom\n", "bin/x.ts": "export {};\n" },
+        {
+          ".githooks/pre-commit": "#!/bin/sh\ncustom\n",
+          "bin/x.ts": "export {};\n",
+          ".claude/skills/a/SKILL.md": "x\n",
+        },
         [
           ".editorconfig",
           ".npmrc",
@@ -649,7 +675,7 @@ describe("scaffold and check-structure", () => {
         const other = fixture(
           `skip-private-${reason ? "reason" : "blank"}`,
           { skip: { structure: reason }, private: true },
-          { ".githooks/post-checkout": "#!/bin/sh\nolder\n" },
+          { ".githooks/post-checkout": "#!/bin/sh\nolder\n", ".claude/skills/a/SKILL.md": "x\n" },
           ["bunfig.toml", ".agents/skills"],
         );
         const before = state(other);
@@ -1434,6 +1460,8 @@ describe("scaffolding check", () => {
     for (const r of [
       plain(process.execPath, ["--no-env-file", bin("scaffolding"), "check"]),
       plain(bin("scaffolding"), ["check"]),
+      // No `env -S`: BusyBox `env`, as on Alpine, refuses it.
+      plain("/bin/sh", [bin("scaffolding"), "check"]),
     ]) {
       const out = `${r.stdout}${r.stderr}`;
       expect(out).toContain("sh=none");
@@ -1446,6 +1474,17 @@ describe("scaffolding check", () => {
       const loaded = plain(process.execPath, [bin(name), "check"]);
       expect(loaded.status).toBe(2);
       expect(loaded.stderr).toContain("--no-env-file");
+    }
+  });
+
+  test("every bin starts through sh, so no `env -S` is needed", () => {
+    const { bin: bins } = JSON.parse(
+      readFileSync(join(import.meta.dir, "..", "package.json"), "utf8"),
+    );
+    for (const path of Object.values<string>(bins)) {
+      const [shebang, launch] = readFileSync(join(import.meta.dir, "..", path), "utf8").split("\n");
+      expect([path, shebang]).toEqual([path, "#!/bin/sh"]);
+      expect([path, launch]).toEqual([path, '// 2>/dev/null; exec bun --no-env-file "$0" "$@"']);
     }
   });
 
@@ -1733,6 +1772,28 @@ describe("catalog", () => {
     expect(links(home, "canonical")).toEqual(["/"]);
     for (const p of ["dashboard/Parts/box-parts/two", "stories/Parts/box-parts/two"])
       expect(links(page(p), "canonical")).toEqual(["/dashboard/Parts/box-parts/two/"]);
+    // `htmlClass` on every page, before the body draws.
+    for (const p of ["", "dashboard/Parts/box-parts/two", "stories/Parts/box-parts/two"])
+      expect(page(p)).toContain('document.documentElement.classList.add(...["fx-root","fx-two"]);');
+    // The skeleton's preview script, as a repository's root runs it; Bun's own `node` shim on PATH
+    // would run Astro's preview under Bun, which fails on Astrobook's routes.
+    const { serve } = await import("../lib/serve.ts");
+    const preview = await serve(
+      ["sh", "-c", `cd ${fixture} && ${PREVIEW} --host "$HOST" --port "$PORT"`],
+      {
+        env: {
+          PATH: [
+            join(import.meta.dir, "..", "node_modules", ".bin"),
+            ...process.env.PATH!.split(":").filter((dir) => !dir.includes("/bun-node-")),
+          ].join(":"),
+        },
+      },
+    );
+    try {
+      expect((await fetch(`${preview.url}/stories/Parts/box-parts/two/`)).status).toBe(200);
+    } finally {
+      preview.stop();
+    }
     // The shell paints the ground from brand's role or token; the fixture's home loads no token,
     // so the page sets them. A story's own stylesheet still wins on a state's page.
     const served = Bun.serve({
@@ -2933,6 +2994,38 @@ describe("check-spaces", () => {
       "check-spaces",
     );
     expect(empty.code).toBe(0);
+  });
+
+  test("a closing tag broken before its >, an expression before a tag and punctuation after one", () => {
+    const flagged = (body: string) =>
+      lines(
+        run(repo({ "src/A.astro": `<p>\n${body}\n</p>\n`, "package.json": "{}" }), "check-spaces")
+          .out,
+        "spaces",
+      ).length;
+    for (const body of [
+      "  <a>x</a\n  >\n  word",
+      "  by {name}\n  <a>x</a>",
+      "  <a>x</a>\n  {name}",
+      "  <a>x</a>\n  (see)",
+      '  <a>x</a>\n  "quoted"',
+      "  <a>x</a>\n  - dash",
+      "  by\n  <img/>",
+    ])
+      expect([body, flagged(body)]).toEqual([body, 1]);
+    for (const body of [
+      '  by {name}{" "}\n  <a>x</a>',
+      `  by {name}{' '}\n  <a>x</a>`,
+      '  <a>x</a>\n  {" "}\n  word',
+      '  <a>x</a\n  >{" "}\n  word',
+      "  <a\n    href={x}\n  >x</a>",
+      "  {name}\n  <a>x</a>",
+      "  {cond && (\n    <b>y</b>\n  )}\n  <a>x</a>",
+      "  {cond && <b t={{ a: 1 }}>y</b>}\n  <a>x</a>",
+      "  <a>x</a>\n  {cond && <b>y</b>}",
+      "  <a>x</a>\n  {list.map((i) => (\n    <b>{i}</b>\n  ))}",
+    ])
+      expect([body, flagged(body)]).toEqual([body, 0]);
   });
 
   test("passes where every Astro config turns compressHTML off; one on, or commented out, reads", () => {

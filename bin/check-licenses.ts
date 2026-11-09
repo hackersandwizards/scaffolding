@@ -1,4 +1,5 @@
-#!/usr/bin/env -S bun --no-env-file
+#!/bin/sh
+// 2>/dev/null; exec bun --no-env-file "$0" "$@"
 import { spawnSync } from "node:child_process";
 import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";

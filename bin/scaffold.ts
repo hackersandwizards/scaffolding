@@ -1,4 +1,5 @@
-#!/usr/bin/env -S bun --no-env-file
+#!/bin/sh
+// 2>/dev/null; exec bun --no-env-file "$0" "$@"
 import { spawnSync } from "node:child_process";
 import {
   cpSync,
@@ -122,7 +123,7 @@ if (catalogIn) {
     dev: "ASTRO_DEV_BACKGROUND=1 bun --bun astro dev --root catalog",
     catalog: "bun run dev",
     build: "check-lock bun --bun astro build --root catalog",
-    preview: "ASTRO_PREVIEW_BACKGROUND=1 bun --bun astro preview --root catalog",
+    preview: "ASTRO_PREVIEW_BACKGROUND=1 astro preview --root catalog",
     "check:retired": "brand-retired dist",
   });
   pkg.scaffolding.check.push("check:retired");

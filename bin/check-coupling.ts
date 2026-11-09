@@ -1,4 +1,5 @@
-#!/usr/bin/env -S bun --no-env-file
+#!/bin/sh
+// 2>/dev/null; exec bun --no-env-file "$0" "$@"
 import { existsSync, readFileSync } from "node:fs";
 import { dirname, posix, resolve } from "node:path";
 import {

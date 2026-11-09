@@ -1,4 +1,5 @@
-#!/usr/bin/env -S bun --no-env-file
+#!/bin/sh
+// 2>/dev/null; exec bun --no-env-file "$0" "$@"
 //   check-confidential --staged               pre-commit: added lines, images and PDFs in the index
 //   check-confidential --message-file <file>  commit-msg: the commit message
 //   check-confidential --commit <rev>         one commit: its added lines, images, PDFs and message

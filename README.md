@@ -24,7 +24,7 @@ package's commands from `node_modules`, so each checkout, a new worktree include
 | ------------------------- | ---------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `scaffold <dir>`          | once                         | Creates a repository from `template/` and `template-catalog/` with this version pinned (below).                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                               |
 | `scaffolding check`       | `bun run check`              | The whole gate, below.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                        |
-| `check-structure [--fix]` | `bun run check`              | The repository against `skeleton.json`, the catalog, the gate's script names (below) and every `bin` target stored executable (100755). `--fix` writes the identical and owned files, the `.agents/skills` link, the hooks path and the `bin` modes, and nothing where `skip.structure` is set or an `allow` entry covers the path.                                                                                                                                                                                                                                                                                                                                                                                                                                           |
+| `check-structure [--fix]` | `bun run check`              | The repository against `skeleton.json`, the catalog, the gate's script names (below) and every `bin` target stored executable (100755). `LICENSE` is required only where `scaffolding.private` is not set, the `.agents/skills` link only where `.claude/skills` exists. `--fix` writes the identical and owned files, the `.agents/skills` link, the hooks path and the `bin` modes, and nothing where `skip.structure` is set or an `allow` entry covers the path.                                                                                                                                                                                                                                                                                                          |
 | `check-confidential`      | pre-commit, commit-msg, push | Terms from a hashed list, Company OS screenshots and text in images (OCR, an unread image fails), commits purged from history.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                |
 | `check-staged`            | pre-commit                   | gitleaks on the index, then `check-coupling` and `check-confidential`, then prettier and eslint on the staged files and stylelint on the staged CSS and Astro ones, each refused when not installed unless `skip.format`, `skip.lint` or `skip.styles` drops the step; `validate:skills` when `.claude/` is staged, `admin-check` when an item is.                                                                                                                                                                                                                                                                                                                                                                                                                            |
 | `check-lock <command>`    | `scaffolding check`, a build | Runs the command once no other locked command runs in the checkout, so a build never rewrites the output a running gate reads (`"build": "check-lock astro build"`; first in the script, since the lock sits in `node_modules` where it starts, so `check-lock sh -c 'cd catalog && astro build'`). Inside a locked command, the gate's own build step included, it runs at once. A signal to `check-lock` goes to the command's whole process group, and the lock stays until that group has exited (a second signal kills it), also where a SIGKILL then ended `check-lock`; where a SIGKILL to the caller's group ended `check-lock` alone before any signal, until the command has exited; the command runs without a controlling terminal, so it cannot open `/dev/tty`. |
@@ -78,7 +78,7 @@ non-blank string in `skip`:
 ```
 
 **Environment.** No step sees a variable that only the checkout's `.env` set. Bun loads `.env`
-into every `bun` process it starts, so every bin here starts with `--no-env-file`, and the gate and
+into every `bun` process it starts, so every bin here starts `bun --no-env-file` through a `#!/bin/sh` line and a second line that is a shell command and a TypeScript comment at once, which also runs under BusyBox `env` (Alpine refuses `env -S`), and the gate and
 `check-staged` pass it to every `bun` a step starts through `BUN_OPTIONS`; a tool that reads `.env` itself, such as
 Vite, still does. Run them as their bins (`bun run check`); `bun bin/scaffolding.ts` without
 `--no-env-file` exits 2. A step that needs a value gets it from the environment that starts the gate.
@@ -87,9 +87,12 @@ Vite, still does. Run them as their bins (`bun run check`); `bun bin/scaffolding
 (HTML's inline elements, such as `small` or `time`): "drawn by" on one line and `<code>brand</code>` on
 the next render as "drawn bybrand". Turned off instead, it keeps every break the formatter writes,
 so a wrapped link carries a space inside its underline and a bare break before punctuation shows as
-a space. The template keeps compression on, and the step flags a line ending in text whose next line
-starts with an inline tag, and an inline closing tag whose next line starts with a word; the fix is
-the `{" "}` prettier itself writes, or joining the lines. A break no space belongs in, such as an
+a space. The template keeps compression on, and the step flags a line ending in text, or in an
+expression after words of its own (`by {name}`), whose next line starts with an inline tag, and an
+inline closing tag, wrapped before its `>` too, whose next line starts with a word, an opening
+bracket, a quote, a dash or one expression that draws no element. The fix is
+the `{" "}` prettier itself writes, or joining the lines. A line of expressions alone counts for
+neither: most lay out sibling elements. A break no space belongs in, such as an
 icon in a flex row, gets an allow entry with `text`. Where every `astro.config.*` in the repository
 sets `compressHTML: false`, the step passes, and it reads the files again once one turns it back on.
 
@@ -248,6 +251,8 @@ The options beyond those above:
   inline; where a repository's stories draw their state alone in an iframe there, which loads `css`,
   the page needs only the tokens its header and bar read and what it draws around the frame, such as
   `["@hackersandwizards/brand/tokens.root.css"]`.
+- `htmlClass`: classes on `<html>` of every page, set before the body draws, such as
+  `["hw-focus-ring"]` for brand's focus ring.
 - `previewStates`: the states a tile draws and links first, each the story's export name in kebab
   case, such as `["light", "loaded-dark"]` for `Light` and `LoadedDark`.
 - `head`: the repository's own `<head>` component, rendered on every page. Ahead of it every page
@@ -325,7 +330,8 @@ an `optimizeDeps` list of its own, found none late.
 Vite still says "Re-optimizing dependencies because lockfile has changed" once after each change to
 `bun.lock`; a dependency the scan cannot reach goes into the repository's `optimizeDeps.include`.
 
-Under an agent, `astro dev` and `astro preview` move themselves into the background, and with
+`astro preview` runs under Node, so `node` has to be on the path: under Bun 1.4.4 it fails resolving
+Astrobook's routes (`ENOENT` for `catalog/astrobook/pages/app.astro`). Under an agent, `astro dev` and `astro preview` move themselves into the background, and with
 `--root catalog` that background server resolves `catalog` from inside `catalog/`: dev waits 30 s
 for it and fails, preview finds no `catalog/catalog/dist`. `ASTRO_DEV_BACKGROUND=1` and
 `ASTRO_PREVIEW_BACKGROUND=1` keep each in the foreground and change nothing for a person:
@@ -334,7 +340,7 @@ for it and fails, preview finds no `catalog/catalog/dist`. `ASTRO_DEV_BACKGROUND
 {
   "dev": "ASTRO_DEV_BACKGROUND=1 bun --bun astro dev --root catalog",
   "catalog": "bun run dev",
-  "preview": "ASTRO_PREVIEW_BACKGROUND=1 bun --bun astro preview --root catalog"
+  "preview": "ASTRO_PREVIEW_BACKGROUND=1 astro preview --root catalog"
 }
 ```
 
