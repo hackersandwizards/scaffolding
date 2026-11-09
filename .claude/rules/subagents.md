@@ -14,12 +14,11 @@
   delegate's tools come from its own definition, never from the caller's.
 - Carry the person's request into the brief in their own words, and mark any framing you add as
   yours: a delegate answers the question the brief asks.
-- A stop condition in a brief names which hits of its search count. Whether a consumer still uses a
-  name is decided by that consumer's tracked source (`git -C <repo> grep`), never by prose in reports
-  or git-ignored build output.
-- Read every tag, pin, item and open point a brief repeats from an earlier report or a notes file
-  from `origin/<default branch>` while writing the brief, and leave out what an earlier run closed:
-  a notes file is what was true when it was written.
+- A brief's stop condition names which search hits count: for whether a consumer still uses a name,
+  the consumer's tracked source (`git -C <repo> grep`), never prose in reports or git-ignored build
+  output.
+- Before a brief repeats a tag, pin, item or open point from an earlier report or notes file, read
+  its current state from `origin` and leave it out if a run closed it.
 - A delegate reviewing credential handling reasons from the source, and the prompt says so: no
   command that reads a keychain, a credential helper or a secret store. A printed value stays in a
   transcript, and only a person can rotate it.
