@@ -121,10 +121,9 @@ a reference and stays.
 
 ## Mirrors and sync
 
-The training repositories under `trainings/` carry no rules, `CLAUDE.md` or skills:
-participants build them in the training. Their harness settings stay, and a sweep across every
-repository leaves them out and says so. `training-environment`, the infrastructure no participant
-clones, keeps its `CLAUDE.md` and `AGENTS.md`.
+A participant repository, a training repository without our `CLAUDE.md` at its root that
+participants build in the training, carries no rules or skills of ours either. Its harness settings
+stay, and a sweep across every repository leaves it out and says so.
 
 The sync script's own `GLOBAL_RULES` and `GLOBAL_SKILLS` arrays say which files are mirrors, and
 `FORKS` names the repo-and-skill pairs the hub does not own. Check the file you are about to edit

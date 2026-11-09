@@ -3,6 +3,8 @@
 Keep repositories as loosely coupled as the job allows: each builds, tests and runs from its own
 checkout and the packages it pins, and its tools write no file outside the checkout: built helpers
 and fetched data go to a git-ignored folder inside it, such as `node_modules/.cache/<tool>/`.
+Chrome for Testing alone stays in the shared cache puppeteer or Playwright installs it to, 570 MB a
+build.
 
 - A defect a review of one deck, page or document finds in its engine or in the brand is fixed in
   the engine, or in the brand where every surface reviews better with the change, never worked
@@ -14,9 +16,10 @@ and fetched data go to a git-ignored folder inside it, such as `node_modules/.ca
 - A package other repositories use declares that surface in `bin` and `exports`. Renaming a
   command, changing its arguments or moving an exported file is a release whose commit names the
   change.
-- Write only into your own repository. Work another repository owns goes there as a brief for a
-  session in that repository: a session started elsewhere misses its `paths:` rules, even after
-  `/add-dir`. The hub's rule and skill sync is the one sync between repositories. A repository
+- Write only into your own repository, and into the hub's copy of a rule or skill the hub mirrors
+  into it, whichever repository finds the fix. Work another repository owns goes there as a brief
+  for a session in that repository: a session started elsewhere misses its `paths:` rules, even
+  after `/add-dir`. The hub's rule and skill sync is the one sync between repositories. A repository
   holding another as a git submodule whose rules it carries, because the submodule is kept free of
   them, writes into that submodule from inside it.
 - Take a fact another repository owns, such as a brand value, a price or a product fact, from its

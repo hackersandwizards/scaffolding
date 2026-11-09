@@ -66,11 +66,11 @@ Prefer these over their classic equivalents.
 
 **JavaScript/TypeScript:**
 - bun is the package manager in every repository of ours: `bun install`, `bun run`, `bun.lock`,
-  `"packageManager": "bun@<version>"`, and those lines in its README and CLAUDE.md. The training
-  repositories under `trainings/` use npm and node instead, in commands, lockfile,
-  `packageManager`, README and MCP config, because most participants have no bun.
+  `"packageManager": "bun@<version>"`, and those lines in its README and CLAUDE.md. A participant
+  repository, a training repository without our `CLAUDE.md` at its root that participants build in
+  the training, uses npm and node instead, in commands, lockfile, `packageManager`, README and MCP config, because most participants have no bun.
 - `bun` instead of `node` for running scripts, and `bunx` instead of `npx` for a package the project
-  does not install, outside a training repository
+  does not install, outside a participant repository
 - `bun install -g` for globals at `~/.bun/bin`
 - built-in `Bun.Image` for image processing (Sharp-shaped, JPEG/PNG/WebP/HEIC/AVIF, no npm deps)
 
@@ -90,9 +90,9 @@ The Bash tool runs zsh. A bare word starting with `=` (`echo =====`) is a failed
 drops the rest of the command line, and `:r` right after a variable is a modifier (`$sha:refs/...`
 loses its `r`). Quote separators and write `${var}:`. An unmatched glob fails its own command with
 `no matches found`: quote every glob a command receives as an argument (`--include='*.ts'`), and
-list files with `ls <dir> | grep` rather than a bare pattern that may match nothing. A function
-named like an alias of the shell snapshot (`g`, `c`, `t`) fails to parse with `defining function
-based on alias`: give a function a name no alias holds.
+list files with `command ls <dir> | command grep` rather than a bare pattern that may match
+nothing. A function named like an alias of the shell snapshot (`g`, `c`, `t`) fails to parse
+with `defining function based on alias`: give a function a name no alias holds.
 `path`, `fpath`, `cdpath` and `manpath` are tied to their uppercase variables, so a loop variable
 named `path` empties the search path and every later command fails with `command not found`. An
 unquoted `$list` stays one word: `for x in $list` runs once and `git commit -- $files` passes one

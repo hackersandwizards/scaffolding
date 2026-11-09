@@ -142,12 +142,12 @@ a known contact does not need this.
    before naming the cause.
 3. Solution-aware: position the category, context engineering vs prompt engineering vs vibe
    coding, before pitching h&w.
-4. Product-aware: differentiate with proof: client names where a public URL shows h&w and that
-   client together, sourced research findings, testimonials, an FAQ for the evaluator's objections.
+4. Product-aware: differentiate with proof: client names where the client-name rule below allows them,
+   sourced research findings, testimonials, an FAQ for the evaluator's objections.
 5. Most aware: scarcity ("3 Q4 spots remaining"), a clear next step, a time-bounded offer.
 
-On the website every page serves one stage: the homepage stage 1, the methodology page stages 2-3,
-the Work Together page stages 4-5.
+On the website every page serves one stage: the homepage stage 1, the Work together page stages
+4-5.
 
 ## Numbers and status claims
 

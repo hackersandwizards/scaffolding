@@ -39,11 +39,10 @@ handling that prevents data loss, security measures, or accessibility basics.
   A repository pinning `@hackersandwizards/scaffolding` takes its hooks from scaffolding's skeleton
   (`check-structure --fix`). Elsewhere a hook is one line in `.githooks/` calling a script:
   `check:staged` runs `check-staged.ts` from this folder, `lfs:pre-push` runs `git lfs pre-push`
-  where LFS is used. `scaffolding check` serialises `bun run check` itself, and scaffolding's skeleton
-  file `scripts/repo/only-bun.cjs` is the `preinstall` guard. npm 7 writes
-  `node_modules` and `package-lock.json` before `preinstall` runs, so `package.json` also sets
-  `"engines": {"npm": "please-use-bun"}` and `.npmrc` sets `engine-strict=true`. A package other
-  repositories install carries no `preinstall`: a consumer's install-script check rejects it.
+  where LFS is used. `scaffolding check` serialises `bun run check` itself. npm is stopped by
+  `"engines": {"npm": "please-use-bun"}` in `package.json` with `engine-strict=true` in `.npmrc`; no
+  install script guards the package manager, and a package other repositories install carries no
+  `preinstall`, since a consumer's install-script check rejects it.
 - Remove or replace a dependency with a known vulnerability before excusing it. An audit
   exception names the advisory ID.
 - A browser that code or an MCP server starts is Chrome for Testing with a profile from `mkdtemp`
@@ -58,10 +57,11 @@ handling that prevents data loss, security measures, or accessibility basics.
   screen, forbids hand-built substitutes for library components, and lists the reference app's UI
   audits as gates from the first wave.
 - Every repository with a UI links its design-system catalogue in the UI, guarded by a coverage
-  test and named in its `CLAUDE.md`. A catalogue shows only what its repository adds to or changes
-  from the packages it builds on (brand's elements, slides' slide types), never their parts again
-  nor its own content such as decks; with nothing added it stays empty. An element two
-  repositories build moves into the package they share.
+  test and named in its `CLAUDE.md`. A catalogue shows what its repository adds to or changes
+  from the packages it builds on (brand's elements, slides' slide types) and one tile per brand
+  element its `brand-elements.json` lists as used, which brand's `brand-elements` requires; never
+  other parts of those packages, nor its own content such as decks. An element two repositories
+  build moves into the package they share.
 - Decks run only on our own slide engine, never Slidev or reveal.js. Two exceptions stay and are
   never proposed for porting: the one client reveal.js deck in Company OS and a partner's own
   course repositories.
