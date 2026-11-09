@@ -1,4 +1,4 @@
-import { afterAll, describe, expect, test } from "bun:test";
+import { afterAll, beforeAll, describe, expect, test } from "bun:test";
 import { spawnSync } from "node:child_process";
 import {
   chmodSync,
@@ -1690,6 +1690,19 @@ describe("shared eslint config", () => {
 });
 
 describe("catalog", () => {
+  // The package the fixture's homeCss names, for every test that builds or serves the fixture.
+  beforeAll(() => {
+    const modules = join(import.meta.dir, "fixture", "catalog", "node_modules");
+    made.push(modules);
+    write(join(modules, "@acme", "ui"), {
+      "package.json": JSON.stringify({
+        name: "@acme/ui",
+        version: "1.2.3",
+        exports: { "./ui.css": "./ui.css" },
+      }),
+      "ui.css": ".acme-ui{color:red}\n",
+    });
+  });
   test("catalogPath: the root, or /catalog/ beside the site's own home; dev drops the base", () => {
     expect(catalogPath({ base: "/s", pages: ["types", "about.astro"] })).toBe("/s/");
     for (const page of ["index.astro", "index.html.ts", "index", "[...slug].astro"])
@@ -1702,15 +1715,6 @@ describe("catalog", () => {
     const fixture = join(import.meta.dir, "fixture");
     const dist = join(fixture, "dist");
     made.push(dist, join(fixture, "catalog", ".astro"), join(fixture, "catalog", "node_modules"));
-    // The package the fixture's homeCss names.
-    write(join(fixture, "catalog", "node_modules", "@acme", "ui"), {
-      "package.json": JSON.stringify({
-        name: "@acme/ui",
-        version: "1.2.3",
-        exports: { "./ui.css": "./ui.css" },
-      }),
-      "ui.css": ".acme-ui{color:red}\n",
-    });
     const astro = join(import.meta.dir, "..", "node_modules", ".bin", "astro");
     const build = (args: string[] = [], env: Record<string, string> = {}) =>
       spawnSync(astro, ["build", "--root", "catalog", ...args], {
@@ -3027,6 +3031,7 @@ describe("check-spaces", () => {
       '  <a>x</a>\n  {cond ? "a" : "b"} more',
       "  <a>x</a>\n  {name}.",
       "  <a>x</a>\n  {name} <em>y</em>",
+      '  <a>x</a>\n  {name} <em\n    class="y">z</em>',
     ])
       expect([body, flagged(body)]).toEqual([body, 1]);
     for (const body of [
@@ -3041,6 +3046,8 @@ describe("check-spaces", () => {
       "  {cond && <b t={{ a: 1 }}>y</b>}\n  <a>x</a>",
       "  <a>x</a>\n  {cond && <b>y</b>}",
       "  <a>x</a>\n  {list.map((i) => (\n    <b>{i}</b>\n  ))}",
+      "  <a>x</a>\n  {items.map(({ name }) => (\n    <b>{name}</b>\n  ))}",
+      "  <a>x</a>\n  {Object.entries({ a: 1 }).map(([k, v]) => (\n    <b>{k}</b>\n  ))}",
     ])
       expect([body, flagged(body)]).toEqual([body, 0]);
   });

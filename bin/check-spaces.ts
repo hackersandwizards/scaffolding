@@ -19,7 +19,9 @@ import {
 // HTML's inline elements that sit in running text: the jsx mode drops the break before each.
 const INLINE =
   "a|abbr|b|bdi|bdo|button|cite|code|data|del|dfn|em|i|img|input|ins|kbd|label|mark|meter|output|progress|q|s|samp|select|small|span|strong|sub|sup|svg|time|u|var";
-const opens = new RegExp(`^\\s*<(${INLINE})(?:[\\s>/]|$)`);
+// Its attributes may follow on the next line.
+const inlineTag = `<(${INLINE})(?:[\\s>/]|$)`;
+const opens = new RegExp(`^\\s*${inlineTag}`);
 const closes = new RegExp(`</(${INLINE})>\\s*$`);
 // Text: a line that ends in neither a tag (>), an opening bracket nor an operator (= & |), or ends
 // in an expression after words of its own ("by {name}"). A line of expressions alone, like the
@@ -33,10 +35,10 @@ const holdsWords = (line: string) => {
   return !text.includes("}") && /[\p{L}\p{N}]/u.test(text.replace(/<[^>]*>/g, ""));
 };
 const endsInExpression = /(?<!\{\s*(?:" "|' ')\s*)\}\s*$/;
-// A word, opening punctuation, a dash, or an expression that draws no element, alone on the line
-// or before text or an inline tag.
+// A word, opening punctuation, a dash, or an expression that draws no element and closes on the
+// line (one level of braces inside), alone or before text or an inline tag.
 const startsInText = new RegExp(
-  `^\\s*(?:[\\p{L}\\p{N}(["'“‘—–-]|\\{(?!\\s*(?:" "|' ')\\s*\\})[^<]*\\}(?:\\s*$|\\s*[^\\s<{]|\\s*<(?:${INLINE})[\\s>/]))`,
+  `^\\s*(?:[\\p{L}\\p{N}(["'“‘—–-]|\\{(?!\\s*(?:" "|' ')\\s*\\})(?:[^<{}]|\\{[^<{}]*\\})*\\}\\s*(?:$|[^\\s<{]|${inlineTag}))`,
   "u",
 );
 
