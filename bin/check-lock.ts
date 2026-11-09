@@ -30,7 +30,8 @@ const SPEAK_MS = 30_000;
 interface Holder {
   pid: number;
   startedAt: number;
-  /** The command's process group, which outlives a holder killed together with its caller's group. */
+  /** The command's pid, the leader of its own process group: it outlives a holder killed together
+   * with its caller's group. */
   group?: number;
 }
 
@@ -61,7 +62,7 @@ const holderName = (): string => {
   const holder = readHolder();
   if (!holder) return "pid unknown";
   return holder.group && !running(holder.pid)
-    ? `process group ${holder.group} of dead pid ${holder.pid}`
+    ? `command ${holder.group} of dead pid ${holder.pid}`
     : `pid ${holder.pid}`;
 };
 
@@ -104,7 +105,7 @@ function dropIfStale(): void {
   // An unreadable lock is a half-written or corrupt one, and nobody can prove it is live. A live
   // holder is never reclaimed on age: a slow run under load outlasted any bound and a second check
   // ran beside it. A reused pid reads as live too, which ends in the wait timeout, not an overlap.
-  if (holder && (running(holder.pid) || (holder.group && running(-holder.group)))) return;
+  if (holder && (running(holder.pid) || (holder.group && running(holder.group)))) return;
   // Deleting by name after the read deleted a fresh lock another waiter wrote in between. A claim,
   // named for these exact contents, lets one waiter delete them, and while they sit at the lock path
   // no acquire can replace them, so the re-read under the claim stays true until the delete.
@@ -211,9 +212,9 @@ const spawned = spawn(command[0], command.slice(1), {
   detached: true,
 });
 child = spawned;
-// The command's own group escapes a SIGKILL to the caller's group, so the lock names that group
-// too, and a waiter reads it as live until the group is empty. A rename replaces the contents
-// whole, as create() writes them.
+// The command's own group escapes a SIGKILL to the caller's group, so the lock names the command
+// too, and a waiter reads it as live until the command has exited; a process it left behind on
+// purpose holds nothing. A rename replaces the contents whole, as create() writes them.
 const holder = held ? readHolder() : undefined;
 if (holder?.pid === process.pid && spawned.pid)
   try {

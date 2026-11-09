@@ -1100,6 +1100,18 @@ describe("check-confidential", () => {
     expect(run(dir, "check-confidential", ["--staged"], env).code).toBe(0);
   });
 
+  test("an unstaged private flag leaves the scan of the index on", () => {
+    const dir = repo({ "package.json": "{}" });
+    write(dir, {
+      "package.json": JSON.stringify({ scaffolding: { private: true } }),
+      "a.md": "Acme Widgets GmbH\n",
+    });
+    sh(dir, ["add", "a.md"]);
+    const r = run(dir, "check-confidential", ["--staged"], env);
+    expect(r.out).toContain("a.md: confidential term");
+    expect(r.code).toBe(1);
+  });
+
   test("a push carrying a purged commit is refused, a clean one passes", () => {
     const remote = temp();
     sh(remote, ["init", "-q", "--bare"]);
@@ -1522,6 +1534,16 @@ describe("scaffolding check", () => {
     const f = run(failed, "scaffolding", ["check"], { CHECK_LOCK: join(failed, ".lock") });
     expect(f.out).toContain("FAIL typecheck");
     expect(f.out).toContain("ok   catalog");
+  });
+
+  test("arguments after a typecheck's script name leave the build waiting for it", () => {
+    const { catalog: _, typecheck: __, ...rest } = skip;
+    const dir = gate(
+      { skip: rest, typecheck: "check:types --pretty" },
+      { "check:types": "sleep 1 && touch tc-done && echo astro", build: "test -f tc-done" },
+    );
+    const r = run(dir, "scaffolding", ["check"], { CHECK_LOCK: join(dir, ".lock") });
+    expect(r.out).toContain("ok   catalog");
   });
 
   test("the styles step prints one line per finding and fails", () => {

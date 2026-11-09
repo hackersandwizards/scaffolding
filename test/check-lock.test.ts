@@ -360,6 +360,27 @@ describe("check-lock wraps a consumer's build", () => {
     expect(next.stdout).toBe("built\n");
   }, 30_000);
 
+  // A command may leave a process behind on purpose: that group member holds nothing.
+  it("reclaims the lock of a SIGKILLed holder once its command has exited", async () => {
+    const lock = lockPath();
+    const check = spawn("bun", [SCRIPT, "sh", "-c", "sleep 30 & sleep 1"], {
+      env: { ...process.env, CHECK_LOCK: lock },
+      stdio: "ignore",
+      detached: true,
+    });
+    await until(() => existsSync(lock) && readFileSync(lock, "utf8").includes("group"), 5_000);
+    const { group } = JSON.parse(readFileSync(lock, "utf8")) as { group: number };
+    const reaped = new Promise((go) => check.on("close", go));
+    process.kill(-check.pid!, "SIGKILL");
+    await reaped;
+    try {
+      const next = run(lock, ["echo", "ran"], { CHECK_LOCK_WAIT_MS: "10000" });
+      expect(next.stdout).toContain("ran");
+    } finally {
+      process.kill(-group, "SIGKILL");
+    }
+  }, 30_000);
+
   it("names a command that cannot start", () => {
     const result = run(lockPath(), ["no-such-command-here"]);
     expect(result.status).toBe(1);

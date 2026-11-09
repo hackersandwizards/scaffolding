@@ -274,10 +274,11 @@ const message = arg("--message-file");
 const commit = arg("--commit");
 const tree = arg("--tree");
 const index = argv.includes("--index");
-if (readPackage(root).scaffolding?.private === true) process.exit(0);
-// The allow list comes from the snapshot scanned, so a commit adding a case and its allow entry
-// together is judged as one. A message belongs to the commit the index makes.
+// `private` and the allow list come from the snapshot scanned, so a commit adding a case and its
+// allow entry together is judged as one and an unstaged edit switches no scan off. A message
+// belongs to the commit the index makes.
 const pkg = readPackage(root, tree ?? commit ?? ":");
+if (pkg.scaffolding?.private === true) process.exit(0);
 
 let list: TermList | undefined;
 // Kept out of applyAllow: no allow entry may switch the list requirement off.
