@@ -240,8 +240,13 @@ The options beyond those above:
 - `homeCss`: the stylesheets the home loads, default `css`. The tiles frame each state, so the home
   needs only the tokens and brand's elements its header, rail and tiles read and what its
   foundations draw, such as
-  `["@hackersandwizards/brand/tokens.root.css", "@hackersandwizards/brand/elements.css"]`. `css` loads on a state's page and a state alone;
-  the header's CSS and the shell's own on the home and a state's page, never on a state alone.
+  `["@hackersandwizards/brand/tokens.root.css", "@hackersandwizards/brand/elements.css"]`. `css` loads on a state alone and, without
+  `dashboardCss`, on a state's page; the header's CSS and the shell's own on the home and a state's
+  page, never on a state alone.
+- `dashboardCss`: the stylesheets a state's page loads, default `css`. The page draws its story
+  inline; where a repository's stories draw their state alone in an iframe there, which loads `css`,
+  the page needs only the tokens its header and bar read and what it draws around the frame, such as
+  `["@hackersandwizards/brand/tokens.root.css"]`.
 - `previewStates`: the states a tile draws and links first, each the story's export name in kebab
   case, such as `["light", "loaded-dark"]` for `Light` and `LoadedDark`.
 - `head`: the repository's own `<head>` component, rendered on every page. Ahead of it every page

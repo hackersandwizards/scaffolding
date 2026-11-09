@@ -32,6 +32,9 @@ export type CatalogOptions = {
    * the tokens and brand's elements.css its header, rail and tiles read and what its foundations
    * draw. */
   homeCss?: string[];
+  /** The stylesheets a state's page loads, default `css`; less for stories that frame their state
+   * alone there, which loads `css`: the tokens the header and bar read and what the page draws. */
+  dashboardCss?: string[];
   /** One or two sentences under the title. */
   lead: string;
   /** The tile preview's viewport in CSS px, drawn whole and scaled to the tile, such as
@@ -388,7 +391,7 @@ export function catalog(options: CatalogOptions): AstroIntegration {
             ? `export { default } from ${spec(`${BRAND_ICON}?url&no-inline`)};`
             : "export default undefined;",
           [`${CSS}home`]: imports([...around, ...(options.homeCss ?? options.css)]),
-          [`${CSS}dashboard`]: imports([...around, ...options.css]),
+          [`${CSS}dashboard`]: imports([...around, ...(options.dashboardCss ?? options.css)]),
           [`${CSS}stories`]: imports(options.css),
         };
         params.updateConfig({

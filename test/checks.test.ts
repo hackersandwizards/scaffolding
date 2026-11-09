@@ -1773,8 +1773,9 @@ describe("catalog", () => {
     expect(styles(state)).toMatch(
       /#astrobook-sidebar,\s*astrobook-sidebar-resize-handle\s*\{\s*display:\s*none\s*!important/,
     );
-    // A state's page takes the header's, the bar's and the repository's CSS; a state alone only the
-    // repository's; the home the header's and the shell's, and of the repository's only `homeCss`.
+    // A state's page takes the header's, the bar's and the repository's CSS, `css` without a
+    // `dashboardCss`; a state alone only the repository's; the home the header's and the shell's,
+    // and of the repository's only `homeCss`.
     const [stateCss, aloneCss, homeCss] = [state, page("stories/Parts/box-parts/two"), home].map(
       styles,
     );
@@ -1993,6 +1994,16 @@ describe("catalog", () => {
       rmSync(file);
       return result;
     };
+    // `dashboardCss` replaces `css` on a state's page; a state alone keeps `css`.
+    const dash = join(fixture, "catalog", "dash.css");
+    made.push(dash);
+    writeFileSync(dash, ".dash{color:red}\n");
+    expect(variant("dashed", 'css: ["./fx.css"], dashboardCss: ["./dash.css"]').status).toBe(0);
+    const dashCss = styles(page("dashboard/Parts/box-parts/two"));
+    expect(dashCss).toContain(".dash{color:red}");
+    expect(dashCss).not.toContain(".box{");
+    expect(styles(page("stories/Parts/box-parts/two"))).toContain(".box{color:teal}");
+    rmSync(dash);
     // A `previewSize` key naming no group fails the build by name: a renamed group would fall back
     // to the small fitted view unseen.
     const stale = variant("stale", "previewSize: { Parts: [1, 1], Pieces: [1440, 900] }");
