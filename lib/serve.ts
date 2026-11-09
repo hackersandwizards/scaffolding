@@ -41,7 +41,6 @@ export async function serve(
   let exited = false;
   server.on("exit", () => (exited = true));
   server.on("error", () => (exited = true));
-  // The whole group, since a wrapper may have exited and left its server running.
   const stop = () => {
     try {
       if (server.pid) process.kill(-server.pid);

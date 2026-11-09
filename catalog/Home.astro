@@ -4,7 +4,7 @@ import config from "virtual:astrobook/global-config.mjs";
 import options from "virtual:scaffolding/catalog";
 import Layout from "./Layout.astro";
 import { label } from "./words.ts";
-import type { CatalogOptions } from "./index.ts";
+import type { CatalogItem, CatalogOptions } from "./index.ts";
 
 type StoryModule = { name: string; directory?: string; stories: { id: string }[] };
 
@@ -33,17 +33,7 @@ const {
 } = { ...options, ...Astro.props };
 const rank = (g: string) => (groupOrder.includes(g) ? groupOrder.indexOf(g) : groupOrder.length);
 const url = (base: string, id: string) => `${base.replace(/\/$/, "")}/${id}${options.slash}`;
-const groups = new Map<
-  string,
-  {
-    name: string;
-    href: string;
-    pill: string;
-    frame?: string;
-    frameSrcdoc?: boolean;
-    frameSize?: [number, number];
-  }[]
->();
+const groups = new Map<string, CatalogItem[]>();
 let states = 0;
 const named = (modules as StoryModule[]).map((m) => ({ ...m, label: label(m.name) }));
 for (const m of named.sort((a, b) => a.label.localeCompare(b.label))) {

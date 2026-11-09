@@ -60,9 +60,9 @@ export type CatalogOptions = {
   href?: string;
   /** The header's nav on every page but a state alone, such as brand's catalogs.json: an href
    * starting with "/" counts from Astro's `base`, and the item named `current` links to this
-   * catalog, at /catalog/ after the base, and carries aria-current; a `current` naming no item fails the build. Without
-   * it, brand's catalogs.json where the repository resolves @hackersandwizards/brand, the item
-   * named `product` current. */
+   * catalog, at /catalog/ after the base, and carries aria-current; a `current` naming no item
+   * fails the build. Without it, brand's catalogs.json where the repository resolves
+   * @hackersandwizards/brand, the item named `product` current. */
   nav?: { items: { name: string; href: string }[]; current?: string };
   /** Under `astro dev`, a header link to the repository's page in the local admin hub,
    * http://admin.localhost:4329/<repo>/dashboard, the repo named as the hub names it. */
@@ -215,7 +215,6 @@ export function catalog(options: CatalogOptions): AstroIntegration {
   let mounted = false;
   // A build writes forwarding pages at /catalog/ for a catalog at the site's root.
   let forwards = false;
-  // Every route Astro renders as a page.
   const pageRoutes = new Set<string>();
   // A build whose assetsPrefix is a file URL is opened from disk, where a root-relative link
   // resolves to the disk's root.
@@ -517,6 +516,8 @@ export function catalog(options: CatalogOptions): AstroIntegration {
           for (const [file, source] of found) {
             const target = join(out, file);
             cpSync(source, target, { recursive: true, dereference: true });
+            // Only in CI: locally a pointer may be a file .lfsconfig leaves out.
+            if (process.env.CI !== "true") continue;
             const files = statSync(target).isDirectory()
               ? readdirSync(target, { recursive: true, encoding: "utf8" }).map((f) => join(file, f))
               : [file];
@@ -524,8 +525,7 @@ export function catalog(options: CatalogOptions): AstroIntegration {
               if (statSync(join(out, f)).isFile() && isPointer(join(out, f))) pointers.push(f);
           }
         }
-        // Only in CI: locally a pointer may be a file .lfsconfig leaves out.
-        if (process.env.CI === "true" && pointers.length)
+        if (pointers.length)
           throw new Error(`catalog copy: still Git LFS pointers: ${pointers.join(", ")}`);
         // Opened from disk, each link to a page or file of the build, a state menu's option included,
         // names its file by file URL, as Astro names the assets, since a folder there opens as a

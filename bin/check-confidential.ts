@@ -404,7 +404,6 @@ function addedLines(diff: string) {
   return added;
 }
 
-// Set by a scan that reads every file: only that one can call an allow entry stale.
 let full = false;
 const isBinary = (p: string) => IMAGE.test(p) || /\.pdf$/i.test(p);
 const LFS = "version https://git-lfs";

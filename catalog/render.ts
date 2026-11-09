@@ -84,22 +84,22 @@ const catalogTile = (item: CatalogItem, group: string) =>
 // first paint (2 s after load where none comes; two animation frames still started before it) and
 // the tile comes within 200 px of the view, so the frames neither delay the first paint nor load
 // all at once (Chrome's loading="lazy" loaded 30 of 40 frames up front). A hidden page, such as a
-// headless check's tab without focus, never paints and its observer never reports (0 of 39 tiles
-// in 10 s): with no first paint to protect and nobody scrolling, it loads every tile at once, so
-// a check reads them all. A frame with data-srcdoc draws from the
-// page's HTML, a <base> keeping its relative links. Draws each sized frame whole at its tile's
-// width, and centres every other frame's content, shrunk where it is taller than the tile and
-// measured afresh each time, so a refit never shrinks it again, as Storybook's "centered" layout
-// does, 8 px clear of each side, on the ground around it. A frame of either kind draws the element
-// marked data-hw-preview alone, or the part inside it a non-empty value selects, everything else
-// and the page's canvas hidden once the ground is read. A centred frame fits what that element
-// paints (its own box where it has a ground, background image, border, shadow or is a control or
-// image, else its text and such boxes inside, so a full-width wrapper centres its button rather
-// than its own box), each cut to the boxes clipping it; else <main>'s only child or <main>. Marks the rail's label of the group read now with
-// aria-current="true": the last group whose top has passed a third of the viewport; once one has
-// and the page can scroll no further, the group the address names where its top shows, else, once
-// the page has scrolled, the last group, so a click on a group the page cannot scroll up to that
-// third marks that group; a mark another script set, such as "page", stays. The rail's names
+// headless check's tab without focus, never paints and its observer never reports (0 of 39 tiles in
+// 10 s): with no first paint to protect and nobody scrolling, it loads every tile at once, so a
+// check reads them all. A frame with data-srcdoc draws from the page's HTML, a <base> keeping its
+// relative links. Draws each sized frame whole at its tile's width, and centres every other frame's
+// content, shrunk where it is taller than the tile and measured afresh each time, so a refit never
+// shrinks it again, as Storybook's "centered" layout does, 8 px clear of each side, on the ground
+// around it. A frame of either kind draws the element marked data-hw-preview alone, or the part
+// inside it a non-empty value selects, everything else and the page's canvas hidden once the ground
+// is read. A centred frame fits what that element paints (its own box where it has a ground,
+// background image, border, shadow or is a control or image, else its text and such boxes inside,
+// so a full-width wrapper centres its button rather than its own box), each cut to the boxes
+// clipping it; else <main>'s only child or <main>. Marks the rail's label of the group read now
+// with aria-current="true": the last group whose top has passed a third of the viewport; once one
+// has and the page can scroll no further, the group the address names where its top shows, else,
+// once the page has scrolled, the last group, so a click on a group the page cannot scroll up to
+// that third marks that group; a mark another script set, such as "page", stays. The rail's names
 // scroll, never the page, to keep that label in view. Delegated on the document, scroll caught in
 // the capture phase since Astrobook scrolls <main> rather than the window, so it holds across
 // Astro's client router swaps and runs once.

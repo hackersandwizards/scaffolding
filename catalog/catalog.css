@@ -40,11 +40,6 @@
   .hw-catalog-rail > .hw-search {
     margin-bottom: 1rem;
   }
-  .hw-catalog-grid {
-    margin: 0;
-    padding: 0;
-    list-style: none;
-  }
   /* brand's focus ring inside the link: outside it, the rail's scroll box clips it. */
   .hw-catalog-rail a {
     --hw-focus-offset: -3px;
@@ -118,6 +113,9 @@
   }
   .hw-catalog-grid {
     display: grid;
+    margin: 0;
+    padding: 0;
+    list-style: none;
     grid-template-columns: repeat(auto-fill, minmax(20rem, 1fr));
     gap: 1rem;
   }

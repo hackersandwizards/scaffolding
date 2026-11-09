@@ -6,8 +6,8 @@ import { join } from "node:path";
  * editor and Prettier ignore files, else block, HTML and `//` comments, a `//` in a URL or a
  * string's start excepted. A block comment opens only after a character that ends code or another
  * comment, or after a word when a space follows the mark: a regular expression cannot tell a string
- * from code, and a glob such as "src/*.ts" would read on to the next closing mark. Group 1 is the character before
- * a comment that a replacement keeps. */
+ * from code, and a glob such as "src/*.ts" would read on to the next closing mark. Group 1 is the
+ * character before a comment that a replacement keeps. */
 export const commentSyntax = (path: string) =>
   /\.(?:sh|py|ya?ml|toml)$|(?:^|\/)(?:\.githooks\/[^/.]+|\.editorconfig|\.prettierignore)$/.test(
     path,
