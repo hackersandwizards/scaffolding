@@ -1,4 +1,4 @@
-#!/usr/bin/env bun
+#!/usr/bin/env -S bun --no-env-file
 
 import { type ChildProcess, spawn } from "node:child_process";
 import { createHash } from "node:crypto";

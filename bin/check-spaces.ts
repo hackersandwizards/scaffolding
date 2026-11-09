@@ -1,4 +1,4 @@
-#!/usr/bin/env bun
+#!/usr/bin/env -S bun --no-env-file
 // Astro's default compressHTML drops a line break where text meets an inline tag, so "drawn by" on
 // one line and "<code>brand</code>" on the next render as "drawn bybrand". Prettier writes {" "}
 // where a space is meant; this finds the line breaks that still carry one. Where every Astro config

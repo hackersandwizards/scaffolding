@@ -1,7 +1,16 @@
-#!/usr/bin/env bun
+#!/usr/bin/env -S bun --no-env-file
 import { spawn, spawnSync } from "node:child_process";
 import { join } from "node:path";
-import { isReason, readPackage, repoRoot, styleFiles, stylelintFlags } from "../lib/repo.ts";
+import {
+  isReason,
+  readPackage,
+  repoRoot,
+  styleFiles,
+  stylelintFlags,
+  withoutEnvFile,
+} from "../lib/repo.ts";
+
+withoutEnvFile("scaffolding");
 
 const KEYS = new Set([
   "allow",

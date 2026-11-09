@@ -15,6 +15,16 @@ export const commentSyntax = (path: string) =>
     ? /(^|\s)#.*/gm
     : /(^|[\s{};,)>]|\b(?=\/\*\s)|(?<=\*\/))\/\*[\s\S]*?\*\/|<!--[\s\S]*?-->|(?<![:"'`\\])\/\/.*/gm;
 
+/** Exits 2 unless this bun started with `--no-env-file`, and hands the flag to every bun a step
+ * starts (README: Environment). */
+export function withoutEnvFile(name: string) {
+  if (!process.execArgv.includes("--no-env-file")) {
+    console.error(`[${name}] run it as its bin or with \`bun --no-env-file\`, so .env stays out`);
+    process.exit(2);
+  }
+  process.env.BUN_OPTIONS = `--no-env-file ${process.env.BUN_OPTIONS ?? ""}`.trim();
+}
+
 /** A reason is a non-blank string, so `false`, `0` or `{}` in package.json gives none. */
 export const isReason = (value: unknown): value is string =>
   typeof value === "string" && value.trim() !== "";

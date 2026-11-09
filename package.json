@@ -1,6 +1,6 @@
 {
   "name": "@hackersandwizards/scaffolding",
-  "version": "5.2.0",
+  "version": "5.3.0",
   "description": "Repository skeleton, gate commands, shared configs and the catalog shell: scaffold, scaffolding check, check-structure, check-confidential, check-staged, check-lock, and the catalog preset.",
   "keywords": [
     "astro-component"
@@ -75,10 +75,10 @@
   },
   "scripts": {
     "prepare": "[ \"$(git rev-parse --show-toplevel 2>/dev/null)\" = \"$(pwd -P)\" ] && git config core.hooksPath .githooks || true",
-    "check": "bun bin/scaffolding.ts check",
-    "check:staged": "bun bin/check-staged.ts",
+    "check": "bun --no-env-file bin/scaffolding.ts check",
+    "check:staged": "bun --no-env-file bin/check-staged.ts",
     "fix": "bun --bun eslint --cache --concurrency=auto . --fix && bun --bun prettier --write .",
-    "check-confidential": "bun bin/check-confidential.ts"
+    "check-confidential": "bun --no-env-file bin/check-confidential.ts"
   },
   "devDependencies": {
     "@types/bun": "1.4.4",

@@ -108,7 +108,7 @@ function write(dir: string, files: Record<string, string>) {
   }
 }
 function run(cwd: string, name: string, args: string[] = [], env: Record<string, string> = {}) {
-  const r = spawnSync(process.execPath, [bin(name), ...args], {
+  const r = spawnSync(process.execPath, ["--no-env-file", bin(name), ...args], {
     cwd,
     env: { ...process.env, ...env },
     encoding: "utf8",
@@ -1289,6 +1289,36 @@ describe("scaffolding check", () => {
     const r = run(dir, "scaffolding", ["check"], { CHECK_LOCK: join(dir, ".lock") });
     expect(r.out).toContain("ok   unique-names");
     expect(r.code).toBe(0);
+  });
+
+  test("no step sees a variable only .env set, a nested bun included", () => {
+    const probe = `sh -c 'echo sh=\${SCAF_TEST_SECRET:-none}' && bun probe.ts`;
+    const dir = gate({ skip, check: ["check:probe"] }, { "check:probe": probe });
+    write(dir, {
+      ".env": "SCAF_TEST_SECRET=x\n",
+      "probe.ts": 'console.log(`bun=${process.env.SCAF_TEST_SECRET ?? "none"}`);\n',
+    });
+    // The parent gate hands its own BUN_OPTIONS down; each run here starts without it.
+    const { BUN_OPTIONS: _, ...bare } = process.env;
+    const env = { ...bare, CHECK_LOCK: join(dir, ".lock") };
+    const plain = (cmd: string, args: string[]) =>
+      spawnSync(cmd, args, { cwd: dir, env, encoding: "utf8" });
+    // Control: outside the gate, bun loads .env.
+    expect(plain(process.execPath, ["probe.ts"]).stdout).toContain("bun=x");
+    for (const r of [
+      plain(process.execPath, ["--no-env-file", bin("scaffolding"), "check"]),
+      plain(bin("scaffolding"), ["check"]),
+    ]) {
+      const out = `${r.stdout}${r.stderr}`;
+      expect(out).toContain("sh=none");
+      expect(out).toContain("bun=none");
+      expect(r.status).toBe(0);
+    }
+    for (const name of ["scaffolding", "check-staged"]) {
+      const loaded = plain(process.execPath, [bin(name), "check"]);
+      expect(loaded.status).toBe(2);
+      expect(loaded.stderr).toContain("--no-env-file");
+    }
   });
 
   test("a failing step fails the gate and stops the later ones", () => {

@@ -76,6 +76,12 @@ non-blank string in `skip`:
 }
 ```
 
+**Environment.** No step sees a variable that only the checkout's `.env` set. Bun loads `.env`
+into every `bun` process it starts, so every bin here starts with `--no-env-file`, and the gate and
+`check-staged` pass it to every `bun` a step starts through `BUN_OPTIONS`; a tool that reads `.env` itself, such as
+Vite, still does. Run them as their bins (`bun run check`); `bun bin/scaffolding.ts` without
+`--no-env-file` exits 2. A step that needs a value gets it from the environment that starts the gate.
+
 **Spaces.** Astro's default `compressHTML` drops a line break where text meets an inline tag
 (HTML's inline elements, such as `small` or `time`): "drawn by" on one line and `<code>brand</code>` on
 the next render as "drawn bybrand". Turned off instead, it keeps every break the formatter writes,

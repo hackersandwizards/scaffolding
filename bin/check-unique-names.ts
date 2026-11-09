@@ -1,4 +1,4 @@
-#!/usr/bin/env bun
+#!/usr/bin/env -S bun --no-env-file
 // Every module-scope function name is defined once, so a grep for its definition finds one site.
 import { readFileSync } from "node:fs";
 import { join } from "node:path";

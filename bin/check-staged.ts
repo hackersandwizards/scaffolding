@@ -1,4 +1,4 @@
-#!/usr/bin/env bun
+#!/usr/bin/env -S bun --no-env-file
 // Check, never write: re-staging a rewritten file would sweep another session's unstaged lines in
 // that file into this commit. A file whose working tree differs from the index is checked from the
 // index on stdin, so those unstaged lines neither pass nor block this commit.
@@ -6,7 +6,9 @@ import { spawn, spawnSync } from "node:child_process";
 import { existsSync, mkdtempSync, readFileSync, rmSync } from "node:fs";
 import { availableParallelism, tmpdir } from "node:os";
 import { join } from "node:path";
-import { isReason, styled, stylelintFlags } from "../lib/repo.ts";
+import { isReason, styled, stylelintFlags, withoutEnvFile } from "../lib/repo.ts";
+
+withoutEnvFile("check:staged");
 
 function refuseCommit(message: string): never {
   console.error(`[check:staged] ${message}`);
