@@ -338,7 +338,7 @@ describe("check-lock wraps a consumer's build", () => {
     }, 30_000);
 
   // A CI cancel or a harness timeout SIGKILLs the caller's group, which the command's own group
-  // escapes: the next run must wait for that group, not read the dead holder as stale.
+  // escapes: the next run must wait for that command, not read the dead holder as stale.
   it("holds a build back while the command of a SIGKILLed holder still runs", async () => {
     const lock = lockPath();
     const done = `${lock}.build-done`;
@@ -381,6 +381,27 @@ describe("check-lock wraps a consumer's build", () => {
     }
   }, 30_000);
 
+  // A shell dies at once on the signal while the build it started shuts down after it.
+  it("after a signal holds a SIGKILLed holder's lock until the command's group is empty", async () => {
+    const lock = lockPath();
+    const done = `${lock}.build-done`;
+    const check = spawn(
+      "bun",
+      [SCRIPT, "sh", "-c", `(trap '' TERM; sleep 3; : > ${done}) & wait`],
+      { env: { ...process.env, CHECK_LOCK: lock }, stdio: "ignore", detached: true },
+    );
+    await until(() => existsSync(lock) && readFileSync(lock, "utf8").includes("group"), 5_000);
+    check.kill("SIGTERM");
+    await until(() => readFileSync(lock, "utf8").includes("signalled"), 5_000);
+    const reaped = new Promise((go) => check.on("close", go));
+    check.kill("SIGKILL");
+    await reaped;
+    const next = run(lock, ["sh", "-c", `test -e ${done} && echo built`], {
+      CHECK_LOCK_WAIT_MS: "15000",
+    });
+    expect(next.stdout).toBe("built\n");
+  }, 30_000);
+
   it("names a command that cannot start", () => {
     const result = run(lockPath(), ["no-such-command-here"]);
     expect(result.status).toBe(1);
@@ -394,6 +415,14 @@ describe("check-lock fails open", () => {
     const lock = lockPath();
     heldBy(lock, 999_999);
     expect(run(lock, ["echo", "ran"]).stdout).toContain("ran");
+  });
+
+  it.skipIf(process.getuid?.() === 0)("reads a live holder of another user as live", () => {
+    const lock = lockPath();
+    heldBy(lock, 1);
+    const result = run(lock, ["echo", "ran"], { CHECK_LOCK_WAIT_MS: "1500" });
+    expect(result.status).toBe(1);
+    expect(result.stdout).not.toContain("ran");
   });
 
   it("reclaims a stale lock past a claim its waiter died holding", () => {

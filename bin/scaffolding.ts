@@ -87,7 +87,6 @@ if (
 const skip = { ...config.skip };
 // A private repository's shipped files reach only company readers.
 if (config.private === true) {
-  skip.confidential ??= "scaffolding.private";
   skip.history ??= "scaffolding.private";
 }
 for (const [step, reason] of Object.entries(skip)) {
@@ -149,8 +148,9 @@ let ok = await group([["install", "bun install --frozen-lockfile"]]);
 // build waits for a typecheck that runs Astro. A plain tsc shares no folder with it.
 // `bun --bun <name>` runs a package script of that name before a binary.
 const typecheck = config.typecheck ?? "";
-const scriptName = typecheck.split(" ")[0]!;
-const sync = /\bastro\b/.test(`${typecheck} ${pkg.scripts?.[scriptName] ?? ""}`);
+const sync = /\bastro\b/.test(
+  [typecheck, ...typecheck.split(/\s+/).map((word) => pkg.scripts?.[word])].join(" "),
+);
 if (ok) ok = await group(Object.entries(shared), sync ? { catalog: "typecheck" } : {});
 for (const entry of config.check ?? []) {
   if (!ok) break;

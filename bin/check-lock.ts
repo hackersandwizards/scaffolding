@@ -33,6 +33,9 @@ interface Holder {
   /** The command's pid, the leader of its own process group: it outlives a holder killed together
    * with its caller's group. */
   group?: number;
+  /** A signal reached the command: its whole group counts, since a shell dies at once and the build
+   * it started shuts down after it. */
+  signalled?: true;
 }
 
 const sleep = (ms: number): Promise<void> => new Promise((done) => setTimeout(done, ms));
@@ -70,10 +73,15 @@ function running(pid: number): boolean {
   try {
     process.kill(pid, 0);
     return true;
-  } catch {
-    return false;
+  } catch (error) {
+    // Alive, under another user.
+    return (error as { code?: string }).code === "EPERM";
   }
 }
+
+// A command that exits on its own may leave a process behind on purpose, which holds nothing.
+const commandRuns = ({ group, signalled }: Holder): boolean =>
+  running(signalled ? -group! : group!);
 
 /**
  * Link fails when the name exists, so the filesystem decides the winner of a race, and the
@@ -105,7 +113,7 @@ function dropIfStale(): void {
   // An unreadable lock is a half-written or corrupt one, and nobody can prove it is live. A live
   // holder is never reclaimed on age: a slow run under load outlasted any bound and a second check
   // ran beside it. A reused pid reads as live too, which ends in the wait timeout, not an overlap.
-  if (holder && (running(holder.pid) || (holder.group && running(holder.group)))) return;
+  if (holder && (running(holder.pid) || (holder.group && commandRuns(holder)))) return;
   // Deleting by name after the read deleted a fresh lock another waiter wrote in between. A claim,
   // named for these exact contents, lets one waiter delete them, and while they sit at the lock path
   // no acquire can replace them, so the re-read under the claim stays true until the delete.
@@ -181,6 +189,7 @@ function onSignal(signal: NodeJS.Signals): void {
   } catch {
     /* the group is already gone */
   }
+  if (!received) annotate({ signalled: true });
   received ??= signal;
 }
 for (const signal of SIGNALS) process.on(signal, onSignal);
@@ -191,6 +200,20 @@ try {
   console.warn(
     `[check-lock] lock unusable (${String(error)}); running "${command.join(" ")}" unserialised`,
   );
+}
+
+/** Rewrites this run's lock with `fields`, whole through a rename, as create() writes it. */
+function annotate(fields: Partial<Holder>): void {
+  const holder = held ? readHolder() : undefined;
+  if (holder?.pid !== process.pid) return;
+  try {
+    writeFileSync(`${LOCK}.${process.pid}`, JSON.stringify({ ...holder, ...fields }));
+    renameSync(`${LOCK}.${process.pid}`, LOCK);
+  } catch {
+    /* the lock keeps what it names, which covers every case but a kill of the caller's group */
+  } finally {
+    rmSync(`${LOCK}.${process.pid}`, { force: true });
+  }
 }
 
 function release(): void {
@@ -213,18 +236,8 @@ const spawned = spawn(command[0], command.slice(1), {
 });
 child = spawned;
 // The command's own group escapes a SIGKILL to the caller's group, so the lock names the command
-// too, and a waiter reads it as live until the command has exited; a process it left behind on
-// purpose holds nothing. A rename replaces the contents whole, as create() writes them.
-const holder = held ? readHolder() : undefined;
-if (holder?.pid === process.pid && spawned.pid)
-  try {
-    writeFileSync(`${LOCK}.${process.pid}`, JSON.stringify({ ...holder, group: spawned.pid }));
-    renameSync(`${LOCK}.${process.pid}`, LOCK);
-  } catch {
-    /* the lock still names this pid, which covers every case but a kill of the caller's group */
-  } finally {
-    rmSync(`${LOCK}.${process.pid}`, { force: true });
-  }
+// too, and a waiter reads it as live until the command has exited.
+if (spawned.pid) annotate({ group: spawned.pid });
 const result = await new Promise<{
   status: number | null;
   signal: NodeJS.Signals | null;

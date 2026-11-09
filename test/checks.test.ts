@@ -1513,8 +1513,8 @@ describe("scaffolding check", () => {
   test("the catalog build starts once a typecheck running Astro has finished", () => {
     const { catalog: _, typecheck: __, ...rest } = skip;
     const dir = gate(
-      { skip: rest, typecheck: "check:types" },
-      // A script name whose body runs Astro counts as Astro.
+      { skip: rest, typecheck: "run check:types --pretty" },
+      // A script name, among other words, whose body runs Astro counts as Astro.
       { "check:types": "sleep 1 && touch tc-done && echo astro", build: "test -f tc-done" },
     );
     const r = run(dir, "scaffolding", ["check"], { CHECK_LOCK: join(dir, ".lock") });
@@ -1536,14 +1536,11 @@ describe("scaffolding check", () => {
     expect(f.out).toContain("ok   catalog");
   });
 
-  test("arguments after a typecheck's script name leave the build waiting for it", () => {
-    const { catalog: _, typecheck: __, ...rest } = skip;
-    const dir = gate(
-      { skip: rest, typecheck: "check:types --pretty" },
-      { "check:types": "sleep 1 && touch tc-done && echo astro", build: "test -f tc-done" },
-    );
+  test("a private repository's gate leaves the confidential scan to check-confidential", () => {
+    const { confidential: _, ...rest } = skip;
+    const dir = gate({ skip: rest, private: true }, {});
     const r = run(dir, "scaffolding", ["check"], { CHECK_LOCK: join(dir, ".lock") });
-    expect(r.out).toContain("ok   catalog");
+    expect(r.out).toContain("ok   confidential");
   });
 
   test("the styles step prints one line per finding and fails", () => {
