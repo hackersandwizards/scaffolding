@@ -207,7 +207,8 @@ async function queueForLock(): Promise<boolean> {
     freeSince = now === undefined ? (freeSince ?? Date.now()) : undefined;
 
     const waited = Date.now() - started;
-    if (waited > WAIT_MS) {
+    // At least: a first poll in the millisecond the wait began measures 0, and a wait of 0 slept.
+    if (waited >= WAIT_MS) {
       console.error(
         `[check-lock] ${holderName()} still holds ${LOCK} after ${Math.round(waited / 1000)}s; not running "${command.join(" ")}" beside it. Retry once it finishes.`,
       );

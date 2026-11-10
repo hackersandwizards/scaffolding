@@ -241,6 +241,20 @@ describe("check-lock serialises the checks", () => {
     expect(JSON.parse(readFileSync(lock, "utf-8")).pid).toBe(process.pid);
   }, 30_000);
 
+  // A first poll inside the millisecond it started measured a wait of 0, not above 0, and slept
+  // 2 s: about one run in three. So ten runs.
+  it("gives up at once under a wait of 0, without a poll's sleep", () => {
+    const lock = lockPath();
+    heldBy(lock, process.pid);
+    for (let i = 0; i < 10; i++) {
+      const started = performance.now();
+      const result = run(lock, ["echo", "ran"], { CHECK_LOCK_WAIT_MS: "0" });
+      expect(result.status).toBe(1);
+      expect(result.stderr).toContain(`pid ${process.pid} still holds`);
+      expect(performance.now() - started).toBeLessThan(1_500);
+    }
+  }, 30_000);
+
   it("lets the first live waiter take the lock and passes over a dead one's ticket", () => {
     const lock = lockPath();
     mkdirSync(`${lock}.queue`);
