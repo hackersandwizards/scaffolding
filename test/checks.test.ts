@@ -2404,7 +2404,11 @@ describe("catalog", () => {
       ]);
     }
     // The shell's type sizes are brand's tokens.json steps, first in brand v2.5.0.
-    writeFileSync(join(brand, "package.json"), JSON.stringify({ version: "2.4.1" }));
+    const brandPkg = join(brand, "package.json");
+    writeFileSync(
+      brandPkg,
+      JSON.stringify({ ...JSON.parse(readFileSync(brandPkg, "utf8")), version: "2.4.1" }),
+    );
     const older = build();
     expect(older.status).not.toBe(0);
     expect(older.stdout + older.stderr).toContain(

@@ -60,7 +60,7 @@
     margin: 0;
     font-family: var(--font-mono);
     font-size: var(--text-page);
-    line-height: 1.25;
+    line-height: var(--text-page--line-height);
   }
   /* The running text at one measure and leading: a paragraph of the main or of a group of markup,
      such as the foundations, of a wrapper the home's slot puts there, or of a details or section in that
@@ -112,7 +112,7 @@
     margin: 0 0 1rem;
     font-family: var(--font-mono);
     font-size: var(--text-heading);
-    line-height: 1.3;
+    line-height: var(--text-heading--line-height);
   }
   .hw-catalog-grid {
     display: grid;

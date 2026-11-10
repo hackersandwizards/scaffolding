@@ -211,9 +211,10 @@ left its page scripts unrun.
 The shell (`catalog/`: Layout, Home, Head, Top, which draws the header, `render.ts`, which draws
 the rail and tiles, and `catalog.css`) reads brand's token roles by name only, and the repository's
 `css` supplies them. Where brand's `tokens.json` holds a name the shell's CSS reads, the build writes
-brand's value as that `var()`'s fallback, in place of any the shell writes. The shell's type sizes
-are brand's `--text-*` steps and carry no fallback of their own, so a repository without brand
-supplies them in its `css`.
+brand's value as that `var()`'s fallback, in place of any the shell writes. A repository without brand
+supplies the type steps the shell reads in its `css`: `--text-page`, `--text-heading`,
+`--text-subheading`, `--text-ui`, `--text-micro` and the line heights of the first three
+(`--text-page--line-height` and so on).
 The home's rail is brand's search field (`hw-search`) over its navigation list (`hw-nav`), so the
 home's stylesheets need brand's `elements.css`, as its tiles need brand's card and pill. The shell
 needs brand v2.5.0 or later, the first with those type steps in `tokens.json`; an older brand

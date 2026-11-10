@@ -327,9 +327,8 @@ export function catalog(options: CatalogOptions): AstroIntegration {
             throw new Error(`catalog copy: ${pattern} is no file in the exports of ${owner}`);
           }
         }
-        // The home's rail is brand's hw-search over its hw-nav (brand v1.47.0), and the shell's type
-        // sizes are brand's --text-* steps from tokens.json (brand v2.5.0): an older brand draws
-        // them unstyled or at inherited sizes, with no error of its own.
+        // The shell's type steps are brand's tokens.json --text-* names, first in brand v2.5.0: an
+        // older brand leaves them bare, the text at inherited sizes, with no error of its own.
         const brand = installed("@hackersandwizards/brand", root)?.split(".").map(Number);
         if (brand && (brand[0] ?? 0) * 1000 + (brand[1] ?? 0) < 2005)
           throw new Error(
