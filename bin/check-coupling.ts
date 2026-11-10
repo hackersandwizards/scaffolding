@@ -93,13 +93,10 @@ function publishes(name: string, subpath: string, disk: boolean): boolean {
 
 // Git reports the root by its real path (/private/tmp on macOS).
 const home = existsSync(homedir()) ? realpathSync(homedir()) : homedir();
-// The home folder's child holding this checkout (~/dev): a path into another checkout under it
-// works on this machine only, and breaks when that repository moves.
+// The home folder's child holding this checkout (~/dev): a path under it outside this checkout
+// reaches another checkout, cloned here or not, works on this machine only, and breaks when that
+// repository moves.
 const devRoot = root.startsWith(`${home}/`) ? join(home, relative(home, root).split("/")[0]) : "";
-const checkoutHolding = (path: string) => {
-  for (let dir = path; devRoot && dir.startsWith(`${devRoot}/`); dir = dirname(dir))
-    if (existsSync(join(dir, ".git"))) return dir;
-};
 
 const own = readPackage(root).name;
 // The pins and the allow list as the commit holds them in a staged run.
@@ -139,8 +136,13 @@ for (const path of listFiles(root, staged)) {
   if (!test)
     for (const [token, rest] of text.matchAll(HOME)) {
       const target = resolve(home + rest);
-      const other = checkoutHolding(target);
-      if (other && other !== root && !target.startsWith(`${root}/`)) flag(path, token, leaves);
+      if (
+        devRoot &&
+        target.startsWith(`${devRoot}/`) &&
+        target !== root &&
+        !target.startsWith(`${root}/`)
+      )
+        flag(path, token, leaves);
     }
   // Code, markup and data reach an installed company package through its exports or its bin, never
   // by a disk path; a stylesheet may name one, but only to a file an export maps (a stylesheet's .css

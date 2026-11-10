@@ -408,6 +408,7 @@ describe("check-coupling", () => {
     mkdirSync(join(home, "dev/org"), { recursive: true });
     const other = join(home, "dev/org/other");
     sh(home, ["init", "-q", other]);
+    // dev/org/gone is cloned nowhere: the finding stays the same on every machine.
     const dir = join(home, "dev/org/this");
     renameSync(
       repo({
@@ -416,7 +417,7 @@ describe("check-coupling", () => {
         "src/a.ts":
           'const a = `${root}/../../other/x.css`;\nconst b = "./../../../other/x.css";\nconst c = "x//y", d = "node_modules/@hackersandwizards/brand/x.ts";\n',
         "src/b.ts":
-          'const k = `${process.env.HOME}/dev/org/other/secrets.zsh`;\nconst own = "~/dev/org/this/src/a.ts";\nconst c = "~/.config/x"; // node_modules/@hackersandwizards/brand/note\nconst e = "it\'s"; // node_modules/@hackersandwizards/brand/note\n',
+          'const k = `${process.env.HOME}/dev/org/other/secrets.zsh`;\nconst g = "~/dev/org/gone/x.ts";\nconst own = "~/dev/org/this/src/a.ts";\nconst c = "~/.config/x"; // node_modules/@hackersandwizards/brand/note\nconst e = "it\'s"; // node_modules/@hackersandwizards/brand/note\n',
       }),
       dir,
     );
@@ -430,6 +431,7 @@ describe("check-coupling", () => {
       "[check-coupling] src/a.ts (./../../../other/x.css)",
       "[check-coupling] src/a.ts (node_modules/@hackersandwizards/brand/x.ts)",
       "[check-coupling] src/b.ts (${process.env.HOME}/dev/org/other/secrets.zsh)",
+      "[check-coupling] src/b.ts (~/dev/org/gone/x.ts)",
     ]);
   });
 
