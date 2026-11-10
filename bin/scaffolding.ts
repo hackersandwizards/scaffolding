@@ -1,6 +1,7 @@
 #!/bin/sh
 // 2>/dev/null; exec bun --no-env-file "$0" "$@"
 import { spawn } from "node:child_process";
+import { existsSync } from "node:fs";
 import { join } from "node:path";
 import {
   isReason,
@@ -190,6 +191,12 @@ async function group(
 // Install first: a tree a pin-raising merge left behind gets installed, and a lockfile out of step
 // fails under its own name, not a later step's.
 let ok = await group([["install", "bun install --frozen-lockfile"]]);
+// Steps that found no Chrome for Testing each installed it into the shared cache at once, and the
+// downloads collided; so where the repository pins puppeteer-core its build is installed here once.
+if (ok && !process.env.CHROME_BINARY && existsSync(join(root, "node_modules/puppeteer-core"))) {
+  const { chromeBinary, INSTALL_HINT } = await import("../lib/chrome.ts");
+  if (!chromeBinary()) console.error(`[scaffolding] ${INSTALL_HINT}`);
+}
 // A typecheck of `astro check` and the catalog's `astro build` both run Astro's sync, whose Vite
 // server optimizes dependencies into one folder (node_modules/.astro/vite-sync). On a cache an
 // install invalidated, two at once race on its rename and one fails with ENOTEMPTY, so the catalog

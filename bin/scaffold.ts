@@ -117,7 +117,7 @@ const pkgPath = join(target, "package.json");
 const pkg = JSON.parse(readFileSync(pkgPath, "utf8"));
 const company = (repo: string, tag: string) => [
   `@hackersandwizards/${repo}`,
-  `github:hackersandwizards/${repo}#${tag}`,
+  `git+https://github.com/hackersandwizards/${repo}.git#${tag}`,
 ];
 // The eslint plugins come with this package, so only the tools themselves are pinned here.
 // `typescript` is the TypeScript 6 API that typescript-eslint imports;

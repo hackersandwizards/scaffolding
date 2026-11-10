@@ -566,10 +566,10 @@ describe("scaffold and check-structure", () => {
   test("a full repository has its catalog, brand and admin on their newest tags", () => {
     const pkg = JSON.parse(readFileSync(join(dir, "package.json"), "utf8"));
     expect(pkg.devDependencies["@hackersandwizards/brand"]).toBe(
-      "github:hackersandwizards/brand#v0.10.0",
+      "git+https://github.com/hackersandwizards/brand.git#v0.10.0",
     );
     expect(pkg.devDependencies["@hackersandwizards/admin"]).toBe(
-      "github:hackersandwizards/admin#v0.10.0",
+      "git+https://github.com/hackersandwizards/admin.git#v0.10.0",
     );
     expect(pkg.scaffolding.skip).toEqual({ test: "new repository: no tests yet" });
     expect(pkg.scripts.build).toBe("check-lock bun --bun astro build --root catalog");
@@ -950,8 +950,8 @@ describe("scaffold and check-structure", () => {
 
   test("a scaffolded repository passes check-coupling but for the pins bun install fetches", () => {
     expect(lines(run(dir, "check-coupling").out, "check-coupling")).toEqual([
-      "[check-coupling] package.json: node_modules holds nothing, not the pinned 0.10.0: bun install (@hackersandwizards/admin@github:hackersandwizards/admin#v0.10.0)",
-      "[check-coupling] package.json: node_modules holds nothing, not the pinned 0.10.0: bun install (@hackersandwizards/brand@github:hackersandwizards/brand#v0.10.0)",
+      "[check-coupling] package.json: node_modules holds nothing, not the pinned 0.10.0: bun install (@hackersandwizards/admin@git+https://github.com/hackersandwizards/admin.git#v0.10.0)",
+      "[check-coupling] package.json: node_modules holds nothing, not the pinned 0.10.0: bun install (@hackersandwizards/brand@git+https://github.com/hackersandwizards/brand.git#v0.10.0)",
     ]);
   });
 });
@@ -1853,6 +1853,26 @@ describe("scaffolding check", () => {
     await Bun.sleep(5_000);
     expect(existsSync(join(dir, "slow-done"))).toBe(false);
   }, 40_000);
+
+  test("a repository pinning puppeteer-core gets Chrome installed once, before the steps", () => {
+    const dir = gate(
+      { skip, check: [["check:a", "check:b"]] },
+      { "check:a": "cat calls.txt", "check:b": "cat calls.txt" },
+    );
+    write(dir, {
+      "node_modules/puppeteer-core/internal/revisions.js":
+        'exports.PUPPETEER_REVISIONS = { chrome: "1.2.3" };\n',
+      "fake/bunx": '#!/bin/sh\necho "install $*" >> calls.txt\necho /nowhere/chrome\n',
+    });
+    chmodSync(join(dir, "fake/bunx"), 0o755);
+    const r = run(dir, "scaffolding", ["check"], {
+      CHECK_LOCK: join(dir, ".lock"),
+      PATH: `${join(dir, "fake")}:${process.env.PATH}`,
+      PUPPETEER_CACHE_DIR: join(dir, "cache"),
+    });
+    expect(r.code).toBe(0);
+    expect(readFileSync(join(dir, "calls.txt"), "utf8").match(/chrome@1\.2\.3/g)).toHaveLength(1);
+  });
 
   test("a package path holding a space runs every bin step", () => {
     const home = join(temp(), "with space");

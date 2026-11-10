@@ -173,13 +173,13 @@ async function waitForLock(): Promise<boolean> {
   ticket = `${String(Date.now()).padStart(15, "0")}-${process.pid}`;
   writeFileSync(`${QUEUE}/${ticket}`, "");
   try {
-    return await take();
+    return await queueForLock();
   } finally {
     leave();
   }
 }
 
-async function take(): Promise<boolean> {
+async function queueForLock(): Promise<boolean> {
   let started = Date.now();
   let spokeAt = 0;
   // By inode: each lock is a new file, and a second read of a lock path a test made a FIFO would

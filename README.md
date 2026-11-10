@@ -7,7 +7,7 @@ shell of its catalog.
 To work on the package itself, see [Developing the package](#developing-the-package).
 
 ```sh
-bun add -d github:hackersandwizards/scaffolding#vX.Y.Z
+bun add -d git+https://github.com/hackersandwizards/scaffolding.git#vX.Y.Z
 ```
 
 `X.Y.Z` is the newest [tag](https://github.com/hackersandwizards/scaffolding/tags). Requirements:
@@ -78,6 +78,9 @@ non-blank string in `skip`:
   }
 }
 ```
+
+Where the repository installs `puppeteer-core`, the gate installs the Chrome for Testing build it
+pins right after `bun install`, once, so steps that start Chrome never download it side by side.
 
 **Output and load.** Each step prints its output and its `ok` or `FAIL` line the moment it ends, and
 the last line names the red steps in the gate's order. A signal to `bun run check` reaches every
