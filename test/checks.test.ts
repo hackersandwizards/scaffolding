@@ -1055,6 +1055,16 @@ describe("scaffold and check-structure", () => {
         { test: "bun test --timeout ${SCAFFOLDING_TEST_TIMEOUT_MS:-5000}" },
       ),
     ).toEqual([]);
+    // Through `bun run` and a script naming another.
+    expect(
+      structure(
+        { test: "bun run test" },
+        {
+          test: "bun run test:unit",
+          "test:unit": "bun test --timeout ${SCAFFOLDING_TEST_TIMEOUT_MS:-5000}",
+        },
+      ),
+    ).toEqual([]);
     expect(structure({ test: "vitest run" }, {})).toEqual([
       red[0].replace("(test)", "(vitest run)"),
     ]);
@@ -2913,7 +2923,49 @@ exec "${process.execPath}" "$@"
     for (let i = 0; i < 100 && !read(bun.log); i++) await Bun.sleep(50);
     spawnSync(hook, args, { cwd: dir, env: env(bun) });
     await done;
-    expect(read(bun.log)).toBe("start locked\nend\nstart locked\nend\n");
+    // The second waits for the first, then has nothing left to install, or installs after it.
+    expect(read(bun.log)).toMatch(/^(start locked\nend\n){1,2}$/);
+  });
+
+  test("an install finding another under way waits for it and reports nothing", async () => {
+    const dir = consumer();
+    mkdirSync(join(dir, "node_modules/.bin"), { recursive: true });
+    const bun = fakeBun();
+    const install = join(dir, ".githooks/install");
+    const first = spawn(install, [], {
+      cwd: dir,
+      env: env(bun, { BUN_SLEEP: "2" }),
+      stdio: "ignore",
+    });
+    const done = new Promise((resolve) => first.on("close", resolve));
+    for (let i = 0; i < 100 && !read(bun.log); i++) await Bun.sleep(50);
+    const second = spawnSync(install, [], { cwd: dir, env: env(bun), encoding: "utf8" });
+    await done;
+    expect(`${second.stdout}${second.stderr}`).toBe("");
+    expect(second.status).toBe(0);
+    expect(read(bun.log)).toBe("start locked\nend\n");
+  });
+
+  test("a dead first install's lock is taken over, and two waiters still install one at a time", async () => {
+    const dir = consumer();
+    mkdirSync(join(dir, "node_modules"));
+    const gone = spawnSync("true").pid;
+    writeFileSync(
+      join(dir, "node_modules/.check.lock"),
+      JSON.stringify({ pid: gone, startedAt: 1 }),
+    );
+    const bun = fakeBun();
+    const install = join(dir, ".githooks/install");
+    const first = spawn(install, [], {
+      cwd: dir,
+      env: env(bun, { BUN_SLEEP: "2" }),
+      stdio: "ignore",
+    });
+    const done = new Promise((resolve) => first.on("close", resolve));
+    spawnSync(install, [], { cwd: dir, env: env(bun, { BUN_SLEEP: "2" }) });
+    await done;
+    expect(read(bun.log)).toMatch(/^(start locked\nend\n){1,2}$/);
+    expect(existsSync(join(dir, "node_modules/.check.lock"))).toBe(false);
   });
 
   test("the MCP server starts after the install, with nothing but the server on stdout", () => {
@@ -2948,11 +3000,18 @@ describe("skeleton SessionStart hook", () => {
     write(origin, { "a.txt": "2\n" });
     sh(origin, ["commit", "-q", "-am", "two"]);
     const fake = temp();
-    writeFileSync(join(fake, "bun"), "#!/bin/sh\n", { mode: 0o755 });
+    // The install a no-op; the fetch's timer the real bun's.
+    writeFileSync(
+      join(fake, "bun"),
+      `#!/bin/sh\n[ "$1" = install ] && exit 0\nexec "${process.execPath}" "$@"\n`,
+      { mode: 0o755 },
+    );
     return { dir, origin, path: `${fake}:${process.env.PATH}` };
   };
-  const start = (dir: string, env: Record<string, string>) =>
-    spawnSync(hook, [], { cwd: dir, env: { ...process.env, ...env }, encoding: "utf8" });
+  // dash, Debian's and Ubuntu's /bin/sh, makes no process group for `set -m` without a terminal.
+  const shells = ["/bin/sh", "/bin/dash"].filter((shell) => existsSync(shell));
+  const start = (dir: string, env: Record<string, string>, shell = "/bin/sh") =>
+    spawnSync(shell, [hook], { cwd: dir, env: { ...process.env, ...env }, encoding: "utf8" });
   const head = (dir: string) => sh(dir, ["rev-parse", "HEAD"]).stdout.toString().trim();
 
   test("fetches and says how far behind main is, and moves no branch under uncommitted work", () => {
@@ -2977,21 +3036,36 @@ describe("skeleton SessionStart hook", () => {
     expect(head(dir)).toBe(head(origin));
   });
 
-  test("a fetch that waits for a person ends at the bound, its ssh with it", () => {
+  test("a fetch that fails says so", () => {
     const { dir, path } = clone();
-    const ssh = join(temp(), "ssh");
-    const pid = `${ssh}.pid`;
-    writeFileSync(ssh, `#!/bin/sh\necho $$ > ${pid}\nexec sleep 600\n`, { mode: 0o755 });
-    sh(dir, ["remote", "set-url", "origin", "git@example.invalid:o/r.git"]);
-    const started = performance.now();
-    const r = start(dir, { PATH: path, GIT_SSH_COMMAND: ssh, SCAFFOLDING_FETCH_WAIT_S: "1" });
-    expect(performance.now() - started).toBeLessThan(5_000);
-    expect(r.stdout).toBe(
-      "origin main not fetched within 1 s: fetch and merge per git.md before work\n",
+    sh(dir, ["remote", "set-url", "origin", join(dir, "gone")]);
+    expect(start(dir, { PATH: path }).stdout).toBe(
+      "git fetch origin main failed: fetch and merge per git.md before work\n",
     );
-    const sleeper = Number(readFileSync(pid, "utf8"));
-    expect(() => process.kill(sleeper, 0)).toThrow();
   });
+
+  test.each(shells)(
+    "a fetch that waits for a person ends at the bound, its ssh with it (%s)",
+    (shell) => {
+      const { dir, path } = clone();
+      const ssh = join(temp(), "ssh");
+      const pid = `${ssh}.pid`;
+      writeFileSync(ssh, `#!/bin/sh\necho $$ > ${pid}\nexec sleep 600\n`, { mode: 0o755 });
+      sh(dir, ["remote", "set-url", "origin", "git@example.invalid:o/r.git"]);
+      const started = performance.now();
+      const r = start(
+        dir,
+        { PATH: path, GIT_SSH_COMMAND: ssh, SCAFFOLDING_FETCH_WAIT_S: "1" },
+        shell,
+      );
+      expect(performance.now() - started).toBeLessThan(5_000);
+      expect(r.stdout).toBe(
+        "origin main not fetched within 1 s: fetch and merge per git.md before work\n",
+      );
+      const sleeper = Number(readFileSync(pid, "utf8"));
+      expect(() => process.kill(sleeper, 0)).toThrow();
+    },
+  );
 });
 
 describe("shared eslint config", () => {
@@ -3035,6 +3109,9 @@ describe("shared eslint config", () => {
     expect(await rejection(Promise.reject(new Error("no answer")))).toBe("Error: no answer");
     expect(await rejection(rejection(Promise.resolve({ a: 1 })))).toBe(
       'Error: expected a rejection, resolved with {"a":1}',
+    );
+    expect(await rejection(rejection(Promise.resolve(1n)))).toBe(
+      "Error: expected a rejection, resolved with 1",
     );
   });
 
@@ -5545,7 +5622,8 @@ describe("chrome-mcp", () => {
       ...process.env,
       PUPPETEER_CACHE_DIR: cache,
       PATH: `${fake}:${process.env.PATH}`,
-      CHROME_BINARY: undefined,
+      // Empty counts as unset, as chromeBinary reads it.
+      CHROME_BINARY: "",
     };
     const server = Bun.spawn([process.execPath, "--no-env-file", bin("chrome-mcp")], {
       cwd: consumer,

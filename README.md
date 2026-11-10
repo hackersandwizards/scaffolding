@@ -579,9 +579,11 @@ Checks run locally in the git hooks and in `bun run check`. The `post-merge` and
 hooks run `.githooks/install` when `bun.lock` or `package.json` changed: `bun install
 --frozen-lockfile` under `check-lock` without waiting, silent when it installs. While a gate or
 build holds the lock it installs nothing, so `node_modules` never changes under a running one, and
-says so on stderr with the command to run; it names a failed install the same way. A checkout
-without `node_modules` has no `check-lock` yet: there the script takes `check-lock`'s lock itself,
-so two first installs, or a first install and a gate, run one after the other. `bun run check`
+says so on stderr with the command to run; it names a failed install the same way. An install
+finding another under way (the MCP server's start and the SessionStart hook run at once) waits for
+it and stops. A checkout without `node_modules` has no `check-lock` yet: there the script takes
+`check-lock`'s lock itself, so a first install and a gate run one after the other, and a dead first
+install's lock is taken over. `bun run check`
 starts with the same install.
 
 Claude Code's `SessionStart` hook runs `.githooks/session-start`: it fetches `main` within 20 s

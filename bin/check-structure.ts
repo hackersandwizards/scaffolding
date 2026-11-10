@@ -7,6 +7,7 @@ import {
   existsSync,
   lstatSync,
   mkdirSync,
+  readdirSync,
   readFileSync,
   readlinkSync,
   rmSync,
@@ -223,14 +224,13 @@ if (existsSync(at("package.json"))) {
   // unasked: bun takes it as a flag, vitest from its config.
   const test = pkg.scaffolding?.test;
   if (test && !isReason(pkg.scaffolding?.skip?.test)) {
-    const configs = listFiles(root, false).filter((p) =>
-      /^vite(?:st)?\.config\.[cm]?[jt]s$/.test(p),
-    );
-    const read = [
-      test,
-      pkg.scripts?.[test] ?? "",
-      ...configs.map((p) => readFileSync(at(p), "utf8")),
-    ];
+    const configs = readdirSync(root).filter((p) => /^vite(?:st)?\.config\.[cm]?[jt]s$/.test(p));
+    // The command, and each script it names, at any depth (`bun run test` naming `test:unit`).
+    const read = [test];
+    for (const text of read)
+      for (const word of text.split(/\s+/))
+        if (pkg.scripts?.[word] && !read.includes(pkg.scripts[word])) read.push(pkg.scripts[word]);
+    read.push(...configs.map((p) => readFileSync(at(p), "utf8")));
     if (!read.some((text) => text.includes("SCAFFOLDING_TEST_TIMEOUT_MS")))
       add(
         "package.json",

@@ -4,37 +4,51 @@
 # Silent when it installs; a skip or a failure goes to stderr with what to run. Never to stdout,
 # which is an MCP server's protocol channel.
 cd "$(git rev-parse --show-toplevel)" || exit 1
+lock=node_modules/.check.lock
+holder() { sed -n 's/^{"pid":\([0-9]*\).*/\1/p' "$lock" 2>/dev/null; }
+# The MCP server's start and the SessionStart hook install at the same moment: where the lock's
+# holder is such an install, it installs for this one too, which waits for it and stops.
+peer=$(holder)
+if [ -n "$peer" ] &&
+  ps -o command= -p "$peer" 2>/dev/null | grep -q -e '\.githooks/install' -e 'check-lock.* bun install --frozen-lockfile'; then
+  waited=0
+  while kill -0 "$peer" 2>/dev/null && [ "$waited" -lt 300 ]; do
+    sleep 1
+    waited=$((waited + 1))
+  done
+  exit 0
+fi
 log=$(mktemp) || exit 1
 trap 'rm -f "$log"' EXIT
-if [ -d node_modules/.bin ]; then
+if [ -x node_modules/.bin/check-lock ] || grep -q '"check-lock":' package.json 2>/dev/null; then
   # Without waiting: a merge or a session start would otherwise wait behind a whole gate. A gate
   # installs as its first step; after a build, the next gate or session start installs.
   CHECK_LOCK_WAIT_MS=0 bun run --silent check-lock bun install --frozen-lockfile </dev/null >"$log" 2>&1
 else
   # No check-lock before the first install: the lock is taken as it writes one, a hard link of a
   # complete file, so a second first install, or a gate that starts meanwhile, waits for this one.
-  lock=node_modules/.check.lock
   mkdir -p node_modules
   printf '{"pid":%s,"startedAt":%s000}' $$ "$(date +%s)" >"$lock.$$"
-  pid() { sed -n 's/^{"pid":\([0-9]*\).*/\1/p' "$lock" 2>/dev/null; }
   waited=0
-  until ln "$lock.$$" "$lock" 2>/dev/null; do
-    # A holder that is gone leaves its lock for check-lock to reclaim; this install goes ahead.
-    holder=$(pid)
-    if [ -n "$holder" ] && ! kill -0 "$holder" 2>/dev/null; then break; fi
-    waited=$((waited + 1))
-    if [ "$waited" -gt 300 ]; then
-      echo "[install] pid $holder still installs after 300 s; not installing beside it" >"$log"
-      break
+  until ln "$lock.$$" "$lock" 2>/dev/null || [ "$waited" -gt 300 ]; do
+    dead=$(holder)
+    # A dead holder's lock goes under a claim, re-read there, so two waiters that both read it
+    # dead never remove the lock the faster one has just taken.
+    if [ -n "$dead" ] && ! kill -0 "$dead" 2>/dev/null && mkdir "$lock.reclaim" 2>/dev/null; then
+      [ "$(holder)" = "$dead" ] && rm -f "$lock"
+      rmdir "$lock.reclaim"
+      continue
     fi
     sleep 1
+    waited=$((waited + 1))
   done
   rm -f "$lock.$$"
-  if [ "$waited" -gt 300 ]; then
-    false
-  else
-    [ "$(pid)" = $$ ] && trap 'rm -f "$log" "$lock"' EXIT
+  if [ "$(holder)" = $$ ]; then
+    trap 'rm -f "$log" "$lock"' EXIT
     bun install --frozen-lockfile </dev/null >"$log" 2>&1
+  else
+    echo "[check-lock] pid $(holder) still holds $lock after 300 s; not installing beside it" >"$log"
+    false
   fi
 fi
 status=$?

@@ -13,7 +13,7 @@ import { cachedChrome, chromeBinary, INSTALL_HINT, NO_KEYCHAIN } from "../lib/ch
 // Any cached build before a download of about 570 MB, which the server's start waits for: a
 // browser an agent drives needs no pinned build, a test comparing pixels does.
 const chrome =
-  process.env.CHROME_BINARY ?? cachedChrome() ?? cachedChrome({ anyBuild: true }) ?? chromeBinary();
+  process.env.CHROME_BINARY || cachedChrome() || cachedChrome({ anyBuild: true }) || chromeBinary();
 if (!chrome) {
   console.error(`[chrome-mcp] ${INSTALL_HINT}`);
   process.exit(1);

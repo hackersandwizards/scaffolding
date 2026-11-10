@@ -4,7 +4,13 @@
 export const rejection = (promise: Promise<unknown>): Promise<string> =>
   promise.then(
     (value) => {
-      throw new Error(`expected a rejection, resolved with ${JSON.stringify(value)}`);
+      let shown: string;
+      try {
+        shown = JSON.stringify(value);
+      } catch {
+        shown = String(value); // a cycle or a BigInt, which JSON refuses
+      }
+      throw new Error(`expected a rejection, resolved with ${shown}`);
     },
     (e: unknown) => String(e),
   );

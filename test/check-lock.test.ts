@@ -242,16 +242,15 @@ describe("check-lock serialises the checks", () => {
   }, 30_000);
 
   // A first poll inside the millisecond it started measured a wait of 0, not above 0, and slept
-  // 2 s: about one run in three. So ten runs.
+  // 2 s: about one run in three. So ten runs, each read by the wait it reports, which a loaded
+  // machine's slow start leaves alone.
   it("gives up at once under a wait of 0, without a poll's sleep", () => {
     const lock = lockPath();
     heldBy(lock, process.pid);
     for (let i = 0; i < 10; i++) {
-      const started = performance.now();
       const result = run(lock, ["echo", "ran"], { CHECK_LOCK_WAIT_MS: "0" });
       expect(result.status).toBe(1);
-      expect(result.stderr).toContain(`pid ${process.pid} still holds`);
-      expect(performance.now() - started).toBeLessThan(1_500);
+      expect(result.stderr).toContain(`pid ${process.pid} still holds ${lock} after 0s`);
     }
   }, 30_000);
 

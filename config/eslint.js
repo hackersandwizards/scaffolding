@@ -47,7 +47,7 @@ export default [
           selector:
             "MemberExpression[property.name=/^(rejects|resolves)$/]:matches([object.callee.name='expect'], [object.object.callee.name='expect'])",
           message:
-            "bun's expect().rejects and .resolves wait in a nested event loop, where a shared puppeteer connection broke; await rejection() from @hackersandwizards/scaffolding/rejection, or await the promise, then expect what it settled to.",
+            "Under bun, expect().rejects and .resolves wait in a nested event loop, where a shared puppeteer connection broke; await rejection() from @hackersandwizards/scaffolding/rejection, or await the promise, then expect what it settled to.",
         },
       ],
     },
