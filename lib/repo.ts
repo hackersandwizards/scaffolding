@@ -116,7 +116,15 @@ export const stylelintFlags = (root: string) => [
 ];
 
 /** `term`: the text is a bare term, which an allow entry names whole. */
-export type Finding = { check: string; path: string; text: string; message: string; term?: true };
+/** `name`: the term stands in the file's path, which an entry's `path` "file names" also covers. */
+export type Finding = {
+  check: string;
+  path: string;
+  text: string;
+  message: string;
+  term?: true;
+  name?: true;
+};
 type AllowEntry = {
   check?: string;
   path?: string | string[];
@@ -187,6 +195,19 @@ export function readPackage(root: string, rev?: string): Package {
   return JSON.parse(git(["show", `${index ? "" : rev}:package.json`], root).toString("utf8"));
 }
 
+/** package.json's text without its allow entries, which name what they excuse; the text as it is
+ * where it is no JSON. */
+export function withoutAllow(json: string): string {
+  let pkg;
+  try {
+    pkg = JSON.parse(json);
+  } catch {
+    return json;
+  }
+  if (pkg.scaffolding) pkg.scaffolding = { ...pkg.scaffolding, allow: undefined };
+  return JSON.stringify(pkg, null, 2);
+}
+
 // `**/` also stands for no folder at all, as in Git and Bun.Glob: `**/x.ts` covers the root's x.ts.
 const glob = (pattern: string) =>
   new RegExp(
@@ -215,7 +236,8 @@ const textCovers = (text: string, f: Finding) =>
 
 const covers = (entry: AllowEntry, f: Finding, text = entry.text) =>
   entry.check === f.check &&
-  (entry.path === undefined || [entry.path].flat().some((p) => glob(p).test(f.path))) &&
+  (entry.path === undefined ||
+    [entry.path].flat().some((p) => glob(p).test(f.path) || (p === "file names" && f.name))) &&
   (text === undefined || [text].flat().some((t) => textCovers(t, f)));
 
 /**

@@ -1193,7 +1193,9 @@ describe("check-confidential", () => {
       run(dir, "check-confidential", ["--staged"], env).out,
       "check-confidential",
     );
-    expect(found.some((l) => l.startsWith("[check-confidential] file names:"))).toBe(true);
+    expect(found).toContain(
+      "[check-confidential] notes/acme-widgets.md: confidential term from the company records in the file's path (acme widgets)",
+    );
     expect(found.filter((l) => l.startsWith("[check-confidential] a.md:"))).toHaveLength(2);
   });
 
@@ -1600,9 +1602,66 @@ describe("check-confidential", () => {
     ).out;
     expect(lines(out, "check-confidential")).toEqual([
       "[check-confidential] other.md: confidential term from the company records (Jane Q Doe)",
-      // Each path of the list dies with its own case.
+      // Each path of the list dies with its own case; package.json's own entries are no case.
+      `[check-confidential] package.json: allow entry matches nothing (${JSON.stringify({ ...allow[0], path: "package.json" })})`,
       `[check-confidential] package.json: allow entry matches nothing (${JSON.stringify({ ...allow[0], path: "gone/**" })})`,
     ]);
+  });
+
+  test("a term in a file's path is that file's: an entry naming the file covers it, file names all", () => {
+    const files = { "people/acme-widgets.md": "x\n", "notes/acme-widgets.md": "x\n" };
+    const scan = (allow: object[]) =>
+      lines(
+        run(
+          repo({ "package.json": JSON.stringify({ scaffolding: { allow } }), ...files }),
+          "check-confidential",
+          ["--tree", "HEAD"],
+          env,
+        ).out,
+        "check-confidential",
+      );
+    const entry = { check: "confidential", text: "Acme Widgets", reason: "test" };
+    expect(scan([{ ...entry, path: "people/**" }])).toEqual([
+      "[check-confidential] notes/acme-widgets.md: confidential term from the company records in the file's path (acme widgets)",
+    ]);
+    expect(scan([{ ...entry, path: "file names" }])).toEqual([]);
+  });
+
+  test.if(process.platform === "darwin")(
+    "an image whose name holds a term is still kept as read",
+    () => {
+      const png = Buffer.from(
+        "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8DwHwAFBQIAX8jx0gAAAABJRU5ErkJggg==",
+        "base64",
+      );
+      const dir = repo({ "package.json": "{}" });
+      writeFileSync(join(dir, "acme-widgets.png"), png);
+      sh(dir, ["add", "acme-widgets.png"]);
+      const r = run(dir, "check-confidential", ["--staged"], { ...env, CI: "" });
+      expect(r.out).toContain("acme-widgets.png: confidential term");
+      expect(readdirSync(join(dir, "node_modules/.cache/scaffolding/read"))).toHaveLength(1);
+    },
+  );
+
+  test("package.json's allow entries are no finding there; the same term elsewhere in it is", () => {
+    const allow = [
+      { check: "confidential", path: "a.md", text: ["Acme Widgets", "Jane Q Doe"], reason: "test" },
+    ];
+    const pkg = (extra: object) => JSON.stringify({ ...extra, scaffolding: { allow } }, null, 2);
+    const files = { "a.md": "Acme Widgets and Jane Q Doe\n" };
+    const clean = repo({ "package.json": pkg({}), ...files });
+    expect(run(clean, "check-confidential", ["--tree", "HEAD"], env).code).toBe(0);
+    const named = repo({ "package.json": pkg({ description: "Acme Widgets" }), ...files });
+    expect(
+      lines(run(named, "check-confidential", ["--tree", "HEAD"], env).out, "check-confidential"),
+    ).toEqual([
+      "[check-confidential] package.json: confidential term from the company records (Acme Widgets)",
+    ]);
+    // The staged scan reads the added lines the same way.
+    const staged = repo({ "package.json": "{}" });
+    write(staged, { "package.json": pkg({}), ...files });
+    sh(staged, ["add", "package.json", "a.md"]);
+    expect(run(staged, "check-confidential", ["--staged"], env).code).toBe(0);
   });
 
   test.if(process.platform === "darwin")("an image that cannot be decoded is refused", () => {

@@ -430,7 +430,9 @@ A finding a repository keeps goes in its `package.json` with the reason:
 ```
 
 `path` takes `*` within a folder and `**` across folders (`**/x.ts` covers the root's `x.ts` too), or a list of such paths, such as a
-person's folder with `"file names"` and `"package.json"` for their name, and `text` narrows an entry to findings
+person's folder for their name. A confidential term in a file's path is that file's finding, so an
+entry naming the file covers it; `"file names"` covers such findings in every file. package.json is
+scanned without its own allow entries, so a term an entry names needs no entry for package.json. `text` narrows an entry to findings
 containing it, or for a confidential term the whole term in any case, its accents composed or
 not and its punctuation read as a space: `"Jane Doe"` keeps `JANE DOE`, never `Jane Doe Consulting`.
 `text` may be a list, each item its own exception. An entry without a reason fails, and so does an entry, or

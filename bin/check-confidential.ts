@@ -39,6 +39,7 @@ import {
   git,
   reader,
   readPackage,
+  withoutAllow,
   repoRoot,
   type Finding,
 } from "../lib/repo.ts";
@@ -313,6 +314,10 @@ const skipped = process.env.CI === "true" && Boolean(tree || index);
 // belongs to the commit the index makes.
 const pkg = readPackage(root, tree ?? commit ?? ":");
 if (pkg.scaffolding?.private === true) process.exit(0);
+// package.json's allow entries name the very terms they allow, so the file is read without them:
+// whole, as the snapshot holds it, since its added lines alone cannot tell an entry from the rest.
+const ownText = (path: string, text: string) =>
+  path === "package.json" ? withoutAllow(JSON.stringify(pkg)) : text;
 
 let list: TermList | undefined;
 // No list reachable under --list-optional: the commit passes unscanned for terms.
@@ -338,7 +343,8 @@ else {
 const bad = new Set<string>(list?.hashes ?? []);
 const h = hasher(list?.salt ?? "");
 
-function scanText(where: string, text: string) {
+/** `inPath`: `text` is the path `where` itself. */
+function scanText(where: string, text: string, inPath = false) {
   if (!list) return;
   const found = new Set<string>();
   const tokens = words(text);
@@ -367,8 +373,9 @@ function scanText(where: string, text: string) {
       check: "confidential",
       path: where,
       text: name,
-      message: "confidential term from the company records",
+      message: `confidential term from the company records${inPath ? " in the file's path" : ""}`,
       term: true,
+      ...(inPath && { name: true as const }),
     });
 }
 
@@ -448,6 +455,7 @@ function scanBinaries(files: { where: string; data: Buffer }[]) {
         report(where, "", "binary file in docs/agent-work not read: no OCR in CI");
     return;
   }
+  const before = findings.length;
   mkdirSync(CACHE_DIR, { recursive: true });
   const scratch = mkdtempSync(join(CACHE_DIR, "scan-"));
   const texts = new Map<string, string>();
@@ -576,8 +584,9 @@ function scanBinaries(files: { where: string; data: Buffer }[]) {
   for (const { file, where, entry, unread } of images)
     if (blocks.has(file)) add(where, blocks.get(file)!);
     else notRead(where, entry, unread);
-  // Only a file read whole is kept: one reported as not read is tried again.
-  const refused = new Set(findings.map((f) => f.path));
+  // Only a file read whole is kept: one reported as not read is tried again. A term in a file's
+  // path, found before the reading, leaves its text whole.
+  const refused = new Set(findings.slice(before).map((f) => f.path));
   mkdirSync(join(CACHE_DIR, "read"), { recursive: true });
   files.forEach(({ where }, i) => {
     if (refused.has(where) || unreadable.has(where) || existsSync(kept[i])) return;
@@ -691,7 +700,7 @@ else if (argv.includes("--staged") || commit) {
     .filter(Boolean)
     .map((line) => ({ binary: line.startsWith("-\t-\t"), path: line.replace(/^\S+\t\S+\t/, "") }));
   const paths = files.map((f) => f.path);
-  scanText("file names", paths.join("\n"));
+  for (const path of paths) scanText(path, path, true);
   const texts = addedLines(git([...range, ...options, "-U0"], root).toString(), paths);
   const binary = new Set(files.filter((f) => f.binary || isBinary(f.path)).map((f) => f.path));
   // A Git LFS pointer is text to git, and its oid line changes with the file it names.
@@ -706,7 +715,8 @@ else if (argv.includes("--staged") || commit) {
     taken.add(path);
     take(path, data[i]);
   });
-  for (const path of paths) if (!taken.has(path)) scanText(path, texts.get(path)?.join("\n") ?? "");
+  for (const path of paths)
+    if (!taken.has(path)) scanText(path, ownText(path, texts.get(path)?.join("\n") ?? ""));
   if (commit)
     scanText("commit message", git(["log", "-1", "--format=%B", commit], root).toString());
 } else if (tree || index) {
@@ -730,7 +740,7 @@ else if (argv.includes("--staged") || commit) {
     }
     return { type: mode === "160000" ? "commit" : "blob", sha, path };
   });
-  scanText("file names", entries.map((e) => e.path).join("\n"));
+  for (const { path } of entries) scanText(path, path, true);
   const blobs = entries.filter((e) => e.type === "blob");
   const data = objects(
     blobs.map((e) => e.sha),
@@ -738,7 +748,7 @@ else if (argv.includes("--staged") || commit) {
   );
   blobs.forEach(({ path }, i) => {
     if (isBinary(path) || data[i].includes(0) || isLfsPointer(data[i])) take(path, data[i]);
-    else scanText(path, data[i].toString("utf8"));
+    else scanText(path, ownText(path, data[i].toString("utf8")));
   });
 } else {
   console.error(

@@ -10,6 +10,7 @@ import {
   finish,
   listFiles,
   readPackage,
+  withoutAllow,
   reader,
   repoRoot,
   TEST,
@@ -101,16 +102,6 @@ const devRoot = root.startsWith(`${home}/`) ? join(home, relative(home, root).sp
 const own = readPackage(root).name;
 // The pins and the allow list as the commit holds them in a staged run.
 const pkg = readPackage(root, staged ? ":" : undefined);
-const withoutAllow = (json: string) => {
-  let pkg;
-  try {
-    pkg = JSON.parse(json);
-  } catch {
-    return json;
-  }
-  if (pkg.scaffolding) pkg.scaffolding = { ...pkg.scaffolding, allow: undefined };
-  return JSON.stringify(pkg, null, 2);
-};
 const leaves = "path leaves the repository; take it from the package its owner publishes";
 for (const path of listFiles(root, staged)) {
   if (!SCANNED.test(path) || SKIPPED.test(path)) continue;
