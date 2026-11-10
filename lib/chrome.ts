@@ -9,7 +9,8 @@ import { homedir } from "node:os";
 import { join } from "node:path";
 import { promisify } from "node:util";
 
-type Options = { shell?: boolean };
+/** `anyBuild`: the newest cached build, whatever build puppeteer-core pins. */
+type Options = { shell?: boolean; anyBuild?: boolean };
 
 const cache = () => process.env.PUPPETEER_CACHE_DIR ?? join(homedir(), ".cache", "puppeteer");
 const kindOf = (shell?: boolean) => (shell ? "chrome-headless-shell" : "chrome");
@@ -39,9 +40,9 @@ const install = (shell?: boolean) => [
 /** The build puppeteer-core pins, else, without puppeteer-core, the newest build in the cache for
  * this platform. `shell` takes chrome-headless-shell, which printed in 2 s on a Mac where the full
  * app's --print-to-pdf never returned. */
-export function cachedChrome({ shell }: Options = {}): string | undefined {
+export function cachedChrome({ shell, anyBuild }: Options = {}): string | undefined {
   const kind = kindOf(shell);
-  const pinned = pinnedBuild(shell);
+  const pinned = anyBuild ? undefined : pinnedBuild(shell);
   const builds = join(cache(), kind);
   const exe = shell
     ? "chrome-headless-shell"

@@ -1,16 +1,19 @@
 #!/bin/sh
 // 2>/dev/null; exec bun --no-env-file "$0" "$@"
 //   chrome-mcp [flag...]   the chrome-devtools MCP server this package pins, headless and isolated, on
-//                          the Chrome for Testing chromeBinary finds (CHROME_BINARY, else the build
-//                          the repository's puppeteer-core pins, else the newest cached, else stable
-//                          installed); further flags go to chrome-devtools-mcp
+//                          Chrome for Testing: CHROME_BINARY, else the build the repository's
+//                          puppeteer-core pins, else the newest cached build, else the pinned build
+//                          or stable installed; further flags go to chrome-devtools-mcp
 import { spawn } from "node:child_process";
 import { readFileSync } from "node:fs";
 import { createRequire } from "node:module";
 import { dirname, join } from "node:path";
-import { chromeBinary, INSTALL_HINT, NO_KEYCHAIN } from "../lib/chrome.ts";
+import { cachedChrome, chromeBinary, INSTALL_HINT, NO_KEYCHAIN } from "../lib/chrome.ts";
 
-const chrome = chromeBinary();
+// Any cached build before a download of about 570 MB, which the server's start waits for: a
+// browser an agent drives needs no pinned build, a test comparing pixels does.
+const chrome =
+  process.env.CHROME_BINARY ?? cachedChrome() ?? cachedChrome({ anyBuild: true }) ?? chromeBinary();
 if (!chrome) {
   console.error(`[chrome-mcp] ${INSTALL_HINT}`);
   process.exit(1);

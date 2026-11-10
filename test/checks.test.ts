@@ -5427,6 +5427,63 @@ describe("chrome-mcp", () => {
       await server.exited;
     }
   }, 120_000);
+
+  test("starts on any cached build where the pinned one is missing, without a download", async () => {
+    const cache = temp();
+    const platform =
+      process.platform === "darwin" ? (process.arch === "arm64" ? "mac_arm" : "mac") : "linux";
+    const exe =
+      process.platform === "darwin"
+        ? "Google Chrome for Testing.app/Contents/MacOS/Google Chrome for Testing"
+        : "chrome";
+    write("/", { [join(cache, "chrome", `${platform}-10.0.1`, "chrome-x", exe)]: "" });
+    const consumer = temp();
+    write(consumer, {
+      "node_modules/puppeteer-core/package.json": JSON.stringify({
+        name: "puppeteer-core",
+        type: "module",
+        exports: { "./internal/*": "./lib/puppeteer/*" },
+      }),
+      "node_modules/puppeteer-core/lib/puppeteer/revisions.js":
+        "export const PUPPETEER_REVISIONS = { chrome: '9.0.1' };\n",
+    });
+    // Stands in for @puppeteer/browsers: logs a download and fails it.
+    const fake = temp();
+    const log = join(fake, "bunx.log");
+    writeFileSync(join(fake, "bunx"), `#!/bin/sh\necho "$*" >> "${log}"\nexit 1\n`, {
+      mode: 0o755,
+    });
+    const env: Record<string, string | undefined> = {
+      ...process.env,
+      PUPPETEER_CACHE_DIR: cache,
+      PATH: `${fake}:${process.env.PATH}`,
+      CHROME_BINARY: undefined,
+    };
+    const server = Bun.spawn([process.execPath, "--no-env-file", bin("chrome-mcp")], {
+      cwd: consumer,
+      env,
+      stdin: "pipe",
+      stdout: "pipe",
+      stderr: "ignore",
+    });
+    server.stdin.write(
+      `${JSON.stringify({ jsonrpc: "2.0", id: 1, method: "initialize", params: { protocolVersion: "2025-06-18", capabilities: {}, clientInfo: { name: "test", version: "0" } } })}\n`,
+    );
+    let out = "";
+    const reader = server.stdout.getReader();
+    try {
+      for (const end = Date.now() + 30_000; !out.includes('"id":1') && Date.now() < end;) {
+        const { value, done } = await reader.read();
+        if (done) break;
+        out += new TextDecoder().decode(value);
+      }
+    } finally {
+      server.kill("SIGTERM");
+      await server.exited;
+    }
+    expect(existsSync(log) ? readFileSync(log, "utf8") : "").toBe("");
+    expect(out).toContain("chrome_devtools");
+  }, 60_000);
 });
 
 describe("serve", () => {
