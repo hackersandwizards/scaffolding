@@ -12,6 +12,7 @@ import {
   writeFileSync,
 } from "node:fs";
 import { basename, dirname, join, resolve } from "node:path";
+import { companyRemote, installedCommit, tagCommit } from "../lib/repo.ts";
 
 const usage =
   "usage: scaffold <dir> [--name <package name>] [--port <port>] [--catalog-in <repo>] [--admin-in <repo>]";
@@ -47,8 +48,7 @@ const home = join(import.meta.dir, "..");
 const own = JSON.parse(readFileSync(join(home, "package.json"), "utf8"));
 
 function newestTag(repo: string): string {
-  const base = process.env.SCAFFOLDING_GIT_BASE ?? "https://github.com/hackersandwizards/";
-  const r = spawnSync("git", ["ls-remote", "--tags", "--refs", `${base}${repo}.git`], {
+  const r = spawnSync("git", ["ls-remote", "--tags", "--refs", companyRemote(repo)], {
     encoding: "utf8",
   });
   const tags = (r.stdout ?? "")
@@ -57,7 +57,9 @@ function newestTag(repo: string): string {
     .filter((tag): tag is string => /^v\d+\.\d+\.\d+$/.test(tag ?? ""))
     .sort((a, b) => Bun.semver.order(a.slice(1), b.slice(1)));
   if (r.status !== 0 || !tags.length) {
-    console.error(`[scaffold] no v<version> tag read from ${base}${repo}.git: ${r.stderr ?? ""}`);
+    console.error(
+      `[scaffold] no v<version> tag read from ${companyRemote(repo)}: ${r.stderr ?? ""}`,
+    );
     process.exit(1);
   }
   return tags.at(-1)!;
@@ -65,6 +67,18 @@ function newestTag(repo: string): string {
 const pins: Record<string, string> = {};
 if (!catalogIn) pins.brand = newestTag("brand");
 if (!adminIn) pins.admin = newestTag("admin");
+// Read before anything is written, so a failure leaves no half-made repository.
+function pagesCommit(): string {
+  const installed = installedCommit(home);
+  try {
+    if (!installed) throw new Error("no installed commit: install the package from its Git tag");
+    return tagCommit(own.version, installed);
+  } catch (e) {
+    console.error(`[scaffold] the Pages workflow's pin: ${(e as Error).message}`);
+    process.exit(1);
+  }
+}
+const commit = catalogIn ? "" : pagesCommit();
 
 cpSync(join(home, "template"), target, { recursive: true });
 if (!catalogIn) cpSync(join(home, "template-catalog"), target, { recursive: true });
@@ -84,6 +98,7 @@ const values: Record<string, string> = {
   port,
   version: own.version,
   packageManager: own.packageManager,
+  commit,
 };
 const filled = ["package.json", "README.md"];
 if (!catalogIn) filled.push("catalog/astro.config.ts", ".github/workflows/pages.yml");

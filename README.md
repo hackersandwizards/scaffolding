@@ -210,7 +210,8 @@ left its page scripts unrun.
 
 The shell (`catalog/`: Layout, Home, Head, Top, which draws the header, `render.ts`, which draws
 the rail and tiles, and `catalog.css`) reads brand's token roles by name only, and the repository's
-`css` supplies them.
+`css` supplies them. Where brand's `tokens.json` holds a name the shell's CSS reads, the build writes
+brand's value as that `var()`'s fallback, in place of any the shell writes.
 The home's rail is brand's search field (`hw-search`) over its navigation list (`hw-nav`), so the
 home's stylesheets need brand v1.47.0 or later with its `elements.css`, as its tiles need brand's
 card and pill; an older brand installed fails the build.
@@ -483,12 +484,16 @@ hooks run `bun install --frozen-lockfile` when `bun.lock` or `package.json` chan
 repository that publishes GitHub Pages calls the reusable workflow, which runs `bun run build` and
 publishes `dist/`. The caller, `.github/workflows/pages.yml`, is owned: where it exists,
 `check-structure` compares it with the skeleton's (`template-catalog/`) with this version filled in, and
-`--fix` writes it, so a pin raise is `bun add` plus `check-structure --fix`:
+`--fix` writes it, so a pin raise is `bun add` plus `check-structure --fix`. The caller grants the
+workflow `pages: write` and `id-token: write`, so it names the tag's full commit, which no tag move
+changes. The check reads it offline: the commit must start with the short SHA bun recorded in the
+installed package's `.bun-tag`. `--fix` (and `scaffold`) read the full commit with `git ls-remote`
+and refuse a tag that no longer points at the installed commit:
 
 ```yaml
 jobs:
   pages:
-    uses: hackersandwizards/scaffolding/.github/workflows/pages.yml@vX.Y.Z
+    uses: hackersandwizards/scaffolding/.github/workflows/pages.yml@<full commit of vX.Y.Z> # vX.Y.Z
     permissions:
       contents: read
       pages: write

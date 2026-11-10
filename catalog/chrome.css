@@ -19,7 +19,7 @@ body:has(> [data-hw-catalog-top]) {
   gap: 0.5rem 1rem;
   padding: 0.75rem 1.5rem;
   border-bottom: 1px solid color-mix(in srgb, currentColor 15%, transparent);
-  font: 500 0.875rem/1.4 var(--font-sans, system-ui, sans-serif);
+  font: 500 0.875rem/1.4 var(--font-sans);
 }
 .hw-catalog-bar :is(a, button, select) {
   display: inline-flex;
@@ -53,7 +53,7 @@ body:has(> [data-hw-catalog-top]) {
   justify-content: center;
   min-width: 1.75rem;
   padding: 0;
-  border-radius: var(--radius-pill, 999px);
+  border-radius: var(--radius-pill);
 }
 .hw-catalog-bar button[aria-pressed="true"] {
   background: color-mix(in srgb, currentColor 12%, transparent);
@@ -83,7 +83,7 @@ body:has(> [data-hw-catalog-top]) {
 .hw-catalog-states li a {
   padding: 0 0.625rem;
   border: 1px solid color-mix(in srgb, currentColor 20%, transparent);
-  border-radius: var(--radius-pill, 999px);
+  border-radius: var(--radius-pill);
 }
 .hw-catalog-states li a[aria-current] {
   border-color: currentColor;

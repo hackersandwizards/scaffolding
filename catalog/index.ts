@@ -17,6 +17,7 @@ import { spawnSync } from "node:child_process";
 import { createRequire } from "node:module";
 import { basename, dirname, join, posix, relative } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
+import { brandFallbacks } from "./fallbacks.ts";
 import { catalogPath, storiesDir } from "./path.ts";
 import { CSS, rewriteRoute } from "./route.ts";
 
@@ -109,6 +110,9 @@ const HEAD = "virtual:scaffolding/catalog-head";
 const AROUND = "virtual:scaffolding/catalog-around";
 const ICON = "virtual:scaffolding/catalog-icon";
 const BRAND_ICON = "@hackersandwizards/brand/logos/favicon.svg";
+const SHELL_CSS = ["catalog.css", "chrome.css", "ground.css"].map((f) =>
+  join(import.meta.dirname, f),
+);
 // The cascade layer order alone, exported since brand v1.52.0.
 const BRAND_LAYERS = "@hackersandwizards/brand/layers.css";
 
@@ -345,6 +349,8 @@ export function catalog(options: CatalogOptions): AstroIntegration {
         // A relative specifier counts from the Astro root, as Astrobook reads `head` and `home`.
         const spec = (s: string) => JSON.stringify(s.startsWith(".") ? join(root, s) : s);
         const nav = options.nav ?? brandNav(require, options.product);
+        const tokens: Record<string, string> =
+          fromBrand(() => require("@hackersandwizards/brand/tokens.json").tokens) ?? {};
         const around = [
           join(import.meta.dirname, "ground.css"),
           ...(header.css ?? []),
@@ -420,6 +426,13 @@ export function catalog(options: CatalogOptions): AstroIntegration {
               include: ROUTER,
             },
             plugins: [
+              {
+                // Ahead of Vite's CSS plugin, which reads the file's text.
+                name: "scaffolding-catalog-fallbacks",
+                enforce: "pre" as const,
+                transform: (code: string, id: string) =>
+                  SHELL_CSS.includes(id.split("?")[0]!) ? brandFallbacks(code, tokens) : undefined,
+              },
               {
                 name: "scaffolding-catalog",
                 resolveId: (id: string) => (Object.hasOwn(modules, id) ? `\0${id}` : undefined),

@@ -1,5 +1,5 @@
 # Owned by @hackersandwizards/scaffolding: check-structure compares this file with the skeleton of
-# the pinned version, and `check-structure --fix` writes it.
+# the pinned version, and `check-structure --fix` writes it with that version's full commit.
 name: Pages
 on:
   push:
@@ -9,7 +9,7 @@ permissions:
   contents: read
 jobs:
   pages:
-    uses: hackersandwizards/scaffolding/.github/workflows/pages.yml@v{{version}}
+    uses: hackersandwizards/scaffolding/.github/workflows/pages.yml@{{commit}} # v{{version}}
     permissions:
       contents: read
       pages: write

@@ -4,6 +4,7 @@ import {
   chmodSync,
   cpSync,
   existsSync,
+  globSync,
   lstatSync,
   mkdirSync,
   mkdtempSync,
@@ -19,8 +20,10 @@ import {
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { pathToFileURL } from "node:url";
+import { brandFallbacks } from "../catalog/fallbacks.ts";
 import { catalogPath } from "../catalog/path.ts";
 import { rewriteRoute } from "../catalog/route.ts";
+import { installedCommit, tagCommit } from "../lib/repo.ts";
 
 const bin = (name: string) => join(import.meta.dir, "..", "bin", `${name}.ts`);
 const PREVIEW = 'ASTRO_PREVIEW_BACKGROUND=1 bun --bun astro preview --root "$PWD/catalog"';
@@ -392,6 +395,10 @@ function remotes(tags: string[]) {
 process.env.SCAFFOLDING_GIT_BASE = remotes(["v0.9.0", "v0.10.0", "v0.2.0", "latest"]);
 const ownVersion = JSON.parse(readFileSync(join(import.meta.dir, "..", "package.json"), "utf8"))
   .version as string;
+// Run from its own checkout, the package pins its HEAD.
+const ownHead = sh(join(import.meta.dir, ".."), ["rev-parse", "HEAD"])
+  .stdout.toString()
+  .trim();
 
 test("check-structure: a bin file is stored executable, and --fix makes it so", () => {
   const dir = repo({
@@ -503,7 +510,7 @@ describe("scaffold and check-structure", () => {
     expect(config).toContain('base: "/demo"');
     expect(config).toContain("port: 4655 }");
     expect(readFileSync(join(dir, ".github/workflows/pages.yml"), "utf8")).toContain(
-      `uses: hackersandwizards/scaffolding/.github/workflows/pages.yml@v${ownVersion}\n`,
+      `uses: hackersandwizards/scaffolding/.github/workflows/pages.yml@${ownHead} # v${ownVersion}\n`,
     );
     // No placeholder item: the hub would list it as the repository's open goal.
     expect(readdirSync(join(dir, "docs/agent-work"))).toEqual([".gitkeep"]);
@@ -569,7 +576,9 @@ describe("scaffold and check-structure", () => {
   test("the owned Pages workflow: an edit goes red, --fix writes this version, absence passes", () => {
     const path = join(dir, ".github/workflows/pages.yml");
     const original = readFileSync(path, "utf8");
-    write(dir, { ".github/workflows/pages.yml": original.replace(`@v${ownVersion}`, "@v0.0.1") });
+    write(dir, {
+      ".github/workflows/pages.yml": original.replace(`@${ownHead}`, `@v${ownVersion}`),
+    });
     expect(lines(run(dir, "check-structure").out, "check-structure")).toEqual([
       "[check-structure] .github/workflows/pages.yml: differs from the skeleton (check-structure --fix)",
     ]);
@@ -579,6 +588,31 @@ describe("scaffold and check-structure", () => {
     rmSync(path);
     expect(run(dir, "check-structure").code).toBe(0);
     write(dir, { ".github/workflows/pages.yml": original });
+  });
+
+  test("the Pages pin: bun's short SHA offline, the tag's full commit from the remote, a moved tag refused", () => {
+    const home = temp();
+    write(home, { ".bun-tag": "hackersandwizards-scaffolding-0123abc\n" });
+    expect(installedCommit(home)).toBe("0123abc");
+    // An install that is neither a Git dependency nor the package's own checkout has none.
+    expect(installedCommit(temp())).toBeUndefined();
+    const base = temp();
+    const remote = join(base, "scaffolding.git");
+    mkdirSync(remote);
+    sh(remote, ["init", "-q", "-b", "main"]);
+    sh(remote, ["commit", "-q", "--allow-empty", "-m", "init"]);
+    // Annotated, so the tag's own object differs from the commit the workflow must name.
+    sh(remote, ["tag", "-a", "v9.9.9", "-m", "release"]);
+    const full = sh(remote, ["rev-parse", "HEAD"]).stdout.toString().trim();
+    const before = process.env.SCAFFOLDING_GIT_BASE;
+    process.env.SCAFFOLDING_GIT_BASE = `${base}/`;
+    try {
+      expect(tagCommit("9.9.9", full.slice(0, 7))).toBe(full);
+      expect(() => tagCommit("9.9.9", "0000000")).toThrow("the tag moved");
+      expect(() => tagCommit("9.9.8", full.slice(0, 7))).toThrow("v9.9.8 not read from");
+    } finally {
+      process.env.SCAFFOLDING_GIT_BASE = before;
+    }
   });
 
   test("--fix leaves a file an allow entry keeps", () => {
@@ -1711,6 +1745,16 @@ describe("shared eslint config", () => {
   });
 });
 
+// Stand-ins for brand's tokens.json values the shell's layout reads, as brand v2.4.0 has them.
+const BRAND_TOKENS = {
+  "--container-measure": "33em",
+  "--spacing-app-header":
+    "calc(var(--spacing-strip) + var(--spacing-header-row) + 1px + env(safe-area-inset-top))",
+  "--spacing-strip": "3px",
+  "--spacing-header-row": "3.5rem",
+  "--radius-pill": "9999px",
+};
+
 describe("catalog", () => {
   // The package the fixture's homeCss names, for every test that builds or serves the fixture.
   beforeAll(() => {
@@ -1731,6 +1775,21 @@ describe("catalog", () => {
       expect(catalogPath({ base: "/s/", pages: [page] })).toBe("/s/catalog/");
     expect(catalogPath({ base: "/s", pages: ["[slug].astro", "indexes"], dev: true })).toBe("/");
     expect(catalogPath({ base: "/s", pages: ["index.astro"], dev: true })).toBe("/catalog/");
+  });
+
+  test("brandFallbacks: brand's token value replaces or adds a var()'s fallback, nested var()s filled", () => {
+    const tokens = {
+      "--a": "calc(var(--b) + 1px)",
+      "--b": "3px",
+      "--c": "color-mix(in srgb, var(--a, red) 5%, white)",
+      "--loop": "var(--loop)",
+    };
+    const css =
+      ".x{a:var(--a);b:var( --b , calc(1px + var(--q)));c:var(--n, var(--b));d:var(--c);e:var(--z, 1px);f:var(--loop)}";
+    expect(brandFallbacks(css, tokens)).toBe(
+      ".x{a:var(--a, calc(var(--b, 3px) + 1px));b:var(--b, 3px);c:var(--n, var(--b, 3px));d:var(--c, color-mix(in srgb, var(--a, red) 5%, white));e:var(--z, 1px);f:var(--loop, var(--loop))}",
+    );
+    expect(brandFallbacks(css, {})).toBe(css);
   });
 
   test("rewriteRoute: an Astrobook route without a place for an edit fails rather than skip it", () => {
@@ -2241,6 +2300,7 @@ describe("catalog", () => {
       "package.json": JSON.stringify({
         exports: {
           "./catalogs.json": "./expert/catalogs.json",
+          "./tokens.json": "./generated/tokens.json",
           "./logos/*": "./logos/*",
           "./header.css": "./header.css",
           "./layers.css": "./tokens/layers.css",
@@ -2261,6 +2321,16 @@ describe("catalog", () => {
         { name: "Other", href: "https://example.com/other/" },
         { name: "Fx", href: "https://example.com/fx/" },
       ]),
+      // Values none of the shell's own: each var() naming one takes it as its fallback.
+      "generated/tokens.json": JSON.stringify({
+        tokens: {
+          "--container-measure": "31em",
+          "--text-page": "1.7rem",
+          "--spacing-app-header": "calc(var(--spacing-strip) + 2rem)",
+          "--spacing-strip": "5px",
+          "--radius-pill": "77px",
+        },
+      }),
     });
     writeFileSync(
       navless,
@@ -2268,6 +2338,20 @@ describe("catalog", () => {
     );
     expect(build(["--config", "navless.config.mjs"]).status).toBe(0);
     const branded = readFileSync(join(dist, "index.html"), "utf8");
+    const sheets = [
+      branded,
+      ...globSync("**/*.css", { cwd: dist }).map((f) => readFileSync(join(dist, f), "utf8")),
+    ]
+      .join("")
+      .replace(/,\s+/g, ",");
+    for (const fallback of [
+      "var(--container-measure,31em)",
+      "var(--text-page,1.7rem)",
+      "var(--spacing-app-header,calc(var(--spacing-strip,5px) + 2rem))",
+      "var(--radius-pill,77px)",
+    ])
+      expect(sheets).toContain(fallback);
+    expect(sheets).not.toContain("var(--text-page,1.5rem)");
     // brand's layer order follows the ground's.
     expect(branded).toContain(
       "<style>@layer hw-catalog-ground;@layer properties, theme, base, components, utilities;</style>",
@@ -2476,7 +2560,10 @@ describe("catalog", () => {
   // 40 tiles, each framing a page whose spec text sits above the element it marks as its preview.
   test("tile frames load after the first paint and near the view, and draw only the marked preview", async () => {
     const { renderCatalog } = await import("../catalog/render.ts");
-    const shellCss = readFileSync(join(import.meta.dir, "..", "catalog", "catalog.css"), "utf8");
+    const shellCss = brandFallbacks(
+      readFileSync(join(import.meta.dir, "..", "catalog", "catalog.css"), "utf8"),
+      BRAND_TOKENS,
+    );
     // An even tile marks a full-width wrapper of its own ground around a smaller box, an odd one a
     // box with a ground of its own.
     const box =
@@ -2605,7 +2692,10 @@ describe("catalog", () => {
   // third of the window, so the rail marked nothing on load.
   test("the rail marks the first group at the top of the page, however tall the lead", async () => {
     const { renderCatalog } = await import("../catalog/render.ts");
-    const shellCss = readFileSync(join(import.meta.dir, "..", "catalog", "catalog.css"), "utf8");
+    const shellCss = brandFallbacks(
+      readFileSync(join(import.meta.dir, "..", "catalog", "catalog.css"), "utf8"),
+      BRAND_TOKENS,
+    );
     const html = `<!doctype html><html><head><style>${shellCss}</style></head><body>${renderCatalog(
       {
         title: "t",
@@ -2660,7 +2750,10 @@ describe("catalog", () => {
   // line opening on a bare "·".
   test("the provenance line wraps between parts, each separator with the part before it", async () => {
     const { renderCatalog } = await import("../catalog/render.ts");
-    const shellCss = readFileSync(join(import.meta.dir, "..", "catalog", "catalog.css"), "utf8");
+    const shellCss = brandFallbacks(
+      readFileSync(join(import.meta.dir, "..", "catalog", "catalog.css"), "utf8"),
+      BRAND_TOKENS,
+    );
     const parts = [
       "certificate-verifier src/stories",
       "@hackersandwizards/brand v2.3.1",
@@ -2727,7 +2820,10 @@ describe("catalog", () => {
 
   test("a sized tile honours the marked preview, a mark may name a part, a clipped box fits as clipped", async () => {
     const { renderCatalog } = await import("../catalog/render.ts");
-    const shellCss = readFileSync(join(import.meta.dir, "..", "catalog", "catalog.css"), "utf8");
+    const shellCss = brandFallbacks(
+      readFileSync(join(import.meta.dir, "..", "catalog", "catalog.css"), "utf8"),
+      BRAND_TOKENS,
+    );
     const part =
       '<span class="part" style="display:inline-block;width:200px;height:100px;background:rgb(1, 2, 3)">x</span><span class="other">y</span>';
     const wide = 'style="width:5000px;height:100px;background:rgb(1, 2, 3)"';

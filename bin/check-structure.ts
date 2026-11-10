@@ -18,10 +18,12 @@ import {
   applyAllow,
   finish,
   git,
+  installedCommit,
   isReason,
   listFiles,
   readPackage,
   repoRoot,
+  tagCommit,
   type Finding,
 } from "../lib/repo.ts";
 
@@ -79,15 +81,31 @@ for (const path of (skeleton.same as string[]).filter((p) => !exempt.absent.incl
     },
   );
 }
+// The owned file pins this version's full commit, which the check matches offline against the
+// installed short SHA; only --fix asks the remote for the rest.
+const commit = installedCommit(home);
 for (const path of skeleton.owned as string[]) {
   if (!exists(path)) continue;
   const template = readFileSync(join(home, "template-catalog", path), "utf8").replaceAll(
     "{{version}}",
     own.version,
   );
-  if (readFileSync(at(path), "utf8") === template) continue;
+  const [before = "", after = ""] = template.split("{{commit}}");
+  const text = readFileSync(at(path), "utf8");
+  const pinned = text.slice(before.length, text.length - after.length);
+  if (!commit) {
+    add(path, "no installed commit to pin: install the package from its Git tag");
+    continue;
+  }
+  if (
+    text.startsWith(before) &&
+    text.endsWith(after) &&
+    /^[0-9a-f]{40}$/.test(pinned) &&
+    pinned.startsWith(commit)
+  )
+    continue;
   add(path, "differs from the skeleton (check-structure --fix)", "", () =>
-    writeFileSync(at(path), template),
+    writeFileSync(at(path), template.replace("{{commit}}", tagCommit(own.version, commit))),
   );
 }
 for (const path of skeleton.present as string[])
@@ -189,5 +207,12 @@ if (hooks !== skeleton.hooksPath)
   );
 
 const left = applyAllow(pkg, "structure", findings, true);
-if (fix) for (const f of left) repairs.get(f)?.();
+if (fix)
+  for (const f of left)
+    try {
+      repairs.get(f)?.();
+    } catch (e) {
+      f.message = (e as Error).message;
+      repairs.delete(f);
+    }
 finish("check-structure", fix ? left.filter((f) => !repairs.has(f)) : left, started);

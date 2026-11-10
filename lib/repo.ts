@@ -1,6 +1,46 @@
 import { spawnSync } from "node:child_process";
-import { existsSync, readFileSync } from "node:fs";
+import { existsSync, readFileSync, realpathSync } from "node:fs";
 import { join } from "node:path";
+
+/** A company repository's remote; the tests point SCAFFOLDING_GIT_BASE at local stand-ins. */
+export const companyRemote = (repo: string) =>
+  `${process.env.SCAFFOLDING_GIT_BASE ?? "https://github.com/hackersandwizards/"}${repo}.git`;
+
+/** The commit the package at `home` came from, read offline: the short SHA bun writes to .bun-tag
+ * for a Git dependency, else the HEAD of the package's own checkout; undefined for any other
+ * install. */
+export function installedCommit(home: string): string | undefined {
+  const tag = join(home, ".bun-tag");
+  if (existsSync(tag)) return /-([0-9a-f]{7,40})$/.exec(readFileSync(tag, "utf8").trim())?.[1];
+  const r = spawnSync("git", ["rev-parse", "--show-toplevel", "HEAD"], {
+    cwd: home,
+    encoding: "utf8",
+  });
+  const [top, head] = (r.stdout ?? "").trim().split("\n");
+  return r.status === 0 && top && realpathSync(top) === realpathSync(home) ? head : undefined;
+}
+
+/** The full commit of this package's tag v<version>, which must be the `installed` one: a short
+ * SHA asks the remote, peeled for an annotated tag. Throws where the remote is not read or the
+ * tag points elsewhere, which means it moved after the install. */
+export function tagCommit(version: string, installed: string): string {
+  if (/^[0-9a-f]{40}$/.test(installed)) return installed;
+  const remote = companyRemote("scaffolding");
+  const tag = `refs/tags/v${version}`;
+  const r = spawnSync("git", ["ls-remote", remote, tag, `${tag}^{}`], { encoding: "utf8" });
+  const refs = new Map(
+    (r.stdout ?? "")
+      .trim()
+      .split("\n")
+      .map((line) => line.split("\t").reverse() as [string, string]),
+  );
+  const sha = refs.get(`${tag}^{}`) ?? refs.get(tag);
+  if (r.status !== 0 || !sha)
+    throw new Error(`v${version} not read from ${remote}: ${r.stderr ?? ""}`.trim());
+  if (!sha.startsWith(installed))
+    throw new Error(`v${version} points at ${sha}, installed is ${installed}: the tag moved`);
+  return sha;
+}
 
 /** A file's comments, by its kind: `#` lines for shell, Python, YAML, TOML, Git hooks and the
  * editor and Prettier ignore files, else block, HTML and `//` comments, a `//` in a URL or a

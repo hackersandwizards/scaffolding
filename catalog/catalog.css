@@ -24,13 +24,11 @@
      rail never slides up under the header at the page's end. */
   .hw-catalog-rail {
     position: sticky;
-    top: calc(var(--spacing-app-header, 4rem) + var(--hw-cat-above));
+    top: calc(var(--spacing-app-header) + var(--hw-cat-above));
     display: flex;
     flex-direction: column;
     align-self: start;
-    max-height: calc(
-      100vh - var(--spacing-app-header, 4rem) - var(--hw-cat-above) - var(--hw-cat-below)
-    );
+    max-height: calc(100vh - var(--spacing-app-header) - var(--hw-cat-above) - var(--hw-cat-below));
   }
   .hw-catalog-rail > nav {
     min-height: 0;
@@ -76,7 +74,7 @@
     :is(.hw-catalog-main, .hw-catalog-text) > :not(section) > p,
     :is(.hw-catalog-main, .hw-catalog-text) > :not(section) > :is(details, section) > p
   ) {
-    max-width: var(--container-measure, 33em);
+    max-width: var(--container-measure);
     line-height: 1.5;
   }
   /* A heading of the home's slot, or of a wrapper element in it: the subheading step in the h2's
@@ -108,7 +106,7 @@
   }
   .hw-catalog-group {
     margin-top: 2.5rem;
-    scroll-margin-top: calc(var(--spacing-app-header, 4rem) + 1rem);
+    scroll-margin-top: calc(var(--spacing-app-header) + 1rem);
   }
   .hw-catalog-group > h2 {
     margin: 0 0 1rem;
@@ -221,7 +219,7 @@
       min-height: 2.75rem;
       padding: 0 0.875rem;
       border: 1px solid var(--hw-cat-line);
-      border-radius: var(--radius-pill, 999px);
+      border-radius: var(--radius-pill);
       white-space: nowrap;
     }
     .hw-catalog-rail li:has(a[aria-current]) > a {
