@@ -1,15 +1,16 @@
 import { defineConfig } from "astro/config";
 import { catalog } from "@hackersandwizards/scaffolding/catalog";
 
-// The base is the project Pages path, https://hackersandwizards.github.io/{{name}}/.
+// The project's Pages URL, https://hackersandwizards.github.io/{{repo}}/.
 export default defineConfig({
-  base: "/{{name}}",
+  site: "https://hackersandwizards.github.io",
+  base: "/{{repo}}",
   devToolbar: { enabled: false },
   server: { host: "127.0.0.1", port: {{port}} },
   integrations: [
     catalog({
-      product: "{{name}}",
-      lead: "Every component of {{name}}, as a story.",
+      product: "{{repo}}",
+      lead: "Every component of {{repo}}, as a story.",
       css: ["@hackersandwizards/brand/tokens.root.css", "@hackersandwizards/brand/elements.css"],
     }),
   ],

@@ -37,6 +37,11 @@ if (existsSync(target) && readdirSync(target).length) {
   process.exit(1);
 }
 const name = option("--name") ?? basename(target);
+// npm's rule for a new package name, checked before anything is written.
+if (!/^(?:@[a-z0-9~-][a-z0-9._~-]*\/)?[a-z0-9~-][a-z0-9._~-]*$/.test(name)) {
+  console.error(`[scaffold] "${name}" is no npm package name: give one with --name\n${usage}`);
+  process.exit(2);
+}
 const port = option("--port") ?? "4600";
 if (!/^\d+$/.test(port)) {
   console.error(`--port must be a number\n${usage}`);
@@ -90,12 +95,16 @@ for (const [path, link] of Object.entries<string>(symlinks)) {
 }
 const values: Record<string, string> = {
   name,
+  // The repository's own name: the Pages path, the product and the README's title.
+  repo: name.replace(/^@[^/]+\//, ""),
+  // A catalog brings .astro files, which only the Astro config lints.
+  eslint: catalogIn ? "eslint" : "eslint/astro",
   port,
   version: own.version,
   packageManager: own.packageManager,
   commit,
 };
-const filled = ["package.json", "README.md"];
+const filled = ["package.json", "README.md", "eslint.config.js"];
 if (!catalogIn) filled.push("catalog/astro.config.ts", ".github/workflows/pages.yml");
 for (const file of filled) {
   const path = join(target, file);
@@ -114,7 +123,7 @@ const company = (repo: string, tag: string) => [
 // `typescript` is the TypeScript 6 API that typescript-eslint imports;
 // `@typescript/native` brings `tsc` 7.
 const tools = ["@types/bun", "@typescript/native", "eslint", "prettier", "typescript"];
-if (!catalogIn) tools.push("astro", "astrobook", "stylelint");
+if (!catalogIn) tools.push("astro", "astrobook", "eslint-plugin-astro", "stylelint");
 // Set here, not in the template: there it would govern this package's own template files with a
 // package that only resolves in a repository that installs it.
 pkg.prettier = "@hackersandwizards/scaffolding/prettier";

@@ -1,4 +1,4 @@
-# {{name}}
+# {{repo}}
 
 What this repository is for, in one paragraph.
 

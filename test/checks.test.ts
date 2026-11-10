@@ -485,6 +485,26 @@ test("every bin target and every file in bin/ is stored executable", () => {
   expect([...stored].filter(([, mode]) => mode !== "100755")).toEqual([]);
 });
 
+test("a tag install, GitHub's archive of the tag, holds what files names, template's dotfiles too", () => {
+  const root = join(import.meta.dir, "..");
+  const { files } = JSON.parse(readFileSync(join(root, "package.json"), "utf8"));
+  const shipped = ["package.json", "README.md", "LICENSE", ...files];
+  const tracked = sh(root, ["ls-files"])
+    .stdout.toString()
+    .split("\n")
+    .filter((path) => shipped.some((top) => path === top || path.startsWith(`${top}/`)));
+  const archived = spawnSync("sh", ["-c", "git archive --worktree-attributes HEAD | tar -t"], {
+    cwd: root,
+    encoding: "utf8",
+  })
+    .stdout.split("\n")
+    .filter((path) => path && !path.endsWith("/"));
+  expect(archived).toContain("template/.npmrc");
+  expect(archived.sort()).toEqual(
+    tracked.filter((path) => sh(root, ["cat-file", "-e", `HEAD:${path}`]).status === 0).sort(),
+  );
+});
+
 describe("scaffold and check-structure", () => {
   const parent = temp();
   const dir = join(parent, "demo");
@@ -539,7 +559,17 @@ describe("scaffold and check-structure", () => {
     expect(pkg.scripts.preview).toBe(PREVIEW);
     const config = readFileSync(join(dir, "catalog/astro.config.ts"), "utf8");
     expect(config).toContain('base: "/demo"');
+    expect(config).toContain('site: "https://hackersandwizards.github.io"');
     expect(config).toContain("port: 4655 }");
+    // The catalog's .astro files are linted by the Astro config, with its plugin pinned.
+    expect(readFileSync(join(dir, "eslint.config.js"), "utf8")).toStartWith(
+      'import base from "@hackersandwizards/scaffolding/eslint/astro";',
+    );
+    expect(pkg.devDependencies["eslint-plugin-astro"]).toBe(
+      JSON.parse(readFileSync(join(import.meta.dir, "../package.json"), "utf8")).devDependencies[
+        "eslint-plugin-astro"
+      ],
+    );
     expect(readFileSync(join(dir, ".github/workflows/pages.yml"), "utf8")).toContain(
       `uses: hackersandwizards/scaffolding/.github/workflows/pages.yml@${ownHead} # v${ownVersion}\n`,
     );
@@ -550,6 +580,23 @@ describe("scaffold and check-structure", () => {
     const formatted = spawnSync(prettier, ["--check", "."], { cwd: dir, encoding: "utf8" });
     expect(`${formatted.stdout}${formatted.stderr}`).toContain("All matched files use Prettier");
     expect(formatted.status).toBe(0);
+  });
+
+  test("--name: a scope stays out of the Pages path and the title, a bad name writes nothing", () => {
+    const at = temp();
+    expect(run(at, "scaffold", ["scoped", "--name", "@acme/scoped"]).code).toBe(0);
+    const config = readFileSync(join(at, "scoped/catalog/astro.config.ts"), "utf8");
+    expect(config).toContain('base: "/scoped"');
+    expect(config).toContain('product: "scoped"');
+    expect(readFileSync(join(at, "scoped/README.md"), "utf8")).toStartWith("# scoped\n");
+    expect(JSON.parse(readFileSync(join(at, "scoped/package.json"), "utf8")).name).toBe(
+      "@acme/scoped",
+    );
+    for (const name of ['a"b', "Upper"]) {
+      const bad = run(at, "scaffold", ["bad", "--name", name]);
+      expect(bad.out).toContain("is no npm package name");
+      expect(existsSync(join(at, "bad"))).toBe(false);
+    }
   });
 
   test("the skeleton has no preinstall, and its prepare sets the hooks path at the top level only", () => {
@@ -1901,16 +1948,23 @@ describe("scaffolding check", () => {
 });
 
 describe("shared eslint config", () => {
-  test("an empty test body goes red, a real one stays green", () => {
+  test("an empty test body or an unused name goes red, a real test stays green", () => {
     const dir = repo({
       "eslint.config.js": `import base from "${join(import.meta.dir, "..", "config", "eslint.js")}";\nexport default base;\n`,
       "a.test.ts": 'test("x", () => {});\n',
       "b.test.ts": 'test("x", () => { expect(1).toBe(1); });\n',
+      // Every file the other checks count as a test, and a call two members deep.
+      "c.spec.ts": 'it("x", () => {});\n',
+      "tests/d.ts": 'test("x", () => {});\n',
+      "e2e/e.js": 'test("x", () => {});\n',
+      "f.test.ts": 'test.concurrent.only("x", () => {});\n',
+      "g.ts": "const unusedThing = 1;\nexport {};\n",
     });
     const eslint = join(import.meta.dir, "..", "node_modules", ".bin", "eslint");
-    const r = spawnSync(eslint, ["a.test.ts", "b.test.ts"], { cwd: dir, encoding: "utf8" });
+    const r = spawnSync(eslint, ["."], { cwd: dir, encoding: "utf8" });
     expect(r.status).toBe(1);
-    expect(r.stdout).toContain("a.test.ts");
+    for (const file of ["a.test.ts", "c.spec.ts", "tests/d.ts", "e2e/e.js", "f.test.ts", "g.ts"])
+      expect(r.stdout).toContain(file);
     expect(r.stdout).not.toContain("b.test.ts");
   });
 
@@ -3281,6 +3335,16 @@ describe("shared stylelint config", () => {
     expect(out).toContain("src/bad.css");
     expect(out).toContain("--color-nope");
     expect(out).not.toContain("src/ok.css");
+    // A self-closing <style> holding ">" is no CSS, and a wrapped one keeps the lines after it.
+    write(dir, {
+      "src/A.astro":
+        '<style set:html={items.map((i) => i.css).join("")} />\n<style\n  set:html={x}\n/>\n<p>a</p>\n<style>\n  a { color: var(--color-nope); }\n</style>\n',
+    });
+    const astro = spawnSync(stylelint, ["src/A.astro"], { cwd: dir, encoding: "utf8" });
+    expect(`${astro.stdout}${astro.stderr}`).toMatch(/src\/A\.astro\s+7:\d+/);
+    expect(`${astro.stdout}${astro.stderr}`).not.toContain("Unknown word");
+    write(dir, { "src/B.astro": "<style set:html={a.map((i) => i.css)} />\n<p>a</p>\n" });
+    expect(spawnSync(stylelint, ["src/B.astro"], { cwd: dir, encoding: "utf8" }).status).toBe(0);
     rmSync(join(dir, "node_modules/@hackersandwizards/brand"), { recursive: true });
     const gone = spawnSync(stylelint, ["src/ok.css"], { cwd: dir, encoding: "utf8" });
     expect(gone.status).not.toBe(0);

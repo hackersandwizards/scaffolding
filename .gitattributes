@@ -1,0 +1,13 @@
+# A tag install is GitHub's tarball of the tag, built by `git archive`: it holds what `files` in
+# package.json ships, and template/'s dotfiles, which `bun pm pack` leaves out.
+/* export-ignore
+/bin -export-ignore
+/lib -export-ignore
+/template -export-ignore
+/template-catalog -export-ignore
+/skeleton.json -export-ignore
+/config -export-ignore
+/catalog -export-ignore
+/package.json -export-ignore
+/README.md -export-ignore
+/LICENSE -export-ignore

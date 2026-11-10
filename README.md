@@ -44,11 +44,12 @@ deleting it changes nothing for the gate.
 
 ## A new repository
 
-`scaffold <dir> [--port <port>] [--name <package>]` (port 4600 and the folder's name by default)
-writes the skeleton from `template/` (with an empty `docs/agent-work/` for the items) and the catalog
-from `template-catalog/` (`catalog/astro.config.ts` on the preset with `base: "/<name>"` and the
-port, an example component and story, `stylelint.config.js`, the scripts `dev`, `catalog`, `build`
-and `preview`, the Pages workflow), and pins brand and admin to the newest tag on their remotes, so
+`scaffold <dir> [--port <port>] [--name <package>]` (port 4600 and the folder's name by default;
+a name npm would refuse stops it before it writes a file) writes the skeleton from `template/` (with an empty `docs/agent-work/` for the items) and the catalog
+from `template-catalog/` (`catalog/astro.config.ts` on the preset with the Pages `site`,
+`base: "/<name>"` without the name's scope, and the port, an example component and story,
+`stylelint.config.js`, the scripts `dev`, `catalog`, `build` and `preview`, the Pages workflow,
+and ESLint's Astro config with `eslint-plugin-astro`, so the `.astro` files are linted), and pins brand and admin to the newest tag on their remotes, so
 an admin or brand release reaches new repositories without a scaffolding release. A repository whose
 catalog or admin area lives in another repository leaves the catalog and brand out with
 `--catalog-in <repo>`, or admin with `--admin-in <repo>`; its `scaffolding.skip` names that
@@ -141,8 +142,11 @@ and runs beside either.
 
 The stylelint base lets a stylesheet, and the `<style>` blocks of an Astro component, read only the
 custom properties brand's `tokens.root.css` (from the repository's installed brand), the files in
-`importFrom` and the same file define. A property a component sets from its markup (a `style`
-attribute) is read with a fallback, `var(--accent, transparent)`.
+`importFrom` and the same file define. An `importFrom` entry starting with `./`, or a bare file
+name, is a file of the repository; any other path with a slash is a package's. The base cannot load
+without brand installed, so a repository without brand gives `skip.styles` a reason. A property a
+component sets from its markup (a `style` attribute) is read with a fallback,
+`var(--accent, transparent)`.
 
 ## The catalog
 
@@ -218,7 +222,8 @@ keeps one size whatever `data-hw-scale` the story sets: `chrome.css` writes
 `brand-value(--text-ui)` and `brand-value(--text-ui--line-height)`, which the build replaces with
 brand's unscaled values. A repository without brand supplies the type steps the shell reads in its
 `css`: `--text-page`, `--text-heading`, `--text-subheading`, `--text-ui`, `--text-micro` and the
-line heights of the first four (`--text-page--line-height` and so on); there the bar reads its
+line heights of the first four (`--text-page--line-height` and so on), and `--spacing-app-header`,
+its header's height, under which the rail sticks and the groups scroll to; there the bar reads its
 `--text-ui` and line height as `var()`s. A program that reads the shell's CSS files itself rather
 than through the build, such as a page that inlines `catalog/catalog.css`, passes each file's text
 through `brandFallbacks(css, tokens)` from `catalog/fallbacks.ts` with the `tokens` of brand's

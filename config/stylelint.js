@@ -3,10 +3,12 @@ import { isAbsolute, join } from "node:path";
 import postcssHtml from "postcss-html";
 import unknownProperties from "stylelint-value-no-unknown-custom-properties";
 
-// A self-closing <style set:html={…} /> holds no CSS of its own and is blanked first: postcss-html
-// would read the rest of the file as CSS.
+// A self-closing <style set:html={…} /> holds no CSS of its own and is blanked first, its line
+// breaks kept: postcss-html would read the rest of the file as CSS. An attribute may hold ">".
 const blank = (source) =>
-  String(source).replace(/<style\b[^>]*\/>/g, (tag) => " ".repeat(tag.length));
+  String(source).replace(/<style(?=[\s/>])(?:"[^"]*"|'[^']*'|\{[^}]*\}|[^>"'{])*\/>/g, (tag) =>
+    tag.replace(/[^\n]/g, " "),
+  );
 const astro = {
   parse: (source, options) => postcssHtml.parse(blank(source), options),
   stringify: postcssHtml.stringify,
