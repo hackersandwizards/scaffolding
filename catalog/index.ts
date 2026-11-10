@@ -51,7 +51,8 @@ export type CatalogOptions = {
    * state alone), such as "screen"; without it such a page keeps what the repository's head sets,
    * else brand's default. The home draws at "dense". */
   storyScale?: string;
-  /** Classes on <html> of every page, set before the body draws, such as ["hw-focus-ring"]. */
+  /** Classes on <html> of every page, set before the body draws, such as ["hw-focus-ring"], with
+   * which every page also loads brand's elements/focus.css. */
   htmlClass?: string[];
   /** Groups shown first, in this order; the rest follow alphabetically. */
   groupOrder?: string[];
@@ -115,6 +116,7 @@ const SHELL_CSS = ["catalog.css", "chrome.css", "ground.css"].map((f) =>
 );
 // The cascade layer order alone, exported since brand v1.52.0.
 const BRAND_LAYERS = "@hackersandwizards/brand/layers.css";
+const BRAND_FOCUS = "@hackersandwizards/brand/elements/focus.css";
 
 /** The nearest folder at or above `from` holding a package.json. */
 function packageDir(from: string): string {
@@ -334,11 +336,18 @@ export function catalog(options: CatalogOptions): AstroIntegration {
           throw new Error(
             `catalog: the shell needs @hackersandwizards/brand v2.5.0 or later, installed is v${brand.join(".")}`,
           );
-        const sheets = [
-          ...options.css,
-          ...(options.homeCss ?? []),
-          ...(options.dashboardCss ?? []),
-        ];
+        // brand's hw-focus-ring draws nothing without its focus.css, which a slim list leaves out.
+        const ring =
+          options.htmlClass?.includes("hw-focus-ring") &&
+          fromBrand(() => require.resolve(BRAND_FOCUS))
+            ? [BRAND_FOCUS]
+            : [];
+        const lists = {
+          home: [...new Set([...(options.homeCss ?? options.css), ...ring])],
+          dashboard: [...new Set([...(options.dashboardCss ?? options.css), ...ring])],
+          stories: [...new Set([...options.css, ...ring])],
+        };
+        const sheets = Object.values(lists).flat();
         const versions = [...new Set(sheets.map(packageOf).filter((p) => p !== undefined))]
           .map((p) => `${p} v${installed(p, root) ?? "?"}`)
           .join(" · ");
@@ -409,9 +418,9 @@ export function catalog(options: CatalogOptions): AstroIntegration {
             : "export default undefined;",
           // Inlined on the home and a state's page: linked, one more render-blocking request.
           [AROUND]: `${around.map((c, i) => `import c${i} from ${spec(`${c}?inline`)};`).join("")}export default ${around.map((_, i) => `c${i}`).join("+")};`,
-          [`${CSS}home`]: imports(options.homeCss ?? options.css),
-          [`${CSS}dashboard`]: imports(options.dashboardCss ?? options.css),
-          [`${CSS}stories`]: imports(options.css),
+          [`${CSS}home`]: imports(lists.home),
+          [`${CSS}dashboard`]: imports(lists.dashboard),
+          [`${CSS}stories`]: imports(lists.stories),
         };
         params.updateConfig({
           // Astro's own default only: an outDir the config sets stays.

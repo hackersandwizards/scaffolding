@@ -2244,6 +2244,8 @@ describe("catalog", () => {
     expect(dashCss).not.toContain(".box{");
     expect(styles(page("stories/Parts/box-parts/two"))).toContain(".box{color:teal}");
     rmSync(dash);
+    // Without brand, hw-focus-ring in `htmlClass` loads no focus ring and fails no build.
+    expect(variant("ringless", 'htmlClass: ["hw-focus-ring"]').status).toBe(0);
     // A `previewSize` key naming no group fails the build by name: a renamed group would fall back
     // to the small fitted view unseen.
     const stale = variant("stale", "previewSize: { Parts: [1, 1], Pieces: [1440, 900] }");
@@ -2323,6 +2325,7 @@ describe("catalog", () => {
           "./header.css": "./header.css",
           "./layers.css": "./tokens/layers.css",
           "./night.css": "./night.css",
+          "./elements/*": "./elements/*",
           "./expert/components/*": "./expert/components/*",
         },
       }),
@@ -2333,6 +2336,7 @@ describe("catalog", () => {
       "header.css": "",
       "tokens/layers.css": "@layer properties, theme, base, components, utilities;\n",
       "night.css": "",
+      "elements/focus.css": ".hw-focus-ring :focus-visible{outline:3px solid purple}\n",
       "expert/components/AppHeader.astro":
         '---\nimport lockup from "../../logos/lockup-screen.svg?url";\nimport night from "../../logos/night-logo.svg?url";\n---\n\n<header class="hw-header"><img class="hw-header-logo" src={lockup} alt="" /><img src={night} alt="" loading="lazy" /><slot /></header>\n',
       "expert/catalogs.json": JSON.stringify([
@@ -2417,6 +2421,13 @@ describe("catalog", () => {
       void slow.stop(true);
     }
     rmSync(navless);
+    // `htmlClass` holding brand's hw-focus-ring loads brand's focus ring on every page; without
+    // the class no page loads it.
+    const ring = ".hw-focus-ring :focus-visible{outline:3px solid purple}";
+    const ringPages = ["", "dashboard/Parts/box-parts/two", "stories/Parts/box-parts/two"];
+    for (const p of ringPages) expect(styles(page(p))).not.toContain(ring);
+    expect(variant("ringed", 'htmlClass: ["hw-focus-ring"]').status).toBe(0);
+    for (const p of ringPages) expect(styles(page(p))).toContain(ring);
     expect(build().status).toBe(0);
     for (const p of ["", "stories/Parts/box-parts/two"]) {
       expect(links(page(p), "icon")).toEqual([

@@ -272,8 +272,12 @@ The options beyond those above:
   inline; where a repository's stories draw their state alone in an iframe there, which loads `css`,
   the page needs only the tokens and faces its header and bar read and what it draws around the
   frame, such as `["@hackersandwizards/brand/tokens.root.css", "@hackersandwizards/brand/fonts.css"]`.
+  A `head` that sets brand's `hw-focus-ring` itself also lists
+  `"@hackersandwizards/brand/elements/focus.css"` here, as in `homeCss` and `css` where they leave
+  out `elements.css`, or that page draws no focus ring.
 - `htmlClass`: classes on `<html>` of every page, set before the body draws, such as
-  `["hw-focus-ring"]` for brand's focus ring.
+  `["hw-focus-ring"]` for brand's focus ring, with which every page also loads brand's
+  `elements/focus.css`, so no list needs to name it.
 - `previewStates`: the states a tile draws and links first, each the story's export name in kebab
   case, such as `["light", "loaded-dark"]` for `Light` and `LoadedDark`.
 - `head`: the repository's own `<head>` component, rendered on every page. Ahead of it every page
