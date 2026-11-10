@@ -3879,11 +3879,11 @@ describe("check-staged", () => {
     expect(run(dir, "check-staged").code).toBe(0);
   });
 
-  test("validate:skills reads this commit's paths, deletions included, whatever the shell exports", () => {
+  test("check:skills reads this commit's paths, deletions included, whatever the shell exports", () => {
     const dir = repo({
       "package.json": JSON.stringify({
         scaffolding: { private: true, skip: { format: "fixture", lint: "fixture" } },
-        scripts: { "validate:skills": `printf '%s' "$VALIDATE_SKILLS_PATHS" > scope.txt` },
+        scripts: { "check:skills": `printf '%s' "$VALIDATE_SKILLS_PATHS" > scope.txt` },
       }),
       ".claude/gone.md": "x\n",
     });

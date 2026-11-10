@@ -51,7 +51,7 @@ for (const [step, check] of [
 // Deletions count: removing a file can break a link the validator checks. Any status but 0
 // (no change) runs it, so a failing git diff fails closed.
 const skills =
-  Boolean(pkg.scripts?.["validate:skills"]) &&
+  Boolean(pkg.scripts?.["check:skills"]) &&
   spawnSync("git", ["diff", "--cached", "--quiet", "--", ".claude"]).status !== 0;
 
 const declared = { ...pkg.dependencies, ...pkg.devDependencies };
@@ -235,7 +235,7 @@ const runs = active.flatMap(([tool, args]) => {
 // session's half-written skill refused this commit, and an inherited scope could narrow it to none.
 if (skills)
   runs.push(
-    runStagedTool(process.execPath, ["run", "validate:skills"], undefined, {
+    runStagedTool(process.execPath, ["run", "check:skills"], undefined, {
       VALIDATE_SKILLS_PATHS: names(["diff", "--cached"]).join("\n"),
     }),
   );
