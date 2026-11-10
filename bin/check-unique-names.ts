@@ -28,7 +28,12 @@ const root = repoRoot();
 const pkg = readPackage(root);
 const frameworkNames = new Set([pkg.scaffolding?.uniqueNames ?? []].flat());
 const files = listFiles(root, false).filter(
-  (file) => /\.(?:[cm]?[jt]s|tsx|astro)$/.test(file) && !file.endsWith(".d.ts") && !TEST.test(file),
+  // .githooks/ holds the skeleton's copies, which the shared lint and format configs skip too.
+  (file) =>
+    /\.(?:[cm]?[jt]s|tsx|astro)$/.test(file) &&
+    !file.endsWith(".d.ts") &&
+    !TEST.test(file) &&
+    !file.startsWith(".githooks/"),
 );
 if (!files.length) throw new Error("no source files matched, so nothing was checked");
 for (const file of files) {

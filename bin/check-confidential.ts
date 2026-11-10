@@ -432,32 +432,38 @@ else {
 const bad = new Set<string>([...(neverMode ? [] : (list?.hashes ?? [])), ...(list?.never ?? [])]);
 const h = hasher(list?.salt ?? "");
 
-/** `inPath`: `text` is the path `where` itself. */
-function scanText(where: string, text: string, inPath = false) {
+/** `inPath`: `texts` is the path `where` itself. Several texts are scanned apart; a name is one finding. */
+function scanText(where: string, texts: string | string[], inPath = false) {
   if (!list) return;
   const found = new Set<string>();
-  const tokens = words(text);
-  const lower = tokens.map((w) => w.toLowerCase());
-  for (let i = 0; i < tokens.length; i++) {
-    if ((tokens[i].length === 3 || capitals(tokens[i])) && bad.has(h(`cs:${tokens[i]}`)))
-      found.add(tokens[i]);
-    let gram = "";
-    for (let n = 0; n < list.maxTokens && i + n < tokens.length; n++) {
-      gram = n ? `${gram} ${lower[i + n]}` : lower[i];
-      // One word of three letters is a cased term. Two one-character words ("K 2") count only
-      // in capitals, since in lower case they are code (`c => a`).
-      const pair = n === 1 && gram.length === 3;
-      const counts = pair ? capitals(tokens[i] + tokens[i + 1]) : n || gram.length > 3;
-      if ((counts && bad.has(h(gram))) || (neverMode && !n && bad.has(h(`any:${gram}`))))
-        found.add(tokens.slice(i, i + n + 1).join(" "));
+  for (const text of [texts].flat()) {
+    const tokens = words(text);
+    const lower = tokens.map((w) => w.toLowerCase());
+    for (let i = 0; i < tokens.length; i++) {
+      if ((tokens[i].length === 3 || capitals(tokens[i])) && bad.has(h(`cs:${tokens[i]}`)))
+        found.add(tokens[i]);
+      let gram = "";
+      for (let n = 0; n < list.maxTokens && i + n < tokens.length; n++) {
+        gram = n ? `${gram} ${lower[i + n]}` : lower[i];
+        // One word of three letters is a cased term. Two one-character words ("K 2") count only
+        // in capitals, since in lower case they are code (`c => a`).
+        const pair = n === 1 && gram.length === 3;
+        const counts = pair ? capitals(tokens[i] + tokens[i + 1]) : n || gram.length > 3;
+        if ((counts && bad.has(h(gram))) || (neverMode && !n && bad.has(h(`any:${gram}`))))
+          found.add(tokens.slice(i, i + n + 1).join(" "));
+      }
     }
+    // A slug or path writes a capitalised name in lower case (quux-workshop, clients/quux/): a
+    // lower-case part of a joined token is checked as the name in capitals.
+    for (const [joined] of text.normalize("NFKC").matchAll(SLUG))
+      for (const part of joined.split(/[-_/.]/))
+        if (
+          part.length >= 3 &&
+          part === part.toLowerCase() &&
+          bad.has(h(`cs:${part.toUpperCase()}`))
+        )
+          found.add(part);
   }
-  // A slug or path writes a capitalised name in lower case (quux-workshop, clients/quux/): a
-  // lower-case part of a joined token is checked as the name in capitals.
-  for (const [joined] of text.normalize("NFKC").matchAll(SLUG))
-    for (const part of joined.split(/[-_/.]/))
-      if (part.length >= 3 && part === part.toLowerCase() && bad.has(h(`cs:${part.toUpperCase()}`)))
-        found.add(part);
   for (const name of found)
     findings.push({
       check: CHECK,
@@ -842,7 +848,7 @@ else if (argv.includes("--staged") || commit) {
     full = true;
     // A key may be a slug the deck shows in its address. Each string apart, so two never join into
     // a name neither shows.
-    for (const [where, text] of texts) for (const piece of [where, ...text]) scanText(where, piece);
+    for (const [where, text] of texts) scanText(where, [where, ...text]);
   }
 } else if (tree || index) {
   full = true;

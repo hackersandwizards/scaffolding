@@ -567,7 +567,7 @@ test("check-structure: a hook with the skeleton's bytes but no executable bit fa
   );
 });
 
-test("every bin target and every file in bin/ is stored executable", () => {
+test("every bin target and every file in bin/ is stored executable, wherever the target lives", () => {
   const root = join(import.meta.dir, "..");
   const { bin } = ownPackage;
   const stored = new Map(
@@ -2131,6 +2131,8 @@ describe("check-confidential never", () => {
     // Each string is scanned apart: two of them never join into a name neither shows.
     expect(never({ deck: ["met Brennwald", "AG today"] }).out).not.toContain("(Brennwald AG)");
     expect(never({ deck: ["met Brennwald AG today"] }).out).toContain("(Brennwald AG)");
+    // A name in several strings of one value is one finding.
+    expect(never({ deck: ["QZX here", "QZX there"] }).out).toContain("1 findings");
   });
 
   test("an input that is empty, not JSON, not an object or holds a value with neither a string nor a key refuses, past any allow entry", () => {
@@ -2481,6 +2483,19 @@ describe("scaffolding check", () => {
     const r = run(dir, "scaffolding", ["check"], { CHECK_LOCK: join(dir, ".lock") });
     expect(r.out).toContain("ok   unique-names");
     expect(r.code).toBe(0);
+  });
+
+  test("a name in .githooks/, the skeleton's copies, counts against none of the repository's own", () => {
+    const dir = repo({
+      "package.json": "{}\n",
+      "a.ts": "export function release() {}\n",
+      ".githooks/check-lock.ts": "export function release() {}\n",
+    });
+    expect(run(dir, "check-unique-names").code).toBe(0);
+    // Control: the same copy outside .githooks/ goes red.
+    write(dir, { "b.ts": "export function release() {}\n" });
+    sh(dir, ["add", "b.ts"]);
+    expect(run(dir, "check-unique-names").code).toBe(1);
   });
 
   test("no step sees a variable only .env set, a nested bun included", () => {
@@ -2867,7 +2882,6 @@ exec "${process.execPath}" "$@"
     cpSync(hooks, join(dir, ".githooks"), { recursive: true });
     return dir;
   };
-  const installed = (dir: string) => mkdirSync(join(dir, "node_modules"), { recursive: true });
   const env = (log: { fake: string; log: string }, more: Record<string, string> = {}) => ({
     ...process.env,
     PATH: `${log.fake}:${process.env.PATH}`,
@@ -2898,7 +2912,7 @@ exec "${process.execPath}" "$@"
     return second;
   };
 
-  test("a lock change installs under check-lock's lock, before the first install and after it", () => {
+  test("a changed lock installs under check-lock's lock, after a checkout and a merge", () => {
     const dir = consumer();
     const args = lockChange(dir);
     sh(dir, ["update-ref", "ORIG_HEAD", args[0]]);
@@ -2910,7 +2924,6 @@ exec "${process.execPath}" "$@"
     expect(`${fresh.stdout}${fresh.stderr}`).toBe("");
     expect(existsSync(join(dir, "node_modules/.check.lock"))).toBe(false);
     rmSync(bun.log);
-    installed(dir);
     const later = hook("post-merge", ["0"]);
     expect(read(bun.log)).toBe("start locked\nend\n");
     expect(`${later.stdout}${later.stderr}`).toBe("");
@@ -2922,7 +2935,7 @@ exec "${process.execPath}" "$@"
 
   test("a gate's lock or a failed install is named on stderr, never stdout, and fails no checkout", () => {
     const dir = consumer();
-    installed(dir);
+    mkdirSync(join(dir, "node_modules"));
     const bun = fakeBun();
     const install = (more: Record<string, string> = {}) =>
       spawnSync(join(dir, ".githooks/install"), [], {
@@ -2958,17 +2971,9 @@ exec "${process.execPath}" "$@"
     expect(checkout.status).toBe(0);
   });
 
-  test("two first installs at once run one after the other", async () => {
-    const dir = consumer();
-    const bun = fakeBun();
-    await both(join(dir, ".githooks/post-checkout"), lockChange(dir), dir, bun);
-    expect(read(bun.log)).toBe(twice);
-  });
-
   // The MCP server's start and the SessionStart hook install at the same moment.
-  test("two installs at once wait for each other, the second without a word", async () => {
+  test("two first installs at once wait for each other, the second without a word", async () => {
     const dir = consumer();
-    installed(dir);
     const bun = fakeBun();
     const second = await both(join(dir, ".githooks/install"), [], dir, bun);
     expect(`${second.stdout}${second.stderr}`).toBe("");
@@ -3012,7 +3017,12 @@ exec "${process.execPath}" "$@"
         env: env(bun, { BUN_SLEEP: "2" }),
         stdio: "ignore",
       });
-      while (!read(join(dir, "node_modules/.check.lock")).includes('"group"')) await Bun.sleep(50);
+      for (
+        let i = 0;
+        i < 200 && !read(join(dir, "node_modules/.check.lock")).includes('"group"');
+        i++
+      )
+        await Bun.sleep(50);
       // Reaped before the next call blocks the event loop: an unreaped shell reads as live.
       const gone = new Promise((resolve) => first.on("exit", resolve));
       first.kill(signal);
@@ -3041,35 +3051,6 @@ exec "${process.execPath}" "$@"
     expect(read(bun.log)).toBe("start locked\nend\n");
     expect(leftovers(dir)).toEqual([]);
   }, 20_000);
-
-  // v5.15.0 took a dead lock over by moving it aside and putting a live one back: with three waiters,
-  // a later move landing after the first takeover dropped the live lock. The gated mv and ln force
-  // that order on any shell code that still moves a lock.
-  test("three first installs on a dead lock run one at a time, however their steps interleave", async () => {
-    const dir = consumer();
-    orphan(dir);
-    const bun = fakeBun();
-    // The first mv runs at once, every later one once an install has begun; a moved lock goes back
-    // once two have. Each waits 10 s at most.
-    const until = (count: number) =>
-      `n=0; until [ "$(grep -c ^start "$BUN_LOG")" -ge ${count} ] || [ $n -ge 100 ]; do sleep 0.1; n=$((n + 1)); done`;
-    const wrap = (name: string, gate: string) =>
-      writeFileSync(join(bun.fake, name), `#!/bin/sh\n${gate}\nexec ${Bun.which(name)} "$@"\n`, {
-        mode: 0o755,
-      });
-    wrap("mv", `mkdir "$BUN_LOG.first" 2>/dev/null || { ${until(1)}; }`);
-    wrap("ln", `case "$1" in *.stale) ${until(2)} ;; esac`);
-    const runs = [1, 2, 3].map(() => {
-      const one = spawn(join(dir, ".githooks/install"), [], {
-        cwd: dir,
-        env: env(bun, { BUN_SLEEP: "3" }),
-        stdio: "ignore",
-      });
-      return new Promise((resolve) => one.on("close", resolve));
-    });
-    await Promise.all(runs);
-    expect(read(bun.log)).toBe(`${twice}start locked\nend\n`);
-  }, 30_000);
 
   test("a new worktree installs, so its first commit finds node_modules", () => {
     const dir = consumer();

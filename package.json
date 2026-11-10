@@ -114,11 +114,6 @@
       },
       {
         "check": "unique-names",
-        "path": ".githooks/check-lock.ts",
-        "reason": "this repository's skeleton copy of template/.githooks/check-lock.ts, which check-structure keeps byte for byte the same"
-      },
-      {
-        "check": "unique-names",
         "path": ".claude/skills/engineering/*",
         "reason": "the home hub's sync copies the engineering skill's stand-alone check-staged.ts, an older form of this package's bin/check-staged.ts, into every repository; the hub owns it"
       }
