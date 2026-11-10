@@ -71,7 +71,7 @@ const script = (s: string) => (pkg.scripts?.[s] ? `bun run --silent ${s}` : s);
 // Quoted for `sh -c`: a package path holding a space failed every bin step.
 const bin = (name: string) => `bun '${join(home, "bin", `${name}.ts`).replaceAll("'", `'\\''`)}'`;
 const shared: Record<string, string> = {
-  format: "bun --bun prettier --check --log-level warn .",
+  format: "bun --bun prettier --check --cache --log-level warn .",
   lint: "bun --bun eslint --cache --concurrency=auto .",
   styles: `bun --bun stylelint "${styleFiles}" ${stylelintFlags(root).join(" ")}`,
   typecheck: `bun --bun ${config.typecheck ?? "tsc --noEmit"}`,
@@ -116,14 +116,20 @@ for (const [step, reason] of Object.entries(skip)) {
   delete shared[step];
 }
 
-const env = { ...process.env, PATH: `${join(root, "node_modules/.bin")}:${process.env.PATH}` };
+const { load, cores, factor } = machineLoad();
+// A test runner's per-test limit (bun's and vitest's default 5 s), stretched as serve's wait is;
+// the repository's test command passes it on, since the gate cannot add a flag to any runner.
+const env = {
+  ...process.env,
+  PATH: `${join(root, "node_modules/.bin")}:${process.env.PATH}`,
+  SCAFFOLDING_TEST_TIMEOUT_MS: String(Math.round(5000 * factor)),
+};
 type Result = { name: string; code: number; ms: number };
 
 // Above one waiting process per core, the tests, the build and the repository's own steps run one
 // after another, once the quick shared checks have run side by side: started all at once on a
 // loaded machine, they starved each other past every fixed limit inside them, and a correct tree
 // went red.
-const { load, cores } = machineLoad();
 const serial = load > cores;
 if (serial)
   console.error(

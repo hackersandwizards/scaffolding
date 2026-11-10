@@ -88,8 +88,11 @@ step; each step still running prints what it said so far and `stopped <step> by 
 the one-minute load average is above the core count, the quick shared checks still run side by
 side, then `test`, `catalog` and the repository's own steps run one after another, and the gate
 says so in its first line; `SCAFFOLDING_LOAD=<n>` stands in for the load. The same load stretches
-`serve`'s default wait (below) by load per core, at most ten times. A test's own limit stays the
-repository's: bun's 5 s per test is set by `--timeout`.
+`serve`'s default wait (below) by load per core, at most ten times, and so does
+`SCAFFOLDING_TEST_TIMEOUT_MS`, 5000 on an idle machine, which every step sees. The test runner's
+per-test limit takes it only from the repository's own test command, such as `"test": "bun test
+--timeout ${SCAFFOLDING_TEST_TIMEOUT_MS:-5000}"` or `vitest run --testTimeout=…`, since bun reads
+that limit from no file and no variable.
 
 **Environment.** No step sees a variable that only the checkout's `.env` set. Bun loads `.env`
 into every `bun` process it starts, so every bin here starts `bun --no-env-file` through a `#!/bin/sh` line and a second line that is a shell command and a TypeScript comment at once, which also runs under BusyBox `env` (Alpine refuses `env -S`), and the gate and

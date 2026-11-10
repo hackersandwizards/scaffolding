@@ -117,7 +117,7 @@
     ],
     "check": [],
     "typecheck": "tsc --noEmit",
-    "test": "bun test",
+    "test": "bun test --timeout ${SCAFFOLDING_TEST_TIMEOUT_MS:-5000}",
     "skip": {
       "catalog": "no surface: the package ships the catalog shell and has no catalog of its own",
       "styles": "brand is not installed here, so its token file is not there to read; the shell's CSS reads brand's names by rule",

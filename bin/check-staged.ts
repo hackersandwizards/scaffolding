@@ -106,22 +106,22 @@ const whole = staged.filter((path) => !differs.has(path));
 // lints, and each skips what its own config ignores, so this and `bun run check` judge the same files.
 const mine = (tool: string, paths: string[]) =>
   tool === "stylelint" ? paths.filter(styled) : paths;
-const tools: Record<string, string[]> = {
-  prettier: [
-    "--check",
-    "--ignore-unknown",
-    "--no-error-on-unmatched-pattern",
-    "--log-level",
-    "warn",
-  ],
-  eslint: ["--cache", "--no-warn-ignored", "--no-error-on-unmatched-pattern"],
+// One list per tool for a staged file read whole and one read from stdin, so both judge alike.
+const flags: Record<string, string[]> = {
+  prettier: ["--ignore-unknown", "--log-level", "warn"],
+  eslint: ["--cache", "--no-warn-ignored"],
   stylelint: stylelintFlags("."),
+};
+const tools: Record<string, string[]> = {
+  prettier: ["--check", ...flags.prettier, "--no-error-on-unmatched-pattern"],
+  eslint: [...flags.eslint, "--no-error-on-unmatched-pattern"],
+  stylelint: flags.stylelint,
 };
 const stdinFlags: Record<string, (path: string) => string[]> = {
   // No --check: prettier --check on stdin exits 0 on a syntax error. The output is compared instead.
-  prettier: (path) => ["--ignore-unknown", "--log-level", "warn", "--stdin-filepath", path],
-  eslint: (path) => ["--cache", "--no-warn-ignored", "--stdin", "--stdin-filename", path],
-  stylelint: (path) => [...tools.stylelint, "--stdin", "--stdin-filename", path],
+  prettier: (path) => [...flags.prettier, "--stdin-filepath", path],
+  eslint: (path) => [...flags.eslint, "--stdin", "--stdin-filename", path],
+  stylelint: (path) => [...flags.stylelint, "--stdin", "--stdin-filename", path],
 };
 
 // Chunked: a commit touching most of a repository passes more path bytes than ARG_MAX holds.

@@ -1965,10 +1965,11 @@ describe("scaffolding check", () => {
     const body = (me: string, other: string) =>
       `test -e ${other} && exit 1; touch ${me}; sleep 0.5; test -e ${other} && exit 1; rm ${me}`;
     const dir = gate(
-      { skip, check: [["check:a", "check:b"]] },
+      { skip, check: [["check:a", "check:b", "check:limit"]] },
       {
         "check:a": body("a.on", "b.on"),
         "check:b": body("b.on", "a.on"),
+        "check:limit": "echo limit=$SCAFFOLDING_TEST_TIMEOUT_MS",
       },
     );
     const loaded = run(dir, "scaffolding", ["check"], {
@@ -1979,8 +1980,11 @@ describe("scaffolding check", () => {
       /load 999 on \d+ cores: tests, build and the repository's steps run one after another/,
     );
     expect(loaded.code).toBe(0);
+    // The per-test limit a test command can pass on, stretched by load per core, ten times at most.
+    expect(loaded.out).toContain("limit=50000");
     const idle = run(dir, "scaffolding", ["check"], { CHECK_LOCK: join(dir, ".lock") });
     expect(idle.out).not.toContain("one after another");
+    expect(idle.out).toContain("limit=5000\n");
     expect(idle.code).toBe(1);
   }, 40_000);
 
@@ -3938,6 +3942,17 @@ describe("check-unique-names", () => {
     });
     const r = run(dir, "check-unique-names");
     expect(r.out).toContain("src/ü.ts:1");
+    expect(r.code).toBe(1);
+  });
+
+  test("an .astro file's frontmatter counts with CRLF line ends too", () => {
+    const dir = repo({
+      "src/a.ts": code["src/a.ts"],
+      "src/B.astro": "---\r\nfunction twice() {}\r\n---\r\n<p>b</p>\r\n",
+      "package.json": "{}",
+    });
+    const r = run(dir, "check-unique-names");
+    expect(r.out).toContain("src/B.astro:2");
     expect(r.code).toBe(1);
   });
 

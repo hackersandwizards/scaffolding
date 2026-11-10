@@ -3,7 +3,6 @@
 // Every module-scope function name is defined once, so a grep for its definition finds one site.
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
-import { fileURLToPath } from "node:url";
 import ts from "@typescript/typescript6";
 import { applyAllow, listFiles, readPackage, repoRoot, TEST, type Finding } from "../lib/repo.ts";
 
@@ -12,7 +11,7 @@ function scriptSource(file: string): string {
   if (!file.endsWith(".astro")) return text;
   // Blank all but the frontmatter and script bodies, keeping newlines, so reported lines match the file.
   const kept = [
-    text.match(/^---\n([\s\S]*?)\n---/d),
+    text.match(/^---\r?\n([\s\S]*?)\r?\n---/d),
     ...text.matchAll(/<script\b[^>]*>([\s\S]*?)<\/script>/dg),
   ].flatMap((m) => (m?.indices?.[1] ? [m.indices[1]] : []));
   let out = "";
@@ -29,11 +28,7 @@ const root = repoRoot();
 const pkg = readPackage(root);
 const frameworkNames = new Set([pkg.scaffolding?.uniqueNames ?? []].flat());
 const files = listFiles(root, false).filter(
-  (file) =>
-    /\.(?:[cm]?[jt]s|tsx|astro)$/.test(file) &&
-    join(root, file) !== fileURLToPath(import.meta.url) &&
-    !file.endsWith(".d.ts") &&
-    !TEST.test(file),
+  (file) => /\.(?:[cm]?[jt]s|tsx|astro)$/.test(file) && !file.endsWith(".d.ts") && !TEST.test(file),
 );
 if (!files.length) throw new Error("no source files matched, so nothing was checked");
 for (const file of files) {
