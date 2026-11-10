@@ -78,7 +78,8 @@
     "check": "bun --no-env-file bin/scaffolding.ts check",
     "check:staged": "bun --no-env-file bin/check-staged.ts",
     "fix": "bun --bun eslint --cache --concurrency=auto . --fix && bun --bun prettier --write .",
-    "check-confidential": "bun --no-env-file bin/check-confidential.ts"
+    "check-confidential": "bun --no-env-file bin/check-confidential.ts",
+    "check-lock": "bun --no-env-file bin/check-lock.ts"
   },
   "devDependencies": {
     "@types/bun": "1.4.4",

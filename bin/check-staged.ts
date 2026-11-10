@@ -32,15 +32,22 @@ const scan = spawnSync(
 if (scan.error) refuseCommit("gitleaks not found: brew install gitleaks");
 if (scan.status !== 0) process.exit(1);
 
-for (const check of ["check-coupling.ts", "check-confidential.ts"]) {
+// The skips, scripts and pins as this commit holds them.
+const pkg = readPackage(repoRoot(), ":");
+const skip = pkg.scaffolding?.skip ?? {};
+// A step the gate skips with a reason is skipped here too; the term scan never is, since this hook
+// is its gate.
+for (const [step, check] of [
+  ["coupling", "check-coupling.ts"],
+  ["", "check-confidential.ts"],
+]) {
+  if (isReason(skip[step])) continue;
   const run = spawnSync(process.execPath, [`${import.meta.dir}/${check}`, "--staged"], {
     stdio: "inherit",
   });
   if (run.status !== 0) process.exit(1);
 }
 
-// The skips, scripts and pins as this commit holds them.
-const pkg = readPackage(repoRoot(), ":");
 // Deletions count: removing a file can break a link the validator checks. Any status but 0
 // (no change) runs it, so a failing git diff fails closed.
 const skills =
@@ -57,6 +64,15 @@ const items =
 if (items && !existsSync("node_modules/.bin/admin-check"))
   refuseCommit("admin-check not installed: bun install");
 
+// spawnSync's default maxBuffer refused a commit past about 1 MB of path names.
+const names = (args: string[]) => {
+  const listed = spawnSync("git", [...args, "--name-only", "-z"], {
+    encoding: "utf8",
+    maxBuffer: Infinity,
+  });
+  if (listed.status !== 0) refuseCommit(`git ${args.join(" ")} failed`);
+  return listed.stdout.split("\0").filter(Boolean);
+};
 // ":<old mode> <new mode> <old sha> <new sha> <status>", then the path, two for a rename or copy.
 const listed = spawnSync("git", ["diff", "--cached", "--raw", "--diff-filter=ACMR", "-z"], {
   encoding: "utf8",
@@ -73,18 +89,16 @@ for (let i = 0; i + 1 < fields.length;) {
   i += paths + 1;
 }
 if (staged.length === 0 && !skills && !items) process.exit(0);
-if (staged.some((path) => path === "bun.lock" || path === "package.json")) {
+if (
+  staged.some((path) => path === "bun.lock" || path === "package.json") &&
+  !isReason(skip.licenses)
+) {
   const run = spawnSync(process.execPath, [`${import.meta.dir}/check-licenses.ts`], {
     stdio: "inherit",
   });
   if (run.status !== 0) process.exit(1);
 }
-const unstaged = spawnSync("git", ["diff", "--name-only", "-z"], {
-  encoding: "utf8",
-  maxBuffer: Infinity,
-});
-if (unstaged.status !== 0) refuseCommit("git diff failed");
-const differs = new Set(unstaged.stdout.split("\0"));
+const differs = new Set(names(["diff"]));
 const partial = staged.filter((path) => differs.has(path));
 const whole = staged.filter((path) => !differs.has(path));
 
@@ -127,11 +141,16 @@ let free = availableParallelism();
 const waiting: (() => void)[] = [];
 type ToolRun = { out: string; code: number; stdout: Buffer };
 
-async function runStagedTool(bin: string, args: string[], stdin?: Buffer): Promise<ToolRun> {
+async function runStagedTool(
+  bin: string,
+  args: string[],
+  stdin?: Buffer,
+  env: Record<string, string> = {},
+): Promise<ToolRun> {
   if (free === 0) await new Promise<void>((go) => waiting.push(go));
   else free--;
   const result = await new Promise<ToolRun>((done) => {
-    const child = spawn(bin, args, { stdio: "pipe" });
+    const child = spawn(bin, args, { stdio: "pipe", env: { ...process.env, ...env } });
     // A child that exits before reading stdin raises EPIPE: caught so it cannot crash the check, and
     // counted as a failure so an unread file never passes.
     let unread = false;
@@ -181,7 +200,6 @@ const gateStep: Record<string, string> = {
   eslint: "lint",
   stylelint: "styles",
 };
-const skip = pkg.scaffolding?.skip ?? {};
 const active = Object.entries(tools).filter(
   ([tool]) => mine(tool, staged).length && !isReason(skip[gateStep[tool]]),
 );
@@ -198,7 +216,8 @@ const runs = active.flatMap(([tool, flags]) => {
     ...chunks
       .map((paths) => mine(tool, paths))
       .filter((paths) => paths.length)
-      .map((paths) => runStagedTool(bin, [...flags, ...paths])),
+      // A staged name starting with `-` would read as an option.
+      .map((paths) => runStagedTool(bin, [...flags, "--", ...paths])),
     ...mine(tool, partial).map(async (path) => {
       const input = stagedContent(path);
       const r = await runStagedTool(bin, stdinFlags[tool](path), input);
@@ -212,7 +231,14 @@ const runs = active.flatMap(([tool, flags]) => {
     }),
   ];
 });
-if (skills) runs.push(runStagedTool(process.execPath, ["run", "validate:skills"]));
+// Scoped to this commit, deletions included, over whatever the shell exported: unscoped, another
+// session's half-written skill refused this commit, and an inherited scope could narrow it to none.
+if (skills)
+  runs.push(
+    runStagedTool(process.execPath, ["run", "validate:skills"], undefined, {
+      VALIDATE_SKILLS_PATHS: names(["diff", "--cached"]).join("\n"),
+    }),
+  );
 if (items) runs.push(checkStagedItems());
 
 // admin-check over the index, not the working tree: docs/agent-work as staged, written to a temporary

@@ -10,6 +10,7 @@ import {
   readFileSync,
   readlinkSync,
   rmSync,
+  statSync,
   symlinkSync,
   writeFileSync,
 } from "node:fs";
@@ -80,6 +81,20 @@ for (const path of (skeleton.same as string[]).filter((p) => !exempt.absent.incl
       copyFileSync(template, at(path));
     },
   );
+}
+// Git skips a hook that is not executable, with a hint, and commits unchecked: the same bytes stored
+// or checked out 100644 passed as equal.
+for (const path of (skeleton.same as string[]).filter((p) => p.startsWith(".githooks/"))) {
+  if (!exists(path)) continue;
+  const [, mode, blob] = /^(\d+) (\S+)/.exec(
+    git(["ls-files", "-s", "--", `:(literal)${path}`], root).toString(),
+  ) ?? [undefined, undefined, undefined];
+  if (statSync(at(path)).mode & 0o100 && mode !== "100644") continue;
+  add(path, "a hook is executable (check-structure --fix)", mode ?? "", () => {
+    chmodSync(at(path), 0o755);
+    // The mode alone, as for a bin file: --chmod would stage the file's uncommitted content too.
+    if (mode === "100644") git(["update-index", "--cacheinfo", `100755,${blob},${path}`], root);
+  });
 }
 // The owned file pins this version's full commit, which the check matches offline against the
 // installed short SHA; only --fix asks the remote for the rest.

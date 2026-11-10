@@ -460,6 +460,26 @@ test("check-structure: a bin file is stored executable, and --fix makes it so", 
   );
 });
 
+test("check-structure: a hook with the skeleton's bytes but no executable bit fails, and --fix sets it", () => {
+  const dir = repo({ "package.json": "{}" });
+  run(dir, "check-structure", ["--fix"]);
+  sh(dir, ["add", "-A"]);
+  const hookLines = () =>
+    lines(run(dir, "check-structure").out, "check-structure").filter((l) => l.includes("a hook"));
+  expect(hookLines()).toEqual([]);
+  chmodSync(join(dir, ".githooks/pre-commit"), 0o644);
+  sh(dir, ["update-index", "--chmod=-x", ".githooks/post-merge"]);
+  expect(hookLines()).toEqual([
+    "[check-structure] .githooks/pre-commit: a hook is executable (check-structure --fix) (100755)",
+    "[check-structure] .githooks/post-merge: a hook is executable (check-structure --fix) (100644)",
+  ]);
+  run(dir, "check-structure", ["--fix"]);
+  expect(hookLines()).toEqual([]);
+  expect(sh(dir, ["ls-files", "-s", ".githooks/post-merge"]).stdout.toString()).toStartWith(
+    "100755",
+  );
+});
+
 test("every bin target and every file in bin/ is stored executable", () => {
   const root = join(import.meta.dir, "..");
   const stored = new Map(
@@ -3461,6 +3481,49 @@ describe("check-staged", () => {
     expect(run(dir, "check-staged").code).toBe(0);
     write(dir, { "docs/agent-work/items/a.md": "broken, unstaged\n" });
     expect(run(dir, "check-staged").code).toBe(0);
+  });
+
+  test("validate:skills reads this commit's paths, deletions included, whatever the shell exports", () => {
+    const dir = repo({
+      "package.json": JSON.stringify({
+        scaffolding: { private: true, skip: { format: "fixture", lint: "fixture" } },
+        scripts: { "validate:skills": `printf '%s' "$VALIDATE_SKILLS_PATHS" > scope.txt` },
+      }),
+      ".claude/gone.md": "x\n",
+    });
+    write(dir, { ".claude/new.md": "y\n", ".claude/half.md": "unstaged\n" });
+    sh(dir, ["rm", "-q", ".claude/gone.md"]);
+    sh(dir, ["add", ".claude/new.md"]);
+    const r = run(dir, "check-staged", [], { VALIDATE_SKILLS_PATHS: "elsewhere/x.md" });
+    expect(r.code).toBe(0);
+    expect(readFileSync(join(dir, "scope.txt"), "utf8")).toBe(".claude/gone.md\n.claude/new.md");
+  });
+
+  test("a staged name starting with a dash reaches the tool as a path", () => {
+    const dir = repo({
+      "package.json": JSON.stringify({ scaffolding: { private: true, skip: { lint: "fixture" } } }),
+      "node_modules/.bin/prettier": '#!/bin/sh\nprintf "%s\\n" "$@" > args.txt\n',
+    });
+    chmodSync(join(dir, "node_modules/.bin/prettier"), 0o755);
+    write(dir, { "--no-config.ts": "export {};\n" });
+    sh(dir, ["add", "--", "--no-config.ts"]);
+    run(dir, "check-staged");
+    expect(readFileSync(join(dir, "args.txt"), "utf8")).toEndWith("--\n--no-config.ts\n");
+  });
+
+  test("a coupling or licence step the gate skips with a reason is skipped here too", () => {
+    const staged = (skip: object) => {
+      const dir = repo({
+        "package.json": JSON.stringify({
+          scaffolding: { private: true, skip: { format: "f", lint: "f", ...skip } },
+        }),
+      });
+      write(dir, { "a.ts": 'import x from "../../elsewhere/x.ts";\n' });
+      sh(dir, ["add", "a.ts"]);
+      return run(dir, "check-staged");
+    };
+    expect(staged({}).code).toBe(1);
+    expect(staged({ coupling: "a fixture outside" }).code).toBe(0);
   });
 
   test("a staged item file without admin-check installed is refused", () => {

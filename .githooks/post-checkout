@@ -2,5 +2,6 @@
 # $3 = 1 is a branch checkout; a new worktree's all-zero old HEAD fails the diff and installs nothing.
 [ "$3" = 1 ] || exit 0
 git diff --quiet "$1" "$2" -- bun.lock package.json 2>/dev/null
-[ $? -eq 1 ] && bun install --frozen-lockfile </dev/null >/dev/null 2>&1
+# Under the lock without waiting: while a gate or build holds it, the gate's own install does it.
+[ $? -eq 1 ] && CHECK_LOCK_WAIT_MS=0 bun run --silent check-lock bun install --frozen-lockfile </dev/null >/dev/null 2>&1
 exit 0
