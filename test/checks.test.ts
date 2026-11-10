@@ -2786,6 +2786,23 @@ describe("catalog", () => {
         `document.head.insertAdjacentHTML("beforeend", "<style>main { padding: 2rem; }</style>")`,
       );
       expect(((await room("")) as number[])[3]).toBe(32);
+      // The bar takes brand's stored theme and writes its toggle there, so a choice made on the
+      // repository's own pages carries into the catalog and back.
+      await painted.evaluate(`localStorage.setItem("theme", "dark"); location.reload()`);
+      await painted.until(
+        `document.readyState === "complete" && !!document.querySelector("[data-hw-theme]")`,
+      );
+      expect(
+        await painted.evaluate(
+          `[document.documentElement.dataset.theme, document.querySelector("[data-hw-theme]").getAttribute("aria-pressed")]`,
+        ),
+      ).toEqual(["dark", "true"]);
+      await painted.evaluate(`document.querySelector("[data-hw-theme]").click()`);
+      expect(
+        await painted.evaluate(
+          `[document.documentElement.dataset.theme, localStorage.getItem("theme")]`,
+        ),
+      ).toEqual(["light", "light"]);
       // A state alone in the window keeps the room inside Astrobook's scrolling <main> too.
       await painted.evaluate(`location.href = "/stories/Parts/box-parts/two/"`);
       await painted.until(

@@ -156,6 +156,15 @@ const root = {
   // the next paint. The listeners sit here too, so a bar on screen already answers.
   (() => {
     const theme = () => window.astroThemeToggle;
+    // brand's ThemeToggle keeps the reader's choice under "theme", Astrobook's toggle under its
+    // own key: the bar takes brand's and writes both, so one choice holds on the repository's pages
+    // and in its catalog. Storage may be blocked (a file:// page); the choice then holds here only.
+    const BRAND_KEY = "theme";
+    try {
+      const chosen = localStorage.getItem(BRAND_KEY);
+      if ((chosen === "dark" || chosen === "light") && theme()?.getTheme?.() !== chosen)
+        theme()?.setTheme?.(chosen);
+    } catch {}
     const pressed = () =>
       document
         .querySelector("[data-hw-theme]")
@@ -181,6 +190,9 @@ const root = {
     document.addEventListener("click", (event) => {
       if (!event.target.closest?.("[data-hw-theme]")) return;
       theme()?.setTheme?.(theme().getTheme?.() === "dark" ? "light" : "dark");
+      try {
+        localStorage.setItem(BRAND_KEY, theme().getTheme());
+      } catch {}
       pressed();
     });
     document.addEventListener("change", (event) => {

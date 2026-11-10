@@ -265,7 +265,9 @@ The options beyond those above:
   to draw (`data-hw-preview=".part"`); one that selects nothing draws the whole mark and logs an
   error in the console. A key naming no story group fails the build.
 - `themeToggle`: `false` leaves the "Dark theme" button out of a state's bar and `data-hw-night` off
-  every page, for a site without a dark theme.
+  every page, for a site without a dark theme. The button reads and writes the choice under
+  `theme`, the key brand's `ThemeToggle` keeps, so a choice made on the repository's own pages holds
+  in its catalog and back.
 - `storyScale`: brand's `data-hw-scale` on every page that draws a story, a state's page and the
   state alone, such as `"screen"`; without it such a page keeps what the repository's `head` sets,
   else brand's default. The home is always `"dense"`.
