@@ -211,19 +211,6 @@ export function readPackage(root: string, rev?: string): Package {
   return JSON.parse(git(["show", `${index ? "" : rev}:package.json`], root).toString("utf8"));
 }
 
-/** package.json's text without its allow entries, which name what they excuse; the text as it is
- * where it is no JSON. */
-export function withoutAllow(json: string): string {
-  let pkg;
-  try {
-    pkg = JSON.parse(json);
-  } catch {
-    return json;
-  }
-  if (pkg.scaffolding) pkg.scaffolding = { ...pkg.scaffolding, allow: undefined };
-  return JSON.stringify(pkg, null, 2);
-}
-
 // `**/` also stands for no folder at all, as in Git and Bun.Glob: `**/x.ts` covers the root's x.ts.
 const glob = (pattern: string) =>
   new RegExp(

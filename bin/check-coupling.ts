@@ -10,7 +10,6 @@ import {
   finish,
   listFiles,
   readPackage,
-  withoutAllow,
   reader,
   repoRoot,
   TEST,
@@ -102,7 +101,18 @@ const devRoot = root.startsWith(`${home}/`) ? join(home, relative(home, root).sp
 const own = readPackage(root).name;
 // The pins and the allow list as the commit holds them in a staged run.
 const pkg = readPackage(root, staged ? ":" : undefined);
+const withoutAllow = (json: string) => {
+  let pkg;
+  try {
+    pkg = JSON.parse(json);
+  } catch {
+    return json;
+  }
+  if (pkg.scaffolding) pkg.scaffolding = { ...pkg.scaffolding, allow: undefined };
+  return JSON.stringify(pkg, null, 2);
+};
 const leaves = "path leaves the repository; take it from the package its owner publishes";
+const outside = (target: string) => target !== root && !target.startsWith(`${root}/`);
 for (const path of listFiles(root, staged)) {
   if (!SCANNED.test(path) || SKIPPED.test(path)) continue;
   // An allow entry names the path it excuses; no rule reads it.
@@ -122,18 +132,12 @@ for (const path of listFiles(root, staged)) {
       }));
   for (const { token, from, climb } of tokens) {
     const target = resolve(from, climb.replace(/[?#].*/, ""));
-    if (target !== root && !target.startsWith(`${root}/`)) flag(path, token, leaves);
+    if (outside(target)) flag(path, token, leaves);
   }
   if (!test)
     for (const [token, rest] of text.matchAll(HOME)) {
       const target = resolve(home + rest);
-      if (
-        devRoot &&
-        target.startsWith(`${devRoot}/`) &&
-        target !== root &&
-        !target.startsWith(`${root}/`)
-      )
-        flag(path, token, leaves);
+      if (devRoot && target.startsWith(`${devRoot}/`) && outside(target)) flag(path, token, leaves);
     }
   // Code, markup and data reach an installed company package through its exports or its bin, never
   // by a disk path; a stylesheet may name one, but only to a file an export maps (a stylesheet's .css

@@ -50,9 +50,12 @@ for (const [step, check] of [
 
 // Deletions count: removing a file can break a link the validator checks. Any status but 0
 // (no change) runs it, so a failing git diff fails closed.
-const skills =
-  Boolean(pkg.scripts?.["check:skills"]) &&
+const claudeStaged =
   spawnSync("git", ["diff", "--cached", "--quiet", "--", ".claude"]).status !== 0;
+// The script's former name would otherwise turn the validation off without a word.
+if (claudeStaged && pkg.scripts?.["validate:skills"] && !pkg.scripts["check:skills"])
+  refuseCommit("rename the script validate:skills to check:skills: check-staged runs check:skills");
+const skills = Boolean(pkg.scripts?.["check:skills"]) && claudeStaged;
 
 const declared = { ...pkg.dependencies, ...pkg.devDependencies };
 const items =

@@ -489,6 +489,11 @@ function remotes(tags: string[]) {
 process.env.SCAFFOLDING_GIT_BASE = remotes(["v0.9.0", "v0.10.0", "v0.2.0", "latest"]);
 const ownPackage = JSON.parse(readFileSync(join(import.meta.dir, "..", "package.json"), "utf8"));
 const ownVersion = ownPackage.version as string;
+// A decodable 1x1 PNG: OCR reads it and finds no text.
+const PNG = Buffer.from(
+  "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8DwHwAFBQIAX8jx0gAAAABJRU5ErkJggg==",
+  "base64",
+);
 // Run from its own checkout, the package pins its HEAD.
 const ownHead = sh(join(import.meta.dir, ".."), ["rev-parse", "HEAD"])
   .stdout.toString()
@@ -845,7 +850,8 @@ describe("scaffold and check-structure", () => {
       {
         ".mcp.json":
           '{ "mcpServers": { "own": { "command": "x" }, "chrome-devtools": { "command": "old" } } }\n',
-        ".claude/settings.json": '{ "model": "x" }\n',
+        ".claude/settings.json":
+          '{ "model": "x", "hooks": { "SessionStart": [{ "matcher": "startup", "hooks": [] }, { "matcher": "resume", "hooks": [] }] } }\n',
       },
     );
     expect(lines(run(other, "check-structure").out, "check-structure")).toEqual([
@@ -861,8 +867,24 @@ describe("scaffold and check-structure", () => {
       own: { command: "x" },
       "chrome-devtools": template(".mcp.json").mcpServers["chrome-devtools"],
     });
+    // The repository's own SessionStart hook stays beside the skeleton's; an older copy of the
+    // skeleton's, under its matcher, goes.
     const settings = JSON.parse(readFileSync(join(other, ".claude/settings.json"), "utf8"));
-    expect(settings).toEqual({ model: "x", ...template(".claude/settings.json") });
+    expect(settings).toEqual({
+      model: "x",
+      hooks: {
+        SessionStart: [
+          ...template(".claude/settings.json").hooks.SessionStart,
+          { matcher: "resume", hooks: [] },
+        ],
+      },
+    });
+    // A file whose value in the way is no object is a finding, never a crash.
+    write(other, { ".claude/settings.json": '{ "hooks": "x" }\n', ".mcp.json": "null\n" });
+    expect(lines(run(other, "check-structure", ["--fix"]).out, "check-structure")).toEqual([
+      "[check-structure] .mcp.json: mcpServers.chrome-devtools sits in no JSON object",
+      "[check-structure] .claude/settings.json: hooks.SessionStart sits in no JSON object",
+    ]);
   });
 
   test("the retired install guard goes red", () => {
@@ -1189,14 +1211,9 @@ describe("check-confidential", () => {
   });
 
   test("an image under docs/agent-work passes once read clean; one that cannot be read goes red", () => {
-    // A decodable 1x1 PNG: OCR reads it and finds no text.
-    const png = Buffer.from(
-      "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8DwHwAFBQIAX8jx0gAAAABJRU5ErkJggg==",
-      "base64",
-    );
     const dir = repo({ "package.json": "{}" });
     mkdirSync(join(dir, "docs/agent-work/review"), { recursive: true });
-    writeFileSync(join(dir, "docs/agent-work/review/shot.png"), png);
+    writeFileSync(join(dir, "docs/agent-work/review/shot.png"), PNG);
     sh(dir, ["add", "docs/agent-work/review/shot.png"]);
     expect(run(dir, "check-confidential", ["--staged"], { ...env, CI: "" }).code).toBe(0);
     write(dir, { "docs/agent-work/review/broken.png": "not really a png" });
@@ -1657,12 +1674,8 @@ describe("check-confidential", () => {
   test.if(process.platform === "darwin")(
     "an image whose name holds a term is still kept as read",
     () => {
-      const png = Buffer.from(
-        "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8DwHwAFBQIAX8jx0gAAAABJRU5ErkJggg==",
-        "base64",
-      );
       const dir = repo({ "package.json": "{}" });
-      writeFileSync(join(dir, "acme-widgets.png"), png);
+      writeFileSync(join(dir, "acme-widgets.png"), PNG);
       sh(dir, ["add", "acme-widgets.png"]);
       const r = run(dir, "check-confidential", ["--staged"], { ...env, CI: "" });
       expect(r.out).toContain("acme-widgets.png: confidential term");
@@ -1681,6 +1694,20 @@ describe("check-confidential", () => {
     const named = repo({ "package.json": pkg({ description: "Acme Widgets" }), ...files });
     expect(
       lines(run(named, "check-confidential", ["--tree", "HEAD"], env).out, "check-confidential"),
+    ).toEqual([
+      "[check-confidential] package.json: confidential term from the company records (Acme Widgets)",
+    ]);
+    // A reason is prose, read as any other text.
+    const reasoned = repo({
+      "package.json": JSON.stringify(
+        { scaffolding: { allow: [{ ...allow[0], reason: "asked by Acme Widgets" }] } },
+        null,
+        2,
+      ),
+      ...files,
+    });
+    expect(
+      lines(run(reasoned, "check-confidential", ["--tree", "HEAD"], env).out, "check-confidential"),
     ).toEqual([
       "[check-confidential] package.json: confidential term from the company records (Acme Widgets)",
     ]);
@@ -1987,15 +2014,11 @@ describe("check-confidential list source", () => {
   test("--list-optional without a list passes a file this machine cannot read, never with a list", () => {
     const optional = ["--staged", "--list-optional"];
     const none = machine({ gh: "deny" });
-    // A decodable PNG on a machine whose swiftc fails: no OCR, as off macOS.
-    const png = Buffer.from(
-      "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8DwHwAFBQIAX8jx0gAAAABJRU5ErkJggg==",
-      "base64",
-    );
+    // A machine whose swiftc fails: no OCR, as off macOS.
     const noOcr = temp();
     writeFileSync(join(noOcr, "swiftc"), "#!/bin/sh\nexit 1\n", { mode: 0o755 });
     write(none.dir, { "a.md": "a\n", "talk.pdf": "%PDF-1.4" });
-    writeFileSync(join(none.dir, "shot.png"), png);
+    writeFileSync(join(none.dir, "shot.png"), PNG);
     sh(none.dir, ["add", "a.md", "shot.png", "talk.pdf"]);
     const PATH = `${noOcr}:${stubDir}:/usr/bin:/bin`;
     const r = none.check({ PATH }, optional);
@@ -2011,7 +2034,7 @@ describe("check-confidential list source", () => {
     expect(strict.out).toContain("shot.png: image not read");
     // A stale list refuses, and the unread file is reported, not passed.
     const stale = machine({ gh: "deny", cache: builtDaysAgo(10), cacheDays: 2 });
-    writeFileSync(join(stale.dir, "shot.png"), png);
+    writeFileSync(join(stale.dir, "shot.png"), PNG);
     sh(stale.dir, ["add", "shot.png"]);
     expect(stale.check({ PATH }, optional).out).not.toContain("passed unread");
   });
@@ -3330,16 +3353,17 @@ describe("catalog", () => {
         "/assets/logo.svg",
       ]);
     }
-    // The shell's type sizes are brand's tokens.json steps, first in brand v2.5.0.
+    // The shell's type sizes are brand's tokens.json steps (brand v2.5.0), the focus ring's room is
+    // brand's --hw-focus-room (v2.10.0).
     const brandPkg = join(brand, "package.json");
     writeFileSync(
       brandPkg,
-      JSON.stringify({ ...JSON.parse(readFileSync(brandPkg, "utf8")), version: "2.4.1" }),
+      JSON.stringify({ ...JSON.parse(readFileSync(brandPkg, "utf8")), version: "2.9.0" }),
     );
     const older = build();
     expect(older.status).not.toBe(0);
     expect(older.stdout + older.stderr).toContain(
-      "needs @hackersandwizards/brand v2.5.0 or later, installed is v2.4.1",
+      "needs @hackersandwizards/brand v2.10.0 or later, installed is v2.9.0",
     );
     rmSync(join(fixture, "node_modules"), { recursive: true });
     // The build adds no robots tag to a page of the repository's own; one with a tag of its own and
@@ -4031,6 +4055,20 @@ describe("check-staged", () => {
     const r = run(dir, "check-staged", [], { VALIDATE_SKILLS_PATHS: "elsewhere/x.md" });
     expect(r.code).toBe(0);
     expect(readFileSync(join(dir, "scope.txt"), "utf8")).toBe(".claude/gone.md\n.claude/new.md");
+  });
+
+  test("a repository naming its validator only validate:skills is refused, not skipped", () => {
+    const dir = repo({
+      "package.json": JSON.stringify({
+        scaffolding: { private: true, skip: { format: "fixture", lint: "fixture" } },
+        scripts: { "validate:skills": "true" },
+      }),
+    });
+    write(dir, { ".claude/new.md": "y\n" });
+    sh(dir, ["add", ".claude/new.md"]);
+    const r = run(dir, "check-staged");
+    expect(r.code).toBe(1);
+    expect(r.out).toContain("rename the script validate:skills to check:skills");
   });
 
   test("a staged name starting with a dash reaches the tool as a path", () => {

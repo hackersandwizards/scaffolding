@@ -39,7 +39,6 @@ import {
   git,
   reader,
   readPackage,
-  withoutAllow,
   repoRoot,
   type Finding,
 } from "../lib/repo.ts";
@@ -314,10 +313,21 @@ const skipped = process.env.CI === "true" && Boolean(tree || index);
 // belongs to the commit the index makes.
 const pkg = readPackage(root, tree ?? commit ?? ":");
 if (pkg.scaffolding?.private === true) process.exit(0);
-// package.json's allow entries name the very terms they allow, so the file is read without them:
-// whole, as the snapshot holds it, since its added lines alone cannot tell an entry from the rest.
-const ownText = (path: string, text: string) =>
-  path === "package.json" ? withoutAllow(JSON.stringify(pkg)) : text;
+// package.json's allow entries name the very terms and paths they allow, so the file is read without
+// them, each entry's reason kept: whole, as the snapshot holds it, since its added lines alone cannot
+// tell an entry from the rest.
+const ownPackage = JSON.stringify(
+  {
+    ...pkg,
+    scaffolding: pkg.scaffolding && {
+      ...pkg.scaffolding,
+      allow: pkg.scaffolding.allow?.map(({ text: _t, path: _p, ...rest }) => rest),
+    },
+  },
+  null,
+  2,
+);
+const ownText = (path: string, text: string) => (path === "package.json" ? ownPackage : text);
 
 let list: TermList | undefined;
 // No list reachable under --list-optional: the commit passes unscanned for terms.
@@ -455,20 +465,24 @@ function scanBinaries(files: { where: string; data: Buffer }[]) {
         report(where, "", "binary file in docs/agent-work not read: no OCR in CI");
     return;
   }
-  const before = findings.length;
   mkdirSync(CACHE_DIR, { recursive: true });
   const scratch = mkdtempSync(join(CACHE_DIR, "scan-"));
   const texts = new Map<string, string>();
   const add = (where: string, text: string) =>
     texts.set(where, `${texts.get(where) ?? ""}\n${text}`);
-  const images: { file: string; where: string; entry: string; unread: string }[] = [];
+  const images: { file: string; where: string; entry: string; why: string }[] = [];
+  // Only a file read whole is kept as read: one not read is tried again.
+  const unread = new Set<string>();
+  const refuse = (where: string, entry: string, message: string) => {
+    unread.add(where);
+    report(where, entry, message);
+  };
   // A file this machine lacks the tool to read. Where the commit goes unscanned for terms anyway, it
   // passes with a warning; only the Company OS screenshot check is lost with it.
-  const unreadable = new Set<string>();
   const notRead = (where: string, entry: string, message: string) => {
-    unreadable.add(where);
-    if (!unscanned) report(where, entry, message);
-    else warn(`${where}${entry && ` (${entry})`}: ${message}; --list-optional: passed unread`);
+    if (!unscanned) return refuse(where, entry, message);
+    unread.add(where);
+    warn(`${where}${entry && ` (${entry})`}: ${message}; --list-optional: passed unread`);
   };
   let saved = 0;
   const save = (data: Buffer, name: string) => {
@@ -524,7 +538,7 @@ function scanBinaries(files: { where: string; data: Buffer }[]) {
             file: `${out}.png`,
             where,
             entry,
-            unread: `PDF page ${i + 1} holds a scan or an image and was not read: no OCR here (macOS only)`,
+            why: `PDF page ${i + 1} holds a scan or an image and was not read: no OCR here (macOS only)`,
           });
       });
     } else if (IMAGE.test(name))
@@ -532,11 +546,11 @@ function scanBinaries(files: { where: string; data: Buffer }[]) {
         file: save(data, name),
         where,
         entry,
-        unread: `image not read: not a decodable image, or no OCR here (macOS only)`,
+        why: `image not read: not a decodable image, or no OCR here (macOS only)`,
       });
     else if (data.subarray(0, 4).toString("latin1") === "PK\x03\x04" && depth < 3) {
       const entries = unzip(data);
-      if (typeof entries === "string") return report(where, entry, `archive not read: ${entries}`);
+      if (typeof entries === "string") return refuse(where, entry, `archive not read: ${entries}`);
       add(where, entries.map((e) => e.name).join("\n"));
       for (const e of entries) read(where, e.name, e.data, depth + 1);
     } else if (!data.includes(0)) {
@@ -552,7 +566,7 @@ function scanBinaries(files: { where: string; data: Buffer }[]) {
           : text,
       );
     } else if (!font(name, data, depth))
-      report(where, entry, `binary file not read: name it with a reason in scaffolding.allow`);
+      refuse(where, entry, `binary file not read: name it with a reason in scaffolding.allow`);
   };
   // Each file's text is kept by its content and this reader's code, so a gate reads a file again
   // only once either changes.
@@ -581,15 +595,12 @@ function scanBinaries(files: { where: string; data: Buffer }[]) {
       }
   }
   rmSync(scratch, { recursive: true, force: true });
-  for (const { file, where, entry, unread } of images)
+  for (const { file, where, entry, why } of images)
     if (blocks.has(file)) add(where, blocks.get(file)!);
-    else notRead(where, entry, unread);
-  // Only a file read whole is kept: one reported as not read is tried again. A term in a file's
-  // path, found before the reading, leaves its text whole.
-  const refused = new Set(findings.slice(before).map((f) => f.path));
+    else notRead(where, entry, why);
   mkdirSync(join(CACHE_DIR, "read"), { recursive: true });
   files.forEach(({ where }, i) => {
-    if (refused.has(where) || unreadable.has(where) || existsSync(kept[i])) return;
+    if (unread.has(where) || existsSync(kept[i])) return;
     // Renamed into place, so a killed run leaves no part of a text that later reads as whole.
     writeFileSync(`${kept[i]}.${process.pid}`, texts.get(where) ?? "");
     renameSync(`${kept[i]}.${process.pid}`, kept[i]);

@@ -36,8 +36,8 @@ const skeleton = JSON.parse(readFileSync(join(home, "skeleton.json"), "utf8"));
 const own = JSON.parse(readFileSync(join(home, "package.json"), "utf8"));
 const findings: Finding[] = [];
 // Repairs run after applyAllow, so --fix never writes a path an allow entry keeps.
-const repairs = new Map<Finding, () => void>();
-const add = (path: string, message: string, text = "", repair?: () => void) => {
+const repairs = new Map<Finding, () => unknown>();
+const add = (path: string, message: string, text = "", repair?: () => unknown) => {
   const finding: Finding = { check: "structure", path, text, message };
   findings.push(finding);
   if (repair) repairs.set(finding, repair);
@@ -163,41 +163,50 @@ else {
 }
 
 // A block every repository keeps alike inside a file that is otherwise its own: the skeleton's value
-// at each key path. --fix writes it in, formatted as the repository's prettier would.
+// at each key path; where that value is a list, each of its items, beside the repository's own,
+// an item with the same `matcher` as one of the skeleton's being an older copy of it. --fix writes
+// them in, formatted as the repository's prettier would.
+const isObject = (v: unknown): v is Record<string, unknown> =>
+  typeof v === "object" && v !== null && !Array.isArray(v);
+const same = (a: unknown, b: unknown) => JSON.stringify(a) === JSON.stringify(b);
 for (const [path, keys] of Object.entries<string[][]>(skeleton.entries)) {
   if (!exists(path)) continue;
   const template = JSON.parse(readFileSync(join(home, "template", path), "utf8"));
-  let file: Record<string, unknown>;
+  let file: unknown;
   try {
     file = JSON.parse(readFileSync(at(path), "utf8"));
   } catch {
-    add(path, "not JSON");
-    continue;
+    file = undefined;
   }
-  const value = (o: unknown, key: string[]) =>
-    key.reduce<unknown>((v, k) => (v as Record<string, unknown> | undefined)?.[k], o);
-  const differ = keys.filter(
-    (key) => JSON.stringify(value(file, key)) !== JSON.stringify(value(template, key)),
-  );
-  if (!differ.length) continue;
-  for (const key of differ) {
-    let o = file as Record<string, unknown>;
-    for (const k of key.slice(0, -1)) o = (o[k] ??= {}) as Record<string, unknown>;
-    o[key.at(-1)!] = value(template, key);
+  const differ: string[] = [];
+  for (const key of keys) {
+    // The object holding the key, created on the way where missing; none where a value in the way
+    // is no object, which no repair can mend.
+    let holder: unknown = file;
+    for (const k of key.slice(0, -1)) holder = isObject(holder) ? (holder[k] ??= {}) : undefined;
+    const want = key.reduce<unknown>((v, k) => (v as Record<string, unknown>)[k], template);
+    if (!isObject(holder)) {
+      add(path, `${key.join(".")} sits in no JSON object`);
+      continue;
+    }
+    const has = holder[key.at(-1)!];
+    if (Array.isArray(want)) {
+      const ours = (o: unknown) =>
+        want.some((item) => same(o, item) || (isObject(o) && o.matcher === item.matcher));
+      const own = (Array.isArray(has) ? has : []).filter((o) => !ours(o));
+      const merged = [...want, ...own];
+      if (same(has, merged)) continue;
+      holder[key.at(-1)!] = merged;
+    } else if (same(has, want)) continue;
+    else holder[key.at(-1)!] = want;
+    differ.push(key.join("."));
   }
-  const text = `${JSON.stringify(file, null, 2)}\n`;
-  const formatted = prettier
-    ? await prettier.format(text, {
-        ...(await prettier.resolveConfig(at(path))),
-        filepath: at(path),
-      })
-    : text;
-  add(
-    path,
-    "differs from the skeleton (check-structure --fix)",
-    differ.map((key) => key.join(".")).join(", "),
-    () => writeFileSync(at(path), formatted),
-  );
+  if (differ.length)
+    add(path, "differs from the skeleton (check-structure --fix)", differ.join(", "), async () => {
+      const text = `${JSON.stringify(file, null, 2)}\n`;
+      const options = { ...(await prettier?.resolveConfig(at(path))), filepath: at(path) };
+      writeFileSync(at(path), prettier ? await prettier.format(text, options) : text);
+    });
 }
 if (existsSync(at("package.json"))) {
   if (pkg.type !== skeleton.package.type)
@@ -262,7 +271,7 @@ const left = applyAllow(pkg, "structure", findings, true);
 if (fix)
   for (const f of left)
     try {
-      repairs.get(f)?.();
+      await repairs.get(f)?.();
     } catch (e) {
       f.message = `${f.message}: ${(e as Error).message}`;
       repairs.delete(f);

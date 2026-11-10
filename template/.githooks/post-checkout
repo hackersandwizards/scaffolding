@@ -5,9 +5,6 @@ git diff --quiet "$1" "$2" -- bun.lock package.json 2>/dev/null
 [ $? -eq 1 ] || exit 0
 # Under the lock without waiting: while a gate or build holds it, the gate's own install does it.
 # Without node_modules check-lock is not there yet, and nothing else runs to wait for.
-if [ -d node_modules ]; then
-  CHECK_LOCK_WAIT_MS=0 bun run --silent check-lock bun install --frozen-lockfile </dev/null >/dev/null 2>&1
-else
-  bun install --frozen-lockfile </dev/null >/dev/null 2>&1
-fi
+lock=; [ -d node_modules ] && lock="bun run --silent check-lock"
+CHECK_LOCK_WAIT_MS=0 $lock bun install --frozen-lockfile </dev/null >/dev/null 2>&1
 exit 0

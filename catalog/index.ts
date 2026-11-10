@@ -336,12 +336,13 @@ export function catalog(options: CatalogOptions): AstroIntegration {
             throw new Error(`catalog copy: ${pattern} is no file in the exports of ${owner}`);
           }
         }
-        // The shell's type steps are brand's tokens.json --text-* names, first in brand v2.5.0: an
-        // older brand leaves them bare, the text at inherited sizes, with no error of its own.
+        // The shell's type steps are brand's tokens.json --text-* names (brand v2.5.0) and the focus
+        // ring's room is brand's --hw-focus-room (v2.10.0): an older brand leaves them bare, the text
+        // at inherited sizes and a ring cut at <main>'s edge, with no error of its own.
         const brand = installed("@hackersandwizards/brand", root)?.split(".").map(Number);
-        if (brand && (brand[0] ?? 0) * 1000 + (brand[1] ?? 0) < 2005)
+        if (brand && (brand[0] ?? 0) * 1000 + (brand[1] ?? 0) < 2010)
           throw new Error(
-            `catalog: the shell needs @hackersandwizards/brand v2.5.0 or later, installed is v${brand.join(".")}`,
+            `catalog: the shell needs @hackersandwizards/brand v2.10.0 or later, installed is v${brand.join(".")}`,
           );
         // brand's hw-focus-ring draws nothing without its focus.css, which a slim list leaves out.
         // First, so the lists' own sheets, brand's elements.css among them, still follow it.
@@ -452,13 +453,13 @@ export function catalog(options: CatalogOptions): AstroIntegration {
                 // Ahead of Vite's CSS plugin, which reads the file's text.
                 name: "scaffolding-catalog-fallbacks",
                 enforce: "pre" as const,
-                // Every stylesheet beside this file is the shell's.
                 // Astrobook's layout as loaded, before Astro compiles it: each page gets its own
                 // title. The bare file only: its <style> blocks come as queries on the same path.
                 load: (id: string) =>
                   id.endsWith("/@astrobook/ui/dist/components/layout.astro")
                     ? retitleLayout(readFileSync(id, "utf8"), join(import.meta.dirname, "words.ts"))
                     : undefined,
+                // Every stylesheet beside this file is the shell's.
                 transform: (code: string, id: string) => {
                   const file = id.split("?")[0]!;
                   return dirname(file) === import.meta.dirname && file.endsWith(".css")
