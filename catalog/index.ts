@@ -401,14 +401,14 @@ export function catalog(options: CatalogOptions): AstroIntegration {
           groupOrder: options.groupOrder ?? [],
           previewStates: options.previewStates ?? [],
           provenance,
-          // Ahead of every stylesheet, which the build puts at the head's end. The focus ring's room:
-          // brand's --hw-focus-room, or where the installed brand lacks it, the sum it stands for
-          // (elements/focus.css: outline width plus offset). A state alone in the window, not in a
-          // tile's frame, gets it inside Astrobook's <main>, whose scroll box cut a ring at x = 0.
+          // Ahead of every stylesheet, which the build puts at the head's end. A state alone in the
+          // window, not in a tile's frame, gets the focus ring's room (brand v2.10.0's
+          // --hw-focus-room, elements/focus.css) inside Astrobook's <main>, whose scroll box cut a
+          // ring at x = 0.
           layers:
             "@layer hw-catalog-ground;" +
             (fromBrand(() => readFileSync(require.resolve(BRAND_LAYERS), "utf8").trim()) ?? "") +
-            "@layer hw-catalog-ground{:root{--hw-cat-ring:var(--hw-focus-room,calc(var(--hw-focus-width, 3px) + var(--hw-focus-offset, 2px)))}[data-hw-alone] main{padding:var(--hw-cat-ring)}}",
+            "@layer hw-catalog-ground{[data-hw-alone] main{padding:var(--hw-focus-room)}}",
           // A story link ends in a slash where the site asks for one, or leaves it open and Astro
           // writes each page as a folder's index.html, which a static host serves only there.
           slash:

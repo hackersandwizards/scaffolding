@@ -2711,14 +2711,15 @@ describe("catalog", () => {
           `[".hw-catalog-bar > a", ".hw-catalog-bar button", ".hw-catalog-tool", ".hw-catalog-step", ".hw-catalog-states li a"].map((s) => { const e = document.querySelector(s); return [getComputedStyle(e).color, e.getBoundingClientRect().height]; })`,
         ),
       ).toEqual(Array(5).fill(["rgb(1, 2, 3)", 28]));
-      // The story keeps the focus ring's room, from brand's settings, clear of <main>'s scroll box
-      // and of the bar, which stays flush with <main>.
+      // The story keeps the focus ring's room, brand's --hw-focus-room, clear of <main>'s scroll
+      // box and of the bar, which stays flush with <main>. The shell retypes none of brand's values:
+      // without the room, the width and offset alone give none.
       const room = (set: string) =>
         painted.evaluate(
           `(() => { document.documentElement.setAttribute("style", ${JSON.stringify(set)}); const [m, b, s] = ["main", ".hw-catalog-bar", ".box"].map((q) => document.querySelector(q).getBoundingClientRect()); return [b.left - m.left, b.width - m.width, b.top - m.top, s.left - m.left, s.top - b.bottom, m.right - s.right]; })()`,
         );
       expect(await room("--hw-focus-width: 4px; --hw-focus-offset: 3px")).toEqual([
-        0, 0, 0, 7, 7, 7,
+        0, 0, 0, 0, 0, 0,
       ]);
       expect(await room("--hw-focus-room: 9px")).toEqual([0, 0, 0, 9, 9, 9]);
       // A story's own padding on <main> wins over the room.
@@ -2733,9 +2734,9 @@ describe("catalog", () => {
       );
       expect(
         await painted.evaluate(
-          `(() => { const [m, s] = ["main", ".box"].map((q) => document.querySelector(q).getBoundingClientRect()); return [s.left - m.left, s.top - m.top, document.documentElement.dataset.hwAlone]; })()`,
+          `(() => { document.documentElement.style.setProperty("--hw-focus-room", "6px"); const [m, s] = ["main", ".box"].map((q) => document.querySelector(q).getBoundingClientRect()); return [s.left - m.left, s.top - m.top, document.documentElement.dataset.hwAlone]; })()`,
         ),
-      ).toEqual([5, 5, ""]);
+      ).toEqual([6, 6, ""]);
     } finally {
       painted.close();
       void served.stop(true);

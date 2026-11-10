@@ -9,12 +9,12 @@ body:has(> [data-hw-catalog-top]) {
   flex-direction: column;
 }
 /* Astrobook's <main> scrolls, so it cuts off a focused control's ring at its edge. The story gets
-   the ring's room (--hw-cat-ring, set with the layer order) below the bar and at the sides, the bar
+   the ring's room (brand's --hw-focus-room) below the bar and at the sides, the bar
    stays flush. In the lowest layer, so a story's own padding on <main> wins. */
 @layer hw-catalog-ground {
   main:has(> .hw-catalog-bar) {
-    padding-inline: var(--hw-cat-ring);
-    padding-bottom: var(--hw-cat-ring);
+    padding-inline: var(--hw-focus-room);
+    padding-bottom: var(--hw-focus-room);
   }
 }
 /* A story that is a whole page may style a bare <main>, the bar's parent, as a centred grid. The
@@ -29,7 +29,7 @@ body:has(> [data-hw-catalog-top]) {
   box-sizing: border-box;
   align-items: center;
   gap: 0.5rem 1rem;
-  margin: 0 calc(-1 * var(--hw-cat-ring)) var(--hw-cat-ring);
+  margin: 0 calc(-1 * var(--hw-focus-room)) var(--hw-focus-room);
   padding: 0.75rem 1.5rem;
   border-bottom: 1px solid color-mix(in srgb, currentColor 15%, transparent);
   font: 500 1rem var(--font-sans);
