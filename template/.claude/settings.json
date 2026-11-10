@@ -6,7 +6,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "git fetch -q origin main && { [ \"$CLAUDE_CODE_REMOTE\" != true ] || git switch -q main; } && { [ \"$(git branch --show-current)\" != main ] || git merge --ff-only -q origin/main; } || echo \"main not switched to or origin/main not merged, fix it per git.md\"; if [ -d node_modules ]; then CHECK_LOCK_WAIT_MS=0 bun run --silent check-lock bun install --frozen-lockfile; else bun install --frozen-lockfile; fi || echo \"bun install --frozen-lockfile failed or a running gate holds the lock: run it before your gate\""
+            "command": "\"$(git rev-parse --show-toplevel)/.githooks/session-start\""
           }
         ]
       }

@@ -1,0 +1,34 @@
+#!/bin/sh
+# The SessionStart hook: fetches main within 20 s (SCAFFOLDING_FETCH_WAIT_S) and says how far behind it the checkout is, then
+# installs. Its stdout is the session's context, so it prints only what the session must act on.
+# It moves no branch in a checkout other sessions share: a fast-forward succeeds with another
+# session's uncommitted file in the tree and moves HEAD under it. The session merges per git.md.
+# A cloud session's checkout is its own, so there it switches to main and fast-forwards.
+exec 2>&1
+cd "$(git rev-parse --show-toplevel)" || exit 0
+# Bounded by the clock: an SSH remote waits for a person to approve the key, and nothing in ssh or
+# git ends that wait. Fetch and timer each run in a process group of their own (set -m), so a kill
+# ends ssh with git and the timer's sleep with the timer; the subshell keeps the shell's notices.
+if (
+  set -m
+  GIT_TERMINAL_PROMPT=0 git fetch -q origin main &
+  fetch=$!
+  (sleep "${SCAFFOLDING_FETCH_WAIT_S:-20}" && kill -- -"$fetch") &
+  timer=$!
+  wait "$fetch"
+  status=$?
+  kill -- -"$timer"
+  exit "$status"
+) >/dev/null 2>&1; then
+  if [ "$CLAUDE_CODE_REMOTE" = true ]; then
+    git switch -q main && git merge --ff-only -q origin/main ||
+      echo "main not switched to or origin/main not merged: fix it per git.md"
+  else
+    behind=$(git rev-list --count HEAD..origin/main 2>/dev/null)
+    [ "${behind:-0}" -eq 0 ] ||
+      echo "origin/main is $behind commits ahead of HEAD: merge it per git.md before work"
+  fi
+else
+  echo "origin main not fetched within ${SCAFFOLDING_FETCH_WAIT_S:-20} s: fetch and merge per git.md before work"
+fi
+.githooks/install || true

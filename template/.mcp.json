@@ -1,8 +1,12 @@
 {
   "mcpServers": {
     "chrome-devtools": {
-      "command": "bun",
-      "args": ["run", "--cwd", "${CLAUDE_PROJECT_DIR:-.}", "--silent", "chrome-mcp"]
+      "command": "sh",
+      "args": [
+        "-c",
+        "cd \"$0\" && { .githooks/install; exec bun run --silent chrome-mcp; }",
+        "${CLAUDE_PROJECT_DIR:-.}"
+      ]
     }
   }
 }

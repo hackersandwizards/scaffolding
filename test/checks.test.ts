@@ -2723,31 +2723,206 @@ describe("scaffolding check", () => {
 });
 
 describe("skeleton install hooks", () => {
-  test("a lock change installs under check-lock, or plainly where node_modules is missing", () => {
-    const dir = repo({ "bun.lock": "a\n" });
-    sh(dir, ["commit", "-q", "--allow-empty", "-m", "a"]);
+  const hooks = join(import.meta.dir, "..", "template/.githooks");
+  // bun's install and the MCP server logged with whether the lock was held; every other call is
+  // the real bun's, so check-lock runs as it does in a consumer.
+  const fakeBun = () => {
+    const fake = temp();
+    writeFileSync(
+      join(fake, "bun"),
+      `#!/bin/sh
+case "$*" in
+  "install --frozen-lockfile")
+    [ -e node_modules/.check.lock ] && held=" locked" || held=
+    echo "start$held" >> "$BUN_LOG"
+    sleep "\${BUN_SLEEP:-0}"
+    echo end >> "$BUN_LOG"
+    exit "\${BUN_EXIT:-0}";;
+  "run --silent chrome-mcp") echo mcp >> "$BUN_LOG"; exit 0;;
+esac
+exec "${process.execPath}" "$@"
+`,
+      { mode: 0o755 },
+    );
+    return { fake, log: join(fake, "bun.log") };
+  };
+  // A consumer: the hooks as the skeleton ships them, check-lock as its bin runs.
+  const consumer = (files: Record<string, string> = {}) => {
+    const dir = repo({
+      "bun.lock": "a\n",
+      "package.json": JSON.stringify({
+        scripts: { "check-lock": `${process.execPath} --no-env-file ${bin("check-lock")}` },
+      }),
+      ...files,
+    });
+    cpSync(hooks, join(dir, ".githooks"), { recursive: true });
+    return dir;
+  };
+  const env = (log: { fake: string; log: string }, more: Record<string, string> = {}) => ({
+    ...process.env,
+    PATH: `${log.fake}:${process.env.PATH}`,
+    BUN_LOG: log.log,
+    ...more,
+  });
+  const read = (path: string) => (existsSync(path) ? readFileSync(path, "utf8") : "");
+
+  test("a lock change installs under the lock: the script's own before the first install, check-lock's after", () => {
+    const dir = consumer();
     const old = sh(dir, ["rev-parse", "HEAD"]).stdout.toString().trim();
     write(dir, { "bun.lock": "b\n" });
     sh(dir, ["commit", "-q", "-am", "b"]);
-    const fake = temp();
-    writeFileSync(join(fake, "bun"), '#!/bin/sh\necho "$*" >> "$BUN_LOG"\n', { mode: 0o755 });
-    const hook = (name: string, args: string[]) => {
-      const log = join(fake, `${name}.log`);
-      spawnSync("/bin/sh", [join(import.meta.dir, "..", "template/.githooks", name), ...args], {
-        cwd: dir,
-        env: { ...process.env, PATH: `${fake}:${process.env.PATH}`, BUN_LOG: log },
-      });
-      return existsSync(log) ? readFileSync(log, "utf8") : "";
-    };
     const head = sh(dir, ["rev-parse", "HEAD"]).stdout.toString().trim();
     sh(dir, ["update-ref", "ORIG_HEAD", old]);
-    expect(hook("post-checkout", [old, head, "1"])).toBe("install --frozen-lockfile\n");
-    expect(hook("post-merge", ["0"])).toBe("install --frozen-lockfile\n");
-    mkdirSync(join(dir, "node_modules"));
-    rmSync(join(fake, "post-merge.log"));
-    expect(hook("post-merge", ["0"])).toBe(
-      "run --silent check-lock bun install --frozen-lockfile\n",
+    const bun = fakeBun();
+    const hook = (name: string, args: string[]) =>
+      spawnSync(join(dir, ".githooks", name), args, { cwd: dir, env: env(bun), encoding: "utf8" });
+    const fresh = hook("post-checkout", [old, head, "1"]);
+    expect(read(bun.log)).toBe("start locked\nend\n");
+    expect(`${fresh.stdout}${fresh.stderr}`).toBe("");
+    expect(existsSync(join(dir, "node_modules/.check.lock"))).toBe(false);
+    rmSync(bun.log);
+    mkdirSync(join(dir, "node_modules/.bin"), { recursive: true });
+    const later = hook("post-merge", ["0"]);
+    expect(read(bun.log)).toBe("start locked\nend\n");
+    expect(`${later.stdout}${later.stderr}`).toBe("");
+    // An unchanged lock installs nothing.
+    rmSync(bun.log);
+    hook("post-checkout", [head, head, "1"]);
+    expect(read(bun.log)).toBe("");
+  });
+
+  test("a held lock or a failed install is named on stderr, never stdout, and fails no checkout", () => {
+    const dir = consumer();
+    mkdirSync(join(dir, "node_modules/.bin"), { recursive: true });
+    const bun = fakeBun();
+    const install = (more: Record<string, string> = {}) =>
+      spawnSync(join(dir, ".githooks/install"), [], {
+        cwd: dir,
+        env: env(bun, more),
+        encoding: "utf8",
+      });
+    writeFileSync(
+      join(dir, "node_modules/.check.lock"),
+      JSON.stringify({ pid: process.pid, startedAt: Date.now() }),
     );
+    const held = install();
+    expect(read(bun.log)).toBe("");
+    expect(held.stdout).toBe("");
+    expect(held.stderr).toContain(`pid ${process.pid} still holds`);
+    expect(held.stderr).toContain("[install] bun install --frozen-lockfile did not run or failed");
+    expect(held.status).toBe(1);
+    rmSync(join(dir, "node_modules/.check.lock"));
+    const failed = install({ BUN_EXIT: "1" });
+    expect(failed.stdout).toBe("");
+    expect(failed.stderr).toContain("[install]");
+    expect(failed.status).toBe(1);
+    const old = sh(dir, ["rev-parse", "HEAD"]).stdout.toString().trim();
+    write(dir, { "bun.lock": "b\n" });
+    sh(dir, ["commit", "-q", "-am", "b"]);
+    const checkout = spawnSync(
+      join(dir, ".githooks/post-checkout"),
+      [old, sh(dir, ["rev-parse", "HEAD"]).stdout.toString().trim(), "1"],
+      { cwd: dir, env: env(bun, { BUN_EXIT: "1" }), encoding: "utf8" },
+    );
+    expect(checkout.stderr).toContain("[install]");
+    expect(checkout.status).toBe(0);
+  });
+
+  test("two first installs at once run one after the other", async () => {
+    const dir = consumer();
+    const old = sh(dir, ["rev-parse", "HEAD"]).stdout.toString().trim();
+    write(dir, { "bun.lock": "b\n" });
+    sh(dir, ["commit", "-q", "-am", "b"]);
+    const args = [old, sh(dir, ["rev-parse", "HEAD"]).stdout.toString().trim(), "1"];
+    const bun = fakeBun();
+    const hook = join(dir, ".githooks/post-checkout");
+    const first = spawn(hook, args, {
+      cwd: dir,
+      env: env(bun, { BUN_SLEEP: "2" }),
+      stdio: "ignore",
+    });
+    const done = new Promise((resolve) => first.on("close", resolve));
+    for (let i = 0; i < 100 && !read(bun.log); i++) await Bun.sleep(50);
+    spawnSync(hook, args, { cwd: dir, env: env(bun) });
+    await done;
+    expect(read(bun.log)).toBe("start locked\nend\nstart locked\nend\n");
+  });
+
+  test("the MCP server starts after the install, with nothing but the server on stdout", () => {
+    const dir = consumer({
+      ".mcp.json": readFileSync(join(import.meta.dir, "../template/.mcp.json"), "utf8"),
+    });
+    const bun = fakeBun();
+    const { command, args } = JSON.parse(readFileSync(join(dir, ".mcp.json"), "utf8")).mcpServers[
+      "chrome-devtools"
+    ];
+    const start = spawnSync(command, [...args.slice(0, -1), dir], {
+      cwd: tmpdir(),
+      env: env(bun, { BUN_EXIT: "1" }),
+      encoding: "utf8",
+    });
+    expect(read(bun.log)).toBe("start locked\nend\nmcp\n");
+    expect(start.stdout).toBe("");
+    expect(start.stderr).toContain("[install]");
+  });
+});
+
+describe("skeleton SessionStart hook", () => {
+  const hook = join(import.meta.dir, "..", "template/.githooks/session-start");
+  // A clone of an origin one commit ahead, its install a no-op that logs.
+  const clone = () => {
+    const origin = repo({ "a.txt": "1\n" });
+    const dir = temp();
+    spawnSync("git", ["clone", "-q", origin, dir]);
+    cpSync(join(import.meta.dir, "..", "template/.githooks"), join(dir, ".githooks"), {
+      recursive: true,
+    });
+    write(origin, { "a.txt": "2\n" });
+    sh(origin, ["commit", "-q", "-am", "two"]);
+    const fake = temp();
+    writeFileSync(join(fake, "bun"), "#!/bin/sh\n", { mode: 0o755 });
+    return { dir, origin, path: `${fake}:${process.env.PATH}` };
+  };
+  const start = (dir: string, env: Record<string, string>) =>
+    spawnSync(hook, [], { cwd: dir, env: { ...process.env, ...env }, encoding: "utf8" });
+  const head = (dir: string) => sh(dir, ["rev-parse", "HEAD"]).stdout.toString().trim();
+
+  test("fetches and says how far behind main is, and moves no branch under uncommitted work", () => {
+    const { dir, path } = clone();
+    const before = head(dir);
+    write(dir, { "b.txt": "another session's\n" });
+    const r = start(dir, { PATH: path });
+    expect(r.stdout).toBe(
+      "origin/main is 1 commits ahead of HEAD: merge it per git.md before work\n",
+    );
+    expect(head(dir)).toBe(before);
+    sh(dir, ["merge", "-q", "--ff-only", "origin/main"]);
+    expect(start(dir, { PATH: path }).stdout).toBe("");
+  });
+
+  test("a cloud session switches to main and fast-forwards", () => {
+    const { dir, origin, path } = clone();
+    sh(dir, ["switch", "-q", "-c", "work"]);
+    const r = start(dir, { PATH: path, CLAUDE_CODE_REMOTE: "true" });
+    expect(r.stdout).toBe("");
+    expect(sh(dir, ["branch", "--show-current"]).stdout.toString()).toBe("main\n");
+    expect(head(dir)).toBe(head(origin));
+  });
+
+  test("a fetch that waits for a person ends at the bound, its ssh with it", () => {
+    const { dir, path } = clone();
+    const ssh = join(temp(), "ssh");
+    const pid = `${ssh}.pid`;
+    writeFileSync(ssh, `#!/bin/sh\necho $$ > ${pid}\nexec sleep 600\n`, { mode: 0o755 });
+    sh(dir, ["remote", "set-url", "origin", "git@example.invalid:o/r.git"]);
+    const started = performance.now();
+    const r = start(dir, { PATH: path, GIT_SSH_COMMAND: ssh, SCAFFOLDING_FETCH_WAIT_S: "1" });
+    expect(performance.now() - started).toBeLessThan(5_000);
+    expect(r.stdout).toBe(
+      "origin main not fetched within 1 s: fetch and merge per git.md before work\n",
+    );
+    const sleeper = Number(readFileSync(pid, "utf8"));
+    expect(() => process.kill(sleeper, 0)).toThrow();
   });
 });
 

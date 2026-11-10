@@ -7,7 +7,9 @@
     ".githooks/commit-msg",
     ".githooks/pre-push",
     ".githooks/post-merge",
-    ".githooks/post-checkout"
+    ".githooks/post-checkout",
+    ".githooks/install",
+    ".githooks/session-start"
   ],
   "owned": [".github/workflows/pages.yml"],
   "entries": {
