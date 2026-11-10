@@ -265,19 +265,19 @@ The options beyond those above:
   the shell's own on the home and a state's page, never on a state alone. The shell brings its
   chrome's ground and text colour, read from brand's tokens in a layer below every other, and its
   box sizing, so it draws the same with or without a reset in the lists; its faces come only from
-  the lists. The home's version line names each package that `css`, `homeCss` and `dashboardCss`
-  load a stylesheet from; a home without stories draws no such line.
+  the lists. The home's version line names each package that `css`, `homeCss`, `dashboardCss` and
+  `htmlClass`'s focus ring load a stylesheet from; a home without stories draws no such line.
 - The shell's own styles (its `chrome.css` and the header's CSS) sit inline on the home and every state's page, so they cost no render-blocking request.
 - `dashboardCss`: the stylesheets a state's page loads, default `css`. The page draws its story
   inline; where a repository's stories draw their state alone in an iframe there, which loads `css`,
   the page needs only the tokens and faces its header and bar read and what it draws around the
-  frame, such as `["@hackersandwizards/brand/tokens.root.css", "@hackersandwizards/brand/fonts.css"]`.
-  A `head` that sets brand's `hw-focus-ring` itself also lists
-  `"@hackersandwizards/brand/elements/focus.css"` here, as in `homeCss` and `css` where they leave
-  out `elements.css`, or that page draws no focus ring.
+  frame, such as `["@hackersandwizards/brand/tokens.root.css", "@hackersandwizards/brand/fonts.css"]`,
+  and the focus ring where the page sets `hw-focus-ring` (see `htmlClass`).
 - `htmlClass`: classes on `<html>` of every page, set before the body draws, such as
-  `["hw-focus-ring"]` for brand's focus ring, with which every page also loads brand's
-  `elements/focus.css`, so no list needs to name it.
+  `["hw-focus-ring"]` for brand's focus ring. With that class every page loads brand's
+  `elements/focus.css` ahead of its lists. A `head` that sets the class itself lists
+  `"@hackersandwizards/brand/elements/focus.css"` in each list that leaves out `elements.css`, or
+  that list's pages draw no focus ring.
 - `previewStates`: the states a tile draws and links first, each the story's export name in kebab
   case, such as `["light", "loaded-dark"]` for `Light` and `LoadedDark`.
 - `head`: the repository's own `<head>` component, rendered on every page. Ahead of it every page

@@ -2428,6 +2428,16 @@ describe("catalog", () => {
     for (const p of ringPages) expect(styles(page(p))).not.toContain(ring);
     expect(variant("ringed", 'htmlClass: ["hw-focus-ring"]').status).toBe(0);
     for (const p of ringPages) expect(styles(page(p))).toContain(ring);
+    // A list naming focus.css itself loads it once, ahead of the list's other sheets.
+    expect(
+      variant(
+        "ringtwice",
+        'css: ["./fx.css", "@hackersandwizards/brand/elements/focus.css"], htmlClass: ["hw-focus-ring"]',
+      ).status,
+    ).toBe(0);
+    const alone = styles(page("stories/Parts/box-parts/two"));
+    expect(alone.split(ring)).toHaveLength(2);
+    expect(alone.indexOf(ring)).toBeLessThan(alone.indexOf(".box{color:teal}"));
     expect(build().status).toBe(0);
     for (const p of ["", "stories/Parts/box-parts/two"]) {
       expect(links(page(p), "icon")).toEqual([

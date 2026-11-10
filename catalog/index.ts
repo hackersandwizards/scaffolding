@@ -337,15 +337,17 @@ export function catalog(options: CatalogOptions): AstroIntegration {
             `catalog: the shell needs @hackersandwizards/brand v2.5.0 or later, installed is v${brand.join(".")}`,
           );
         // brand's hw-focus-ring draws nothing without its focus.css, which a slim list leaves out.
+        // First, so the lists' own sheets, brand's elements.css among them, still follow it.
         const ring =
           options.htmlClass?.includes("hw-focus-ring") &&
           fromBrand(() => require.resolve(BRAND_FOCUS))
             ? [BRAND_FOCUS]
             : [];
+        const withRing = (list: string[]) => [...new Set([...ring, ...list])];
         const lists = {
-          home: [...new Set([...(options.homeCss ?? options.css), ...ring])],
-          dashboard: [...new Set([...(options.dashboardCss ?? options.css), ...ring])],
-          stories: [...new Set([...options.css, ...ring])],
+          home: withRing(options.homeCss ?? options.css),
+          dashboard: withRing(options.dashboardCss ?? options.css),
+          stories: withRing(options.css),
         };
         const sheets = Object.values(lists).flat();
         const versions = [...new Set(sheets.map(packageOf).filter((p) => p !== undefined))]
