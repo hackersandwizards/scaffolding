@@ -20,6 +20,7 @@ interface Props {
   previewStates?: string[];
 }
 
+const count = (n: number, noun: string) => `${n} ${noun}${n === 1 ? "" : "s"}`;
 const {
   product,
   href,
@@ -49,7 +50,7 @@ for (const m of named.sort((a, b) => a.label.localeCompare(b.label))) {
     name: m.label,
     search: m.name,
     href: url(config.dashboardBase, first.id),
-    pill: m.stories.length === 1 ? "1 state" : `${m.stories.length} states`,
+    pill: count(m.stories.length, "state"),
     frame: previews ? url(config.storyBase, first.id) : undefined,
     frameSrcdoc: previews === "srcdoc",
     frameSize: Array.isArray(previewSize)
@@ -70,7 +71,7 @@ const data = {
   title,
   lead,
   provenance: states
-    ? `${options.provenance} · ${modules.length} components · ${states} states`
+    ? `${options.provenance} · ${count(modules.length, "component")} · ${count(states, "state")}`
     : undefined,
   groups: [...groups]
     .sort(([a], [b]) => rank(a) - rank(b) || a.localeCompare(b))

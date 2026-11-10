@@ -73,7 +73,7 @@ const root = {
 <RepositoryHead />
 <script
   is:inline
-  set:html={`Object.assign(document.documentElement.dataset,${JSON.stringify(root)});document.documentElement.classList.add(...${JSON.stringify(shell.htmlClass)});`}
+  set:html={`Object.assign(document.documentElement.dataset,${JSON.stringify(root)});document.documentElement.classList.add(...${JSON.stringify(shell.htmlClass)});${alone ? 'if(window===top)document.documentElement.dataset.hwAlone="";' : ""}`}
 />
 {mod && (
   <template id="hw-catalog-bar">

@@ -1854,7 +1854,7 @@ describe("scaffolding check", () => {
     expect(r.out).toMatch(/\[scaffolding\] failed in [\d.]+ s: check:fast, check:also\n/);
   });
 
-  test("above one waiting process per core the steps run one after another", () => {
+  test("above one waiting process per core the repository's steps run one after another", () => {
     // Each step fails where the other runs beside it.
     const body = (me: string, other: string) =>
       `test -e ${other} && exit 1; touch ${me}; sleep 0.5; test -e ${other} && exit 1; rm ${me}`;
@@ -1869,12 +1869,14 @@ describe("scaffolding check", () => {
       CHECK_LOCK: join(dir, ".lock"),
       SCAFFOLDING_LOAD: "999",
     });
-    expect(loaded.out).toMatch(/load 999 on \d+ cores: steps run one after another/);
+    expect(loaded.out).toMatch(
+      /load 999 on \d+ cores: tests, build and the repository's steps run one after another/,
+    );
     expect(loaded.code).toBe(0);
     const idle = run(dir, "scaffolding", ["check"], { CHECK_LOCK: join(dir, ".lock") });
     expect(idle.out).not.toContain("one after another");
     expect(idle.code).toBe(1);
-  });
+  }, 40_000);
 
   test("a signal to the outer runner ends the steps, names them, and frees the lock", async () => {
     const dir = gate(
@@ -2225,6 +2227,7 @@ describe("catalog", () => {
       "import { parseStoryDefaultExport, parseStoryNamedExport } from 'astrobook/client';",
       "const { decorators, args } = parseStoryNamedExport(m, './a.stories.ts', 'One');",
       "---",
+      "<StoryPage story={'a'} hasSidebar={true}>",
       "{isAstroComponent ? <m.default.component {...args} /> : <m.default.component {...args} client:load />}",
       "",
     ].join("\n");
@@ -2233,6 +2236,12 @@ describe("catalog", () => {
     expect(out).toContain("Astro.locals.hwCatalogLead = args?.lead;");
     expect(out).not.toContain("client:load");
     expect(rewriteRoute("dashboard/a.astro", route, false)).toContain("client:load");
+    // A state's page draws the bar instead of Astrobook's sidebar; a state alone has none anyway.
+    expect(rewriteRoute("dashboard/a.astro", route, false)).toContain("hasSidebar={false}");
+    expect(out).toContain("hasSidebar={true}");
+    expect(() =>
+      rewriteRoute("dashboard/a.astro", route.replace("hasSidebar={true}", ""), false),
+    ).toThrow(/sidebar/);
     expect(rewriteRoute("stories/a.astro", `${route}${route.split("---")[1]}`, true)).not.toContain(
       "client:load",
     );
@@ -2373,6 +2382,20 @@ describe("catalog", () => {
       await painted.until(
         `document.readyState === "complete" && !!document.querySelector(".hw-catalog")`,
       );
+      // A sized tile fitted while the search hid it is fitted again once the search shows it.
+      const sized = `document.querySelector(".hw-catalog-preview[data-frame-width] iframe").style.transform`;
+      await painted.until(`${sized}.startsWith("scale(") && ${sized} !== "scale(0)"`);
+      const fitted = await painted.evaluate(sized);
+      const search = (q: string) =>
+        `(() => { const s = document.querySelector(".hw-catalog-search"); s.value = ${JSON.stringify(q)}; s.dispatchEvent(new Event("input", { bubbles: true })); })()`;
+      await painted.evaluate(search("many"));
+      await painted.evaluate(`dispatchEvent(new Event("resize"))`);
+      // The resize has fitted the hidden tile: at scale 0, or marked to fit once shown.
+      await painted.until(
+        `document.querySelector(".hw-catalog-preview[data-frame-width]").hasAttribute("data-hw-unfit") || ${sized} === "scale(0)"`,
+      );
+      await painted.evaluate(search(""));
+      expect(await painted.evaluate(sized)).toBe(fitted);
       const ground = () =>
         painted.evaluate(`getComputedStyle(document.documentElement).backgroundColor`);
       expect(await ground()).toBe("rgba(0, 0, 0, 0)");
@@ -2418,6 +2441,21 @@ describe("catalog", () => {
         0, 0, 0, 7, 7, 7,
       ]);
       expect(await room("--hw-focus-room: 9px")).toEqual([0, 0, 0, 9, 9, 9]);
+      // A story's own padding on <main> wins over the room.
+      await painted.evaluate(
+        `document.head.insertAdjacentHTML("beforeend", "<style>main { padding: 2rem; }</style>")`,
+      );
+      expect(((await room("")) as number[])[3]).toBe(32);
+      // A state alone in the window keeps the room inside Astrobook's scrolling <main> too.
+      await painted.evaluate(`location.href = "/stories/Parts/box-parts/two/"`);
+      await painted.until(
+        `location.pathname.startsWith("/stories/") && document.readyState === "complete" && !!document.querySelector(".box")`,
+      );
+      expect(
+        await painted.evaluate(
+          `(() => { const [m, s] = ["main", ".box"].map((q) => document.querySelector(q).getBoundingClientRect()); return [s.left - m.left, s.top - m.top, document.documentElement.dataset.hwAlone]; })()`,
+        ),
+      ).toEqual([5, 5, ""]);
     } finally {
       painted.close();
       void served.stop(true);
@@ -2810,7 +2848,7 @@ describe("catalog", () => {
     expect(sheets).not.toContain("brand-value");
     // brand's layer order follows the ground's.
     expect(branded).toContain(
-      "<style>@layer hw-catalog-ground;@layer properties, theme, base, components, utilities;</style>",
+      "<style>@layer hw-catalog-ground;@layer properties, theme, base, components, utilities;@layer hw-catalog-ground{",
     );
     expect(branded).toContain(
       '<nav class="hw-header-nav" aria-label="Main" data-hw-catalogs><a class="hw-header-link" href="https://example.com/other/">Other</a><a class="hw-header-link" href="/catalog/" aria-current="page">Fx</a></nav>',

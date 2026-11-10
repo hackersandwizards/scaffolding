@@ -99,7 +99,8 @@ const catalogTile = (item: CatalogItem, group: string) =>
 // is read. A centred frame fits what that element paints (its own box where it has a ground,
 // background image, border, shadow or is a control or image, else its text and such boxes inside,
 // so a full-width wrapper centres its button rather than its own box), each cut to the boxes
-// clipping it; else <main>'s only child or <main>. Marks the rail's label of the group read now
+// clipping it; else <main>'s only child or <main>. A tile the search hides measures 0 wide, so it
+// is fitted once the search shows it again rather than drawn at scale 0. Marks the rail's label of the group read now
 // with aria-current="true": the last group whose top has passed a third of the viewport, else the
 // first group, however tall the lead above it; where the page can scroll no further, the group the address names where its top shows, else,
 // once the page has scrolled, the last group, so a click on a group the page cannot scroll up to
@@ -110,6 +111,7 @@ const catalogTile = (item: CatalogItem, group: string) =>
 const SCRIPT = `<script>(()=>{
 const part=(m,s)=>{let e;try{e=m.querySelector(s);}catch{}if(!e&&!m.dataset.hwPreviewLogged){m.dataset.hwPreviewLogged="1";console.error("data-hw-preview: "+s+" selects nothing, drawing the whole mark");}return e||m;};
 const fit=(p)=>{const f=p.firstElementChild;if(!(f instanceof HTMLIFrameElement))return;
+if(!p.clientWidth){p.dataset.hwUnfit="";return;}delete p.dataset.hwUnfit;
 const d=f.contentDocument,mark=d&&d.querySelector("[data-hw-preview]"),own=mark&&(mark.dataset.hwPreview?part(mark,mark.dataset.hwPreview):mark),css=(e)=>d.defaultView.getComputedStyle(e),clear=(b)=>/^(transparent|rgba\\(.*, 0\\))$/.test(b);
 const around=(c)=>{if(own&&d.getElementById("hw-preview-only"))return;let ground;for(let e=c;e&&!ground;e=e.parentElement)if(!clear(css(e).backgroundColor))ground=css(e).backgroundColor;
 if(ground)p.style.background=ground;
@@ -152,7 +154,8 @@ document.addEventListener("input",(e)=>{const f=e.target;if(!(f instanceof HTMLI
 const q=f.value.trim().toLowerCase().split(/\\s+/);const typed=q.join("")!=="";const root=f.closest(".hw-catalog");
 for(const g of root.querySelectorAll(".hw-catalog-group")){let n=0;const link=root.querySelector('.hw-catalog-rail a[href="#'+g.id+'"]'),names=link?.nextElementSibling?.children??[];
 g.querySelectorAll(".hw-catalog-tile").forEach((t,i)=>{const hit=q.every((w)=>t.dataset.search.includes(w));t.parentElement.hidden=!hit;if(names[i])names[i].hidden=!hit;if(hit)n++;});
-const off=n===0&&typed;g.hidden=off;if(link)link.parentElement.hidden=off;}later();});
+const off=n===0&&typed;g.hidden=off;if(link)link.parentElement.hidden=off;}
+root.querySelectorAll(".hw-catalog-preview[data-hw-unfit]").forEach(fit);later();});
 })();</script>`;
 
 export function renderCatalog(data: CatalogData): string {

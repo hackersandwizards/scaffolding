@@ -9,15 +9,13 @@ body:has(> [data-hw-catalog-top]) {
   flex-direction: column;
 }
 /* Astrobook's <main> scrolls, so it cuts off a focused control's ring at its edge. The story gets
-   the ring's room below the bar and at the sides, the bar stays flush: brand's --hw-focus-room, or
-   where the installed brand lacks it, the sum it stands for (elements/focus.css: outline width plus
-   offset). */
-main:has(> .hw-catalog-bar) {
-  --hw-cat-ring: var(
-    --hw-focus-room,
-    calc(var(--hw-focus-width, 3px) + var(--hw-focus-offset, 2px))
-  );
-  padding: 0 var(--hw-cat-ring) var(--hw-cat-ring);
+   the ring's room (--hw-cat-ring, set with the layer order) below the bar and at the sides, the bar
+   stays flush. In the lowest layer, so a story's own padding on <main> wins. */
+@layer hw-catalog-ground {
+  main:has(> .hw-catalog-bar) {
+    padding-inline: var(--hw-cat-ring);
+    padding-bottom: var(--hw-cat-ring);
+  }
 }
 /* A story that is a whole page may style a bare <main>, the bar's parent, as a centred grid. The
    bar keeps one size whatever data-hw-scale the page sets, which redefines brand's --text-* steps.

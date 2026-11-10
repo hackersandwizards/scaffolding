@@ -85,7 +85,8 @@ pins right after `bun install`, once, so steps that start Chrome never download 
 **Output and load.** Each step prints its output and its `ok` or `FAIL` line the moment it ends, and
 the last line names the red steps in the gate's order. A signal to `bun run check` reaches every
 step; each step still running prints what it said so far and `stopped <step> by <signal>`. Where
-the one-minute load average is above the core count, the steps run one after another and the gate
+the one-minute load average is above the core count, the quick shared checks still run side by
+side, then `test`, `catalog` and the repository's own steps run one after another, and the gate
 says so in its first line; `SCAFFOLDING_LOAD=<n>` stands in for the load. The same load stretches
 `serve`'s default wait (below) by load per core, at most ten times. A test's own limit stays the
 repository's: bun's 5 s per test is set by `--timeout`.
@@ -216,7 +217,8 @@ arrow keys too, the position ("10 of 38"), and between them a link per state, or
 menu grouped by a word three or more state names share (`BlockImage` under Block, `AccentTheme`
 under Theme). The bar, rather than a list beside the canvas, keeps the canvas at full width, less the room of brand's focus ring (`--hw-focus-room`, else
 `--hw-focus-width` plus `--hw-focus-offset`), which the shell sets as `<main>`'s padding around the
-story so its scrolling edge never cuts off a focused control's ring. A story's file name, on its tile, in the rail and in the bar, and each camelCase state read in
+story so its scrolling edge never cuts off a focused control's ring; a story's own padding on `<main>`
+wins. A state alone keeps the same room where it fills the window, not inside a tile's frame. A story's file name, on its tile, in the rail and in the bar, and each camelCase state read in
 sentence case (`GridSlide` as "Grid slide"; the search still finds `GridSlide`), `PrimaryOnNight` as "Primary on night", and keeps whole an acronym, a plural acronym
 (`TwoPDFs` as "Two PDFs") and a few names with inner capitals (GitHub, GitLab, LinkedIn, YouTube,
 JavaScript, TypeScript, OpenAI), which reads better than the export name or Title Case. A name with underscores marks its words and keeps each in its

@@ -115,15 +115,17 @@ for (const [step, reason] of Object.entries(skip)) {
 const env = { ...process.env, PATH: `${join(root, "node_modules/.bin")}:${process.env.PATH}` };
 type Result = { name: string; code: number; ms: number };
 
-// Above one waiting process per core, the steps run one after another: started side by side on a
+// Above one waiting process per core, the tests, the build and the repository's own steps run one
+// after another, once the quick shared checks have run side by side: started all at once on a
 // loaded machine, they starved each other past every fixed limit inside them, and a correct tree
 // went red.
 const { load, cores } = machineLoad();
 const serial = load > cores;
 if (serial)
   console.error(
-    `[scaffolding] load ${Math.round(load)} on ${cores} cores: steps run one after another`,
+    `[scaffolding] load ${Math.round(load)} on ${cores} cores: tests, build and the repository's steps run one after another`,
   );
+const quick = new Set(Object.keys(shared).filter((name) => name !== "test" && name !== "catalog"));
 
 const started = performance.now();
 const results: Result[] = [];
@@ -174,16 +176,19 @@ async function group(
   steps: [string, string][],
   after: Record<string, string> = {},
 ): Promise<boolean> {
-  // One at a time, a step writes straight to the terminal.
-  const buffered = steps.length > 1 && !serial;
   const runs = new Map<string, Promise<Result>>();
-  for (const [n, c] of steps) {
-    if (serial) {
-      runs.set(n, Promise.resolve(await run(n, c, buffered)));
-      continue;
-    }
+  const start = (n: string, c: string, buffered: boolean) => {
     const first = runs.get(after[n] ?? "");
     runs.set(n, first ? first.then(() => run(n, c, buffered)) : run(n, c, buffered));
+  };
+  const alone = serial ? steps.filter(([n]) => !quick.has(n)) : [];
+  const beside = steps.filter((step) => !alone.includes(step));
+  for (const [n, c] of beside) start(n, c, steps.length > 1);
+  if (alone.length) await Promise.all(runs.values());
+  // One at a time, a step writes straight to the terminal.
+  for (const [n, c] of alone) {
+    start(n, c, false);
+    await runs.get(n);
   }
   return (await Promise.all(runs.values())).every((r) => r.code === 0);
 }
