@@ -32,7 +32,15 @@ import {
 } from "node:fs";
 import { extname, join, resolve } from "node:path";
 import { inflateRawSync } from "node:zlib";
-import { applyAllow, finish, git, readPackage, repoRoot, type Finding } from "../lib/repo.ts";
+import {
+  applyAllow,
+  finish,
+  git,
+  reader,
+  readPackage,
+  repoRoot,
+  type Finding,
+} from "../lib/repo.ts";
 
 const TERMS_REPO = "hackersandwizards/confidential-terms";
 const HOUR = 3_600_000;
@@ -106,17 +114,11 @@ if (argv[0] === "build") {
 if (argv[0] === "purged") {
   // Adds to the repository's list under its own salt. `> .confidential-purged.json` empties the
   // file before this runs, so then the index's copy counts.
-  const file = ".confidential-purged.json";
-  const top = spawnSync("git", ["rev-parse", "--show-toplevel"], {
-    encoding: "utf8",
-  }).stdout.trim();
+  const top = repoRoot();
   let old: { salt: string; hashes: string[] } | undefined;
-  for (const read of [
-    () => readFileSync(join(top, file), "utf8"),
-    () => git(["show", `:${file}`], top || ".").toString(),
-  ])
+  for (const read of [reader(top, false), reader(top, true)])
     try {
-      old = JSON.parse(read());
+      old = JSON.parse(read(".confidential-purged.json").toString());
       break;
     } catch {}
   const salt = old?.salt ?? randomBytes(16).toString("hex");
@@ -297,6 +299,9 @@ if (argv[0] === "fetch") {
 
 const message = arg("--message-file");
 const commit = arg("--commit");
+// Only the hooks of an outside contributor's commit go without a list; an audit never does.
+const optional =
+  argv.includes("--list-optional") && (argv.includes("--staged") || Boolean(message));
 const tree = arg("--tree");
 const index = argv.includes("--index");
 // A deploy's audit needs no access; a commit, its message or a push is scanned wherever it is made.
@@ -316,8 +321,7 @@ else {
   list = loaded.list;
   // For a public repository's outside contributors, who cannot fetch the list: no list at all
   // passes, a stale or broken one still refuses.
-  if (loaded.absent && argv.includes("--list-optional"))
-    warn(`${loaded.problem}; --list-optional: terms not scanned`);
+  if (loaded.absent && optional) warn(`${loaded.problem}; --list-optional: terms not scanned`);
   else if (loaded.problem)
     listProblem.push({
       check: "confidential",
@@ -364,31 +368,47 @@ function scanText(where: string, text: string) {
 }
 
 const IMAGE = /\.(?:png|jpe?g|webp|gif|heic|heif|avif|tiff?|bmp|ico|icns)$/i;
-// Glyph outlines: no text a scan could read.
-const FONT = /\.(?:woff2?|ttf|otf|eot|odttf)$/i;
+// Glyph outlines, no text a scan could read, known by their own signature: WOFF, WOFF2, OpenType,
+// TrueType and a collection at the start, EOT's at byte 34. An Office file's embedded font is
+// obfuscated, so there the name alone tells.
+const FONT = ["wOFF", "wOF2", "OTTO", "\0\x01\0\0", "true", "ttcf"];
+const font = (name: string, data: Buffer, depth: number) =>
+  FONT.includes(data.subarray(0, 4).toString("latin1")) ||
+  data.subarray(34, 36).toString("latin1") === "LP" ||
+  (depth > 0 && /\.odttf$/i.test(name));
 const XML = /\.(?:xml|rels|x?html?|svg)$/i;
 // Paragraphs, breaks, cells and list items of Office, OpenDocument and HTML markup.
 const BLOCK = /<\/?(?:\w+:)?(?:p|h\d?|br|tab|tc|td|th|tr|si|c|li|div|line-break)\b[^>]*>/g;
 const OS_NAV = ["Dashboard", "Deals", "Deliverables", "Assignments", "Invoices"];
 
+const OCR_SOURCE = join(import.meta.dir, "../lib/ocr.swift");
+
 function ocrBinary(): string | undefined {
-  const source = join(import.meta.dir, "../lib/ocr.swift");
-  const digest = createHash("sha256").update(readFileSync(source)).digest("hex").slice(0, 12);
+  const digest = createHash("sha256").update(readFileSync(OCR_SOURCE)).digest("hex").slice(0, 12);
   const bin = join(CACHE_DIR, `ocr-${digest}`);
   if (existsSync(bin)) return bin;
   if (process.platform !== "darwin") return undefined;
-  const built = spawnSync("swiftc", ["-O", source, "-o", bin], { stdio: "ignore" });
+  const built = spawnSync("swiftc", ["-O", OCR_SOURCE, "-o", bin], { stdio: "ignore" });
   return built.status === 0 ? bin : undefined;
 }
 
 const ENTITY: Record<string, string> = { amp: "&", lt: "<", gt: ">", quot: '"', apos: "'" };
+const fromCode = (code: number, m: string) => (code <= 0x10ffff ? String.fromCodePoint(code) : m);
 const decode = (s: string) =>
   s.replace(/&(?:#(\d+)|#x([\da-f]+)|(\w+));/gi, (m, d, x, name) =>
-    d || x ? String.fromCodePoint(parseInt(d ?? x, d ? 10 : 16)) : (ENTITY[name] ?? m),
+    d || x ? fromCode(parseInt(d ?? x, d ? 10 : 16), m) : (ENTITY[name] ?? m),
   );
 
 /** The entries of a zip archive (Office, OpenDocument, iWork, .zip), or why it cannot be read. */
 function unzip(data: Buffer): { name: string; data: Buffer }[] | string {
+  try {
+    return entriesOf(data);
+  } catch (e) {
+    return `damaged zip archive (${(e as Error).message})`;
+  }
+}
+
+function entriesOf(data: Buffer): { name: string; data: Buffer }[] | string {
   const end = data.lastIndexOf(Buffer.from("PK\x05\x06", "latin1"));
   if (end < 0) return "no zip directory";
   const entries: { name: string; data: Buffer }[] = [];
@@ -445,9 +465,20 @@ function scanBinaries(files: { where: string; data: Buffer }[]) {
         return report(where, entry, `PDF not read: install poppler for pdftotext`);
       const pages = pdf.stdout.toString().split("\f").slice(0, -1);
       add(where, pages.join("\n"));
-      // A page without a word is a scan or a picture of text: OCR reads its rendering.
+      // "page num type width ..." under two header lines, one row per image.
+      const listed = spawnSync("pdfimages", ["-list", file]);
+      if (listed.status !== 0)
+        return report(where, entry, `PDF not read: install poppler for pdfimages`);
+      const pictured = new Set(
+        listed.stdout
+          .toString()
+          .split("\n")
+          .slice(2)
+          .map((row) => Number(row.trim().split(/\s+/)[0])),
+      );
+      // A page without a word is a scan, and an image may show text: OCR reads the page's rendering.
       pages.forEach((page, i) => {
-        if (/[\p{L}\p{N}]/u.test(page)) return;
+        if (/[\p{L}\p{N}]/u.test(page) && !pictured.has(i + 1)) return;
         const out = `${file}-${i + 1}`;
         const r = spawnSync("pdftoppm", [
           "-r",
@@ -465,14 +496,14 @@ function scanBinaries(files: { where: string; data: Buffer }[]) {
           report(
             where,
             entry,
-            `PDF page ${i + 1} has no text and was not rendered: install poppler for pdftoppm`,
+            `PDF page ${i + 1} holds a scan or an image and was not rendered: install poppler for pdftoppm`,
           );
         else
           images.push({
             file: `${out}.png`,
             where,
             entry,
-            unread: `PDF page ${i + 1} has no text and was not read: no OCR here (macOS only)`,
+            unread: `PDF page ${i + 1} holds a scan or an image and was not read: no OCR here (macOS only)`,
           });
       });
     } else if (IMAGE.test(name))
@@ -499,14 +530,14 @@ function scanBinaries(files: { where: string; data: Buffer }[]) {
             )
           : text,
       );
-    } else if (!FONT.test(name))
+    } else if (!font(name, data, depth))
       report(where, entry, `binary file not read: name it with a reason in scaffolding.allow`);
   };
   // Each file's text is kept by its content and this reader's code, so a gate reads a file again
   // only once either changes.
   const reader = createHash("sha256")
     .update(readFileSync(import.meta.path))
-    .update(readFileSync(join(import.meta.dir, "../lib/ocr.swift")));
+    .update(readFileSync(OCR_SOURCE));
   const kept = files.map(({ data }) =>
     join(CACHE_DIR, "read", reader.copy().update(data).digest("hex").slice(0, 32)),
   );
@@ -522,9 +553,10 @@ function scanBinaries(files: { where: string; data: Buffer }[]) {
       { maxBuffer: Infinity },
     );
     if (out.status === 0)
-      for (const block of `\n${out.stdout}`.split("\n== ").slice(1)) {
+      // A recognised line may itself start "== ": only a scratch path opens a block.
+      for (const block of `\n${out.stdout}`.split(`\n== ${scratch}/`).slice(1)) {
         const [file, ...lines] = block.split("\n");
-        blocks.set(file, lines.join("\n"));
+        blocks.set(join(scratch, file), lines.join("\n"));
       }
   }
   rmSync(scratch, { recursive: true, force: true });
@@ -532,10 +564,13 @@ function scanBinaries(files: { where: string; data: Buffer }[]) {
     if (blocks.has(file)) add(where, blocks.get(file)!);
     else report(where, entry, unread);
   // Only a file read whole is kept: one reported as not read is tried again.
-  const unread = new Set(findings.map((f) => f.path));
+  const refused = new Set(findings.map((f) => f.path));
   mkdirSync(join(CACHE_DIR, "read"), { recursive: true });
   files.forEach(({ where }, i) => {
-    if (!unread.has(where) && !existsSync(kept[i])) writeFileSync(kept[i], texts.get(where) ?? "");
+    if (refused.has(where) || existsSync(kept[i])) return;
+    // Renamed into place, so a killed run leaves no part of a text that later reads as whole.
+    writeFileSync(`${kept[i]}.${process.pid}`, texts.get(where) ?? "");
+    renameSync(`${kept[i]}.${process.pid}`, kept[i]);
   });
   for (const [where, text] of texts) {
     const nav = OS_NAV.filter((w) => new RegExp(`^${w}$`, "m").test(text));
@@ -565,7 +600,21 @@ function addedLines(diff: string, paths: string[]) {
 let full = false;
 const isBinary = (p: string) => IMAGE.test(p) || /\.pdf$/i.test(p);
 const LFS = "version https://git-lfs";
-const blob = (spec: string) => git(["show", spec], root);
+/** The blobs `names` (a SHA, `:<path>`, `<rev>:<path>`) name, by one cat-file: a `git show` per
+ * file cost 6.6 ms each. An error names the file by its path in `paths`. */
+function objects(names: string[], paths: string[]): Buffer[] {
+  if (!names.length) return [];
+  const batch = git(["cat-file", "--batch"], root, names.join("\n") + "\n");
+  let at = 0;
+  return paths.map((path) => {
+    const header = batch.indexOf(10, at);
+    const [, type, length] = batch.subarray(at, header).toString().split(" ");
+    if (type !== "blob") throw new Error(`git cat-file: ${path} not readable (${type})`);
+    const data = batch.subarray(header + 1, header + 1 + Number(length));
+    at = header + 2 + Number(length);
+    return data;
+  });
+}
 const binaries: { where: string; data: Buffer }[] = [];
 const take = (where: string, data: Buffer) => {
   if (data.subarray(0, LFS.length).toString() === LFS) {
@@ -582,22 +631,32 @@ else if (argv.includes("--staged") || commit) {
   const range = commit
     ? ["show", "--format=", "--no-renames", commit]
     : ["diff", "--cached", "--no-renames"];
-  const options = ["--no-color", "--no-ext-diff", "--diff-filter=AM"];
+  // No user setting may change what the scan sees: a textconv driver's text in place of a binary,
+  // or a submodule's log, which has no "diff --git" header and shifts every later file's lines.
+  const options = [
+    "--no-color",
+    "--no-ext-diff",
+    "--no-textconv",
+    "--ignore-submodules",
+    "--diff-filter=AM",
+  ];
   // "<added>\t<deleted>\t<path>", "-" for a file git diffs as binary, in the patch's order.
   const files = git([...range, ...options, "--numstat", "-z"], root)
     .toString()
     .split("\0")
     .filter(Boolean)
     .map((line) => ({ binary: line.startsWith("-\t-\t"), path: line.replace(/^\S+\t\S+\t/, "") }));
-  const diff = git([...range, ...options, "-U0"], root).toString();
-  scanText("file names", files.map((f) => f.path).join("\n"));
-  const texts = addedLines(
-    diff,
-    files.map((f) => f.path),
+  const paths = files.map((f) => f.path);
+  scanText("file names", paths.join("\n"));
+  const texts = addedLines(git([...range, ...options, "-U0"], root).toString(), paths);
+  const binary = files.filter((f) => f.binary || isBinary(f.path)).map((f) => f.path);
+  const data = objects(
+    binary.map((path) => `${commit ?? ""}:${path}`),
+    binary,
   );
-  for (const { binary, path } of files)
-    if (binary || isBinary(path)) take(path, blob(commit ? `${commit}:${path}` : `:${path}`));
-    else scanText(path, texts.get(path)?.join("\n") ?? "");
+  binary.forEach((path, i) => take(path, data[i]));
+  for (const path of paths)
+    if (!binary.includes(path)) scanText(path, texts.get(path)?.join("\n") ?? "");
   if (commit)
     scanText("commit message", git(["log", "-1", "--format=%B", commit], root).toString());
 } else if (tree || index) {
@@ -623,19 +682,14 @@ else if (argv.includes("--staged") || commit) {
   });
   scanText("file names", entries.map((e) => e.path).join("\n"));
   const blobs = entries.filter((e) => e.type === "blob");
-  // One cat-file for every blob: a `git show` per file cost 6.6 ms each.
-  const batch = git(["cat-file", "--batch"], root, blobs.map((e) => e.sha).join("\n") + "\n");
-  let at = 0;
-  for (const { path } of blobs) {
-    const header = batch.indexOf(10, at);
-    const [, type, length] = batch.subarray(at, header).toString().split(" ");
-    if (type !== "blob") throw new Error(`git cat-file: ${path} not readable (${type})`);
-    const size = Number(length);
-    const data = batch.subarray(header + 1, header + 1 + size);
-    at = header + 2 + size;
-    if (isBinary(path) || data.includes(0)) take(path, data);
-    else scanText(path, data.toString("utf8"));
-  }
+  const data = objects(
+    blobs.map((e) => e.sha),
+    blobs.map((e) => e.path),
+  );
+  blobs.forEach(({ path }, i) => {
+    if (isBinary(path) || data[i].includes(0)) take(path, data[i]);
+    else scanText(path, data[i].toString("utf8"));
+  });
 } else {
   console.error(
     "usage: check-confidential --staged | --message-file <file> [--list-optional] | --commit <rev> | --index | --tree <rev> | prepush | fetch | build <terms|-> [--public <file>] | purged <sha>...",

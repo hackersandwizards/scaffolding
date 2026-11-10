@@ -482,19 +482,19 @@ checkout fetches on its own.
 - A list built more than 3 days ago prints a warning: Company OS has stopped rebuilding it.
 - Added lines, file names and the whole commit message count, comment lines included.
 - Binary files are read: images by OCR, every frame and page, and a transparent one on a white
-  and a black ground; PDFs with `pdftotext`, and a page without text by OCR of its rendering
-  (`pdftoppm`); Office, OpenDocument and other zip files by their entries. Fonts pass unread. Any
-  other binary file, or one that cannot be read, refuses the commit until an allow entry names
-  its path. OCR uses the macOS Vision framework, so a Linux machine commits no image to a public
-  repository. A file's text is kept by its content in `node_modules/.cache/scaffolding/read/`,
+  and a black ground; PDFs with `pdftotext`, and a page without text or with an image by OCR of
+  its rendering (`pdftoppm`, `pdfimages`); Office, OpenDocument and other zip files by their
+  entries. A font, known by its signature rather than its name, passes unread. Any other binary
+  file, or one that cannot be read, refuses the commit until an allow entry names its path. OCR
+  uses the macOS Vision framework, so a Linux machine commits no image to a public repository. A file's text is kept by its content in `node_modules/.cache/scaffolding/read/`,
   so a gate reads it again only once the file or the reader changes.
 - With `CI=true` the `--index` and `--tree` audits skip the term and binary reading, so a deploy
   needs no access. A commit, its message and a push are scanned wherever they are made.
 - `check-confidential fetch` fetches now, for a cloud setup script. `--list <file>` or
   `SCAFFOLDING_CONFIDENTIAL_TERMS` reads a list from a file instead.
-- `--list-optional` lets a public repository's own hook scan every commit without blocking an
-  outside contributor: where there is no list and none can be fetched, the scan passes with a
-  warning. A list that is there but invalid or built more than 7 days ago still refuses.
+- `--list-optional`, with `--staged` or `--message-file`, lets a public repository's own hooks scan
+  every commit without blocking an outside contributor: where there is no list and none can be
+  fetched, the scan passes with a warning. A list that is there but invalid or built more than 7 days ago still refuses.
 - `check-confidential build <terms|-> [--public <file>]` turns one term per line into a list stamped
   with its build time. It leaves out every term the public text in `<file>` already carries, and
   refuses to build without `/usr/share/dict/words`. A term of more than six words counts by its

@@ -11,6 +11,7 @@ import {
   readPackage,
   reader,
   repoRoot,
+  TEST,
   type Finding,
 } from "../lib/repo.ts";
 
@@ -30,7 +31,6 @@ const SCANNED =
   /\.(?:[cm]?[jt]sx?|astro|vue|svelte|css|scss|pcss|html|sh|py|json|jsonc|toml|ya?ml)$|^\.githooks\//;
 const IMPORTING = /\.(?:[cm]?[jt]sx?|astro|vue|svelte|css|scss|pcss|html)$/;
 const STYLES = /\.(?:css|scss|pcss)$/;
-const TEST = /(?:^|\/)(?:__tests__|tests?|e2e)\/|\.(?:test|spec)\.[cm]?[jt]sx?$/;
 const SKIPPED = /(?:^|\/)(?:bun\.lock|package-lock\.json)$/;
 // A climb, bare or after "./", a variable or a command: one naming the root ($ROOT, ${root},
 // $(git rev-parse --show-toplevel)) climbs from the root, any other from the file's folder.
@@ -116,6 +116,7 @@ const withoutAllow = (json: string) => {
   if (pkg.scaffolding) pkg.scaffolding = { ...pkg.scaffolding, allow: undefined };
   return JSON.stringify(pkg, null, 2);
 };
+const leaves = "path leaves the repository; take it from the package its owner publishes";
 for (const path of listFiles(root, staged)) {
   if (!SCANNED.test(path) || SKIPPED.test(path)) continue;
   // An allow entry names the path it excuses; no rule reads it.
@@ -123,8 +124,8 @@ for (const path of listFiles(root, staged)) {
   const text = path === "package.json" ? withoutAllow(raw) : raw;
   const base = path === "package.json" ? root : resolve(root, dirname(path));
   // A test holds path-like strings as data, so there only import specifiers count.
-  const leaves = "path leaves the repository; take it from the package its owner publishes";
-  const tokens = TEST.test(path)
+  const test = TEST.test(path);
+  const tokens = test
     ? [...text.matchAll(SPECIFIER)]
         .map((m) => ({ token: m[1], from: base, climb: m[1] }))
         .filter((t) => t.token.startsWith("../"))
@@ -137,7 +138,7 @@ for (const path of listFiles(root, staged)) {
     const target = resolve(from, climb.replace(/[?#].*/, ""));
     if (target !== root && !target.startsWith(`${root}/`)) flag(path, token, leaves);
   }
-  if (!TEST.test(path))
+  if (!test)
     for (const [token, rest] of text.matchAll(HOME)) {
       const target = resolve(home + rest);
       const other = checkoutHolding(target);
@@ -150,10 +151,11 @@ for (const path of listFiles(root, staged)) {
   if (text.includes("@hackersandwizards"))
     for (const line of (path.endsWith(".py") ? text.replace(DOCSTRING, "$1") : text)
       .replace(commentSyntax(path), (comment, kept = "", at: number, all: string) => {
-        // A line mark after an unclosed quote ("x//y", "issue #12") sits in a string: code follows.
-        const before = all.slice(all.lastIndexOf("\n", at) + 1, at) + kept;
-        const quoted = ['"', "'", "`"].some((q) => before.split(q).length % 2 === 0);
-        return quoted && !comment.slice(kept.length).startsWith("/*") ? comment : kept;
+        // A line mark after an unclosed quote (`x//y`) sits in a string: code follows.
+        let open = "";
+        for (const c of all.slice(all.lastIndexOf("\n", at) + 1, at) + kept)
+          if (open ? c === open : "\"'`".includes(c)) open = open ? "" : c;
+        return open && !comment.startsWith("/*", kept.length) ? comment : kept;
       })
       .split("\n"))
       for (const m of line.matchAll(INSTALLED)) {
@@ -170,7 +172,7 @@ for (const path of listFiles(root, staged)) {
           );
       }
   if (!IMPORTING.test(path)) continue;
-  if (!TEST.test(path))
+  if (!test)
     for (const [, disk, name, raw] of text.matchAll(CSS)) {
       const spec = `${name}/${raw}`;
       // Outside a stylesheet a disk path is the installed-path rule's, which leaves a stylesheet's

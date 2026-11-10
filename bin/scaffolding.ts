@@ -91,7 +91,7 @@ const shared: Record<string, string> = {
 };
 if (!config.test && !isReason(config.skip?.test))
   fail("scaffolding.test is missing: name the tests, or skip.test with a reason");
-const declared = { ...(pkg.dependencies as object), ...(pkg.devDependencies as object) };
+const declared = { ...pkg.dependencies, ...pkg.devDependencies };
 if (!("@hackersandwizards/admin" in declared) && !isReason(config.skip?.admin))
   fail("@hackersandwizards/admin is not pinned: pin it, or skip.admin with a reason");
 // The build is the repository's own, so its step names the folders: brand-retired over what it writes.

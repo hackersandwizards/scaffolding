@@ -69,6 +69,9 @@ export const commentSyntax = (path: string) => {
       );
 };
 
+/** The files check-coupling and check-unique-names count as tests, as config/eslint.js globs them. */
+export const TEST = /(?:^|\/)(?:__tests__|tests?|e2e)\/|\.(?:test|spec)\.[cm]?[jt]sx?$/;
+
 /** Exits 2 unless this bun started with `--no-env-file`, and hands the flag to every bun a step
  * starts (README: Environment). */
 export function withoutEnvFile(name: string) {
@@ -125,11 +128,11 @@ export const repoRoot = (cwd = process.cwd()) =>
 /**
  * The working tree's files, tracked and untracked but not ignored, so a file the next commit adds
  * is judged before the commit hook sees it; with `staged`, the added, copied, modified and renamed
- * paths in the index.
+ * paths in the index, a submodule's commit left out.
  */
 export function listFiles(root: string, staged: boolean): string[] {
   const args = staged
-    ? ["diff", "--cached", "--name-only", "--diff-filter=ACMR", "-z"]
+    ? ["diff", "--cached", "--name-only", "--diff-filter=ACMR", "--ignore-submodules", "-z"]
     : ["ls-files", "-z", "--cached", "--others", "--exclude-standard", "--deduplicate"];
   const files = git(args, root).toString().split("\0").filter(Boolean);
   return staged ? files : files.filter((path) => existsSync(`${root}/${path}`));

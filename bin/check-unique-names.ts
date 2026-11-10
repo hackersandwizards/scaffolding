@@ -5,7 +5,7 @@ import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import ts from "@typescript/typescript6";
-import { applyAllow, listFiles, readPackage, repoRoot, type Finding } from "../lib/repo.ts";
+import { applyAllow, listFiles, readPackage, repoRoot, TEST, type Finding } from "../lib/repo.ts";
 
 function scriptSource(file: string): string {
   const text = readFileSync(file, "utf8");
@@ -24,8 +24,6 @@ function scriptSource(file: string): string {
   return out + text.slice(at).replace(/[^\n]/g, " ");
 }
 
-const testFile = /(^|\/)(__tests__|tests?|e2e)\/|\.(test|spec)\.[cm]?[jt]sx?$/;
-
 const sites = new Map<string, string[]>();
 const root = repoRoot();
 const pkg = readPackage(root);
@@ -35,7 +33,7 @@ const files = listFiles(root, false).filter(
     /\.(?:[cm]?[jt]s|tsx|astro)$/.test(file) &&
     join(root, file) !== fileURLToPath(import.meta.url) &&
     !file.endsWith(".d.ts") &&
-    !testFile.test(file),
+    !TEST.test(file),
 );
 if (!files.length) throw new Error("no source files matched, so nothing was checked");
 for (const file of files) {

@@ -406,7 +406,7 @@ describe("check-coupling", () => {
         "src/a.ts":
           'const a = `${root}/../../other/x.css`;\nconst b = "./../../../other/x.css";\nconst c = "x//y", d = "node_modules/@hackersandwizards/brand/x.ts";\n',
         "src/b.ts":
-          'const k = `${process.env.HOME}/dev/org/other/secrets.zsh`;\nconst own = "~/dev/org/this/src/a.ts";\nconst c = "~/.config/x"; // node_modules/@hackersandwizards/brand/note\n',
+          'const k = `${process.env.HOME}/dev/org/other/secrets.zsh`;\nconst own = "~/dev/org/this/src/a.ts";\nconst c = "~/.config/x"; // node_modules/@hackersandwizards/brand/note\nconst e = "it\'s"; // node_modules/@hackersandwizards/brand/note\n',
       }),
       dir,
     );
@@ -475,8 +475,8 @@ function remotes(tags: string[]) {
   return `${base}/`;
 }
 process.env.SCAFFOLDING_GIT_BASE = remotes(["v0.9.0", "v0.10.0", "v0.2.0", "latest"]);
-const ownVersion = JSON.parse(readFileSync(join(import.meta.dir, "..", "package.json"), "utf8"))
-  .version as string;
+const ownPackage = JSON.parse(readFileSync(join(import.meta.dir, "..", "package.json"), "utf8"));
+const ownVersion = ownPackage.version as string;
 // Run from its own checkout, the package pins its HEAD.
 const ownHead = sh(join(import.meta.dir, ".."), ["rev-parse", "HEAD"])
   .stdout.toString()
@@ -545,7 +545,7 @@ test("every bin target and every file in bin/ is stored executable", () => {
   // Control: the same read of a file stored plain has to answer 100644.
   expect(stored.get("README.md")).toBe("100644");
   stored.delete("README.md");
-  const { bin } = JSON.parse(readFileSync(join(root, "package.json"), "utf8"));
+  const { bin } = ownPackage;
   expect(Object.values<string>(bin).filter((path) => !stored.has(path))).toEqual([]);
   // No `env -S`: BusyBox `env`, as on Alpine, refuses it.
   for (const path of Object.values<string>(bin))
@@ -558,12 +558,11 @@ test("every bin target and every file in bin/ is stored executable", () => {
 
 test("a tag install, GitHub's archive of the tag, holds what files names, template's dotfiles too", () => {
   const root = join(import.meta.dir, "..");
-  const { files } = JSON.parse(readFileSync(join(root, "package.json"), "utf8"));
-  const shipped = ["package.json", "README.md", "LICENSE", ...files];
-  const tracked = sh(root, ["ls-files"])
+  const shipped = ["package.json", "README.md", "LICENSE", ...ownPackage.files];
+  const committed = sh(root, ["ls-tree", "-r", "--name-only", "HEAD", "--", ...shipped])
     .stdout.toString()
     .split("\n")
-    .filter((path) => shipped.some((top) => path === top || path.startsWith(`${top}/`)));
+    .filter(Boolean);
   const archived = spawnSync("sh", ["-c", "git archive --worktree-attributes HEAD | tar -t"], {
     cwd: root,
     encoding: "utf8",
@@ -571,9 +570,7 @@ test("a tag install, GitHub's archive of the tag, holds what files names, templa
     .stdout.split("\n")
     .filter((path) => path && !path.endsWith("/"));
   expect(archived).toContain("template/.npmrc");
-  expect(archived.sort()).toEqual(
-    tracked.filter((path) => sh(root, ["cat-file", "-e", `HEAD:${path}`]).status === 0).sort(),
-  );
+  expect(archived.sort()).toEqual(committed.sort());
 });
 
 describe("scaffold and check-structure", () => {
@@ -652,9 +649,7 @@ describe("scaffold and check-structure", () => {
       'import base from "@hackersandwizards/scaffolding/eslint/astro";',
     );
     expect(pkg.devDependencies["eslint-plugin-astro"]).toBe(
-      JSON.parse(readFileSync(join(import.meta.dir, "../package.json"), "utf8")).devDependencies[
-        "eslint-plugin-astro"
-      ],
+      ownPackage.devDependencies["eslint-plugin-astro"],
     );
     expect(readFileSync(join(dir, ".github/workflows/pages.yml"), "utf8")).toContain(
       `uses: hackersandwizards/scaffolding/.github/workflows/pages.yml@${ownHead} # v${ownVersion}\n`,
@@ -1275,8 +1270,46 @@ describe("check-confidential", () => {
     expect(readdirSync(join(dir, "node_modules/.cache/scaffolding/read"))).toHaveLength(2);
   });
 
+  test("no setting or name changes what is read, and a damaged archive is refused", () => {
+    const dir = repo({ "package.json": "{}" });
+    mkdirSync(join(dir, "d/word"), { recursive: true });
+    write(dir, {
+      "d/word/document.xml": "<w:document><w:p>Acme Widgets &#99999999;</w:p></w:document>",
+      ".gitattributes": "*.docx diff=shown\n",
+      "b.md": "for Jane Q Doe\n",
+    });
+    expect(spawnSync("zip", ["-qr", "../offer.docx", "word"], { cwd: join(dir, "d") }).status).toBe(
+      0,
+    );
+    rmSync(join(dir, "d"), { recursive: true });
+    // A picture under a font's name, and an archive whose directory points past its end.
+    writeFileSync(join(dir, "logo.woff"), Buffer.from("\x89PNG\r\n\x1a\n\0\0\0\rIHDR", "latin1"));
+    writeFileSync(
+      join(dir, "broken.zip"),
+      Buffer.concat([
+        Buffer.from("PK\x03\x04\0\0PK\x05\x06\0\0\0\0\x01\0\x01\0", "latin1"),
+        Buffer.from([0, 0, 0, 0, 0xff, 0xff, 0, 0, 0, 0]),
+      ]),
+    );
+    sh(dir, ["config", "diff.shown.textconv", "echo"]);
+    sh(dir, ["config", "diff.submodule", "log"]);
+    const sub = sh(dir, ["rev-parse", "HEAD"]).stdout.toString().trim();
+    sh(dir, ["update-index", "--add", "--cacheinfo", `160000,${sub},a-sub`]);
+    sh(dir, ["add", ".gitattributes", "offer.docx", "b.md", "logo.woff", "broken.zip"]);
+    expect(
+      lines(run(dir, "check-confidential", ["--staged"], env).out, "check-confidential")
+        .map((l) => l.replace(/ \(.*/, ""))
+        .sort(),
+    ).toEqual([
+      "[check-confidential] b.md: confidential term from the company records",
+      "[check-confidential] broken.zip: archive not read: damaged zip archive",
+      "[check-confidential] logo.woff: binary file not read: name it with a reason in scaffolding.allow",
+      "[check-confidential] offer.docx: confidential term from the company records",
+    ]);
+  });
+
   test.if(process.platform === "darwin")(
-    "OCR reads a transparent image, every page of a TIFF and a PDF page without text",
+    "OCR reads a transparent image, every page of a TIFF and a PDF page without text or with an image",
     () => {
       const dir = repo({ "package.json": "{}" });
       const make = (args: string[]) =>
@@ -1296,6 +1329,54 @@ describe("check-confidential", () => {
         rmSync(join(dir, `${name}.txt`));
         rmSync(join(dir, `${name}.pdf`));
       };
+      // A PDF page with a caption over a picture of text: the picture is a JPEG drawn on the page.
+      writeFileSync(join(dir, "figure.txt"), "We met Jane Q Doe here\n");
+      const printed = spawnSync(
+        "cupsfilter",
+        ["-i", "text/plain", "-m", "application/pdf", "figure.txt"],
+        {
+          cwd: dir,
+        },
+      );
+      writeFileSync(join(dir, "figure-text.pdf"), printed.stdout);
+      make(["pdftoppm", "-r", "100", "-jpeg", "-singlefile", "figure-text.pdf", "figure"]);
+      const jpeg = readFileSync(join(dir, "figure.jpg"));
+      const [width, height] = ["pixelWidth", "pixelHeight"].map((key) =>
+        Number(
+          new RegExp(`${key}: (\\d+)`).exec(
+            spawnSync("sips", ["-g", key, "figure.jpg"], { cwd: dir }).stdout.toString(),
+          )![1],
+        ),
+      );
+      const content = "q 612 0 0 792 0 0 cm /Im1 Do Q BT /F1 10 Tf 280 20 Td (Figure 1) Tj ET";
+      const objects = [
+        "<< /Type /Catalog /Pages 2 0 R >>",
+        "<< /Type /Pages /Kids [3 0 R] /Count 1 >>",
+        "<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Contents 4 0 R /Resources << /Font << /F1 5 0 R >> /XObject << /Im1 6 0 R >> >> >>",
+        `<< /Length ${content.length} >>\nstream\n${content}\nendstream`,
+        "<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>",
+        `<< /Type /XObject /Subtype /Image /Width ${width} /Height ${height} /ColorSpace /DeviceRGB /BitsPerComponent 8 /Filter /DCTDecode /Length ${jpeg.length} >>\nstream\n`,
+      ];
+      const parts: Buffer[] = [Buffer.from("%PDF-1.4\n")];
+      const offsets: number[] = [];
+      const size = () => parts.reduce((n, b) => n + b.length, 0);
+      objects.forEach((body, i) => {
+        offsets.push(size());
+        parts.push(Buffer.from(`${i + 1} 0 obj\n${body}`, "latin1"));
+        if (i === 5) parts.push(jpeg, Buffer.from("\nendstream"));
+        parts.push(Buffer.from("\nendobj\n"));
+      });
+      const xref = size();
+      parts.push(
+        Buffer.from(
+          `xref\n0 7\n0000000000 65535 f \n${offsets.map((o) => `${String(o).padStart(10, "0")} 00000 n \n`).join("")}trailer\n<< /Size 7 /Root 1 0 R >>\nstartxref\n${xref}\n%%EOF\n`,
+        ),
+      );
+      writeFileSync(join(dir, "figure.pdf"), Buffer.concat(parts));
+      for (const f of ["figure.txt", "figure-text.pdf", "figure.jpg"]) rmSync(join(dir, f));
+      expect(spawnSync("pdftotext", ["figure.pdf", "-"], { cwd: dir }).stdout.toString()).toContain(
+        "Figure 1",
+      );
       page("We met Acme Widgets here", "clear");
       page("nothing to see here", "blank");
       page("We met Jane Q Doe here", "jane");
@@ -1304,11 +1385,12 @@ describe("check-confidential", () => {
       make(["sips", "-s", "format", "tiff", "jane.png", "--out", "jane.tiff"]);
       make(["tiffutil", "-cat", "blank.tiff", "jane.tiff", "-out", "pages.tiff"]);
       for (const f of ["blank.png", "jane.png", "blank.tiff", "jane.tiff"]) rmSync(join(dir, f));
-      sh(dir, ["add", "clear.png", "scan.pdf", "pages.tiff"]);
+      sh(dir, ["add", "clear.png", "scan.pdf", "pages.tiff", "figure.pdf"]);
       expect(
         lines(run(dir, "check-confidential", ["--staged"], env).out, "check-confidential").sort(),
       ).toEqual([
         "[check-confidential] clear.png: confidential term from the company records (Acme Widgets)",
+        "[check-confidential] figure.pdf: confidential term from the company records (Jane Q Doe)",
         "[check-confidential] pages.tiff: confidential term from the company records (Jane Q Doe)",
         "[check-confidential] scan.pdf: confidential term from the company records (Jane Q Doe)",
       ]);
@@ -1748,6 +1830,8 @@ describe("check-confidential list source", () => {
       machine({ gh: "deny", cache: builtDaysAgo(10), cacheDays: 2 }).check({}, optional).code,
     ).toBe(1);
     expect(machine({ gh: "ok" }).check({}, optional).out).toContain("(Acme Widgets)");
+    // An audit never goes without the list.
+    expect(none.check({}, ["--index", "--list-optional"]).code).toBe(1);
   });
 
   test("CI skips the audit's term step without fetching, the path rule still holds", () => {
@@ -4172,6 +4256,7 @@ describe("check-history", () => {
         ".githooks/pre-commit": "# the flow (decision\n# merge-comparison)\nrun\n",
         "src/d.ts": "// the flow (decision\r\n// merge-comparison)\r\n",
         "src/e.html": "<!-- the flow (blind\n     panel) -->\n",
+        "src/f.ts": 'const s = "x//the flow (decision merge-comparison)";\n',
       }),
       "check-history",
     );
