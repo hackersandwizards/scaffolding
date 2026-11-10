@@ -198,7 +198,9 @@ hidden on every page. A state's page carries a bar instead: back to the home, th
 theme toggle, a link to the state alone, and the states: previous and next, with the left and right
 arrow keys too, the position ("10 of 38"), and between them a link per state, or above 12 states a
 menu grouped by a word three or more state names share (`BlockImage` under Block, `AccentTheme`
-under Theme). The bar, rather than a list beside the canvas, keeps the canvas at full width. A story's file name, on its tile, in the rail and in the bar, and each camelCase state read in
+under Theme). The bar, rather than a list beside the canvas, keeps the canvas at full width, less the room of brand's focus ring (`--hw-focus-room`, else
+`--hw-focus-width` plus `--hw-focus-offset`), which the shell sets as `<main>`'s padding around the
+story so its scrolling edge never cuts off a focused control's ring. A story's file name, on its tile, in the rail and in the bar, and each camelCase state read in
 sentence case (`GridSlide` as "Grid slide"; the search still finds `GridSlide`), `PrimaryOnNight` as "Primary on night", and keeps whole an acronym, a plural acronym
 (`TwoPDFs` as "Two PDFs") and a few names with inner capitals (GitHub, GitLab, LinkedIn, YouTube,
 JavaScript, TypeScript, OpenAI), which reads better than the export name or Title Case. A name with underscores marks its words and keeps each in its
