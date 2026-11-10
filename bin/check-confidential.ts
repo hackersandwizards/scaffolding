@@ -616,11 +616,33 @@ function objects(names: string[], paths: string[]): Buffer[] {
   });
 }
 const binaries: { where: string; data: Buffer }[] = [];
+const isLfsPointer = (data: Buffer) => data.subarray(0, LFS.length).toString() === LFS;
+const OID = /^oid sha256:([0-9a-f]{64})$/m;
+let lfsStores: string[] | undefined;
+/** The file a Git LFS pointer names, from the working tree where it matches the pointer's oid,
+ * else from the local LFS store; undefined where neither holds it. */
+function lfsContent(where: string, pointer: Buffer): Buffer | undefined {
+  const oid = OID.exec(pointer.toString())?.[1];
+  if (!oid) return undefined;
+  if (!lfsStores) {
+    const common = resolve(root, git(["rev-parse", "--git-common-dir"], root).toString().trim());
+    const storage = spawnSync("git", ["config", "--type=path", "lfs.storage"], { cwd: root })
+      .stdout.toString()
+      .trim();
+    lfsStores = [join(common, "lfs"), ...(storage ? [resolve(common, storage)] : [])];
+  }
+  const at = join(oid.slice(0, 2), oid.slice(2, 4), oid);
+  for (const file of [join(root, where), ...lfsStores.map((dir) => join(dir, "objects", at))]) {
+    if (!statSync(file, { throwIfNoEntry: false })?.isFile()) continue;
+    const data = readFileSync(file);
+    if (createHash("sha256").update(data).digest("hex") === oid) return data;
+  }
+}
 const take = (where: string, data: Buffer) => {
-  if (data.subarray(0, LFS.length).toString() === LFS) {
-    if (argv.includes("--staged") && existsSync(join(root, where)))
-      data = readFileSync(join(root, where));
-    else return console.error(`[check-confidential] ${where}: Git LFS pointer, not read`);
+  if (isLfsPointer(data)) {
+    const content = lfsContent(where, data);
+    if (!content) return console.error(`[check-confidential] ${where}: Git LFS pointer, not read`);
+    data = content;
   }
   binaries.push({ where, data });
 };
@@ -649,14 +671,20 @@ else if (argv.includes("--staged") || commit) {
   const paths = files.map((f) => f.path);
   scanText("file names", paths.join("\n"));
   const texts = addedLines(git([...range, ...options, "-U0"], root).toString(), paths);
-  const binary = files.filter((f) => f.binary || isBinary(f.path)).map((f) => f.path);
+  const binary = new Set(files.filter((f) => f.binary || isBinary(f.path)).map((f) => f.path));
+  // A Git LFS pointer is text to git, and its oid line changes with the file it names.
+  const read = paths.filter((p) => binary.has(p) || texts.get(p)?.some((l) => OID.test(l)));
   const data = objects(
-    binary.map((path) => `${commit ?? ""}:${path}`),
-    binary,
+    read.map((path) => `${commit ?? ""}:${path}`),
+    read,
   );
-  binary.forEach((path, i) => take(path, data[i]));
-  for (const path of paths)
-    if (!binary.includes(path)) scanText(path, texts.get(path)?.join("\n") ?? "");
+  const taken = new Set<string>();
+  read.forEach((path, i) => {
+    if (!binary.has(path) && !isLfsPointer(data[i])) return;
+    taken.add(path);
+    take(path, data[i]);
+  });
+  for (const path of paths) if (!taken.has(path)) scanText(path, texts.get(path)?.join("\n") ?? "");
   if (commit)
     scanText("commit message", git(["log", "-1", "--format=%B", commit], root).toString());
 } else if (tree || index) {
@@ -687,7 +715,7 @@ else if (argv.includes("--staged") || commit) {
     blobs.map((e) => e.path),
   );
   blobs.forEach(({ path }, i) => {
-    if (isBinary(path) || data[i].includes(0)) take(path, data[i]);
+    if (isBinary(path) || data[i].includes(0) || isLfsPointer(data[i])) take(path, data[i]);
     else scanText(path, data[i].toString("utf8"));
   });
 } else {

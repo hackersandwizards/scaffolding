@@ -1,5 +1,6 @@
 import { afterAll, beforeAll, describe, expect, test } from "bun:test";
 import { spawnSync } from "node:child_process";
+import { createHash } from "node:crypto";
 import {
   chmodSync,
   cpSync,
@@ -1268,6 +1269,53 @@ describe("check-confidential", () => {
       ).toEqual(expected);
     // Kept by content: the document and the font, never the file not read.
     expect(readdirSync(join(dir, "node_modules/.cache/scaffolding/read"))).toHaveLength(2);
+  });
+
+  test("a Git LFS file is read where its content is at hand, from the working tree or the store", () => {
+    const dir = repo({ "package.json": "{}" });
+    mkdirSync(join(dir, "d/word"), { recursive: true });
+    write(dir, { "d/word/document.xml": "<w:t>We met Acme Widgets</w:t>" });
+    expect(spawnSync("zip", ["-qr", "../offer.docx", "word"], { cwd: join(dir, "d") }).status).toBe(
+      0,
+    );
+    rmSync(join(dir, "d"), { recursive: true });
+    const content = readFileSync(join(dir, "offer.docx"));
+    const oid = createHash("sha256").update(content).digest("hex");
+    // The index holds the pointer git-lfs would stage, the working tree the file it names.
+    const pointer = `version https://git-lfs.github.com/spec/v1\noid sha256:${oid}\nsize ${content.length}\n`;
+    const blob = spawnSync("git", ["hash-object", "-w", "--stdin"], { cwd: dir, input: pointer })
+      .stdout.toString()
+      .trim();
+    sh(dir, ["update-index", "--add", "--cacheinfo", `100644,${blob},offer.docx`]);
+    const found = (mode: string) =>
+      lines(run(dir, "check-confidential", [mode], env).out, "check-confidential");
+    const term = "[check-confidential] offer.docx: confidential term from the company records";
+    for (const mode of ["--staged", "--index"])
+      expect(found(mode)).toEqual([`${term} (Acme Widgets)`]);
+    // A working tree that differs from the pointer is not what the index holds; the store is.
+    writeFileSync(join(dir, "offer.docx"), "changed since");
+    const missing = "[check-confidential] offer.docx: Git LFS pointer, not read";
+    for (const mode of ["--staged", "--index"]) expect(found(mode)).toEqual([missing]);
+    const stored = join(dir, ".git/lfs/objects", oid.slice(0, 2), oid.slice(2, 4));
+    mkdirSync(stored, { recursive: true });
+    writeFileSync(join(stored, oid), content);
+    for (const mode of ["--staged", "--index"])
+      expect(found(mode)).toEqual([`${term} (Acme Widgets)`]);
+    // A text file kept in Git LFS is scanned as text, not refused as an unread binary.
+    const notes = Buffer.from("We met Jane Q Doe.\n");
+    const noted = createHash("sha256").update(notes).digest("hex");
+    writeFileSync(join(dir, "notes.json"), notes);
+    const textBlob = spawnSync("git", ["hash-object", "-w", "--stdin"], {
+      cwd: dir,
+      input: `version https://git-lfs.github.com/spec/v1\noid sha256:${noted}\nsize ${notes.length}\n`,
+    })
+      .stdout.toString()
+      .trim();
+    sh(dir, ["update-index", "--add", "--cacheinfo", `100644,${textBlob},notes.json`]);
+    for (const mode of ["--staged", "--index"])
+      expect(found(mode)).toContain(
+        "[check-confidential] notes.json: confidential term from the company records (Jane Q Doe)",
+      );
   });
 
   test("no setting or name changes what is read, and a damaged archive is refused", () => {
