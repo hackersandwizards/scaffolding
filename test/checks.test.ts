@@ -1330,10 +1330,26 @@ describe("check-confidential", () => {
     expect(refused.stderr).toContain("purged from this repository's history");
     const clean = sh(dir, ["rev-parse", "HEAD~1"]).stdout.toString().trim();
     expect(push(clean).status).toBe(0);
-    // Already on origin, the commit still counts as new to a second remote.
+    // A stale tracking ref or a fetched pull request holding it hides nothing.
     sh(dir, ["update-ref", "refs/remotes/origin/main", purged]);
-    expect(push(purged).status).toBe(0);
+    sh(dir, ["update-ref", "refs/remotes/origin/pr/1", purged]);
+    expect(push(purged).status).toBe(1);
     expect(push(purged, "backup").status).toBe(1);
+  });
+
+  test("purged adds to the repository's list under its salt, a redirect's empty file included", () => {
+    const dir = repo({ "package.json": "{}" });
+    const purged = (shas: string[]) =>
+      JSON.parse(run(dir, "check-confidential", ["purged", ...shas]).out);
+    const first = purged(["a".repeat(40)]);
+    write(dir, { ".confidential-purged.json": JSON.stringify(first) });
+    const both = purged(["b".repeat(40), "a".repeat(40)]);
+    expect(both.salt).toBe(first.salt);
+    expect(both.hashes).toHaveLength(2);
+    expect(both.hashes).toContain(first.hashes[0]);
+    sh(dir, ["add", ".confidential-purged.json"]);
+    write(dir, { ".confidential-purged.json": "" });
+    expect(purged(["b".repeat(40)])).toEqual(both);
   });
 
   test("prepush hands the refs to Git LFS only where the push may carry LFS content", () => {
@@ -1481,8 +1497,8 @@ describe("check-confidential list source", () => {
       CI: "",
       SCAFFOLDING_CONFIDENTIAL_TERMS: "",
     };
-    const check = (extra: Record<string, string> = {}, mode = "--staged") =>
-      run(dir, "check-confidential", [mode], { ...env, ...extra });
+    const check = (extra: Record<string, string> = {}, args = ["--staged"]) =>
+      run(dir, "check-confidential", args, { ...env, ...extra });
     const calls = () => readFileSync(log, "utf8").split("\n").filter(Boolean).length;
     return { dir, home, check, calls, cache };
   }
@@ -1541,13 +1557,26 @@ describe("check-confidential list source", () => {
     expect(r.out).toContain("Refused");
   });
 
+  test("--list-optional passes without any list, never with a stale one or past a term", () => {
+    const optional = ["--staged", "--list-optional"];
+    const none = machine({ gh: "deny" });
+    expect(none.check().code).toBe(1);
+    const r = none.check({}, optional);
+    expect(r.code).toBe(0);
+    expect(r.out).toContain("--list-optional: terms not scanned");
+    expect(
+      machine({ gh: "deny", cache: builtDaysAgo(10), cacheDays: 2 }).check({}, optional).code,
+    ).toBe(1);
+    expect(machine({ gh: "ok" }).check({}, optional).out).toContain("(Acme Widgets)");
+  });
+
   test("CI skips the audit's term step without fetching, the path rule still holds", () => {
     const m = machine({ gh: "deny" });
-    expect(m.check({ CI: "true" }, "--index").code).toBe(0);
+    expect(m.check({ CI: "true" }, ["--index"]).code).toBe(0);
     expect(m.calls()).toBe(0);
     write(m.dir, { "docs/agent-work/shot.png": "x" });
     sh(m.dir, ["add", "docs/agent-work/shot.png"]);
-    expect(m.check({ CI: "true" }, "--index").out).toContain(
+    expect(m.check({ CI: "true" }, ["--index"]).out).toContain(
       "docs/agent-work/shot.png: binary file in docs/agent-work not read: no OCR in CI",
     );
   });

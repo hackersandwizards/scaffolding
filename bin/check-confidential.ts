@@ -1,6 +1,8 @@
 #!/bin/sh
 // 2>/dev/null; exec bun --no-env-file "$0" "$@"
-//   check-confidential --staged               pre-commit: added lines, images and PDFs in the index
+//   check-confidential --staged               pre-commit: added lines and binary files in the index
+//   --list-optional                           with --staged or --message-file: no list reachable
+//                                             passes with a warning, for outside contributors
 //   check-confidential --message-file <file>  commit-msg: the commit message
 //   check-confidential --commit <rev>         one commit: its added lines, images, PDFs and message
 //   check-confidential --index                every file of the index, the gate's audit
@@ -102,9 +104,24 @@ if (argv[0] === "build") {
 }
 
 if (argv[0] === "purged") {
-  const salt = randomBytes(16).toString("hex");
-  const h = hasher(salt);
-  console.log(JSON.stringify({ salt, hashes: argv.slice(1).map(h).sort() }));
+  // Adds to the repository's list under its own salt. `> .confidential-purged.json` empties the
+  // file before this runs, so then the index's copy counts.
+  const file = ".confidential-purged.json";
+  const top = spawnSync("git", ["rev-parse", "--show-toplevel"], {
+    encoding: "utf8",
+  }).stdout.trim();
+  let old: { salt: string; hashes: string[] } | undefined;
+  for (const read of [
+    () => readFileSync(join(top, file), "utf8"),
+    () => git(["show", `:${file}`], top || ".").toString(),
+  ])
+    try {
+      old = JSON.parse(read());
+      break;
+    } catch {}
+  const salt = old?.salt ?? randomBytes(16).toString("hex");
+  const hashes = new Set([...(old?.hashes ?? []), ...argv.slice(1).map(hasher(salt))]);
+  console.log(JSON.stringify({ salt, hashes: [...hashes].sort() }));
   process.exit(0);
 }
 
@@ -133,8 +150,10 @@ if (argv[0] === "prepush") {
     const purged = JSON.parse(readFileSync(file, "utf8"));
     const bad = new Set<string>(purged.hashes);
     const h = hasher(purged.salt);
+    // Only the tips the remote reports count as held there: a stale tracking ref or a fetched pull
+    // request may still point into the purged history.
     const commits = locals.flatMap((local) =>
-      git(["rev-list", local, ...notOnRemote], root)
+      git(["rev-list", local, "--ignore-missing", "--not", ...sha(3)], root)
         .toString()
         .split("\n")
         .filter(Boolean),
@@ -249,7 +268,7 @@ function fetchList(): string | undefined {
   renameSync(`${CACHE}.tmp`, CACHE);
 }
 
-function loadList(): { list?: TermList; problem?: string } {
+function loadList(): { list?: TermList; problem?: string; absent?: boolean } {
   const file = arg("--list") || process.env.SCAFFOLDING_CONFIDENTIAL_TERMS || undefined;
   let problem: string | undefined;
   if (!file && age(CACHE) >= DAY && (age(CACHE) === Infinity || age(ATTEMPT) >= HOUR)) {
@@ -258,7 +277,8 @@ function loadList(): { list?: TermList; problem?: string } {
   } else if (!file && age(CACHE) >= DAY) warn("copy older than a day; next fetch within the hour");
   const source = file ?? CACHE;
   const list = existsSync(source) ? parse(readFileSync(source, "utf8")) : undefined;
-  if (!list) return { problem: problem ?? `no valid list at ${source}` };
+  if (!list)
+    return { problem: problem ?? `no valid list at ${source}`, absent: !existsSync(source) };
   const built = Date.parse(list.built ?? "");
   if (Number.isNaN(built) || built > Date.now() + HOUR)
     return { problem: `${source} has no valid build time` };
@@ -294,7 +314,11 @@ if (skipped) warn("CI: term step skipped; the commit hook is the gate");
 else {
   const loaded = loadList();
   list = loaded.list;
-  if (loaded.problem)
+  // For a public repository's outside contributors, who cannot fetch the list: no list at all
+  // passes, a stale or broken one still refuses.
+  if (loaded.absent && argv.includes("--list-optional"))
+    warn(`${loaded.problem}; --list-optional: terms not scanned`);
+  else if (loaded.problem)
     listProblem.push({
       check: "confidential",
       path: "confidential terms",
@@ -598,7 +622,7 @@ else if (argv.includes("--staged") || commit) {
   }
 } else {
   console.error(
-    "usage: check-confidential --staged | --message-file <file> | --commit <rev> | --index | --tree <rev> | prepush | fetch | build <terms|-> [--public <file>] | purged <sha>...",
+    "usage: check-confidential --staged | --message-file <file> [--list-optional] | --commit <rev> | --index | --tree <rev> | prepush | fetch | build <terms|-> [--public <file>] | purged <sha>...",
   );
   process.exit(2);
 }

@@ -472,6 +472,9 @@ checkout fetches on its own.
   needs no access. A commit, its message and a push are scanned wherever they are made.
 - `check-confidential fetch` fetches now, for a cloud setup script. `--list <file>` or
   `SCAFFOLDING_CONFIDENTIAL_TERMS` reads a list from a file instead.
+- `--list-optional` lets a public repository's own hook scan every commit without blocking an
+  outside contributor: where there is no list and none can be fetched, the scan passes with a
+  warning. A list that is there but invalid or built more than 7 days ago still refuses.
 - `check-confidential build <terms|-> [--public <file>]` turns one term per line into a list stamped
   with its build time. It leaves out every term the public text in `<file>` already carries, and
   refuses to build without `/usr/share/dict/words`. A term of more than six words counts by its
@@ -481,8 +484,11 @@ checkout fetches on its own.
 A repository with `"scaffolding": { "private": true }` skips the check and keeps no `commit-msg`
 hook, which `check-structure --fix` removes.
 
-`check-confidential purged <sha>...` writes `.confidential-purged.json`: after a history rewrite,
-the pre-push hook refuses a push from an old clone that still carries one of those commits.
+`check-confidential purged <sha>... > .confidential-purged.json` writes the list of purged
+commits: after a history rewrite, the pre-push hook refuses a push from an old clone that still
+carries one of them, whatever its tracking refs or fetched pull requests point at. A repository that
+already has the list keeps its salt and entries and gets the new ones added; with the file emptied
+by the redirect, the staged copy counts.
 
 The pre-push hook then hands the refs to `git lfs pre-push` where the push may carry LFS objects or
 touch a lockable file. That is the case where the repository's LFS store holds a file (`lfs/objects`
