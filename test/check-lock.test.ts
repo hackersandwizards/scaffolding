@@ -254,6 +254,20 @@ describe("check-lock serialises the checks", () => {
     }
   }, 30_000);
 
+  it("waits under a wait of 0 for a holder running the same command", async () => {
+    const lock = lockPath();
+    const first = spawn("bun", [SCRIPT, "sh", "-c", "sleep 2"], {
+      env: { ...process.env, CHECK_LOCK: lock },
+      stdio: "ignore",
+    });
+    const done = new Promise((resolve) => first.on("close", resolve));
+    await until(() => existsSync(lock), "the first holder");
+    const same = run(lock, ["sh", "-c", "sleep 2"], { CHECK_LOCK_WAIT_MS: "0" });
+    await done;
+    expect(same.status).toBe(0);
+    expect(same.stderr).toBe("");
+  }, 30_000);
+
   it("lets the first live waiter take the lock and passes over a dead one's ticket", () => {
     const lock = lockPath();
     mkdirSync(`${lock}.queue`);

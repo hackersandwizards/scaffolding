@@ -32,7 +32,8 @@ const LOCK = process.env.CHECK_LOCK ?? resolve("node_modules", ".check.lock");
 // The longest one holder may keep a waiter waiting; the wait starts again whenever the lock passes
 // on, so a queue of slow gates never runs it out, a hung holder does. Overridable so the test can
 // prove the timeout without waiting it out.
-const WAIT_MS = Number(process.env.CHECK_LOCK_WAIT_MS ?? 15 * 60 * 1000);
+const FULL_WAIT_MS = 15 * 60 * 1000;
+const WAIT_MS = Number(process.env.CHECK_LOCK_WAIT_MS ?? FULL_WAIT_MS);
 // NaN would never compare greater, and the wait would never end.
 if (!Number.isFinite(WAIT_MS)) throw new Error("CHECK_LOCK_WAIT_MS must be a number of ms");
 const POLL_MS = 2_000;
@@ -41,6 +42,8 @@ const SPEAK_MS = 30_000;
 interface Holder {
   pid: number;
   startedAt: number;
+  /** The command it runs, read by a waiter for the same one. */
+  command?: string[];
   /** The command's pid, the leader of its own process group: it outlives a holder killed together
    * with its caller's group. */
   group?: number;
@@ -115,7 +118,7 @@ function create(path: string, contents: string): boolean {
 }
 
 const acquire = (): boolean =>
-  create(LOCK, JSON.stringify({ pid: process.pid, startedAt: Date.now() }));
+  create(LOCK, JSON.stringify({ pid: process.pid, startedAt: Date.now(), command }));
 
 function dropIfStale(): void {
   const raw = readLock();
@@ -208,7 +211,16 @@ async function queueForLock(): Promise<boolean> {
 
     const waited = Date.now() - started;
     // At least: a first poll in the millisecond the wait began measures 0, and a wait of 0 slept.
-    if (waited >= WAIT_MS) {
+    // A shorter wait gives up on another command only. One held by this same command, such as the
+    // two installs a session's start begins at once, is waited for in full, since that run leaves
+    // this one little to do; a free lock for one poll, in which such a run may take it first.
+    const givesUp = () => {
+      const current = readHolder();
+      return current === undefined
+        ? waited >= POLL_MS
+        : current.command?.join("\0") !== command.join("\0");
+    };
+    if (waited >= Math.max(WAIT_MS, FULL_WAIT_MS) || (waited >= WAIT_MS && givesUp())) {
       console.error(
         `[check-lock] ${holderName()} still holds ${LOCK} after ${Math.round(waited / 1000)}s; not running "${command.join(" ")}" beside it. Retry once it finishes.`,
       );

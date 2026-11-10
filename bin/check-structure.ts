@@ -225,11 +225,15 @@ if (existsSync(at("package.json"))) {
   const test = pkg.scaffolding?.test;
   if (test && !isReason(pkg.scaffolding?.skip?.test)) {
     const configs = readdirSync(root).filter((p) => /^vite(?:st)?\.config\.[cm]?[jt]s$/.test(p));
-    // The command, and each script it names, at any depth (`bun run test` naming `test:unit`).
-    const read = [test];
+    // The command, and each script it runs, at any depth: the value itself where it names one, as
+    // the gate runs it, and each `run <name>` (`bun run test` naming `test:unit`). `bun test` is
+    // bun's runner, never the script named test.
+    const scripts: Record<string, string> = pkg.scripts ?? {};
+    const script = (name: string) => (Object.hasOwn(scripts, name) ? [scripts[name]] : []);
+    const read = [test, ...script(test)];
     for (const text of read)
-      for (const word of text.split(/\s+/))
-        if (pkg.scripts?.[word] && !read.includes(pkg.scripts[word])) read.push(pkg.scripts[word]);
+      for (const [, name] of text.matchAll(/\brun\s+(?:--?\S+\s+)*([^\s;&|]+)/g))
+        for (const found of script(name)) if (!read.includes(found)) read.push(found);
     read.push(...configs.map((p) => readFileSync(at(p), "utf8")));
     if (!read.some((text) => text.includes("SCAFFOLDING_TEST_TIMEOUT_MS")))
       add(

@@ -1055,6 +1055,14 @@ describe("scaffold and check-structure", () => {
         { test: "bun test --timeout ${SCAFFOLDING_TEST_TIMEOUT_MS:-5000}" },
       ),
     ).toEqual([]);
+    // `bun test` is bun's runner, not the script named test; a word that names no script of its
+    // own, such as toString, is none.
+    expect(
+      structure(
+        { test: "bun test -t toString" },
+        { test: "bun test --timeout ${SCAFFOLDING_TEST_TIMEOUT_MS:-5000}" },
+      ),
+    ).toEqual([red[0].replace("(test)", "(bun test -t toString)")]);
     // Through `bun run` and a script naming another.
     expect(
       structure(
@@ -2824,17 +2832,16 @@ exec "${process.execPath}" "$@"
     );
     return { fake, log: join(fake, "bun.log") };
   };
-  // A consumer: the hooks as the skeleton ships them, check-lock as its bin runs.
+  // A consumer with the hooks as the skeleton ships them; `installed` links check-lock as an
+  // install of the package does.
   const consumer = (files: Record<string, string> = {}) => {
-    const dir = repo({
-      "bun.lock": "a\n",
-      "package.json": JSON.stringify({
-        scripts: { "check-lock": `${process.execPath} --no-env-file ${bin("check-lock")}` },
-      }),
-      ...files,
-    });
+    const dir = repo({ "bun.lock": "a\n", "package.json": "{}\n", ...files });
     cpSync(hooks, join(dir, ".githooks"), { recursive: true });
     return dir;
+  };
+  const installed = (dir: string) => {
+    mkdirSync(join(dir, "node_modules/.bin"), { recursive: true });
+    symlinkSync(bin("check-lock"), join(dir, "node_modules/.bin/check-lock"));
   };
   const env = (log: { fake: string; log: string }, more: Record<string, string> = {}) => ({
     ...process.env,
@@ -2843,35 +2850,54 @@ exec "${process.execPath}" "$@"
     ...more,
   });
   const read = (path: string) => (existsSync(path) ? readFileSync(path, "utf8") : "");
+  const head = (dir: string) => sh(dir, ["rev-parse", "HEAD"]).stdout.toString().trim();
+  /** The post-checkout arguments of a checkout that changed bun.lock. */
+  const lockChange = (dir: string) => {
+    const old = head(dir);
+    write(dir, { "bun.lock": "b\n" });
+    sh(dir, ["commit", "-q", "-am", "b"]);
+    return [old, head(dir), "1"];
+  };
+  const twice = "start locked\nend\nstart locked\nend\n";
+  // Two at once, the first holding its install for 2 s: the second's result once both have ended.
+  const both = async (
+    command: string,
+    args: string[],
+    cwd: string,
+    bun: { fake: string; log: string },
+  ) => {
+    const first = spawn(command, args, { cwd, env: env(bun, { BUN_SLEEP: "2" }), stdio: "ignore" });
+    const done = new Promise((resolve) => first.on("close", resolve));
+    const second = spawnSync(command, args, { cwd, env: env(bun), encoding: "utf8" });
+    await done;
+    return second;
+  };
 
   test("a lock change installs under the lock: the script's own before the first install, check-lock's after", () => {
     const dir = consumer();
-    const old = sh(dir, ["rev-parse", "HEAD"]).stdout.toString().trim();
-    write(dir, { "bun.lock": "b\n" });
-    sh(dir, ["commit", "-q", "-am", "b"]);
-    const head = sh(dir, ["rev-parse", "HEAD"]).stdout.toString().trim();
-    sh(dir, ["update-ref", "ORIG_HEAD", old]);
+    const args = lockChange(dir);
+    sh(dir, ["update-ref", "ORIG_HEAD", args[0]]);
     const bun = fakeBun();
     const hook = (name: string, args: string[]) =>
       spawnSync(join(dir, ".githooks", name), args, { cwd: dir, env: env(bun), encoding: "utf8" });
-    const fresh = hook("post-checkout", [old, head, "1"]);
+    const fresh = hook("post-checkout", args);
     expect(read(bun.log)).toBe("start locked\nend\n");
     expect(`${fresh.stdout}${fresh.stderr}`).toBe("");
     expect(existsSync(join(dir, "node_modules/.check.lock"))).toBe(false);
     rmSync(bun.log);
-    mkdirSync(join(dir, "node_modules/.bin"), { recursive: true });
+    installed(dir);
     const later = hook("post-merge", ["0"]);
     expect(read(bun.log)).toBe("start locked\nend\n");
     expect(`${later.stdout}${later.stderr}`).toBe("");
     // An unchanged lock installs nothing.
     rmSync(bun.log);
-    hook("post-checkout", [head, head, "1"]);
+    hook("post-checkout", [args[1], args[1], "1"]);
     expect(read(bun.log)).toBe("");
   });
 
-  test("a held lock or a failed install is named on stderr, never stdout, and fails no checkout", () => {
+  test("a gate's lock or a failed install is named on stderr, never stdout, and fails no checkout", () => {
     const dir = consumer();
-    mkdirSync(join(dir, "node_modules/.bin"), { recursive: true });
+    installed(dir);
     const bun = fakeBun();
     const install = (more: Record<string, string> = {}) =>
       spawnSync(join(dir, ".githooks/install"), [], {
@@ -2881,7 +2907,11 @@ exec "${process.execPath}" "$@"
       });
     writeFileSync(
       join(dir, "node_modules/.check.lock"),
-      JSON.stringify({ pid: process.pid, startedAt: Date.now() }),
+      JSON.stringify({
+        pid: process.pid,
+        startedAt: Date.now(),
+        command: ["bun", "x.ts", "check"],
+      }),
     );
     const held = install();
     expect(read(bun.log)).toBe("");
@@ -2894,59 +2924,34 @@ exec "${process.execPath}" "$@"
     expect(failed.stdout).toBe("");
     expect(failed.stderr).toContain("[install]");
     expect(failed.status).toBe(1);
-    const old = sh(dir, ["rev-parse", "HEAD"]).stdout.toString().trim();
-    write(dir, { "bun.lock": "b\n" });
-    sh(dir, ["commit", "-q", "-am", "b"]);
-    const checkout = spawnSync(
-      join(dir, ".githooks/post-checkout"),
-      [old, sh(dir, ["rev-parse", "HEAD"]).stdout.toString().trim(), "1"],
-      { cwd: dir, env: env(bun, { BUN_EXIT: "1" }), encoding: "utf8" },
-    );
+    const checkout = spawnSync(join(dir, ".githooks/post-checkout"), lockChange(dir), {
+      cwd: dir,
+      env: env(bun, { BUN_EXIT: "1" }),
+      encoding: "utf8",
+    });
     expect(checkout.stderr).toContain("[install]");
     expect(checkout.status).toBe(0);
   });
 
   test("two first installs at once run one after the other", async () => {
     const dir = consumer();
-    const old = sh(dir, ["rev-parse", "HEAD"]).stdout.toString().trim();
-    write(dir, { "bun.lock": "b\n" });
-    sh(dir, ["commit", "-q", "-am", "b"]);
-    const args = [old, sh(dir, ["rev-parse", "HEAD"]).stdout.toString().trim(), "1"];
     const bun = fakeBun();
-    const hook = join(dir, ".githooks/post-checkout");
-    const first = spawn(hook, args, {
-      cwd: dir,
-      env: env(bun, { BUN_SLEEP: "2" }),
-      stdio: "ignore",
-    });
-    const done = new Promise((resolve) => first.on("close", resolve));
-    for (let i = 0; i < 100 && !read(bun.log); i++) await Bun.sleep(50);
-    spawnSync(hook, args, { cwd: dir, env: env(bun) });
-    await done;
-    // The second waits for the first, then has nothing left to install, or installs after it.
-    expect(read(bun.log)).toMatch(/^(start locked\nend\n){1,2}$/);
+    await both(join(dir, ".githooks/post-checkout"), lockChange(dir), dir, bun);
+    expect(read(bun.log)).toBe(twice);
   });
 
-  test("an install finding another under way waits for it and reports nothing", async () => {
+  // The MCP server's start and the SessionStart hook install at the same moment.
+  test("two installs at once wait for each other, the second without a word", async () => {
     const dir = consumer();
-    mkdirSync(join(dir, "node_modules/.bin"), { recursive: true });
+    installed(dir);
     const bun = fakeBun();
-    const install = join(dir, ".githooks/install");
-    const first = spawn(install, [], {
-      cwd: dir,
-      env: env(bun, { BUN_SLEEP: "2" }),
-      stdio: "ignore",
-    });
-    const done = new Promise((resolve) => first.on("close", resolve));
-    for (let i = 0; i < 100 && !read(bun.log); i++) await Bun.sleep(50);
-    const second = spawnSync(install, [], { cwd: dir, env: env(bun), encoding: "utf8" });
-    await done;
+    const second = await both(join(dir, ".githooks/install"), [], dir, bun);
     expect(`${second.stdout}${second.stderr}`).toBe("");
     expect(second.status).toBe(0);
-    expect(read(bun.log)).toBe("start locked\nend\n");
+    expect(read(bun.log)).toBe(twice);
   });
 
-  test("a dead first install's lock is taken over, and two waiters still install one at a time", async () => {
+  test("a dead first install's lock is moved aside once, and two waiters still install one at a time", async () => {
     const dir = consumer();
     mkdirSync(join(dir, "node_modules"));
     const gone = spawnSync("true").pid;
@@ -2955,17 +2960,9 @@ exec "${process.execPath}" "$@"
       JSON.stringify({ pid: gone, startedAt: 1 }),
     );
     const bun = fakeBun();
-    const install = join(dir, ".githooks/install");
-    const first = spawn(install, [], {
-      cwd: dir,
-      env: env(bun, { BUN_SLEEP: "2" }),
-      stdio: "ignore",
-    });
-    const done = new Promise((resolve) => first.on("close", resolve));
-    spawnSync(install, [], { cwd: dir, env: env(bun, { BUN_SLEEP: "2" }) });
-    await done;
-    expect(read(bun.log)).toMatch(/^(start locked\nend\n){1,2}$/);
-    expect(existsSync(join(dir, "node_modules/.check.lock"))).toBe(false);
+    await both(join(dir, ".githooks/install"), [], dir, bun);
+    expect(read(bun.log)).toBe(twice);
+    expect(readdirSync(join(dir, "node_modules"))).toEqual([]);
   });
 
   test("the MCP server starts after the install, with nothing but the server on stdout", () => {
@@ -3025,6 +3022,8 @@ describe("skeleton SessionStart hook", () => {
     expect(head(dir)).toBe(before);
     sh(dir, ["merge", "-q", "--ff-only", "origin/main"]);
     expect(start(dir, { PATH: path }).stdout).toBe("");
+    // A bound that is no number of seconds is the default, with no warning from the timer.
+    expect(start(dir, { PATH: path, SCAFFOLDING_FETCH_WAIT_S: "20s" }).stdout).toBe("");
   });
 
   test("a cloud session switches to main and fast-forwards", () => {

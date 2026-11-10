@@ -8,10 +8,15 @@
 exec 2>&1
 cd "$(git rev-parse --show-toplevel)" || exit 0
 wait=${SCAFFOLDING_FETCH_WAIT_S:-20}
+case $wait in '' | *[!0-9]*) wait=20 ;; esac
 # Bounded by the clock: an SSH remote waits for a person to approve the key, and nothing in ssh or
 # git ends that wait. The fetch runs in a process group of its own (detached), so the kill ends ssh
-# with git; dash's `set -m` makes none without a terminal, so bun keeps the time.
-bun --no-env-file -e '
+# with git; dash's `set -m` makes none without a terminal, so bun keeps the time. Without bun,
+# which the install below needs too, the fetch runs unbounded.
+if ! command -v bun >/dev/null; then
+  GIT_TERMINAL_PROMPT=0 git fetch -q origin main >/dev/null 2>&1
+else
+  bun --no-env-file -e '
   const { spawn } = require("node:child_process");
   const git = spawn("git", ["fetch", "-q", "origin", "main"], {
     detached: true,
@@ -28,7 +33,8 @@ bun --no-env-file -e '
     clearTimeout(timer);
     process.exit(code ?? 1);
   });
-' "$wait"
+' "$wait" 2>/dev/null
+fi
 fetched=$?
 if [ "$fetched" -eq 0 ]; then
   if [ "$CLAUDE_CODE_REMOTE" = true ]; then
