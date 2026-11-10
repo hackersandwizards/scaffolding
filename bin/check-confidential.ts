@@ -840,8 +840,9 @@ else if (argv.includes("--staged") || commit) {
     });
   else {
     full = true;
-    // A key may be a slug the deck shows in its address.
-    for (const [where, text] of texts) scanText(where, [where, ...text].join("\n"));
+    // A key may be a slug the deck shows in its address. Each string apart, so two never join into
+    // a name neither shows.
+    for (const [where, text] of texts) for (const piece of [where, ...text]) scanText(where, piece);
   }
 } else if (tree || index) {
   full = true;

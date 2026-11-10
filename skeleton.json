@@ -9,6 +9,7 @@
     ".githooks/post-merge",
     ".githooks/post-checkout",
     ".githooks/install",
+    ".githooks/check-lock.ts",
     ".githooks/session-start"
   ],
   "owned": [".github/workflows/pages.yml"],

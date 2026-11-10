@@ -45,7 +45,13 @@ const SIGNALS = ["SIGINT", "SIGTERM", "SIGHUP", "SIGQUIT"] as const;
 if (process.argv[3] !== "--locked") {
   const lock = spawn(
     process.execPath,
-    [join(home, "bin/check-lock.ts"), process.execPath, import.meta.path, "check", "--locked"],
+    [
+      join(home, "template/.githooks/check-lock.ts"),
+      process.execPath,
+      import.meta.path,
+      "check",
+      "--locked",
+    ],
     // A group of its own: a terminal's Ctrl-C reaches this process alone, which passes it on once;
     // reaching check-lock as well, the second copy read as a second signal and killed the gate.
     { stdio: "inherit", cwd: root, detached: true },

@@ -539,7 +539,7 @@ checkout fetches on its own.
 `check-confidential never` reads one JSON object on stdin, `{"<where>": <value>}`, such as a deck
 test's decks by slug, and refuses every name of the list's never section in any case, in a key as
 in its text. A value is a string or any JSON: its object keys and every string in it are its text,
-so a deck goes in as it is. It runs in private repositories too, and fetches, keeps and ages the list
+so a deck goes in as it is; each string is scanned apart. It runs in private repositories too, and fetches, keeps and ages the list
 as the other scans do. A kept copy without a never section is fetched again, at most once an hour.
 
 - Exit 0: no never name. Exit 1: a finding, printed as
@@ -547,7 +547,7 @@ as the other scans do. A kept copy without a never section is fetched again, at 
 - An exception is an allow entry in the working tree's `package.json` with
   `"check": "never-shown"`, a `path` glob over the `<where>` keys, the `text` and a reason. An entry
   matching nothing fails, since the input holds every string the caller shows.
-- It refuses an input that is empty, not JSON, not an object or holds a value without a string,
+- It refuses an input that is empty, not JSON, not an object or holds a value with neither a string nor an object key,
   and a list whose never section is missing or empty. No allow entry covers either.
 - With `CI=true` it passes with a warning, so a deploy needs no access and no Git checkout.
 
@@ -583,11 +583,9 @@ new worktree too: `bun install
 build holds the lock it installs nothing, so `node_modules` never changes under a running one, and
 says so on stderr with the command to run; it names a failed install the same way. An install
 finding another under way (the MCP server's start and the SessionStart hook run at once) waits for
-it, as `check-lock` waits for a holder running its own command. A checkout without `node_modules` has no `check-lock` yet: there the script takes
-`check-lock`'s lock itself, by `check-lock`'s rules: the lock names `bun install` as its command, so
-it stays while that runs even where the script was killed, and a lock whose holder and command have
-both ended, or that names neither, is taken over. `bun run check`
-starts with the same install.
+it, as `check-lock` waits for a holder running its own command. The script runs the skeleton's copy
+of `check-lock` (`.githooks/check-lock.ts`), so a first install, before `node_modules` holds the
+package, takes the lock as every later one does. `bun run check` starts with the same install.
 
 Claude Code's `SessionStart` hook runs `.githooks/session-start`: it fetches `main` into
 `origin/main` within 20 s (`SCAFFOLDING_FETCH_WAIT_S`, whole seconds above 0), since an SSH remote can wait for a person to approve the key, says

@@ -20,7 +20,7 @@ import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { afterAll, describe, expect, it } from "bun:test";
 
-const SCRIPT = resolve(import.meta.dirname, "../bin/check-lock.ts");
+const SCRIPT = resolve(import.meta.dirname, "../template/.githooks/check-lock.ts");
 
 const roots: string[] = [];
 afterAll(() => {

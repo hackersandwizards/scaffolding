@@ -12,7 +12,7 @@
     "check-structure": "bin/check-structure.ts",
     "check-confidential": "bin/check-confidential.ts",
     "check-staged": "bin/check-staged.ts",
-    "check-lock": "bin/check-lock.ts",
+    "check-lock": "template/.githooks/check-lock.ts",
     "chrome-mcp": "bin/chrome-mcp.ts",
     "scaffolding": "bin/scaffolding.ts"
   },
@@ -81,7 +81,7 @@
     "check:staged": "bun --no-env-file bin/check-staged.ts",
     "fix": "bun --bun eslint --cache --concurrency=auto . --fix && bun --bun prettier --write .",
     "check-confidential": "bun --no-env-file bin/check-confidential.ts",
-    "check-lock": "bun --no-env-file bin/check-lock.ts",
+    "check-lock": "bun --no-env-file template/.githooks/check-lock.ts",
     "chrome-mcp": "bun --no-env-file bin/chrome-mcp.ts"
   },
   "devDependencies": {
@@ -111,6 +111,11 @@
         "check": "coupling",
         "path": "test/checks.test.ts",
         "reason": "planted cases the coupling tests feed to the check"
+      },
+      {
+        "check": "unique-names",
+        "path": ".githooks/check-lock.ts",
+        "reason": "this repository's skeleton copy of template/.githooks/check-lock.ts, which check-structure keeps byte for byte the same"
       },
       {
         "check": "unique-names",

@@ -569,8 +569,9 @@ test("check-structure: a hook with the skeleton's bytes but no executable bit fa
 
 test("every bin target and every file in bin/ is stored executable", () => {
   const root = join(import.meta.dir, "..");
+  const { bin } = ownPackage;
   const stored = new Map(
-    sh(root, ["ls-files", "-s", "--", "bin", "README.md"])
+    sh(root, ["ls-files", "-s", "--", "bin", ...Object.values<string>(bin), "README.md"])
       .stdout.toString()
       .trim()
       .split("\n")
@@ -582,7 +583,6 @@ test("every bin target and every file in bin/ is stored executable", () => {
   // Control: the same read of a file stored plain has to answer 100644.
   expect(stored.get("README.md")).toBe("100644");
   stored.delete("README.md");
-  const { bin } = ownPackage;
   expect(Object.values<string>(bin).filter((path) => !stored.has(path))).toEqual([]);
   // No `env -S`: BusyBox `env`, as on Alpine, refuses it.
   for (const path of Object.values<string>(bin))
@@ -2128,9 +2128,12 @@ describe("check-confidential never", () => {
     expect(never({ deck: { slides: [{ title: "plain", notes: ["QZX"] }] } }).code).toBe(1);
     expect(never({ deck: { slides: [{ QZX: 1 }] } }).code).toBe(1);
     expect(never({ deck: { slides: [{ title: "plain", notes: ["text"] }] } }).code).toBe(0);
+    // Each string is scanned apart: two of them never join into a name neither shows.
+    expect(never({ deck: ["met Brennwald", "AG today"] }).out).not.toContain("(Brennwald AG)");
+    expect(never({ deck: ["met Brennwald AG today"] }).out).toContain("(Brennwald AG)");
   });
 
-  test("an input that is empty, not JSON, not an object or holds a value without a string refuses, past any allow entry", () => {
+  test("an input that is empty, not JSON, not an object or holds a value with neither a string nor a key refuses, past any allow entry", () => {
     const at = repo({
       "package.json": JSON.stringify({
         scaffolding: { allow: [{ check: "never-shown", reason: "everything" }] },
@@ -2634,7 +2637,7 @@ describe("scaffolding check", () => {
 
   test("a package path holding a space runs every bin step", () => {
     const home = join(temp(), "with space");
-    for (const folder of ["bin", "lib"])
+    for (const folder of ["bin", "lib", "template/.githooks"])
       cpSync(join(import.meta.dir, "..", folder), join(home, folder), { recursive: true });
     const dir = gate({ skip });
     const r = spawnSync(
@@ -2858,17 +2861,13 @@ exec "${process.execPath}" "$@"
     );
     return { fake, log: join(fake, "bun.log") };
   };
-  // A consumer with the hooks as the skeleton ships them; `installed` links check-lock as an
-  // install of the package does.
+  // A consumer with the hooks as the skeleton ships them, check-lock's copy among them.
   const consumer = (files: Record<string, string> = {}) => {
     const dir = repo({ "bun.lock": "a\n", "package.json": "{}\n", ...files });
     cpSync(hooks, join(dir, ".githooks"), { recursive: true });
     return dir;
   };
-  const installed = (dir: string) => {
-    mkdirSync(join(dir, "node_modules/.bin"), { recursive: true });
-    symlinkSync(bin("check-lock"), join(dir, "node_modules/.bin/check-lock"));
-  };
+  const installed = (dir: string) => mkdirSync(join(dir, "node_modules"), { recursive: true });
   const env = (log: { fake: string; log: string }, more: Record<string, string> = {}) => ({
     ...process.env,
     PATH: `${log.fake}:${process.env.PATH}`,
@@ -2899,7 +2898,7 @@ exec "${process.execPath}" "$@"
     return second;
   };
 
-  test("a lock change installs under the lock: the script's own before the first install, check-lock's after", () => {
+  test("a lock change installs under check-lock's lock, before the first install and after it", () => {
     const dir = consumer();
     const args = lockChange(dir);
     sh(dir, ["update-ref", "ORIG_HEAD", args[0]]);
@@ -2977,29 +2976,31 @@ exec "${process.execPath}" "$@"
     expect(read(bun.log)).toBe(twice);
   });
 
-  test("a dead first install's lock is moved aside once, and two waiters still install one at a time", async () => {
-    const dir = consumer();
-    mkdirSync(join(dir, "node_modules"));
-    const gone = spawnSync("true").pid;
+  // check-lock's lock, staging and claim files; its queue folder stays.
+  const leftovers = (dir: string) =>
+    readdirSync(join(dir, "node_modules")).filter((name) => name !== ".check.lock.queue");
+  // A first install whose bun outlived its shell, as check-lock writes it.
+  const orphan = (dir: string, group?: number) => {
+    mkdirSync(join(dir, "node_modules"), { recursive: true });
     writeFileSync(
       join(dir, "node_modules/.check.lock"),
-      JSON.stringify({ pid: gone, startedAt: 1 }),
+      JSON.stringify({
+        pid: spawnSync("true").pid,
+        startedAt: 1,
+        command: ["bun", "install", "--frozen-lockfile"],
+        group,
+      }),
     );
+  };
+
+  test("a dead first install's lock is taken over once, and two waiters still install one at a time", async () => {
+    const dir = consumer();
+    orphan(dir);
     const bun = fakeBun();
     await both(join(dir, ".githooks/install"), [], dir, bun);
     expect(read(bun.log)).toBe(twice);
-    expect(readdirSync(join(dir, "node_modules"))).toEqual([]);
+    expect(leftovers(dir)).toEqual([]);
   });
-
-  /** Resolves once `path` holds `count` lines starting with `start`. */
-  const starts = async (path: string, count = 1) => {
-    while (
-      read(path)
-        .split("\n")
-        .filter((l) => l.startsWith("start")).length < count
-    )
-      await new Promise((resolve) => setTimeout(resolve, 50));
-  };
 
   test.each(["SIGKILL", "SIGTERM"] as const)(
     "a first install whose shell got %s holds the lock until its bun has ended",
@@ -3011,7 +3012,7 @@ exec "${process.execPath}" "$@"
         env: env(bun, { BUN_SLEEP: "2" }),
         stdio: "ignore",
       });
-      await starts(bun.log);
+      while (!read(join(dir, "node_modules/.check.lock")).includes('"group"')) await Bun.sleep(50);
       // Reaped before the next call blocks the event loop: an unreaped shell reads as live.
       const gone = new Promise((resolve) => first.on("exit", resolve));
       first.kill(signal);
@@ -3024,50 +3025,38 @@ exec "${process.execPath}" "$@"
 
   test("a lock whose pid is dead and whose group runs is waited for; an empty one is stale", async () => {
     const dir = consumer();
-    mkdirSync(join(dir, "node_modules"));
     const group = spawn("sleep", ["30"]);
-    writeFileSync(
-      join(dir, "node_modules/.check.lock"),
-      JSON.stringify({ pid: spawnSync("true").pid, startedAt: 1, group: group.pid }),
-    );
+    orphan(dir, group.pid);
     const bun = fakeBun();
     const install = spawn(join(dir, ".githooks/install"), [], { cwd: dir, env: env(bun) });
     const done = new Promise((resolve) => install.on("close", resolve));
-    await new Promise((resolve) => setTimeout(resolve, 1_500));
+    await Bun.sleep(1_500);
     expect(read(bun.log)).toBe("");
     group.kill();
     await done;
     expect(read(bun.log)).toBe("start locked\nend\n");
-    // An empty lock names no live holder.
     rmSync(bun.log);
     writeFileSync(join(dir, "node_modules/.check.lock"), "");
     spawnSync(join(dir, ".githooks/install"), [], { cwd: dir, env: env(bun), timeout: 10_000 });
     expect(read(bun.log)).toBe("start locked\nend\n");
-    expect(readdirSync(join(dir, "node_modules"))).toEqual([]);
+    expect(leftovers(dir)).toEqual([]);
   }, 20_000);
 
-  // Three waiters on a dead lock, the later two moving it after the first has taken it over, and the
-  // lock put back only once a second install has begun: the order a loaded machine can give them.
+  // v5.15.0 took a dead lock over by moving it aside and putting a live one back: with three waiters,
+  // a later move landing after the first takeover dropped the live lock. The gated mv and ln force
+  // that order on any shell code that still moves a lock.
   test("three first installs on a dead lock run one at a time, however their steps interleave", async () => {
     const dir = consumer();
-    mkdirSync(join(dir, "node_modules"));
-    writeFileSync(
-      join(dir, "node_modules/.check.lock"),
-      JSON.stringify({ pid: spawnSync("true").pid, startedAt: 1 }),
-    );
+    orphan(dir);
     const bun = fakeBun();
     // The first mv runs at once, every later one once an install has begun; a moved lock goes back
     // once two have. Each waits 10 s at most.
     const until = (count: number) =>
       `n=0; until [ "$(grep -c ^start "$BUN_LOG")" -ge ${count} ] || [ $n -ge 100 ]; do sleep 0.1; n=$((n + 1)); done`;
     const wrap = (name: string, gate: string) =>
-      writeFileSync(
-        join(bun.fake, name),
-        `#!/bin/sh\n${gate}\nexec ${spawnSync("sh", ["-c", `command -v ${name}`])
-          .stdout.toString()
-          .trim()} "$@"\n`,
-        { mode: 0o755 },
-      );
+      writeFileSync(join(bun.fake, name), `#!/bin/sh\n${gate}\nexec ${Bun.which(name)} "$@"\n`, {
+        mode: 0o755,
+      });
     wrap("mv", `mkdir "$BUN_LOG.first" 2>/dev/null || { ${until(1)}; }`);
     wrap("ln", `case "$1" in *.stale) ${until(2)} ;; esac`);
     const runs = [1, 2, 3].map(() => {
@@ -3084,9 +3073,9 @@ exec "${process.execPath}" "$@"
 
   test("a new worktree installs, so its first commit finds node_modules", () => {
     const dir = consumer();
-    sh(dir, ["config", "core.hooksPath", ".githooks"]);
     sh(dir, ["add", "-A"]);
     sh(dir, ["commit", "-qm", "hooks"]);
+    sh(dir, ["config", "core.hooksPath", ".githooks"]);
     const bun = fakeBun();
     const tree = join(temp(), "tree");
     spawnSync("git", ["worktree", "add", "-q", "--detach", tree], { cwd: dir, env: env(bun) });
