@@ -6,7 +6,7 @@ export default [
     ignores: [
       "template/**/*",
       "!template/.githooks/",
-      "!template/.githooks/check-lock.ts",
+      "!template/.githooks/**",
       "template-catalog/**",
     ],
   },

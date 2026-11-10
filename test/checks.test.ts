@@ -2492,9 +2492,8 @@ describe("scaffolding check", () => {
       ".githooks/check-lock.ts": "export function release() {}\n",
     });
     expect(run(dir, "check-unique-names").code).toBe(0);
-    // Control: the same copy outside .githooks/ goes red.
-    write(dir, { "b.ts": "export function release() {}\n" });
-    sh(dir, ["add", "b.ts"]);
+    // Control: the same file outside .githooks/ goes red.
+    sh(dir, ["mv", ".githooks", "githooks"]);
     expect(run(dir, "check-unique-names").code).toBe(1);
   });
 
@@ -3023,6 +3022,7 @@ exec "${process.execPath}" "$@"
         i++
       )
         await Bun.sleep(50);
+      expect(read(join(dir, "node_modules/.check.lock"))).toContain('"group"');
       // Reaped before the next call blocks the event loop: an unreaped shell reads as live.
       const gone = new Promise((resolve) => first.on("exit", resolve));
       first.kill(signal);

@@ -28,7 +28,7 @@ const root = repoRoot();
 const pkg = readPackage(root);
 const frameworkNames = new Set([pkg.scaffolding?.uniqueNames ?? []].flat());
 const files = listFiles(root, false).filter(
-  // .githooks/ holds the skeleton's copies, which the shared lint and format configs skip too.
+  // .githooks/ holds the skeleton's copies, which the shared eslint config skips too.
   (file) =>
     /\.(?:[cm]?[jt]s|tsx|astro)$/.test(file) &&
     !file.endsWith(".d.ts") &&
