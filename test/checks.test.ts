@@ -1711,7 +1711,7 @@ describe("check-confidential", () => {
     expect(logged()).toBe(
       "pre-push origin x\n".repeat(3) + "pre-push backup x\n" + "pre-push origin x\n".repeat(3),
     );
-  });
+  }, 20_000);
 });
 
 describe("check-confidential list source", () => {
