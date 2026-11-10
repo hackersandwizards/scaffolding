@@ -111,9 +111,9 @@ const HEAD = "virtual:scaffolding/catalog-head";
 const AROUND = "virtual:scaffolding/catalog-around";
 const ICON = "virtual:scaffolding/catalog-icon";
 const BRAND_ICON = "@hackersandwizards/brand/logos/favicon.svg";
-const SHELL_CSS = ["catalog.css", "chrome.css", "ground.css"].map((f) =>
-  join(import.meta.dirname, f),
-);
+// Astrobook's URL folders for a state's page and a state alone, passed so its defaults cannot move
+// under the dev redirect and the forwarding pages.
+const SUBPATHS = { dashboardSubpath: "dashboard", previewSubpath: "stories" };
 // The cascade layer order alone, exported since brand v1.52.0.
 const BRAND_LAYERS = "@hackersandwizards/brand/layers.css";
 const BRAND_FOCUS = "@hackersandwizards/brand/elements/focus.css";
@@ -147,13 +147,13 @@ function installed(name: string, from: string): string | undefined {
   }
 }
 
-/** What `read` takes from brand; undefined only where brand is missing or older than the file. */
+/** What `read` takes from brand; undefined only where brand is missing. Every brand the shell
+ * accepts (v2.5.0 and later) exports each path read here, so an export it drops fails the build. */
 function fromBrand<T>(read: () => T): T | undefined {
   try {
     return read();
   } catch (e) {
-    const code = (e as { code?: string }).code;
-    if (code === "MODULE_NOT_FOUND" || code === "ERR_PACKAGE_PATH_NOT_EXPORTED") return undefined;
+    if ((e as { code?: string }).code === "MODULE_NOT_FOUND") return undefined;
     throw e;
   }
 }
@@ -173,8 +173,11 @@ function brandNav(
 }
 
 const POINTER = "version https://git-lfs.github.com/spec/";
-const isPointer = (file: string) =>
-  readFileSync(file).subarray(0, POINTER.length).toString() === POINTER;
+// A pointer file is under 200 bytes, so a larger file is read no further.
+const isPointer = (file: string) => {
+  if (statSync(file).size > 1024) return false;
+  return readFileSync(file).subarray(0, POINTER.length).toString() === POINTER;
+};
 
 // A stylesheet or font served without its type is refused by the browser.
 const TYPES: Record<string, string> = {
@@ -232,12 +235,17 @@ export function catalog(options: CatalogOptions): AstroIntegration {
   // where the catalog moved to the root; undefined for a current path.
   let moved = (_: string): string | undefined => undefined;
   /** A `copy` entry as [path in the build, file or folder it copies]: a package path once, a glob
-   * once per match. */
-  const copied = (pattern: string): [string, string][] => {
+   * once per match, globbed again only when `fresh` (a glob under ** walks node_modules). */
+  const globbed = new Map<string, [string, string][]>();
+  const copied = (pattern: string, fresh = false): [string, string][] => {
     const file = resolved.get(pattern);
-    return file
-      ? [[pattern, file]]
-      : globSync(pattern, { cwd: repo }).map((match) => [match, join(repo, match)]);
+    if (file) return [[pattern, file]];
+    if (fresh || !globbed.has(pattern))
+      globbed.set(
+        pattern,
+        globSync(pattern, { cwd: repo }).map((match) => [match, join(repo, match)]),
+      );
+    return globbed.get(pattern)!;
   };
   return {
     name: "@hackersandwizards/scaffolding/catalog",
@@ -287,7 +295,8 @@ export function catalog(options: CatalogOptions): AstroIntegration {
           // Only the catalog's own former pages move, as in the build: a site's page under
           // /catalog/ stays.
           const now =
-            atRoot && /^\/catalog(\/(dashboard|stories)(\/|$)|\/?$)/.test(unbased)
+            atRoot &&
+            new RegExp(`^/catalog(/(${Object.values(SUBPATHS).join("|")})(/|$)|/?$)`).test(unbased)
               ? strip(unbased, "/catalog")
               : unbased;
           // A file Vite serves, a module under the root such as catalog/Head.astro or a public
@@ -445,8 +454,13 @@ export function catalog(options: CatalogOptions): AstroIntegration {
                 // Ahead of Vite's CSS plugin, which reads the file's text.
                 name: "scaffolding-catalog-fallbacks",
                 enforce: "pre" as const,
-                transform: (code: string, id: string) =>
-                  SHELL_CSS.includes(id.split("?")[0]!) ? brandFallbacks(code, tokens) : undefined,
+                // Every stylesheet beside this file is the shell's.
+                transform: (code: string, id: string) => {
+                  const file = id.split("?")[0]!;
+                  return dirname(file) === import.meta.dirname && file.endsWith(".css")
+                    ? brandFallbacks(code, tokens)
+                    : undefined;
+                },
               },
               {
                 name: "scaffolding-catalog",
@@ -459,6 +473,7 @@ export function catalog(options: CatalogOptions): AstroIntegration {
         inner = astrobook({
           directory: relative(root, stories),
           subpath: atRoot ? "" : "/catalog",
+          ...SUBPATHS,
           title: `${options.product} catalog`,
           css: [],
           head: join(import.meta.dirname, "Head.astro"),
@@ -497,10 +512,13 @@ export function catalog(options: CatalogOptions): AstroIntegration {
           }
           const file = path.startsWith(`${base}/`) ? path.slice(base.length + 1) : "";
           if (!file || !fixed.length) return next();
-          const match = fixed
-            .filter(([, prefix]) => !prefix || file === prefix || file.startsWith(`${prefix}/`))
-            .flatMap(([pattern]) => copied(pattern))
-            .find(([at]) => file === at || file.startsWith(`${at}/`));
+          // A file added since the last glob is found on the second pass.
+          const find = (fresh: boolean) =>
+            fixed
+              .filter(([, prefix]) => !prefix || file === prefix || file.startsWith(`${prefix}/`))
+              .flatMap(([pattern]) => copied(pattern, fresh))
+              .find(([at]) => file === at || file.startsWith(`${at}/`));
+          const match = find(false) ?? find(true);
           const full = match && join(match[1], file.slice(match[0].length));
           if (
             !full ||
@@ -520,9 +538,12 @@ export function catalog(options: CatalogOptions): AstroIntegration {
         // The catalog lived under /catalog/ until v2.0.0: each of its published pages forwards. A
         // build opened from disk was never published there.
         if (forwards)
-          for (const page of globSync(["index.html", "{dashboard,stories}/**/index.html"], {
-            cwd: out,
-          })) {
+          for (const page of globSync(
+            ["index.html", `{${Object.values(SUBPATHS).join(",")}}/**/index.html`],
+            {
+              cwd: out,
+            },
+          )) {
             const to = encodeURI(`${base}/${dirname(page) === "." ? "" : `${dirname(page)}/`}`);
             const stub = join(out, "catalog", page);
             if (existsSync(stub)) continue;
@@ -534,7 +555,7 @@ export function catalog(options: CatalogOptions): AstroIntegration {
           }
         const pointers: string[] = [];
         for (const pattern of options.copy ?? []) {
-          const found = copied(pattern);
+          const found = copied(pattern, true);
           if (found.length === 0) throw new Error(`catalog copy: ${pattern} matches nothing`);
           for (const [file, source] of found) {
             const target = join(out, file);

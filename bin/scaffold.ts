@@ -82,11 +82,11 @@ try {
 
 cpSync(join(home, "template"), target, { recursive: true });
 if (!catalogIn) cpSync(join(home, "template-catalog"), target, { recursive: true });
-// Stored under another name: as eslint.config.js it would lint this package's own template files
-// with an import of this package that only resolves in a repository that installs it; the Astro
-// config holds a placeholder that is no TypeScript until it is filled.
-const renames = ["eslint.config.js", ...(catalogIn ? [] : ["catalog/astro.config.ts"])];
-for (const file of renames) renameSync(join(target, `${file}.tmpl`), join(target, file));
+// Stored as .tmpl: as eslint.config.js it would lint this package's own template files with an
+// import of this package that only resolves in a repository that installs it; the Astro config
+// holds a placeholder that is no TypeScript until it is filled.
+for (const file of readdirSync(target, { recursive: true, encoding: "utf8" }))
+  if (file.endsWith(".tmpl")) renameSync(join(target, file), join(target, file.slice(0, -5)));
 // A Git dependency installs without symlinks, so the skeleton's links are made here.
 const { symlinks } = JSON.parse(readFileSync(join(home, "skeleton.json"), "utf8"));
 for (const [path, link] of Object.entries<string>(symlinks)) {
@@ -110,7 +110,10 @@ for (const file of filled) {
   const path = join(target, file);
   writeFileSync(
     path,
-    readFileSync(path, "utf8").replace(/\{\{(\w+)\}\}/g, (_, key) => values[key]),
+    readFileSync(path, "utf8").replace(/\{\{(\w+)\}\}/g, (_, key: string) => {
+      if (!Object.hasOwn(values, key)) throw new Error(`${file}: no value for {{${key}}}`);
+      return values[key]!;
+    }),
   );
 }
 const pkgPath = join(target, "package.json");
@@ -127,6 +130,9 @@ if (!catalogIn) tools.push("astro", "astrobook", "eslint-plugin-astro", "styleli
 // Set here, not in the template: there it would govern this package's own template files with a
 // package that only resolves in a repository that installs it.
 pkg.prettier = "@hackersandwizards/scaffolding/prettier";
+// The bun floor and the scripts every repository shares, as this package states them for itself.
+pkg.engines = { bun: own.engines.bun, ...pkg.engines };
+pkg.scripts = { prepare: own.scripts.prepare, fix: own.scripts.fix, ...pkg.scripts };
 pkg.devDependencies = Object.fromEntries(
   [
     ...tools.map((t) => [t, own.devDependencies[t]]),
@@ -152,10 +158,9 @@ writeFileSync(pkgPath, `${JSON.stringify(pkg, null, 2)}\n`);
 if (!catalogIn) {
   // As text: prettier keeps a short array on one line, JSON.stringify would not.
   const tsPath = join(target, "tsconfig.json");
-  const ts = readFileSync(tsPath, "utf8").replace(
-    '"test/**/*.ts"]',
-    '"test/**/*.ts", "catalog/**/*.ts"]',
-  );
+  const was = readFileSync(tsPath, "utf8");
+  const ts = was.replace('"test/**/*.ts"]', '"test/**/*.ts", "catalog/**/*.ts"]');
+  if (ts === was) throw new Error("template/tsconfig.json: no include list ending in test/**/*.ts");
   writeFileSync(tsPath, ts);
 }
 spawnSync("git", ["init", "-q", "-b", "main"], { cwd: target, stdio: "inherit" });

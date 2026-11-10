@@ -44,7 +44,7 @@ const HISTORY: [string, RegExp][] = [
   [
     "item id",
     new RegExp(
-      String.raw`\b(?!(?:AES|CVE|CWE|ECMA|IEEE|ISO|RFC|SHA|UTF)-)[A-Z]{2,4}-\d+\b|\b[Ii]tems?\s+[a-z0-9]+(?:-[a-z0-9]+)+` +
+      String.raw`\b(?!(?:AES|CSS|CVE|CWE|ECMA|ES|IEEE|ISO|MD|RFC|SHA|TLS|UTF|WCAG|WOFF)-)[A-Z]{2,4}-\d+\b|\b[Ii]tems?\s+[a-z0-9]+(?:-[a-z0-9]+)+` +
         (items.length ? String.raw`|(?<![\w-])(?:${items.join("|")})(?![\w-])` : ""),
       "g",
     ),

@@ -5,7 +5,7 @@ import tseslint from "typescript-eslint";
 import base from "./eslint.js";
 
 export default [
-  ...base.slice(0, -1),
+  ...base,
   ...astro.configs.recommended,
   // eslint-plugin-astro loads the TypeScript parser from the working directory, which an
   // isolated install of the repository lacks: without it, TypeScript in an .astro file fails to parse.

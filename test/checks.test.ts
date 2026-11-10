@@ -14,6 +14,7 @@ import {
   realpathSync,
   renameSync,
   rmSync,
+  statSync,
   symlinkSync,
   utimesSync,
   writeFileSync,
@@ -606,7 +607,22 @@ describe("scaffold and check-structure", () => {
 
   test("a scaffolded repository passes", () => {
     expect(made.code).toBe(0);
-    expect(JSON.parse(readFileSync(join(dir, "package.json"), "utf8")).name).toBe("demo");
+    const pkg = JSON.parse(readFileSync(join(dir, "package.json"), "utf8"));
+    expect(pkg.name).toBe("demo");
+    // The bun floor and the shared scripts are this package's own.
+    const own = JSON.parse(readFileSync(join(import.meta.dir, "../package.json"), "utf8"));
+    expect(pkg.engines.bun).toBe(own.engines.bun);
+    expect([pkg.scripts.prepare, pkg.scripts.fix]).toEqual([own.scripts.prepare, own.scripts.fix]);
+    // Every placeholder filled and every .tmpl renamed, in whichever template file it sits.
+    const files = sh(dir, ["ls-files", "-co", "--exclude-standard"]).stdout.toString().split("\n");
+    expect(files.filter((f) => f.endsWith(".tmpl"))).toEqual([]);
+    expect(
+      files.filter(
+        (f) =>
+          statSync(join(dir, f), { throwIfNoEntry: false })?.isFile() &&
+          /\{\{\w+\}\}/.test(readFileSync(join(dir, f), "utf8")),
+      ),
+    ).toEqual([]);
     const r = run(dir, "check-structure");
     expect(r.out).toBe("");
     expect(r.code).toBe(0);
@@ -3020,6 +3036,10 @@ describe("catalog", () => {
       expect(css.headers.get("content-type")).toBe("text/css");
       expect(await css.text()).toBe("a {\n  color: red;\n}\n");
       expect((await fetch(`${server.url}/assets/skip.txt`)).status).toBe(404);
+      // Each pattern is globbed once; a file added since is found by a second glob.
+      made.push(join(fixture, "assets", "late.svg"));
+      writeFileSync(join(fixture, "assets", "late.svg"), "<svg/>");
+      expect((await fetch(`${server.url}/assets/late.svg`)).status).toBe(200);
       // `admin`: in dev the header links the repository's page in the local hub; the fixture's
       // repository is this checkout.
       expect(await (await fetch(`${server.url}/`)).text()).toMatch(
@@ -4073,7 +4093,7 @@ describe("check-history", () => {
         "src/c.html": "<!-- OS-1 -->\n",
         ".githooks/pre-commit": "# decision label-system, 06.11.\nrun\n",
         "src/clean.ts":
-          "// how to use it, why it is so: UTF-8, SHA-256\nconst at = '2026-11-01';\n",
+          "// how to use it, why it is so: UTF-8, SHA-256, CSS-3, WOFF-2, ES-2022, WCAG-2, TLS-1, MD-5\nconst at = '2026-11-01';\n",
         "docs/agent-work/items/new-claim.md": "x\n",
         "other/d.css": "/* blind panel 2026-11-01 */\n",
       }),

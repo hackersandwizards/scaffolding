@@ -25,8 +25,9 @@ function pinnedBuild(shell?: boolean): string | undefined {
 }
 
 // Pinned: bunx runs the newest published release of an unpinned package.
+const BROWSERS = "@puppeteer/browsers@3.2.6";
 const install = (shell?: boolean) => [
-  "@puppeteer/browsers@3.2.6",
+  BROWSERS,
   "install",
   `${kindOf(shell)}@${pinnedBuild(shell) ?? "stable"}`,
   "--path",
@@ -115,8 +116,7 @@ export async function chromeBinaryAsync(options: Options = {}): Promise<string |
   return started;
 }
 
-export const INSTALL_HINT =
-  "Chrome for Testing is required: bunx @puppeteer/browsers@3.2.6 install chrome@<the build node_modules/puppeteer-core/lib/puppeteer/revisions.js pins, else stable> --path ~/.cache/puppeteer, or set CHROME_BINARY.";
+export const INSTALL_HINT = `Chrome for Testing is required: bunx ${BROWSERS} install chrome@<the build node_modules/puppeteer-core/lib/puppeteer/revisions.js pins, else stable> --path ~/.cache/puppeteer, or set CHROME_BINARY.`;
 
 /** Chrome otherwise asks the macOS keychain for "Chromium Safe Storage", a dialog per launch. */
 export const NO_KEYCHAIN = ["--use-mock-keychain", "--password-store=basic"];
