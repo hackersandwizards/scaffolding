@@ -119,11 +119,18 @@ function write(dir: string, files: Record<string, string>) {
   }
 }
 // SCAFFOLDING_LOAD 0: the gate runs its steps side by side whatever this machine's load is.
-function run(cwd: string, name: string, args: string[] = [], env: Record<string, string> = {}) {
+function run(
+  cwd: string,
+  name: string,
+  args: string[] = [],
+  env: Record<string, string> = {},
+  input?: string,
+) {
   const r = spawnSync(process.execPath, ["--no-env-file", bin(name), ...args], {
     cwd,
     env: { ...process.env, SCAFFOLDING_LOAD: "0", ...env },
     encoding: "utf8",
+    input,
   });
   return { code: r.status, out: `${r.stdout}${r.stderr}` };
 }
@@ -1891,6 +1898,164 @@ describe("check-confidential", () => {
   }, 20_000);
 });
 
+// Invented stand-ins for the names h&w never shows: QZX three letters in capitals, ZWOX four, Brennwald a
+// capitalised name with a legal form, Marigold a dictionary word the public text also carries.
+describe("check-confidential never", () => {
+  const dir = temp();
+  writeFileSync(join(dir, "never.txt"), "QZX\nBrennwald AG\nMarigold\nZWOX\n");
+  writeFileSync(join(dir, "public.txt"), "We like Marigold.\n");
+  const build = (input: string, never = join(dir, "never.txt")) =>
+    run(
+      dir,
+      "check-confidential",
+      ["build", "-", "--public", join(dir, "public.txt"), "--never", never],
+      {},
+      input,
+    );
+  const list = join(dir, "list.json");
+  writeFileSync(list, build("Acme Widgets\nMarigold\n").out);
+  const env = { SCAFFOLDING_CONFIDENTIAL_TERMS: list, CI: "" };
+  const never = (texts: unknown, at = repo({ "package.json": "{}" }), extra = {}) =>
+    run(at, "check-confidential", ["never"], { ...env, ...extra }, JSON.stringify(texts));
+
+  test("build keeps every never name, hashed, and a cased one also in any case", () => {
+    const built = JSON.parse(readFileSync(list, "utf8"));
+    expect(readFileSync(list, "utf8")).not.toMatch(/qzx|zwox|brennwald|marigold/i);
+    // Marigold, public and a word, leaves the terms but stays a never name.
+    expect(built.hashes).toHaveLength(1);
+    // QZX and ZWOX two each, Brennwald AG and Brennwald one each, Marigold one.
+    expect(built.never).toHaveLength(7);
+  });
+
+  test("build refuses an empty never input and a name under three letters, its legal form dropped", () => {
+    const names = join(dir, "names.txt");
+    for (const [text, why] of [
+      ["\n\n", "--never: no name"],
+      ["QZX\nQZ\n", "under three letters: QZ"],
+      ["QZ AG\n", "under three letters: QZ AG"],
+    ]) {
+      writeFileSync(names, text);
+      const r = build("Acme Widgets\n", names);
+      expect(r.code).toBe(1);
+      expect(r.out).toContain(why);
+    }
+    writeFileSync(names, "QZX AG\n");
+    expect(build("Acme Widgets\n", names).code).toBe(0);
+  });
+
+  // The matching table of the never-shown names report, each name replaced by its stand-in.
+  test.each([
+    ["QZX", true],
+    ["Qzx", true],
+    ["qzx", true],
+    ["QZX-Lieferung", true],
+    ["QZX’s Team", true],
+    ["qzx-workshop", true],
+    ["/qzx-ops-training/a.svg", true],
+    ["Qzx-Wan Keqzx", true],
+    ["Brennwald", true],
+    ["BRENNWALD", true],
+    ["Brennwald-Projekt", true],
+    ["QZX Smart Systems", true],
+    ["Marigold", true],
+    ["marigold", true],
+    ["zwox", true],
+    ["Brennwalds", false],
+    ["Wir haben gestern im Büro über das Angebot gesprochen.", false],
+  ])("%s: refused %p", (text, refused) => {
+    const r = never({ "deck/a": "Titel\n" + text });
+    expect(r.code).toBe(refused ? 1 : 0);
+    if (refused) expect(r.out).toContain("deck/a: a name h&w never shows from the company records");
+  });
+
+  test("runs in a private repository too", () => {
+    const at = repo({ "package.json": JSON.stringify({ scaffolding: { private: true } }) });
+    expect(never({ x: "QZX" }, at).code).toBe(1);
+  });
+
+  test("an allow entry in the working tree's package.json passes its case; one matching nothing fails", () => {
+    const entry = {
+      check: "never-shown",
+      path: "deliveries/*-qzx-*/*",
+      text: "QZX",
+      reason: "its own client",
+    };
+    const at = repo({ "package.json": "{}" });
+    write(at, { "package.json": JSON.stringify({ scaffolding: { allow: [entry] } }) });
+    expect(never({ "deliveries/2026-qzx-a/deck": "QZX" }, at).code).toBe(0);
+    // The entry covers its text only: another never name in the same delivery still refuses.
+    expect(never({ "deliveries/2026-qzx-a/deck": "QZX and Brennwald" }, at).code).toBe(1);
+    const stale = never({ "deliveries/2026-other/deck": "nothing" }, at);
+    expect(stale.code).toBe(1);
+    expect(stale.out).toContain("allow entry matches nothing");
+    // A confidential entry is the public scans' own and covers no never name.
+    write(at, {
+      "package.json": JSON.stringify({
+        scaffolding: { allow: [{ ...entry, check: "confidential" }] },
+      }),
+    });
+    expect(never({ "deliveries/2026-qzx-a/deck": "QZX" }, at).code).toBe(1);
+  });
+
+  test("an input that is empty, not JSON, not an object or not all strings refuses, past any allow entry", () => {
+    const at = repo({
+      "package.json": JSON.stringify({
+        scaffolding: { allow: [{ check: "never-shown", reason: "everything" }] },
+      }),
+    });
+    for (const input of ["", "{}", "[]", "not json", '{"a": "x", "b": 1}', '"QZX"']) {
+      const r = run(at, "check-confidential", ["never"], env, input);
+      expect(r.code).toBe(1);
+      expect(r.out).toContain("stdin: nothing to scan");
+    }
+    expect(never({ a: "plain text" }, repo({ "package.json": "{}" })).code).toBe(0);
+  });
+
+  test("a list with a missing or empty never section refuses", () => {
+    const at = repo({ "package.json": "{}" });
+    for (const section of [undefined, []]) {
+      const old = join(temp(), "old.json");
+      writeFileSync(
+        old,
+        JSON.stringify({ ...JSON.parse(readFileSync(list, "utf8")), never: section }),
+      );
+      const r = never({ a: "plain text" }, at, { SCAFFOLDING_CONFIDENTIAL_TERMS: old });
+      expect(r.code).toBe(1);
+      expect(r.out).toContain("the list has no never section");
+    }
+  });
+
+  test("CI skips with a warning", () => {
+    const r = never({ a: "QZX" }, repo({ "package.json": "{}" }), { CI: "true" });
+    expect(r.code).toBe(0);
+    expect(r.out).toContain("CI: never scan skipped");
+  });
+
+  test("a public commit and its message refuse never names under the commit scan's casing rule", () => {
+    const at = repo({ "package.json": "{}", "a.md": "a\n" });
+    const staged = (text: string, terms = list) => {
+      write(at, { "a.md": `a\n${text}\n` });
+      sh(at, ["add", "a.md"]);
+      return run(at, "check-confidential", ["--staged"], {
+        ...env,
+        SCAFFOLDING_CONFIDENTIAL_TERMS: terms,
+      }).code;
+    };
+    for (const text of ["QZX", "see qzx-workshop/", "ZWOX", "Brennwald", "brennwald"])
+      expect([text, staged(text)]).toEqual([text, 1]);
+    for (const text of ["bei Qzx", "zwox", "Zwox"]) expect([text, staged(text)]).toEqual([text, 0]);
+    // A list without a never section scans as before.
+    const old = join(temp(), "old.json");
+    const { never: _never, ...terms } = JSON.parse(readFileSync(list, "utf8"));
+    writeFileSync(old, JSON.stringify(terms));
+    expect(staged("QZX Brennwald", old)).toBe(0);
+    expect(staged("Acme Widgets", old)).toBe(1);
+    const msg = join(at, "MSG");
+    writeFileSync(msg, "fix: deck for Brennwald\n");
+    expect(run(at, "check-confidential", ["--message-file", msg], env).code).toBe(1);
+  });
+});
+
 describe("check-confidential list source", () => {
   const names = join(temp(), "names.txt");
   writeFileSync(names, "Acme Widgets GmbH\n");
@@ -1952,6 +2117,52 @@ describe("check-confidential list source", () => {
     // Bun's own transpiler cache may land in HOME; the command writes nothing there.
     expect(readdirSync(m.home)).not.toContain(".config");
     expect(readdirSync(m.home)).not.toContain(".cache");
+  });
+
+  test("the never scan fetches, keeps and ages the list as the commit scan does", () => {
+    const neverNames = join(temp(), "never.txt");
+    writeFileSync(neverNames, "QZX\n");
+    const withNever = run(temp(), "check-confidential", [
+      "build",
+      names,
+      "--never",
+      neverNames,
+    ]).out;
+    const aged = JSON.stringify({
+      ...JSON.parse(withNever),
+      built: new Date(Date.now() - 10 * 864e5).toISOString(),
+    });
+    const deck = JSON.stringify({ a: "QZX" });
+    const m = machine({ gh: "ok", remote: withNever });
+    const env = {
+      HOME: m.home,
+      PATH: `${stubDir}:${process.env.PATH}`,
+      GH_STUB: "ok",
+      GH_STUB_FILE: join(m.home, "remote.json"),
+      GH_STUB_LOG: join(m.home, "gh.log"),
+      CI: "",
+      SCAFFOLDING_CONFIDENTIAL_TERMS: "",
+    };
+    expect(run(m.dir, "check-confidential", ["never"], env, deck).out).toContain("(QZX)");
+    expect(readFileSync(m.cache, "utf8")).toBe(withNever);
+    run(m.dir, "check-confidential", ["never"], env, deck);
+    expect(m.calls()).toBe(1);
+    const old = machine({ gh: "ok", remote: aged });
+    const r = run(
+      old.dir,
+      "check-confidential",
+      ["never"],
+      {
+        ...env,
+        HOME: old.home,
+        GH_STUB_FILE: join(old.home, "remote.json"),
+        GH_STUB_LOG: join(old.home, "gh.log"),
+      },
+      JSON.stringify({ a: "plain" }),
+    );
+    expect(r.code).toBe(1);
+    expect(r.out).toContain("list built 10 days ago, more than 7");
+    expect(r.out).toContain("then run it again");
   });
 
   test("a copy fetched within the day is used without a fetch", () => {

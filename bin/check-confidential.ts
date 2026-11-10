@@ -12,11 +12,15 @@
 //                                             .confidential-purged.json, then hands the refs to
 //                                             `git lfs pre-push` where the push may carry LFS content
 //                                             or touch a lockable file
+//   check-confidential never                  reads {"<where>": "<text>"} on stdin and refuses every
+//                                             name of the list's never section in any case, in
+//                                             private repositories too: a deck test's strings
 //   check-confidential fetch                  fetches the list now, for a cloud setup script
-//   check-confidential build <terms|-> [--public <file>]
+//   check-confidential build <terms|-> [--public <file>] [--never <file>]
 //                                             prints a hashed list from one term per line (- reads
 //                                             stdin), stamped with its build time, leaving out every
-//                                             term the public text in <file> already carries
+//                                             term the public text in <file> already carries;
+//                                             --never adds the never section, every name kept
 //   check-confidential purged <sha>...        prints .confidential-purged.json for purged commits
 import { spawnSync } from "node:child_process";
 import { createHash, randomBytes } from "node:crypto";
@@ -94,21 +98,53 @@ if (argv[0] === "build") {
   // The scan reads grams of six words at most, so a longer term counts by its first six.
   const first = (term: string) => words(term).slice(0, 6);
   const norm = (term: string) => first(term).join(" ").toLowerCase();
+  const variantsOf = (term: string) =>
+    LEGAL.test(term) ? [term, term.replace(LEGAL, "")] : [term];
+  /** Adds the variant's hash; answers whether it is a cased term. */
+  const add = (into: Set<string>, variant: string) => {
+    const tokens = first(variant);
+    const n = norm(variant);
+    const cased = tokens.length === 1 && (n.length === 3 || capitals(tokens[0]));
+    into.add(cased ? h(`cs:${tokens[0]}`) : h(n));
+    maxTokens = Math.max(maxTokens, tokens.length);
+    return cased;
+  };
   for (const term of terms) {
-    const variants = LEGAL.test(term) ? [term, term.replace(LEGAL, "")] : [term];
+    const variants = variantsOf(term);
     if (variants.some((v) => published.has(norm(v)))) continue;
     for (const variant of variants) {
       const tokens = first(variant);
       const n = norm(variant);
       const word = tokens.length === 1 && n.length > 3 && dict.has(n) && !capitals(tokens[0]);
-      if (n.length < 3 || word) continue;
-      const cased = tokens.length === 1 && (n.length === 3 || capitals(tokens[0]));
-      hashes.add(cased ? h(`cs:${tokens[0]}`) : h(n));
-      maxTokens = Math.max(maxTokens, tokens.length);
+      if (n.length >= 3 && !word) add(hashes, variant);
     }
   }
+  // The never section is chosen by hand: no public text and no dictionary word drops a name. A cased
+  // name gets a second hash under "any:", which only the never scan reads, so a public commit keeps
+  // the casing rule above and a deck still refuses the name in any case.
+  const neverFile = arg("--never");
+  const never = new Set<string>();
+  if (neverFile) {
+    const names = readFileSync(neverFile, "utf8")
+      .split("\n")
+      .map((s) => s.trim())
+      .filter(Boolean);
+    // An empty section would pass every deck, and a name under three letters, its legal form
+    // dropped, would match ordinary words.
+    const short = names.filter((t) => variantsOf(t).some((v) => norm(v).length < 3));
+    if (!names.length || short.length) {
+      console.error(
+        `[check-confidential] --never: ${short.length ? `under three letters: ${short.join(", ")}` : "no name"}; not building`,
+      );
+      process.exit(1);
+    }
+    for (const name of names)
+      for (const variant of variantsOf(name))
+        if (add(never, variant)) never.add(h(`any:${norm(variant)}`));
+  }
   const built = new Date().toISOString();
-  console.log(JSON.stringify({ built, salt, maxTokens, hashes: [...hashes].sort() }));
+  const sections = neverFile ? { never: [...never].sort() } : {};
+  console.log(JSON.stringify({ built, salt, maxTokens, hashes: [...hashes].sort(), ...sections }));
   process.exit(0);
 }
 
@@ -225,12 +261,19 @@ if (argv[0] === "prepush") {
   finish("check-confidential", findings, started);
 }
 
-type TermList = { built?: string; salt: string; maxTokens: number; hashes: string[] };
+type TermList = {
+  built?: string;
+  salt: string;
+  maxTokens: number;
+  hashes: string[];
+  never?: string[];
+};
 const parse = (text: string): TermList | undefined => {
   try {
     const l = JSON.parse(text);
     const valid =
       Array.isArray(l?.hashes) &&
+      (l.never === undefined || Array.isArray(l.never)) &&
       typeof l.salt === "string" &&
       Number.isInteger(l.maxTokens) &&
       l.maxTokens >= 1 &&
@@ -299,6 +342,8 @@ if (argv[0] === "fetch") {
   process.exit(loaded.problem ? 1 : 0);
 }
 
+const neverMode = argv[0] === "never";
+const CHECK = neverMode ? "never-shown" : "confidential";
 const message = arg("--message-file");
 const commit = arg("--commit");
 // Only the hooks of an outside contributor's commit go without a list; an audit never does.
@@ -307,12 +352,17 @@ const optional =
 const tree = arg("--tree");
 const index = argv.includes("--index");
 // A deploy's audit needs no access; a commit, its message or a push is scanned wherever it is made.
-const skipped = process.env.CI === "true" && Boolean(tree || index);
+const skipped = process.env.CI === "true" && Boolean(tree || index || neverMode);
+if (skipped && neverMode) {
+  warn("CI: never scan skipped");
+  process.exit(0);
+}
 // `private` and the allow list come from the snapshot scanned, so a commit adding a case and its
 // allow entry together is judged as one and an unstaged edit switches no scan off. A message
-// belongs to the commit the index makes.
-const pkg = readPackage(root, tree ?? commit ?? ":");
-if (pkg.scaffolding?.private === true) process.exit(0);
+// belongs to the commit the index makes. The never scan reads what the working tree renders, and
+// runs in a private repository too: no surface shows those names.
+const pkg = readPackage(root, neverMode ? undefined : (tree ?? commit ?? ":"));
+if (pkg.scaffolding?.private === true && !neverMode) process.exit(0);
 // package.json's allow entries name the very terms and paths they allow, so the file is read without
 // them, each entry's reason kept: whole, as the snapshot holds it, since its added lines alone cannot
 // tell an entry from the rest.
@@ -344,13 +394,22 @@ else {
   if (unscanned) warn(`${loaded.problem}; --list-optional: terms not scanned`);
   else if (loaded.problem)
     listProblem.push({
-      check: "confidential",
+      check: CHECK,
       path: "confidential terms",
       text: "",
-      message: `${loaded.problem}. Refused: run \`gh auth login\` with an account in the ${TERMS_REPO.split("/")[0]} trainers team, then commit again`,
+      message: `${loaded.problem}. Refused: run \`gh auth login\` with an account in the ${TERMS_REPO.split("/")[0]} trainers team, then ${neverMode ? "run it" : "commit"} again`,
+    });
+  // A list without names to look for would pass every deck.
+  else if (neverMode && !list?.never?.length)
+    listProblem.push({
+      check: CHECK,
+      path: "confidential terms",
+      text: "",
+      message: "the list has no never section: Company OS has not built one",
     });
 }
-const bad = new Set<string>(list?.hashes ?? []);
+// A public repository's own scans refuse a never name too, under their casing rule.
+const bad = new Set<string>([...(neverMode ? [] : (list?.hashes ?? [])), ...(list?.never ?? [])]);
 const h = hasher(list?.salt ?? "");
 
 /** `inPath`: `text` is the path `where` itself. */
@@ -369,7 +428,8 @@ function scanText(where: string, text: string, inPath = false) {
       // in capitals, since in lower case they are code (`c => a`).
       const pair = n === 1 && gram.length === 3;
       const counts = pair ? capitals(tokens[i] + tokens[i + 1]) : n || gram.length > 3;
-      if (counts && bad.has(h(gram))) found.add(tokens.slice(i, i + n + 1).join(" "));
+      if ((counts && bad.has(h(gram))) || (neverMode && bad.has(h(`any:${gram}`))))
+        found.add(tokens.slice(i, i + n + 1).join(" "));
     }
   }
   // A slug or path writes a capitalised name in lower case (quux-workshop, clients/quux/): a
@@ -380,10 +440,10 @@ function scanText(where: string, text: string, inPath = false) {
         found.add(part);
   for (const name of found)
     findings.push({
-      check: "confidential",
+      check: CHECK,
       path: where,
       text: name,
-      message: `confidential term from the company records${inPath ? " in the file's path" : ""}`,
+      message: `${neverMode ? "a name h&w never shows" : "confidential term"} from the company records${inPath ? " in the file's path" : ""}`,
       term: true,
       ...(inPath && { name: true as const }),
     });
@@ -730,6 +790,26 @@ else if (argv.includes("--staged") || commit) {
     if (!taken.has(path)) scanText(path, ownText(path, texts.get(path)?.join("\n") ?? ""));
   if (commit)
     scanText("commit message", git(["log", "-1", "--format=%B", commit], root).toString());
+} else if (neverMode) {
+  let input: unknown;
+  try {
+    input = JSON.parse(readFileSync(0, "utf8"));
+  } catch {}
+  const texts =
+    input && typeof input === "object" && !Array.isArray(input) ? Object.entries(input) : [];
+  // Kept out of applyAllow like the list's own problems: a broken dump passes nothing.
+  if (!texts.length || texts.some(([, text]) => typeof text !== "string"))
+    listProblem.push({
+      check: CHECK,
+      path: "stdin",
+      text: "",
+      message: 'nothing to scan: stdin holds no {"<where>": "<text>"} object of strings',
+    });
+  else {
+    // The caller hands over every string it shows, so an allow entry matching nothing is stale.
+    full = true;
+    for (const [where, text] of texts) scanText(where, text as string);
+  }
 } else if (tree || index) {
   full = true;
   const listed = git(tree ? ["ls-tree", "-r", "-z", tree] : ["ls-files", "-s", "-z"], root)
@@ -763,7 +843,7 @@ else if (argv.includes("--staged") || commit) {
   });
 } else {
   console.error(
-    "usage: check-confidential --staged | --message-file <file> [--list-optional] | --commit <rev> | --index | --tree <rev> | prepush | fetch | build <terms|-> [--public <file>] | purged <sha>...",
+    "usage: check-confidential --staged | --message-file <file> [--list-optional] | --commit <rev> | --index | --tree <rev> | never | prepush | fetch | build <terms|-> [--public <file>] [--never <file>] | purged <sha>...",
   );
   process.exit(2);
 }
@@ -774,6 +854,6 @@ scanBinaries(binaries);
 // cannot tell.
 finish(
   "check-confidential",
-  [...listProblem, ...applyAllow(pkg, "confidential", findings, full && Boolean(list))],
+  [...listProblem, ...applyAllow(pkg, CHECK, findings, full && Boolean(list))],
   started,
 );
