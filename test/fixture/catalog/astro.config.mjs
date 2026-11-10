@@ -8,7 +8,7 @@ export default defineConfig({
       css: ["./fx.css"],
       lead: "Lead.",
       groupOrder: ["Types", "Parts"],
-      previewStates: ["missing", "two"],
+      previewStates: ["block-image", "two"],
       previewSize: { Types: [1440, 900] },
       storyScale: "screen",
       htmlClass: ["fx-root", "fx-two"],

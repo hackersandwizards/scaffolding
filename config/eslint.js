@@ -23,7 +23,7 @@ export default [
   js.configs.recommended,
   ...tseslint.configs.recommended,
   {
-    languageOptions: { globals: { ...globals.browser, ...globals.node } },
+    languageOptions: { globals: { ...globals.browser, ...globals.node, ...globals.bunBuiltin } },
     rules: {
       // An error: a warning exits 0, so a gate read only when red never shows it.
       "@typescript-eslint/no-unused-vars": [

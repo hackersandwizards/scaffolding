@@ -2383,6 +2383,8 @@ describe("shared eslint config", () => {
       "e2e/e.js": 'test("x", () => {});\n',
       "f.test.ts": 'test.concurrent.only("x", () => {});\n',
       "g.ts": "const unusedThing = 1;\nexport {};\n",
+      // Bun's global is known in a script, where typescript-eslint leaves no-undef on.
+      "h.mjs": "console.log(Bun.version);\n",
     });
     const eslint = join(import.meta.dir, "..", "node_modules", ".bin", "eslint");
     const r = spawnSync(eslint, ["."], { cwd: dir, encoding: "utf8" });
@@ -2390,6 +2392,7 @@ describe("shared eslint config", () => {
     for (const file of ["a.test.ts", "c.spec.ts", "tests/d.ts", "e2e/e.js", "f.test.ts", "g.ts"])
       expect(r.stdout).toContain(file);
     expect(r.stdout).not.toContain("b.test.ts");
+    expect(r.stdout).not.toContain("h.mjs");
   });
 
   test("the astro preset parses an .astro file's TypeScript with its own typescript-eslint", () => {
@@ -2540,6 +2543,8 @@ describe("catalog", () => {
     expect(home).toMatch(
       /<ul class="hw-catalog-names"><li><a href="\/dashboard\/Parts\/box-parts\/two\/">Box parts<\/a>/,
     );
+    // `previewStates` in order: the first a component has wins.
+    expect(home).toContain('<a href="/dashboard/Parts/many-parts/block-image/">Many parts</a>');
     // A frame names its page in data-src: the shell's script loads it once the tile nears the view.
     expect(home).toContain('data-src="/stories/Types/box-types/two/"');
     expect(home).not.toMatch(/<iframe[^>]* src=/);
@@ -2962,6 +2967,13 @@ describe("catalog", () => {
     expect(stale.status).not.toBe(0);
     expect(`${stale.stdout}${stale.stderr}`).toContain(
       'catalog previewSize: "Pieces" names no story group (Parts, Types)',
+    );
+    // A `previewStates` entry naming no story's state fails the build by name: a renamed state
+    // would leave every tile on another state unseen.
+    const unknown = variant("unknown", 'previewStates: ["two", "gone"]');
+    expect(unknown.status).not.toBe(0);
+    expect(`${unknown.stdout}${unknown.stderr}`).toContain(
+      'catalog previewStates: "gone" names no story\'s state',
     );
     // `themeToggle: false`: the bar offers no dark theme.
     expect(variant("light", "themeToggle: false").status).toBe(0);

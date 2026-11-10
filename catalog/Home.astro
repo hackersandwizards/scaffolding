@@ -60,6 +60,10 @@ for (const m of named.sort((a, b) => a.label.localeCompare(b.label))) {
         : undefined,
   });
 }
+// A renamed state would otherwise leave every tile on another state unseen.
+for (const state of previewStates)
+  if (!named.some((m) => m.stories.some((s) => s.id.endsWith(`/${state}`))))
+    throw new Error(`catalog previewStates: "${state}" names no story's state`);
 // A renamed group would otherwise draw its tiles at the small fitted size unseen.
 if (previewSize && !Array.isArray(previewSize))
   for (const key of Object.keys(previewSize))

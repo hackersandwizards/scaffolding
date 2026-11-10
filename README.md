@@ -145,7 +145,7 @@ the confidential scan; in the working tree, the history step.
 
 | Export                                         | Use                                                                                                                                                                                                                                                         |
 | ---------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `./eslint`, `./eslint/astro`                   | `export default [...base, ...]` in `eslint.config.js`                                                                                                                                                                                                       |
+| `./eslint`, `./eslint/astro`                   | `export default [...base, ...]` in `eslint.config.js`; browser, Node and Bun globals                                                                                                                                                                        |
 | `./tsconfig/bun.json`, `./tsconfig/astro.json` | `"extends"` in `tsconfig.json`; `include` and `paths` stay in the repository                                                                                                                                                                                |
 | `./prettier`                                   | `"prettier": "@hackersandwizards/scaffolding/prettier"` in `package.json`, `.astro` included; a config adding plugins lists `...base.plugins` first                                                                                                         |
 | `./stylelint`                                  | `export default styles({ importFrom: [...] })` in `stylelint.config.js`                                                                                                                                                                                     |
@@ -304,7 +304,8 @@ The options beyond those above:
   `"@hackersandwizards/brand/elements/focus.css"` in each list that leaves out `elements.css`, or
   that list's pages draw no focus ring.
 - `previewStates`: the states a tile draws and links first, each the story's export name in kebab
-  case, such as `["light", "loaded-dark"]` for `Light` and `LoadedDark`.
+  case, such as `["light", "loaded-dark"]` for `Light` and `LoadedDark`. An entry that names no
+  story's state fails the build.
 - `head`: the repository's own `<head>` component, rendered on every page. Ahead of it every page
   declares the cascade layer order: the shell's ground first, then, where the repository resolves
   brand v1.52.0 or later, brand's `layers.css`, so a head on such a brand declares no order of its
