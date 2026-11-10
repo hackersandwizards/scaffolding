@@ -27,20 +27,22 @@ export function freePort(): Promise<number> {
 
 /** Starts `command` with HOST and PORT set, waits until it answers, and hands back its URL and a
  * stop. Fails after `timeoutMs` without an answer (20 s times the machine's load factor), or when
- * the server exits first. */
+ * the server exits first. `stderr: true` passes the server's stderr through, so a crash or a render
+ * error shows its stack. */
 export async function serve(
   command: string[],
   {
     env = {},
     timeoutMs = 20_000 * machineLoad().factor,
-  }: { env?: Record<string, string>; timeoutMs?: number } = {},
+    stderr = false,
+  }: { env?: Record<string, string>; timeoutMs?: number; stderr?: boolean } = {},
 ): Promise<{ url: string; stop: () => void }> {
   const port = await freePort();
   const url = `http://127.0.0.1:${port}`;
   // In a group of its own, so stop() reaches a server a wrapper such as `bun run` starts too.
   const server = spawn(command[0]!, command.slice(1), {
     env: { ...process.env, ...env, HOST: "127.0.0.1", PORT: String(port) },
-    stdio: "ignore",
+    stdio: ["ignore", "ignore", stderr ? "inherit" : "ignore"],
     detached: true,
   });
   // Where this process dies without stop(), killed by a signal included, the watcher's stdin

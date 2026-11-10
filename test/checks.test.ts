@@ -4848,6 +4848,22 @@ describe("serve", () => {
     await expect(serve(["/nonexistent-polish-bin"])).rejects.toThrow("it exited");
   });
 
+  test("stderr: true passes the server's stderr through; by default it stays quiet", () => {
+    const lib = JSON.stringify(join(import.meta.dir, "..", "lib", "serve.ts"));
+    const said = (options: string) =>
+      spawnSync(
+        process.execPath,
+        [
+          "-e",
+          `const { serve } = await import(${lib});
+await serve([process.execPath, "-e", "console.error('boot failed: stack'); process.exit(1)"], ${options}).catch(() => {});`,
+        ],
+        { encoding: "utf8" },
+      ).stderr;
+    expect(said("{ stderr: true }")).toContain("boot failed: stack");
+    expect(said("{}")).not.toContain("boot failed");
+  });
+
   test("the load factor is load per core, from 1 up to 10", () => {
     const factor = (load: string) =>
       Number(
