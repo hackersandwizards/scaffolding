@@ -8,17 +8,20 @@
 exec 2>&1
 cd "$(git rev-parse --show-toplevel)" || exit 0
 wait=${SCAFFOLDING_FETCH_WAIT_S:-20}
-case $wait in '' | *[!0-9]*) wait=20 ;; esac
+# A bound that is no whole number of seconds, or 0, which would end the fetch at once, is the default.
+case $wait in '' | *[!0-9]*) wait=20 ;; *[1-9]*) ;; *) wait=20 ;; esac
+# Into origin/main by name: a clone of one other branch has no refspec that updates it.
+ref=+refs/heads/main:refs/remotes/origin/main
 # Bounded by the clock: an SSH remote waits for a person to approve the key, and nothing in ssh or
 # git ends that wait. The fetch runs in a process group of its own (detached), so the kill ends ssh
 # with git; dash's `set -m` makes none without a terminal, so bun keeps the time. Without bun,
 # which the install below needs too, the fetch runs unbounded.
 if ! command -v bun >/dev/null; then
-  GIT_TERMINAL_PROMPT=0 git fetch -q origin main >/dev/null 2>&1
+  GIT_TERMINAL_PROMPT=0 git fetch -q origin "$ref" >/dev/null 2>&1
 else
   bun --no-env-file -e '
   const { spawn } = require("node:child_process");
-  const git = spawn("git", ["fetch", "-q", "origin", "main"], {
+  const git = spawn("git", ["fetch", "-q", "origin", process.argv[2]], {
     detached: true,
     stdio: "ignore",
     env: { ...process.env, GIT_TERMINAL_PROMPT: "0" },
@@ -33,7 +36,7 @@ else
     clearTimeout(timer);
     process.exit(code ?? 1);
   });
-' "$wait" 2>/dev/null
+' "$wait" "$ref" 2>/dev/null
 fi
 fetched=$?
 if [ "$fetched" -eq 0 ]; then

@@ -13,32 +13,56 @@ if [ -x node_modules/.bin/check-lock ] || grep -q '"check-lock":' package.json 2
   # installs. Another install holding the lock is waited for, as check-lock does for its own command.
   CHECK_LOCK_WAIT_MS=0 bun run --silent check-lock bun install --frozen-lockfile </dev/null >"$log" 2>&1
 else
-  # No check-lock before the first install: the lock is taken as check-lock takes it, a hard link of
-  # a complete file naming the same command, so another first install, or check-lock once linked,
-  # waits for this one.
-  holder() { sed -n 's/^{"pid":\([0-9]*\).*/\1/p' "$1" 2>/dev/null; }
+  # No check-lock before the first install: the lock is taken by check-lock's rules, so another
+  # first install, or check-lock once linked, waits for this one. A lock is live while its pid or
+  # its group (here bun's pid, which outlives a killed shell) runs; one that names neither is stale.
+  field() { printf %s "$2" | sed -n "s/.*\"$1\":\([1-9][0-9]*\).*/\1/p"; }
+  live() { kill -0 "$(field pid "$1")" 2>/dev/null || kill -0 "$(field group "$1")" 2>/dev/null; }
+  # A stale lock is removed under a numbered claim for exactly its contents, which no other waiter
+  # can take while they stand: a dead claimant is passed over, a live one ends the try.
+  reclaim() {
+    raw=$(cat "$lock" 2>/dev/null) || return 0
+    live "$raw" && return 0
+    base="$lock.reclaim-$(printf %s "$raw" | cksum | cut -d ' ' -f 1)"
+    slot=0
+    until ln "$lock.$$" "$base.$slot" 2>/dev/null; do
+      owner=$(cat "$base.$slot" 2>/dev/null) || return 0
+      live "$owner" && return 0
+      slot=$((slot + 1))
+    done
+    [ "$(cat "$lock" 2>/dev/null)" = "$raw" ] && rm -f "$lock"
+    while [ "$slot" -ge 0 ]; do
+      rm -f "$base.$slot"
+      slot=$((slot - 1))
+    done
+  }
+  holds() { [ "$(field pid "$(cat "$lock" 2>/dev/null)")" = $$ ]; }
+  # The lock goes only while it names this shell and bun has ended.
+  trap 'rm -f "$log" "$lock.$$"; holds && ! kill -0 "$bun" 2>/dev/null && rm -f "$lock"' EXIT
   mkdir -p node_modules
-  printf '{"pid":%s,"startedAt":%s000,"command":["bun","install","--frozen-lockfile"]}' \
-    $$ "$(date +%s)" >"$lock.$$"
+  entry() {
+    printf '{"pid":%s,"startedAt":%s000,"command":["bun","install","--frozen-lockfile"]%s}' \
+      $$ "$started" "$1" >"$lock.$$"
+  }
+  started=$(date +%s)
+  entry ""
   waited=0
-  until ln "$lock.$$" "$lock" 2>/dev/null || [ "$waited" -gt 300 ]; do
-    dead=$(holder "$lock")
-    # A dead holder's lock is moved aside whole, which one waiter alone can do; a live lock moved by
-    # a waiter that read the dead one before it goes back.
-    if [ -n "$dead" ] && ! kill -0 "$dead" 2>/dev/null && mv "$lock" "$lock.$$.stale" 2>/dev/null; then
-      [ "$(holder "$lock.$$.stale")" = "$dead" ] || ln "$lock.$$.stale" "$lock" 2>/dev/null
-      rm -f "$lock.$$.stale"
-      continue
-    fi
+  until ln "$lock.$$" "$lock" 2>/dev/null; do
+    reclaim
+    ln "$lock.$$" "$lock" 2>/dev/null && break
+    [ "$waited" -lt 300 ] || break
     sleep 1
     waited=$((waited + 1))
   done
+  # A link to the lock itself once taken: entry() must write a new file, never through it.
   rm -f "$lock.$$"
-  if [ "$(holder "$lock")" = $$ ]; then
-    trap 'rm -f "$log" "$lock"' EXIT
-    bun install --frozen-lockfile </dev/null >"$log" 2>&1
+  if holds; then
+    bun install --frozen-lockfile </dev/null >"$log" 2>&1 &
+    bun=$!
+    entry ",\"group\":$bun" && mv "$lock.$$" "$lock"
+    wait "$bun"
   else
-    echo "[install] pid $(holder "$lock") still holds $lock after 300 s; not installing beside it" >"$log"
+    echo "[install] pid $(field pid "$(cat "$lock" 2>/dev/null)") still holds $lock after 300 s; not installing beside it" >"$log"
     false
   fi
 fi

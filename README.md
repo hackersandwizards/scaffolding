@@ -15,8 +15,8 @@ bun 1.3 or newer, gitleaks (`brew install gitleaks`), `pdftotext` and `pdftoppm`
 on macOS `swiftc` for the OCR helper, built once per checkout into `node_modules/.cache/scaffolding/`.
 A commit in a repository without `scaffolding.private` also needs a `gh` login in the `trainers` team:
 the confidential-terms check (below) fetches its list with it. The commit and push hooks run the
-package's commands from `node_modules`, so each checkout, a new worktree included, needs
-`bun install` first. Without it the hook stops and says so.
+package's commands from `node_modules`, so each checkout needs `bun install` first; a new worktree
+gets it from `post-checkout`. Without it the hook stops and says so.
 
 ## Commands
 
@@ -154,7 +154,7 @@ the confidential scan; in the working tree, the history step.
 | `./prettier`                                   | `"prettier": "@hackersandwizards/scaffolding/prettier"` in `package.json`, `.astro` included; a config adding plugins lists `...base.plugins` first                                                                                                                                                        |
 | `./stylelint`                                  | `export default styles({ importFrom: [...] })` in `stylelint.config.js`                                                                                                                                                                                                                                    |
 | `./chrome`, `./serve`                          | Chrome for Testing, the build the repository's `puppeteer-core` pins (newest cached without one), with the shared flags; a gate server on a port the system hands out, answering within 20 s times `machineLoad().factor` unless `timeoutMs` says otherwise, its stderr passed through with `stderr: true` |
-| `./rejection`                                  | `expect(await rejection(promise)).toContain("...")` in a test: the error the promise rejects with, as text; a promise that resolves fails the test, naming its value                                                                                                                                       |
+| `./rejection`                                  | `expect(await rejection(promise)).toContain("...")` in a test: the error the promise rejects with, as text; a promise that resolves fails the test, naming its value's first 200 characters, and the trace names the calling line                                                                          |
 
 TypeScript comes as two packages until typescript-eslint can read TypeScript 7, which ships no
 compiler API yet: `"typescript": "npm:@typescript/typescript6@…"` for the TypeScript 6 API it
@@ -536,9 +536,10 @@ checkout fetches on its own.
 
 ### Names h&w never shows
 
-`check-confidential never` reads one JSON object of strings on stdin, `{"<where>": "<text>"}`, such
-as a deck test's strings by slug, and refuses every name of the list's never section in any case,
-in a key as in its text. It runs in private repositories too, and fetches, keeps and ages the list
+`check-confidential never` reads one JSON object on stdin, `{"<where>": <value>}`, such as a deck
+test's decks by slug, and refuses every name of the list's never section in any case, in a key as
+in its text. A value is a string or any JSON: its object keys and every string in it are its text,
+so a deck goes in as it is. It runs in private repositories too, and fetches, keeps and ages the list
 as the other scans do. A kept copy without a never section is fetched again, at most once an hour.
 
 - Exit 0: no never name. Exit 1: a finding, printed as
@@ -546,7 +547,7 @@ as the other scans do. A kept copy without a never section is fetched again, at 
 - An exception is an allow entry in the working tree's `package.json` with
   `"check": "never-shown"`, a `path` glob over the `<where>` keys, the `text` and a reason. An entry
   matching nothing fails, since the input holds every string the caller shows.
-- It refuses an input that is empty, not JSON, not an object or holds a value that is not a string,
+- It refuses an input that is empty, not JSON, not an object or holds a value without a string,
   and a list whose never section is missing or empty. No allow entry covers either.
 - With `CI=true` it passes with a warning, so a deploy needs no access and no Git checkout.
 
@@ -576,18 +577,20 @@ are read from each pushed branch's tip, by a Git older than 2.40 from the checke
 ## Pipelines
 
 Checks run locally in the git hooks and in `bun run check`. The `post-merge` and `post-checkout`
-hooks run `.githooks/install` when `bun.lock` or `package.json` changed: `bun install
+hooks run `.githooks/install` when `bun.lock` or `package.json` changed, and `post-checkout` in a
+new worktree too: `bun install
 --frozen-lockfile` under `check-lock` without waiting, silent when it installs. While a gate or
 build holds the lock it installs nothing, so `node_modules` never changes under a running one, and
 says so on stderr with the command to run; it names a failed install the same way. An install
 finding another under way (the MCP server's start and the SessionStart hook run at once) waits for
 it, as `check-lock` waits for a holder running its own command. A checkout without `node_modules` has no `check-lock` yet: there the script takes
-`check-lock`'s lock itself, so a first install and a gate run one after the other, and a dead first
-install's lock is taken over. `bun run check`
+`check-lock`'s lock itself, by `check-lock`'s rules: the lock names `bun install` as its command, so
+it stays while that runs even where the script was killed, and a lock whose holder and command have
+both ended, or that names neither, is taken over. `bun run check`
 starts with the same install.
 
-Claude Code's `SessionStart` hook runs `.githooks/session-start`: it fetches `main` within 20 s
-(`SCAFFOLDING_FETCH_WAIT_S`), since an SSH remote can wait for a person to approve the key, says
+Claude Code's `SessionStart` hook runs `.githooks/session-start`: it fetches `main` into
+`origin/main` within 20 s (`SCAFFOLDING_FETCH_WAIT_S`, whole seconds above 0), since an SSH remote can wait for a person to approve the key, says
 how many commits `origin/main` is ahead, and runs `.githooks/install`. It moves no branch, since a
 fast-forward succeeds with another session's uncommitted file in the shared tree and moves `HEAD`
 under it; the session merges itself. In a cloud session (`CLAUDE_CODE_REMOTE=true`), whose

@@ -2124,13 +2124,27 @@ describe("check-confidential never", () => {
     expect(never({ "deliveries/2026-qzx-a/deck": "QZX" }, at).code).toBe(1);
   });
 
-  test("an input that is empty, not JSON, not an object or not all strings refuses, past any allow entry", () => {
+  test("a value nests: every key and string in it is scanned", () => {
+    expect(never({ deck: { slides: [{ title: "plain", notes: ["QZX"] }] } }).code).toBe(1);
+    expect(never({ deck: { slides: [{ QZX: 1 }] } }).code).toBe(1);
+    expect(never({ deck: { slides: [{ title: "plain", notes: ["text"] }] } }).code).toBe(0);
+  });
+
+  test("an input that is empty, not JSON, not an object or holds a value without a string refuses, past any allow entry", () => {
     const at = repo({
       "package.json": JSON.stringify({
         scaffolding: { allow: [{ check: "never-shown", reason: "everything" }] },
       }),
     });
-    for (const input of ["", "{}", "[]", "not json", '{"a": "x", "b": 1}', '"QZX"']) {
+    for (const input of [
+      "",
+      "{}",
+      "[]",
+      "not json",
+      '{"a": "x", "b": 1}',
+      '{"a": [{}]}',
+      '"QZX"',
+    ]) {
       const r = run(at, "check-confidential", ["never"], env, input);
       expect(r.code).toBe(1);
       expect(r.out).toContain("stdin: nothing to scan");
@@ -2977,6 +2991,109 @@ exec "${process.execPath}" "$@"
     expect(readdirSync(join(dir, "node_modules"))).toEqual([]);
   });
 
+  /** Resolves once `path` holds `count` lines starting with `start`. */
+  const starts = async (path: string, count = 1) => {
+    while (
+      read(path)
+        .split("\n")
+        .filter((l) => l.startsWith("start")).length < count
+    )
+      await new Promise((resolve) => setTimeout(resolve, 50));
+  };
+
+  test.each(["SIGKILL", "SIGTERM"] as const)(
+    "a first install whose shell got %s holds the lock until its bun has ended",
+    async (signal) => {
+      const dir = consumer();
+      const bun = fakeBun();
+      const first = spawn(join(dir, ".githooks/install"), [], {
+        cwd: dir,
+        env: env(bun, { BUN_SLEEP: "2" }),
+        stdio: "ignore",
+      });
+      await starts(bun.log);
+      // Reaped before the next call blocks the event loop: an unreaped shell reads as live.
+      const gone = new Promise((resolve) => first.on("exit", resolve));
+      first.kill(signal);
+      await gone;
+      spawnSync(join(dir, ".githooks/install"), [], { cwd: dir, env: env(bun) });
+      expect(read(bun.log)).toBe(twice);
+    },
+    20_000,
+  );
+
+  test("a lock whose pid is dead and whose group runs is waited for; an empty one is stale", async () => {
+    const dir = consumer();
+    mkdirSync(join(dir, "node_modules"));
+    const group = spawn("sleep", ["30"]);
+    writeFileSync(
+      join(dir, "node_modules/.check.lock"),
+      JSON.stringify({ pid: spawnSync("true").pid, startedAt: 1, group: group.pid }),
+    );
+    const bun = fakeBun();
+    const install = spawn(join(dir, ".githooks/install"), [], { cwd: dir, env: env(bun) });
+    const done = new Promise((resolve) => install.on("close", resolve));
+    await new Promise((resolve) => setTimeout(resolve, 1_500));
+    expect(read(bun.log)).toBe("");
+    group.kill();
+    await done;
+    expect(read(bun.log)).toBe("start locked\nend\n");
+    // An empty lock names no live holder.
+    rmSync(bun.log);
+    writeFileSync(join(dir, "node_modules/.check.lock"), "");
+    spawnSync(join(dir, ".githooks/install"), [], { cwd: dir, env: env(bun), timeout: 10_000 });
+    expect(read(bun.log)).toBe("start locked\nend\n");
+    expect(readdirSync(join(dir, "node_modules"))).toEqual([]);
+  }, 20_000);
+
+  // Three waiters on a dead lock, the later two moving it after the first has taken it over, and the
+  // lock put back only once a second install has begun: the order a loaded machine can give them.
+  test("three first installs on a dead lock run one at a time, however their steps interleave", async () => {
+    const dir = consumer();
+    mkdirSync(join(dir, "node_modules"));
+    writeFileSync(
+      join(dir, "node_modules/.check.lock"),
+      JSON.stringify({ pid: spawnSync("true").pid, startedAt: 1 }),
+    );
+    const bun = fakeBun();
+    // The first mv runs at once, every later one once an install has begun; a moved lock goes back
+    // once two have. Each waits 10 s at most.
+    const until = (count: number) =>
+      `n=0; until [ "$(grep -c ^start "$BUN_LOG")" -ge ${count} ] || [ $n -ge 100 ]; do sleep 0.1; n=$((n + 1)); done`;
+    const wrap = (name: string, gate: string) =>
+      writeFileSync(
+        join(bun.fake, name),
+        `#!/bin/sh\n${gate}\nexec ${spawnSync("sh", ["-c", `command -v ${name}`])
+          .stdout.toString()
+          .trim()} "$@"\n`,
+        { mode: 0o755 },
+      );
+    wrap("mv", `mkdir "$BUN_LOG.first" 2>/dev/null || { ${until(1)}; }`);
+    wrap("ln", `case "$1" in *.stale) ${until(2)} ;; esac`);
+    const runs = [1, 2, 3].map(() => {
+      const one = spawn(join(dir, ".githooks/install"), [], {
+        cwd: dir,
+        env: env(bun, { BUN_SLEEP: "3" }),
+        stdio: "ignore",
+      });
+      return new Promise((resolve) => one.on("close", resolve));
+    });
+    await Promise.all(runs);
+    expect(read(bun.log)).toBe(`${twice}start locked\nend\n`);
+  }, 30_000);
+
+  test("a new worktree installs, so its first commit finds node_modules", () => {
+    const dir = consumer();
+    sh(dir, ["config", "core.hooksPath", ".githooks"]);
+    sh(dir, ["add", "-A"]);
+    sh(dir, ["commit", "-qm", "hooks"]);
+    const bun = fakeBun();
+    const tree = join(temp(), "tree");
+    spawnSync("git", ["worktree", "add", "-q", "--detach", tree], { cwd: dir, env: env(bun) });
+    expect(read(bun.log)).toBe("start locked\nend\n");
+    expect(existsSync(join(tree, "node_modules"))).toBe(true);
+  });
+
   test("the MCP server starts after the install, with nothing but the server on stdout", () => {
     const dir = consumer({
       ".mcp.json": readFileSync(join(import.meta.dir, "../template/.mcp.json"), "utf8"),
@@ -3034,8 +3151,20 @@ describe("skeleton SessionStart hook", () => {
     expect(head(dir)).toBe(before);
     sh(dir, ["merge", "-q", "--ff-only", "origin/main"]);
     expect(start(dir, { PATH: path }).stdout).toBe("");
-    // A bound that is no number of seconds is the default, with no warning from the timer.
-    expect(start(dir, { PATH: path, SCAFFOLDING_FETCH_WAIT_S: "20s" }).stdout).toBe("");
+    // A bound that is no number of seconds, or 0, is the default, with no warning from the timer.
+    for (const bound of ["20s", "0"])
+      expect(start(dir, { PATH: path, SCAFFOLDING_FETCH_WAIT_S: bound }).stdout).toBe("");
+  });
+
+  test("a clone of one other branch still learns how far main is ahead", () => {
+    const { dir, origin, path } = clone();
+    sh(origin, ["branch", "-q", "work", "HEAD~1"]);
+    const single = temp();
+    spawnSync("git", ["clone", "-q", "--single-branch", "--branch", "work", origin, single]);
+    cpSync(join(dir, ".githooks"), join(single, ".githooks"), { recursive: true });
+    expect(start(single, { PATH: path }).stdout).toBe(
+      "origin/main is 1 commits ahead of HEAD: merge it per git.md before work\n",
+    );
   });
 
   test("a cloud session switches to main and fast-forwards", () => {
@@ -3124,6 +3253,12 @@ describe("shared eslint config", () => {
     expect(await rejection(rejection(Promise.resolve(1n)))).toBe(
       "Error: expected a rejection, resolved with 1",
     );
+    // A long value is cut, and the trace names the line that called rejection().
+    const failure = await rejection(Promise.resolve("x".repeat(5000))).catch((e: Error) => e);
+    expect((failure as Error).message).toBe(
+      `expected a rejection, resolved with "${"x".repeat(199)}… (5002 characters)`,
+    );
+    expect((failure as Error).stack).toContain("checks.test.ts");
   });
 
   test("the astro preset parses an .astro file's TypeScript with its own typescript-eslint", () => {

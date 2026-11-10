@@ -1,7 +1,12 @@
 #!/bin/sh
-# $3 = 1 is a branch checkout; a new worktree's all-zero old HEAD fails the diff and installs nothing.
+# $3 = 1 is a branch checkout. It installs where bun.lock or package.json changed, and in a new
+# worktree (an all-zero old HEAD), which has no node_modules, so pre-commit would refuse every commit.
 [ "$3" = 1 ] || exit 0
-git diff --quiet "$1" "$2" -- bun.lock package.json 2>/dev/null
-[ $? -eq 1 ] || exit 0
+case $1 in
+*[!0]*)
+  git diff --quiet "$1" "$2" -- bun.lock package.json 2>/dev/null
+  [ $? -eq 1 ] || exit 0
+  ;;
+esac
 # install names a skip or a failure on stderr; the checkout's exit status stays its own.
 "$(dirname "$0")/install" || true

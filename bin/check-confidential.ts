@@ -12,7 +12,7 @@
 //                                             .confidential-purged.json, then hands the refs to
 //                                             `git lfs pre-push` where the push may carry LFS content
 //                                             or touch a lockable file
-//   check-confidential never                  reads {"<where>": "<text>"} on stdin and refuses every
+//   check-confidential never                  reads {"<where>": <text or JSON>} on stdin, refuses every
 //                                             name of the list's never section in any case, in
 //                                             private repositories too: a deck test's strings
 //   check-confidential fetch                  fetches the list now, for a cloud setup script
@@ -815,20 +815,33 @@ else if (argv.includes("--staged") || commit) {
   try {
     input = JSON.parse(readFileSync(0, "utf8"));
   } catch {}
+  // A value may nest: its object keys and every string in it are its text, so a deck goes in whole.
+  const strings = (value: unknown): string[] =>
+    typeof value === "string"
+      ? [value]
+      : value && typeof value === "object"
+        ? Object.entries(value).flatMap(([key, item]) => [
+            ...(Array.isArray(value) ? [] : [key]),
+            ...strings(item),
+          ])
+        : [];
   const texts =
-    input && typeof input === "object" && !Array.isArray(input) ? Object.entries(input) : [];
+    input && typeof input === "object" && !Array.isArray(input)
+      ? Object.entries(input).map(([where, value]) => [where, strings(value)] as const)
+      : [];
   // Kept out of applyAllow like the list's own problems: a broken dump passes nothing.
-  if (!texts.length || texts.some(([, text]) => typeof text !== "string"))
+  if (!texts.length || texts.some(([, text]) => !text.length))
     listProblem.push({
       check: CHECK,
       path: "stdin",
       text: "",
-      message: 'nothing to scan: stdin holds no {"<where>": "<text>"} object of strings',
+      message:
+        'nothing to scan: stdin holds no {"<where>": <value>} object, each value a string or JSON holding one',
     });
   else {
     full = true;
     // A key may be a slug the deck shows in its address.
-    for (const [where, text] of texts) scanText(where, `${where}\n${text}`);
+    for (const [where, text] of texts) scanText(where, [where, ...text].join("\n"));
   }
 } else if (tree || index) {
   full = true;
