@@ -487,8 +487,9 @@ publishes `dist/`. The caller, `.github/workflows/pages.yml`, is owned: where it
 `--fix` writes it, so a pin raise is `bun add` plus `check-structure --fix`. The caller grants the
 workflow `pages: write` and `id-token: write`, so it names the tag's full commit, which no tag move
 changes. The check reads it offline: the commit must start with the short SHA bun recorded in the
-installed package's `.bun-tag`. `--fix` (and `scaffold`) read the full commit with `git ls-remote`
-and refuse a tag that no longer points at the installed commit:
+installed package's `.bun-tag`. Run from an install, `--fix` and `scaffold` read the full commit
+with `git ls-remote` and refuse a tag that no longer points at the installed commit. Run from this
+package's own checkout, they pin its HEAD:
 
 ```yaml
 jobs:
