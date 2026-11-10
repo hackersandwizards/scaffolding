@@ -16,5 +16,6 @@ test builds `test/fixture/` with the preset. The pre-commit hook runs `bun run c
 
 ## Releases
 
-A changed command name, argument or exported path is a release whose commit names the change.
+A changed command name, argument or exported path is a release whose commit names the change,
+every such change since the previous tag, whoever made it (`git log v<previous>..HEAD`).
 Bump `version` in package.json, commit, tag `v<version>`, push the tag.
