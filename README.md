@@ -522,8 +522,8 @@ checkout fetches on its own.
   time: the names h&w never shows. Public text drops none of them. A name in capitals, of three
   letters or in the dictionary also gets a hash in lower case, which only `never` reads. The build
   refuses `--never` without a file, an empty file and a name of fewer than three letters, its legal
-  form dropped. A caller holding the names in memory passes them on a fourth pipe as
-  `--never /dev/fd/3`.
+  form dropped. `--never -` reads the names from stdin after a NUL byte, so `build - --never -`
+  takes the terms, a NUL byte and the never names on one pipe, and no plain list touches the disk.
 - Every scan above refuses a never name too, in its own casing: `QZX` and `qzx-workshop` refuse,
   `bei Qzx` passes, and a never name in the dictionary refuses nothing there. A list without a never
   section scans as before.

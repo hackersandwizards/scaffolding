@@ -20,7 +20,8 @@
 //                                             prints a hashed list from one term per line (- reads
 //                                             stdin), stamped with its build time, leaving out every
 //                                             term the public text in <file> already carries;
-//                                             --never adds the never section, every name kept
+//                                             --never adds the never section, every name kept;
+//                                             --never - reads it from stdin after a NUL byte
 //   check-confidential purged <sha>...        prints .confidential-purged.json for purged commits
 import { spawnSync } from "node:child_process";
 import { createHash, randomBytes } from "node:crypto";
@@ -71,12 +72,17 @@ const SLUG = /[\p{L}\p{N}]+(?:[-_/.][\p{L}\p{N}]+)+/gu;
 const capitals = (w: string) => /^\p{Lu}[\p{Lu}\p{N}]+$/u.test(w);
 
 if (argv[0] === "build") {
-  const lines = (file: string) =>
-    readFileSync(file === "-" ? 0 : file, "utf8")
+  // One stdin carries both lists: the terms, a NUL byte, then the never names. Under `bun run` the
+  // command cannot open a fourth pipe (/dev/fd/3: EACCES, Bun 1.4.4).
+  const stdin = [argv[1], arg("--never")].includes("-") ? readFileSync(0, "utf8") : "";
+  const cut = stdin.includes("\0") ? stdin.indexOf("\0") : stdin.length;
+  const piped = [stdin.slice(0, cut), stdin.slice(cut + 1)];
+  const lines = (file: string, part: number) =>
+    (file === "-" ? piped[part] : readFileSync(file, "utf8"))
       .split("\n")
       .map((s) => s.trim())
       .filter(Boolean);
-  const terms = lines(argv[1]);
+  const terms = lines(argv[1], 0);
   const LEGAL = /\s+(?:gmbh|ag|se|kg|ug|mbh|co|ltd|inc|llc|plc|bv|sa|sarl|gmbh & co\.? kg)\.?$/i;
   // The scan reads grams of six words at most, so a longer term counts by its first six.
   const first = (term: string) => words(term).slice(0, 6);
@@ -86,7 +92,7 @@ if (argv[0] === "build") {
   // The names h&w never shows. An empty section would pass every deck, and a name under three
   // letters, its legal form dropped, would match ordinary words.
   const neverFile = argv.includes("--never") ? (arg("--never") ?? "") : undefined;
-  const names = neverFile ? lines(neverFile) : [];
+  const names = neverFile ? lines(neverFile, 1) : [];
   const short = names.filter((t) =>
     variantsOf(t).some((v) => norm(v).replaceAll(" ", "").length < 3),
   );

@@ -1957,6 +1957,17 @@ describe("check-confidential never", () => {
     expect(build("Acme Widgets\n", names).code).toBe(0);
   });
 
+  test("build reads the never names from stdin after a NUL byte; without one it refuses", () => {
+    const both = ["build", "-", "--never", "-"];
+    const r = run(dir, "check-confidential", both, {}, "Acme Widgets\nZWOX\n\0QZX\nBrennwald AG\n");
+    expect(r.code).toBe(0);
+    // ZWOX before the NUL is a term: QZX two hashes, Brennwald AG and Brennwald one each.
+    expect([JSON.parse(r.out).hashes.length, JSON.parse(r.out).never.length]).toEqual([2, 4]);
+    const none = run(dir, "check-confidential", both, {}, "Acme Widgets\nQZX\n");
+    expect(none.code).toBe(1);
+    expect(none.out).toContain("--never: no name");
+  });
+
   // The matching table of the never-shown names report, each name replaced by its stand-in.
   test.each([
     ["QZX", true],
