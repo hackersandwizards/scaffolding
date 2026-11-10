@@ -11,6 +11,7 @@ import {
   readdirSync,
   readFileSync,
   readlinkSync,
+  realpathSync,
   renameSync,
   rmSync,
   symlinkSync,
@@ -338,6 +339,36 @@ describe("check-coupling", () => {
       `[check-coupling] tools/fonts.py: ${installed} (node_modules' / '@hackersandwizards)`,
       `[check-coupling] tools/fonts.py: ${installed} (node_modules/@hackersandwizards/brand/data)`,
       `[check-coupling] tools/fonts.py: ${installed} (node_modules/@hackersandwizards/brand/tokens/fonts)`,
+    ]);
+  });
+
+  test("a climb after a prefix, a home path into another checkout and a mark in a string count", () => {
+    const home = temp();
+    mkdirSync(join(home, "dev/org"), { recursive: true });
+    const other = join(home, "dev/org/other");
+    sh(home, ["init", "-q", other]);
+    const dir = join(home, "dev/org/this");
+    renameSync(
+      repo({
+        "package.json": JSON.stringify({ name: "this" }),
+        ".githooks/pre-commit": '#!/bin/sh\ncd "$ROOT/../other"\ncd "$(dirname "$0")/../src"\n',
+        "src/a.ts":
+          'const a = `${root}/../../other/x.css`;\nconst b = "./../../../other/x.css";\nconst c = "x//y", d = "node_modules/@hackersandwizards/brand/x.ts";\n',
+        "src/b.ts":
+          'const k = `${process.env.HOME}/dev/org/other/secrets.zsh`;\nconst own = "~/dev/org/this/src/a.ts";\nconst c = "~/.config/x"; // node_modules/@hackersandwizards/brand/note\n',
+      }),
+      dir,
+    );
+    expect(
+      lines(run(dir, "check-coupling", [], { HOME: home }).out, "check-coupling")
+        .map((l) => l.replace(/: .*\(/, " ("))
+        .sort(),
+    ).toEqual([
+      "[check-coupling] .githooks/pre-commit ($ROOT/../other)",
+      "[check-coupling] src/a.ts (${root}/../../other/x.css)",
+      "[check-coupling] src/a.ts (./../../../other/x.css)",
+      "[check-coupling] src/a.ts (node_modules/@hackersandwizards/brand/x.ts)",
+      "[check-coupling] src/b.ts (${process.env.HOME}/dev/org/other/secrets.zsh)",
     ]);
   });
 
@@ -3390,6 +3421,50 @@ describe("check-staged", () => {
     expect(partial.out).toContain("[check:staged] stylelint: a.css as staged");
     expect(partial.code).toBe(1);
   }, 20_000);
+
+  test("the index decides: its package.json, no submodule as a file, the item copy in the checkout", () => {
+    const tools = {
+      // prettier logs the paths it gets and fails a.ts; admin-check logs the folder it gets.
+      "node_modules/.bin/prettier":
+        '#!/bin/sh\necho "$@" >> args.log\ncase "$*" in *a.ts*) exit 1;; esac\n',
+      "node_modules/.bin/admin-check": '#!/bin/sh\necho "$1" >> items.log\n',
+    };
+    const manifest = (skip: object) =>
+      JSON.stringify({
+        scaffolding: { private: true, skip: { lint: "fixture", ...skip } },
+        devDependencies: { "@hackersandwizards/admin": "1.0.0" },
+      });
+    const dir = repo({ "package.json": manifest({}), ...tools });
+    for (const tool of Object.keys(tools)) chmodSync(join(dir, tool), 0o755);
+    const commit = (skip: object) => {
+      write(dir, { "package.json": manifest(skip) });
+      sh(dir, ["commit", "-qm", "manifest", "package.json"]);
+    };
+    write(dir, { "a.ts": "x\n" });
+    sh(dir, ["add", "a.ts"]);
+    // An unstaged skip leaves the tool on; an unstaged removal leaves the staged skip in force.
+    write(dir, { "package.json": manifest({ format: "unstaged" }) });
+    expect(run(dir, "check-staged").code).toBe(1);
+    commit({ format: "committed" });
+    write(dir, { "package.json": manifest({}) });
+    expect(run(dir, "check-staged").code).toBe(0);
+    commit({});
+    sh(dir, ["rm", "-q", "--cached", "a.ts"]);
+    // A submodule's new commit, with the submodule dirty, is no file for prettier.
+    const sub = repo({ "x.md": "x\n" });
+    sh(dir, ["-c", "protocol.file.allow=always", "submodule", "add", "-q", sub, "sub"]);
+    sh(dir, ["commit", "-qm", "sub"]);
+    sh(join(dir, "sub"), ["commit", "-q", "--allow-empty", "-m", "next"]);
+    write(dir, { "sub/x.md": "dirty\n", "docs/agent-work/items/a.md": "a\n" });
+    sh(dir, ["add", "sub", "docs/agent-work/items/a.md"]);
+    const r = run(dir, "check-staged");
+    expect(r.out).toBe("");
+    expect(r.code).toBe(0);
+    expect(readFileSync(join(dir, "args.log"), "utf8")).not.toMatch(/\bsub\b/);
+    expect(readFileSync(join(dir, "items.log"), "utf8")).toStartWith(
+      `${realpathSync(dir)}/node_modules/.cache/scaffolding/staged-items-`,
+    );
+  });
 
   test("a file staged in the old docs/tracking folder runs admin-check too", () => {
     const dir = repo({ "package.json": pkg });

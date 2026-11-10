@@ -4,10 +4,17 @@
 // that file into this commit. A file whose working tree differs from the index is checked from the
 // index on stdin, so those unstaged lines neither pass nor block this commit.
 import { spawn, spawnSync } from "node:child_process";
-import { existsSync, mkdtempSync, readFileSync, rmSync } from "node:fs";
-import { availableParallelism, tmpdir } from "node:os";
+import { existsSync, mkdirSync, mkdtempSync, rmSync } from "node:fs";
+import { availableParallelism } from "node:os";
 import { join } from "node:path";
-import { isReason, styled, stylelintFlags, withoutEnvFile } from "../lib/repo.ts";
+import {
+  isReason,
+  readPackage,
+  repoRoot,
+  styled,
+  stylelintFlags,
+  withoutEnvFile,
+} from "../lib/repo.ts";
 
 withoutEnvFile("check:staged");
 
@@ -32,7 +39,8 @@ for (const check of ["check-coupling.ts", "check-confidential.ts"]) {
   if (run.status !== 0) process.exit(1);
 }
 
-const pkg = JSON.parse(readFileSync("package.json", "utf8"));
+// The skips, scripts and pins as this commit holds them.
+const pkg = readPackage(repoRoot(), ":");
 // Deletions count: removing a file can break a link the validator checks. Any status but 0
 // (no change) runs it, so a failing git diff fails closed.
 const skills =
@@ -49,11 +57,21 @@ const items =
 if (items && !existsSync("node_modules/.bin/admin-check"))
   refuseCommit("admin-check not installed: bun install");
 
-const listed = spawnSync("git", ["diff", "--cached", "--name-only", "--diff-filter=ACMR", "-z"], {
+// ":<old mode> <new mode> <old sha> <new sha> <status>", then the path, two for a rename or copy.
+const listed = spawnSync("git", ["diff", "--cached", "--raw", "--diff-filter=ACMR", "-z"], {
   encoding: "utf8",
+  maxBuffer: Infinity,
 });
 if (listed.status !== 0) refuseCommit("git diff --cached failed");
-const staged = listed.stdout.split("\0").filter(Boolean);
+const staged: string[] = [];
+const fields = listed.stdout.split("\0");
+for (let i = 0; i + 1 < fields.length;) {
+  const [, mode, , , status] = fields[i].split(" ");
+  const paths = /^[RC]/.test(status) ? 2 : 1;
+  // A submodule's commit (mode 160000) is no file for the tools.
+  if (mode !== "160000") staged.push(fields[i + paths]);
+  i += paths + 1;
+}
 if (staged.length === 0 && !skills && !items) process.exit(0);
 if (staged.some((path) => path === "bun.lock" || path === "package.json")) {
   const run = spawnSync(process.execPath, [`${import.meta.dir}/check-licenses.ts`], {
@@ -61,7 +79,10 @@ if (staged.some((path) => path === "bun.lock" || path === "package.json")) {
   });
   if (run.status !== 0) process.exit(1);
 }
-const unstaged = spawnSync("git", ["diff", "--name-only", "-z"], { encoding: "utf8" });
+const unstaged = spawnSync("git", ["diff", "--name-only", "-z"], {
+  encoding: "utf8",
+  maxBuffer: Infinity,
+});
 if (unstaged.status !== 0) refuseCommit("git diff failed");
 const differs = new Set(unstaged.stdout.split("\0"));
 const partial = staged.filter((path) => differs.has(path));
@@ -197,7 +218,10 @@ if (items) runs.push(checkStagedItems());
 // admin-check over the index, not the working tree: docs/agent-work as staged, written to a temporary
 // folder, so another session's unstaged item edit neither blocks nor passes this commit.
 async function checkStagedItems(): Promise<ToolRun> {
-  const dir = mkdtempSync(join(tmpdir(), "check-staged-items-"));
+  // Inside the checkout, never the system's temp folder: item files can hold company data.
+  const cache = join(process.cwd(), "node_modules/.cache/scaffolding");
+  mkdirSync(cache, { recursive: true });
+  const dir = mkdtempSync(join(cache, "staged-items-"));
   try {
     const tracked = spawnSync(
       "git",

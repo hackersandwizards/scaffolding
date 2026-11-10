@@ -1,7 +1,8 @@
 #!/bin/sh
 // 2>/dev/null; exec bun --no-env-file "$0" "$@"
-import { existsSync, readFileSync } from "node:fs";
-import { dirname, posix, resolve } from "node:path";
+import { existsSync, readFileSync, realpathSync } from "node:fs";
+import { homedir } from "node:os";
+import { dirname, join, posix, relative, resolve } from "node:path";
 import {
   applyAllow,
   commentSyntax,
@@ -31,7 +32,12 @@ const IMPORTING = /\.(?:[cm]?[jt]sx?|astro|vue|svelte|css|scss|pcss|html)$/;
 const STYLES = /\.(?:css|scss|pcss)$/;
 const TEST = /(?:^|\/)(?:__tests__|tests?|e2e)\/|\.(?:test|spec)\.[cm]?[jt]sx?$/;
 const SKIPPED = /(?:^|\/)(?:bun\.lock|package-lock\.json)$/;
-const UP = /(?<![\w./-])(?:\.\.\/)+[^\s"'`)\],;]*/g;
+// A climb, bare or after "./", a variable or a command: one naming the root ($ROOT, ${root},
+// $(git rev-parse --show-toplevel)) climbs from the root, any other from the file's folder.
+const UP = /(?<![\w./-])(?:(\$\{[^}\s]*\}|\$\([^)]*\)|\$\w+|\.)\/)?(?:\.\.\/)+[^\s"'`)\],;]*/g;
+// A path from a home folder: ~, $HOME, ${process.env.HOME}, ${homedir()}, /Users/<name>.
+const HOME =
+  /(?<![\w./$~-])(?:~|\$\{?HOME\}?|\$\{(?:process\.env\.HOME|(?:os\.)?homedir\(\))\}|\/(?:Users|home)\/[\w.-]+)(\/[^\s"'`)\],;$]*)/g;
 const BRAND = "@hackersandwizards/brand";
 const SHELL = "@hackersandwizards/scaffolding";
 const CSS =
@@ -87,6 +93,16 @@ function publishes(name: string, subpath: string, disk: boolean): boolean {
   return !pkg || !("exports" in pkg) || (disk ? targeted : exported)(pkg.exports, subpath);
 }
 
+// Git reports the root by its real path (/private/tmp on macOS).
+const home = existsSync(homedir()) ? realpathSync(homedir()) : homedir();
+// The home folder's child holding this checkout (~/dev): a path into another checkout under it
+// works on this machine only, and breaks when that repository moves.
+const devRoot = root.startsWith(`${home}/`) ? join(home, relative(home, root).split("/")[0]) : "";
+const checkoutHolding = (path: string) => {
+  for (let dir = path; devRoot && dir.startsWith(`${devRoot}/`); dir = dirname(dir))
+    if (existsSync(join(dir, ".git"))) return dir;
+};
+
 const own = readPackage(root).name;
 // The pins and the allow list as the commit holds them in a staged run.
 const pkg = readPackage(root, staged ? ":" : undefined);
@@ -107,21 +123,38 @@ for (const path of listFiles(root, staged)) {
   const text = path === "package.json" ? withoutAllow(raw) : raw;
   const base = path === "package.json" ? root : resolve(root, dirname(path));
   // A test holds path-like strings as data, so there only import specifiers count.
+  const leaves = "path leaves the repository; take it from the package its owner publishes";
   const tokens = TEST.test(path)
-    ? [...text.matchAll(SPECIFIER)].map((m) => m[1]).filter((spec) => spec.startsWith("../"))
-    : [...text.matchAll(UP)].map((m) => m[0]);
-  for (const token of tokens) {
-    const target = resolve(base, token.replace(/[?#].*/, ""));
-    if (target !== root && !target.startsWith(`${root}/`))
-      flag(path, token, "path leaves the repository; take it from the package its owner publishes");
+    ? [...text.matchAll(SPECIFIER)]
+        .map((m) => ({ token: m[1], from: base, climb: m[1] }))
+        .filter((t) => t.token.startsWith("../"))
+    : [...text.matchAll(UP)].map(([token, prefix]) => ({
+        token,
+        from: prefix && /root|toplevel/i.test(prefix) ? root : base,
+        climb: prefix ? token.slice(prefix.length + 1) : token,
+      }));
+  for (const { token, from, climb } of tokens) {
+    const target = resolve(from, climb.replace(/[?#].*/, ""));
+    if (target !== root && !target.startsWith(`${root}/`)) flag(path, token, leaves);
   }
+  if (!TEST.test(path))
+    for (const [token, rest] of text.matchAll(HOME)) {
+      const target = resolve(home + rest);
+      const other = checkoutHolding(target);
+      if (other && other !== root && !target.startsWith(`${root}/`)) flag(path, token, leaves);
+    }
   // Code, markup and data reach an installed company package through its exports or its bin, never
   // by a disk path; a stylesheet may name one, but only to a file an export maps (a stylesheet's .css
   // path is the CSS rule's). A comment, a docstring or a Tailwind @source names the path
   // without using it.
   if (text.includes("@hackersandwizards"))
     for (const line of (path.endsWith(".py") ? text.replace(DOCSTRING, "$1") : text)
-      .replace(commentSyntax(path), "$1")
+      .replace(commentSyntax(path), (comment, kept = "", at: number, all: string) => {
+        // A line mark after an unclosed quote ("x//y", "issue #12") sits in a string: code follows.
+        const before = all.slice(all.lastIndexOf("\n", at) + 1, at) + kept;
+        const quoted = ['"', "'", "`"].some((q) => before.split(q).length % 2 === 0);
+        return quoted && !comment.slice(kept.length).startsWith("/*") ? comment : kept;
+      })
       .split("\n"))
       for (const m of line.matchAll(INSTALLED)) {
         if (m[1] === own || line.slice(0, m.index).includes("@source")) continue;

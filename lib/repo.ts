@@ -133,6 +133,8 @@ export type Package = {
   packageManager?: string;
   engines?: Record<string, string>;
   scripts?: Record<string, string>;
+  dependencies?: Record<string, string>;
+  devDependencies?: Record<string, string>;
   scaffolding?: {
     allow?: AllowEntry[];
     private?: boolean;
