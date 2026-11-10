@@ -11,9 +11,9 @@ bun add -d github:hackersandwizards/scaffolding#vX.Y.Z
 ```
 
 `X.Y.Z` is the newest [tag](https://github.com/hackersandwizards/scaffolding/tags). Requirements:
-bun 1.3 or newer, gitleaks (`brew install gitleaks`), `pdftotext` from poppler, and
+bun 1.3 or newer, gitleaks (`brew install gitleaks`), `pdftotext` and `pdftoppm` from poppler, and
 on macOS `swiftc` for the OCR helper, built once per checkout into `node_modules/.cache/scaffolding/`.
-A commit in a repository without `"private": true` also needs a `gh` login in the `trainers` team:
+A commit in a repository without `scaffolding.private` also needs a `gh` login in the `trainers` team:
 the confidential-terms check (below) fetches its list with it. The commit and push hooks run the
 package's commands from `node_modules`, so each checkout, a new worktree included, needs
 `bun install` first. Without it the hook stops and says so.
@@ -25,7 +25,7 @@ package's commands from `node_modules`, so each checkout, a new worktree include
 | `scaffold <dir>`          | once                         | Creates a repository from `template/` and `template-catalog/` with this version pinned (below).                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                               |
 | `scaffolding check`       | `bun run check`              | The whole gate, below.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                        |
 | `check-structure [--fix]` | `bun run check`              | The repository against `skeleton.json`, the catalog, the gate's script names (below) and every `bin` target stored executable (100755). `LICENSE` is required only where `scaffolding.private` is not set, the `.agents/skills` link only where `.claude/skills` exists. `--fix` writes the identical and owned files, the `.agents/skills` link, the hooks path and the `bin` modes, and nothing where `skip.structure` is set or an `allow` entry covers the path.                                                                                                                                                                                                                                                                                                          |
-| `check-confidential`      | pre-commit, commit-msg, push | Terms from a hashed list, Company OS screenshots and text in images (OCR, an unread image fails), commits purged from history.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                |
+| `check-confidential`      | pre-commit, commit-msg, push | Terms from a hashed list, Company OS screenshots, text in images, PDFs and Office files (an unread binary file fails), commits purged from history.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                           |
 | `check-staged`            | pre-commit                   | gitleaks on the index, then `check-coupling` and `check-confidential`, then prettier and eslint on the staged files and stylelint on the staged CSS and Astro ones, each refused when not installed unless `skip.format`, `skip.lint` or `skip.styles` drops the step; `validate:skills` when `.claude/` is staged, `admin-check` when an item is.                                                                                                                                                                                                                                                                                                                                                                                                                            |
 | `check-lock <command>`    | `scaffolding check`, a build | Runs the command once no other locked command runs in the checkout, so a build never rewrites the output a running gate reads (`"build": "check-lock astro build"`; first in the script, since the lock sits in `node_modules` where it starts, so `check-lock sh -c 'cd catalog && astro build'`). Inside a locked command, the gate's own build step included, it runs at once. A signal to `check-lock` goes to the command's whole process group, and the lock stays until that group has exited (a second signal kills it), also where a SIGKILL then ended `check-lock`; where a SIGKILL to the caller's group ended `check-lock` alone before any signal, until the command has exited; the command runs without a controlling terminal, so it cannot open `/dev/tty`. |
 
@@ -120,7 +120,7 @@ gives `skip.retired` a reason; the gate goes red otherwise. `scaffold` writes th
 repository with its catalog.
 
 `uniqueNames` lists names the framework dictates, which the unique-names step lets repeat. Every
-step in `scaffolding.check` is a script named `check:<what>`. `"private": true` in the index skips
+step in `scaffolding.check` is a script named `check:<what>`. `scaffolding.private` in the index skips
 the confidential scan; in the working tree, the history step.
 
 ## Configs
@@ -462,15 +462,21 @@ checkout fetches on its own.
   counts, with a warning.
 - A list built more than 3 days ago prints a warning: Company OS has stopped rebuilding it.
 - Added lines, file names and the whole commit message count, comment lines included.
-- An image or PDF that cannot be read refuses the commit. Images are read with the macOS Vision
-  framework, so a Linux machine commits no image to a public repository. PDFs need `pdftotext`.
-- With `CI=true` the term and image reading is skipped, so a deploy needs no access. The commit hook
-  is the gate.
+- Binary files are read: images by OCR, every frame and page, and a transparent one on a white
+  and a black ground; PDFs with `pdftotext`, and a page without text by OCR of its rendering
+  (`pdftoppm`); Office, OpenDocument and other zip files by their entries. Fonts pass unread. Any
+  other binary file, or one that cannot be read, refuses the commit until an allow entry names
+  its path. OCR uses the macOS Vision framework, so a Linux machine commits no image to a public
+  repository.
+- With `CI=true` the `--index` and `--tree` audits skip the term and binary reading, so a deploy
+  needs no access. A commit, its message and a push are scanned wherever they are made.
 - `check-confidential fetch` fetches now, for a cloud setup script. `--list <file>` or
   `SCAFFOLDING_CONFIDENTIAL_TERMS` reads a list from a file instead.
 - `check-confidential build <terms|-> [--public <file>]` turns one term per line into a list stamped
   with its build time. It leaves out every term the public text in `<file>` already carries, and
-  refuses to build without `/usr/share/dict/words`.
+  refuses to build without `/usr/share/dict/words`. A term of more than six words counts by its
+  first six. A three-letter term, or one word in capitals, matches only in that case and in a
+  path or slug in lower case; two one-character words (`K 2`) match only in capitals.
 
 A repository with `"scaffolding": { "private": true }` skips the check and keeps no `commit-msg`
 hook, which `check-structure --fix` removes.

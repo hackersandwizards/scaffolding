@@ -28,7 +28,8 @@ import {
   statSync,
   writeFileSync,
 } from "node:fs";
-import { join, resolve } from "node:path";
+import { extname, join, resolve } from "node:path";
+import { inflateRawSync } from "node:zlib";
 import { applyAllow, finish, git, readPackage, repoRoot, type Finding } from "../lib/repo.ts";
 
 const TERMS_REPO = "hackersandwizards/confidential-terms";
@@ -79,18 +80,20 @@ if (argv[0] === "build") {
   const hashes = new Set<string>();
   let maxTokens = 1;
   const LEGAL = /\s+(?:gmbh|ag|se|kg|ug|mbh|co|ltd|inc|llc|plc|bv|sa|sarl|gmbh & co\.? kg)\.?$/i;
-  const norm = (term: string) => words(term).join(" ").toLowerCase();
+  // The scan reads grams of six words at most, so a longer term counts by its first six.
+  const first = (term: string) => words(term).slice(0, 6);
+  const norm = (term: string) => first(term).join(" ").toLowerCase();
   for (const term of terms) {
     const variants = LEGAL.test(term) ? [term, term.replace(LEGAL, "")] : [term];
     if (variants.some((v) => published.has(norm(v)))) continue;
     for (const variant of variants) {
-      const tokens = words(variant);
+      const tokens = first(variant);
       const n = norm(variant);
       const word = tokens.length === 1 && n.length > 3 && dict.has(n) && !capitals(tokens[0]);
       if (n.length < 3 || word) continue;
       const cased = tokens.length === 1 && (n.length === 3 || capitals(tokens[0]));
       hashes.add(cased ? h(`cs:${tokens[0]}`) : h(n));
-      maxTokens = Math.max(maxTokens, Math.min(tokens.length, 6));
+      maxTokens = Math.max(maxTokens, tokens.length);
     }
   }
   const built = new Date().toISOString();
@@ -110,8 +113,9 @@ const CACHE_DIR = join(root, "node_modules/.cache/scaffolding");
 const CACHE = join(CACHE_DIR, "confidential-terms.json");
 const ATTEMPT = `${CACHE}.attempt`;
 const findings: Finding[] = [];
-const report = (path: string, text: string, message: string) =>
+const report = (path: string, text: string, message: string) => {
   findings.push({ check: "confidential", path, text, message });
+};
 
 if (argv[0] === "prepush") {
   const input = readFileSync(0);
@@ -275,6 +279,8 @@ const message = arg("--message-file");
 const commit = arg("--commit");
 const tree = arg("--tree");
 const index = argv.includes("--index");
+// A deploy's audit needs no access; a commit, its message or a push is scanned wherever it is made.
+const skipped = process.env.CI === "true" && Boolean(tree || index);
 // `private` and the allow list come from the snapshot scanned, so a commit adding a case and its
 // allow entry together is judged as one and an unstaged edit switches no scan off. A message
 // belongs to the commit the index makes.
@@ -284,7 +290,7 @@ if (pkg.scaffolding?.private === true) process.exit(0);
 let list: TermList | undefined;
 // Kept out of applyAllow: no allow entry may switch the list requirement off.
 const listProblem: Finding[] = [];
-if (process.env.CI === "true") warn("CI: term step skipped; the commit hook is the gate");
+if (skipped) warn("CI: term step skipped; the commit hook is the gate");
 else {
   const loaded = loadList();
   list = loaded.list;
@@ -310,14 +316,18 @@ function scanText(where: string, text: string) {
     let gram = "";
     for (let n = 0; n < list.maxTokens && i + n < tokens.length; n++) {
       gram = n ? `${gram} ${lower[i + n]}` : lower[i];
-      if (gram.length > 3 && bad.has(h(gram))) found.add(tokens.slice(i, i + n + 1).join(" "));
+      // One word of three letters is a cased term. Two one-character words ("K 2") count only
+      // in capitals, since in lower case they are code (`c => a`).
+      const pair = n === 1 && gram.length === 3;
+      const counts = pair ? capitals(tokens[i] + tokens[i + 1]) : n || gram.length > 3;
+      if (counts && bad.has(h(gram))) found.add(tokens.slice(i, i + n + 1).join(" "));
     }
   }
   // A slug or path writes a capitalised name in lower case (quux-workshop, clients/quux/): a
   // lower-case part of a joined token is checked as the name in capitals.
   for (const [joined] of text.normalize("NFKC").matchAll(SLUG))
     for (const part of joined.split(/[-_/.]/))
-      if (part.length > 3 && part === part.toLowerCase() && bad.has(h(`cs:${part.toUpperCase()}`)))
+      if (part.length >= 3 && part === part.toLowerCase() && bad.has(h(`cs:${part.toUpperCase()}`)))
         found.add(part);
   for (const name of found)
     findings.push({
@@ -329,7 +339,12 @@ function scanText(where: string, text: string) {
     });
 }
 
-const IMAGE = /\.(?:png|jpe?g|webp|gif|heic|tiff?)$/i;
+const IMAGE = /\.(?:png|jpe?g|webp|gif|heic|heif|avif|tiff?|bmp|ico|icns)$/i;
+// Glyph outlines: no text a scan could read.
+const FONT = /\.(?:woff2?|ttf|otf|eot|odttf)$/i;
+const XML = /\.(?:xml|rels|x?html?|svg)$/i;
+// Paragraphs, breaks, cells and list items of Office, OpenDocument and HTML markup.
+const BLOCK = /<\/?(?:\w+:)?(?:p|h\d?|br|tab|tc|td|th|tr|si|c|li|div|line-break)\b[^>]*>/g;
 const OS_NAV = ["Dashboard", "Deals", "Deliverables", "Assignments", "Invoices"];
 
 function ocrBinary(): string | undefined {
@@ -342,48 +357,146 @@ function ocrBinary(): string | undefined {
   return built.status === 0 ? bin : undefined;
 }
 
+const ENTITY: Record<string, string> = { amp: "&", lt: "<", gt: ">", quot: '"', apos: "'" };
+const decode = (s: string) =>
+  s.replace(/&(?:#(\d+)|#x([\da-f]+)|(\w+));/gi, (m, d, x, name) =>
+    d || x ? String.fromCodePoint(parseInt(d ?? x, d ? 10 : 16)) : (ENTITY[name] ?? m),
+  );
+
+/** The entries of a zip archive (Office, OpenDocument, iWork, .zip), or why it cannot be read. */
+function unzip(data: Buffer): { name: string; data: Buffer }[] | string {
+  const end = data.lastIndexOf(Buffer.from("PK\x05\x06", "latin1"));
+  if (end < 0) return "no zip directory";
+  const entries: { name: string; data: Buffer }[] = [];
+  let at = data.readUInt32LE(end + 16);
+  for (let n = data.readUInt16LE(end + 10); n > 0; n--) {
+    if (data.readUInt32LE(at) !== 0x02014b50) return "damaged zip directory";
+    const [flags, method] = [data.readUInt16LE(at + 8), data.readUInt16LE(at + 10)];
+    const size = data.readUInt32LE(at + 20);
+    const nameLength = data.readUInt16LE(at + 28);
+    const name = data.toString("utf8", at + 46, at + 46 + nameLength);
+    const local = data.readUInt32LE(at + 42);
+    at += 46 + nameLength + data.readUInt16LE(at + 30) + data.readUInt16LE(at + 32);
+    if (name.endsWith("/")) continue;
+    if (flags & 1) return `${name} is encrypted`;
+    if (size === 0xffffffff || local === 0xffffffff) return "zip64 archive";
+    const from = local + 30 + data.readUInt16LE(local + 26) + data.readUInt16LE(local + 28);
+    const raw = data.subarray(from, from + size);
+    if (method === 0) entries.push({ name, data: raw });
+    else if (method === 8) entries.push({ name, data: inflateRawSync(raw) });
+    else return `${name} uses compression method ${method}`;
+  }
+  return entries;
+}
+
 function scanBinaries(files: { where: string; data: Buffer }[]) {
   if (!files.length) return;
-  // A review page's images may sit under docs/agent-work once read clean. CI reads none, so there
-  // they stay refused rather than pass unread.
-  if (process.env.CI === "true") {
+  // A review page's images may sit under docs/agent-work once read clean. A CI audit reads none, so
+  // there they stay refused rather than pass unread.
+  if (skipped) {
     for (const { where } of files)
       if (/(?:^|\/)docs\/agent-work\//.test(where))
-        report(where, "", "image or PDF in docs/agent-work not read: no OCR in CI");
+        report(where, "", "binary file in docs/agent-work not read: no OCR in CI");
     return;
   }
   mkdirSync(CACHE_DIR, { recursive: true });
   const scratch = mkdtempSync(join(CACHE_DIR, "scan-"));
   const texts = new Map<string, string>();
-  const images: string[] = [];
-  files.forEach(({ where, data }, i) => {
-    const file = join(scratch, `${i}${where.match(/\.\w+$/)?.[0] ?? ""}`);
+  const add = (where: string, text: string) =>
+    texts.set(where, `${texts.get(where) ?? ""}\n${text}`);
+  const images: { file: string; where: string; entry: string; unread: string }[] = [];
+  let saved = 0;
+  const save = (data: Buffer, name: string) => {
+    const file = join(scratch, `${saved++}${extname(name)}`);
     writeFileSync(file, data);
-    if (!/\.pdf$/i.test(where)) return images.push(file);
-    const pdf = spawnSync("pdftotext", [file, "-"], { maxBuffer: Infinity });
-    if (pdf.status === 0) texts.set(where, pdf.stdout.toString());
-  });
+    return file;
+  };
+  // `name` is the file's own name, inside an archive the entry's; findings name `where`.
+  const read = (where: string, name: string, data: Buffer, depth = 0): void => {
+    const entry = name === where ? "" : name;
+    if (/\.pdf$/i.test(name) || data.subarray(0, 5).toString() === "%PDF-") {
+      const file = save(data, "x.pdf");
+      const pdf = spawnSync("pdftotext", [file, "-"], { maxBuffer: Infinity });
+      if (pdf.status !== 0)
+        return report(where, entry, `PDF not read: install poppler for pdftotext`);
+      const pages = pdf.stdout.toString().split("\f").slice(0, -1);
+      add(where, pages.join("\n"));
+      // A page without a word is a scan or a picture of text: OCR reads its rendering.
+      pages.forEach((page, i) => {
+        if (/[\p{L}\p{N}]/u.test(page)) return;
+        const out = `${file}-${i + 1}`;
+        const r = spawnSync("pdftoppm", [
+          "-r",
+          "150",
+          "-png",
+          "-singlefile",
+          "-f",
+          `${i + 1}`,
+          "-l",
+          `${i + 1}`,
+          file,
+          out,
+        ]);
+        if (r.status !== 0)
+          report(
+            where,
+            entry,
+            `PDF page ${i + 1} has no text and was not rendered: install poppler for pdftoppm`,
+          );
+        else
+          images.push({
+            file: `${out}.png`,
+            where,
+            entry,
+            unread: `PDF page ${i + 1} has no text and was not read: no OCR here (macOS only)`,
+          });
+      });
+    } else if (IMAGE.test(name))
+      images.push({
+        file: save(data, name),
+        where,
+        entry,
+        unread: `image not read: not a decodable image, or no OCR here (macOS only)`,
+      });
+    else if (data.subarray(0, 4).toString("latin1") === "PK\x03\x04" && depth < 3) {
+      const entries = unzip(data);
+      if (typeof entries === "string") return report(where, entry, `archive not read: ${entries}`);
+      add(where, entries.map((e) => e.name).join("\n"));
+      for (const e of entries) read(where, e.name, e.data, depth + 1);
+    } else if (!data.includes(0)) {
+      const text = data.toString("utf8");
+      // Markup read twice: a block's tag as a line break and every other tag dropped joins a word
+      // Word splits across runs; every tag as a space keeps apart what no block tag separates.
+      add(
+        where,
+        XML.test(name) || text.startsWith("<?xml")
+          ? decode(
+              `${text.replace(/<[^>]*>/g, " ")}\n${text.replace(BLOCK, "\n").replace(/<[^>]*>/g, "")}`,
+            )
+          : text,
+      );
+    } else if (!FONT.test(name))
+      report(where, entry, `binary file not read: name it with a reason in scaffolding.allow`);
+  };
+  for (const { where, data } of files) read(where, where, data);
   const ocr = images.length ? ocrBinary() : undefined;
+  const blocks = new Map<string, string>();
   if (ocr) {
-    const out = spawnSync(ocr, images, { maxBuffer: Infinity });
-    for (const block of out.status === 0
-      ? `\n${out.stdout}`.split(`\n== ${scratch}/`).slice(1)
-      : []) {
-      const [name, ...lines] = block.split("\n");
-      const file = files[Number(name.split(".")[0])];
-      if (file) texts.set(file.where, lines.join("\n"));
-    }
+    const out = spawnSync(
+      ocr,
+      images.map((i) => i.file),
+      { maxBuffer: Infinity },
+    );
+    if (out.status === 0)
+      for (const block of `\n${out.stdout}`.split("\n== ").slice(1)) {
+        const [file, ...lines] = block.split("\n");
+        blocks.set(file, lines.join("\n"));
+      }
   }
   rmSync(scratch, { recursive: true, force: true });
-  for (const { where } of files)
-    if (!texts.has(where))
-      report(
-        where,
-        "",
-        /\.pdf$/i.test(where)
-          ? "PDF not read: install poppler for pdftotext"
-          : "image not read: not a decodable image, or no OCR here (macOS only)",
-      );
+  for (const { file, where, entry, unread } of images)
+    if (blocks.has(file)) add(where, blocks.get(file)!);
+    else report(where, entry, unread);
   for (const [where, text] of texts) {
     const nav = OS_NAV.filter((w) => new RegExp(`^${w}$`, "m").test(text));
     if (nav.length >= 3) report(where, nav.join(", "), "Company OS screenshot");
@@ -391,17 +504,20 @@ function scanBinaries(files: { where: string; data: Buffer }[]) {
   }
 }
 
-function addedLines(diff: string) {
+/** Added lines per path; `paths` are the diff's files in its order, one per `diff --git` line. */
+function addedLines(diff: string, paths: string[]) {
   const added = new Map<string, string[]>();
-  let path = "";
-  let previous = "";
+  let path: string | undefined;
+  let file = -1;
+  let hunk = false;
   for (const line of diff.split("\n")) {
-    // A file header is "+++ " right after "--- "; inside a hunk the same text is an added line.
-    if (line.startsWith("+++ ") && previous.startsWith("--- "))
-      path = line.slice(4).replace(/^b\//, "");
-    else if (line.startsWith("+") && path)
-      added.set(path, [...(added.get(path) ?? []), line.slice(1)]);
-    previous = line;
+    // A hunk's lines start with " ", "+", "-" or "\\", so only a file's header starts "diff --git".
+    if (line.startsWith("diff --git ")) [path, hunk] = [paths[++file], false];
+    else if (line.startsWith("@@")) hunk = true;
+    else if (hunk && path !== undefined && line.startsWith("+")) {
+      if (!added.has(path)) added.set(path, []);
+      added.get(path)!.push(line.slice(1));
+    }
   }
   return added;
 }
@@ -426,28 +542,22 @@ else if (argv.includes("--staged") || commit) {
   const range = commit
     ? ["show", "--format=", "--no-renames", commit]
     : ["diff", "--cached", "--no-renames"];
-  const diff = git(
-    [
-      "-c",
-      "core.quotePath=false",
-      ...range,
-      "--src-prefix=a/",
-      "--dst-prefix=b/",
-      "-U0",
-      "--no-color",
-      "--no-ext-diff",
-      "--diff-filter=AM",
-    ],
-    root,
-  ).toString();
-  for (const [path, lines] of addedLines(diff))
-    if (!isBinary(path)) scanText(path, lines.join("\n"));
-  const names = git([...range, "--name-only", "--diff-filter=AM", "-z"], root)
+  const options = ["--no-color", "--no-ext-diff", "--diff-filter=AM"];
+  // "<added>\t<deleted>\t<path>", "-" for a file git diffs as binary, in the patch's order.
+  const files = git([...range, ...options, "--numstat", "-z"], root)
     .toString()
-    .split("\0");
-  scanText("file names", names.join("\n"));
-  for (const path of names.filter((p) => p && isBinary(p)))
-    take(path, blob(commit ? `${commit}:${path}` : `:${path}`));
+    .split("\0")
+    .filter(Boolean)
+    .map((line) => ({ binary: line.startsWith("-\t-\t"), path: line.replace(/^\S+\t\S+\t/, "") }));
+  const diff = git([...range, ...options, "-U0"], root).toString();
+  scanText("file names", files.map((f) => f.path).join("\n"));
+  const texts = addedLines(
+    diff,
+    files.map((f) => f.path),
+  );
+  for (const { binary, path } of files)
+    if (binary || isBinary(path)) take(path, blob(commit ? `${commit}:${path}` : `:${path}`));
+    else scanText(path, texts.get(path)?.join("\n") ?? "");
   if (commit)
     scanText("commit message", git(["log", "-1", "--format=%B", commit], root).toString());
 } else if (tree || index) {
@@ -483,8 +593,8 @@ else if (argv.includes("--staged") || commit) {
     const size = Number(length);
     const data = batch.subarray(header + 1, header + 1 + size);
     at = header + 2 + size;
-    if (isBinary(path)) take(path, data);
-    else if (!data.includes(0)) scanText(path, data.toString("utf8"));
+    if (isBinary(path) || data.includes(0)) take(path, data);
+    else scanText(path, data.toString("utf8"));
   }
 } else {
   console.error(

@@ -1012,6 +1012,130 @@ describe("check-confidential", () => {
     expect(found.filter((l) => l.startsWith("[check-confidential] a.md:"))).toHaveLength(2);
   });
 
+  test("the staged diff: '++ ' after '-- ' is an added line, a path with a space keeps its entry", () => {
+    const dir = repo({
+      "package.json": JSON.stringify({
+        scaffolding: {
+          allow: [{ check: "confidential", path: "docs/my notes.md", reason: "test" }],
+        },
+      }),
+      "notes.sql": "select 1;\n-- old note\n",
+    });
+    write(dir, { "notes.sql": "select 1;\n++ Acme Widgets\n", "docs/my notes.md": "ZYX\n" });
+    sh(dir, ["add", "notes.sql", "docs/my notes.md"]);
+    expect(
+      lines(run(dir, "check-confidential", ["--staged"], env).out, "check-confidential"),
+    ).toEqual([
+      "[check-confidential] notes.sql: confidential term from the company records (Acme Widgets)",
+    ]);
+  });
+
+  test("CI skips the term scan in a full audit only, never in a commit's own scans", () => {
+    const dir = repo({ "package.json": "{}", "a.md": "nothing\n" });
+    write(dir, { "a.md": "nothing\nAcme Widgets\n" });
+    sh(dir, ["add", "a.md"]);
+    const ci = { ...env, CI: "true" };
+    expect(run(dir, "check-confidential", ["--index"], ci).code).toBe(0);
+    expect(run(dir, "check-confidential", ["--staged"], ci).out).toContain("(Acme Widgets)");
+    const msg = join(dir, "MSG");
+    writeFileSync(msg, "for Acme Widgets\n");
+    expect(run(dir, "check-confidential", ["--message-file", msg], ci).code).toBe(1);
+  });
+
+  test("terms the scan could not produce: seven words, two characters, a three-letter slug", () => {
+    const terms = join(temp(), "short.txt");
+    writeFileSync(terms, "Alpha Bravo Charlie Delta Echo Foxtrot Golfo\nK 2\nZYX\n");
+    const shortList = join(temp(), "short.json");
+    writeFileSync(shortList, run(temp(), "check-confidential", ["build", terms]).out);
+    const shortEnv = { SCAFFOLDING_CONFIDENTIAL_TERMS: shortList, CI: "" };
+    const found = (text: string) =>
+      lines(
+        run(
+          repo({ "package.json": "{}", "a.md": text }),
+          "check-confidential",
+          ["--index"],
+          shortEnv,
+        ).out,
+        "check-confidential",
+      ).map((l) => l.replace(/.*\(/, "("));
+    expect(found("Alpha Bravo Charlie Delta Echo Foxtrot Golfo\n")).toEqual([
+      "(Alpha Bravo Charlie Delta Echo Foxtrot)",
+    ]);
+    expect(found("the K 2 team, see clients/zyx/ and zyx-workshop\n").sort()).toEqual([
+      "(K 2)",
+      "(zyx)",
+    ]);
+    // In lower case two letters are code.
+    expect(found("const k = (k) => k 2;\n")).toEqual([]);
+  });
+
+  test("a binary file is read or refused: Office and zip files, fonts, anything else", () => {
+    const dir = repo({ "package.json": "{}" });
+    // Word splits a sentence into runs, here inside a word and between two.
+    mkdirSync(join(dir, "d/word"), { recursive: true });
+    write(dir, {
+      "d/word/document.xml":
+        '<?xml version="1.0"?><w:document><w:p><w:r><w:t>We met Acme Wid</w:t></w:r><w:r><w:t>gets</w:t></w:r></w:p><w:p><w:r><w:t>and Jane Q</w:t></w:r><w:r><w:t xml:space="preserve"> Doe</w:t></w:r></w:p></w:document>',
+    });
+    expect(spawnSync("zip", ["-qr", "../offer.docx", "word"], { cwd: join(dir, "d") }).status).toBe(
+      0,
+    );
+    rmSync(join(dir, "d"), { recursive: true });
+    writeFileSync(join(dir, "font.woff2"), Buffer.from([0x77, 0x4f, 0x46, 0x32, 0, 1, 2]));
+    writeFileSync(join(dir, "data.bin"), Buffer.from("x\0y ZYX"));
+    sh(dir, ["add", "offer.docx", "font.woff2", "data.bin"]);
+    const expected = [
+      "[check-confidential] data.bin: binary file not read: name it with a reason in scaffolding.allow",
+      "[check-confidential] offer.docx: confidential term from the company records (Acme Widgets)",
+      "[check-confidential] offer.docx: confidential term from the company records (Jane Q Doe)",
+    ];
+    for (const mode of ["--staged", "--index"])
+      expect(
+        lines(run(dir, "check-confidential", [mode], env).out, "check-confidential").sort(),
+      ).toEqual(expected);
+  });
+
+  test.if(process.platform === "darwin")(
+    "OCR reads a transparent image, every page of a TIFF and a PDF page without text",
+    () => {
+      const dir = repo({ "package.json": "{}" });
+      const make = (args: string[]) =>
+        expect(spawnSync(args[0], args.slice(1), { cwd: dir }).status).toBe(0);
+      const page = (text: string, name: string) => {
+        writeFileSync(join(dir, `${name}.txt`), `${text}\n`);
+        const pdf = spawnSync(
+          "cupsfilter",
+          ["-i", "text/plain", "-m", "application/pdf", `${name}.txt`],
+          {
+            cwd: dir,
+          },
+        );
+        writeFileSync(join(dir, `${name}.pdf`), pdf.stdout);
+        // sips renders the page on a transparent ground.
+        make(["sips", "-Z", "1600", "-s", "format", "png", `${name}.pdf`, "--out", `${name}.png`]);
+        rmSync(join(dir, `${name}.txt`));
+        rmSync(join(dir, `${name}.pdf`));
+      };
+      page("We met Acme Widgets here", "clear");
+      page("nothing to see here", "blank");
+      page("We met Jane Q Doe here", "jane");
+      make(["sips", "-s", "format", "pdf", "jane.png", "--out", "scan.pdf"]);
+      make(["sips", "-s", "format", "tiff", "blank.png", "--out", "blank.tiff"]);
+      make(["sips", "-s", "format", "tiff", "jane.png", "--out", "jane.tiff"]);
+      make(["tiffutil", "-cat", "blank.tiff", "jane.tiff", "-out", "pages.tiff"]);
+      for (const f of ["blank.png", "jane.png", "blank.tiff", "jane.tiff"]) rmSync(join(dir, f));
+      sh(dir, ["add", "clear.png", "scan.pdf", "pages.tiff"]);
+      expect(
+        lines(run(dir, "check-confidential", ["--staged"], env).out, "check-confidential").sort(),
+      ).toEqual([
+        "[check-confidential] clear.png: confidential term from the company records (Acme Widgets)",
+        "[check-confidential] pages.tiff: confidential term from the company records (Jane Q Doe)",
+        "[check-confidential] scan.pdf: confidential term from the company records (Jane Q Doe)",
+      ]);
+    },
+    60_000,
+  );
+
   test("an allow entry cannot switch off the list requirement", () => {
     const dir = repo({
       "package.json": JSON.stringify({
@@ -1357,8 +1481,8 @@ describe("check-confidential list source", () => {
       CI: "",
       SCAFFOLDING_CONFIDENTIAL_TERMS: "",
     };
-    const check = (extra: Record<string, string> = {}) =>
-      run(dir, "check-confidential", ["--staged"], { ...env, ...extra });
+    const check = (extra: Record<string, string> = {}, mode = "--staged") =>
+      run(dir, "check-confidential", [mode], { ...env, ...extra });
     const calls = () => readFileSync(log, "utf8").split("\n").filter(Boolean).length;
     return { dir, home, check, calls, cache };
   }
@@ -1417,13 +1541,15 @@ describe("check-confidential list source", () => {
     expect(r.out).toContain("Refused");
   });
 
-  test("CI skips the term step without fetching, the path rule still holds", () => {
+  test("CI skips the audit's term step without fetching, the path rule still holds", () => {
     const m = machine({ gh: "deny" });
-    expect(m.check({ CI: "true" }).code).toBe(0);
+    expect(m.check({ CI: "true" }, "--index").code).toBe(0);
     expect(m.calls()).toBe(0);
     write(m.dir, { "docs/agent-work/shot.png": "x" });
     sh(m.dir, ["add", "docs/agent-work/shot.png"]);
-    expect(m.check({ CI: "true" }).out).toContain("image or PDF in docs/agent-work not read");
+    expect(m.check({ CI: "true" }, "--index").out).toContain(
+      "docs/agent-work/shot.png: binary file in docs/agent-work not read: no OCR in CI",
+    );
   });
 
   test("a PDF that cannot be read is refused", () => {
