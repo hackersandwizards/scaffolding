@@ -154,6 +154,7 @@ export type Package = {
     uniqueNames?: string[];
     skip?: Record<string, unknown>;
     check?: (string | string[])[];
+    styles?: string[];
     licenses?: Record<string, { license?: string; reason?: unknown }>;
   };
   [field: string]: unknown;

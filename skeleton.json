@@ -62,7 +62,7 @@
   },
   "catalog": {
     "scripts": ["dev", "catalog", "build"],
-    "configs": ["astro.config.ts", "astro.config.mjs"],
+    "configs": ["astro.config.ts", "astro.config.mjs", "astro.config.js", "astro.config.mts"],
     "preset": "@hackersandwizards/scaffolding/catalog"
   }
 }

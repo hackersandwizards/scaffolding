@@ -10,22 +10,26 @@ import {
   styleFiles,
   stylelintFlags,
   withoutEnvFile,
+  type Package,
 } from "../lib/repo.ts";
 import { machineLoad } from "../lib/serve.ts";
 
 withoutEnvFile("scaffolding");
 
-const KEYS = new Set([
-  "allow",
-  "private",
-  "typecheck",
-  "uniqueNames",
-  "test",
-  "skip",
-  "check",
-  "styles",
-  "licenses",
-]);
+// Every key of the Package type's scaffolding and no other, or typecheck fails.
+const KEYS = new Set(
+  Object.keys({
+    allow: 0,
+    private: 0,
+    typecheck: 0,
+    uniqueNames: 0,
+    test: 0,
+    skip: 0,
+    check: 0,
+    styles: 0,
+    licenses: 0,
+  } satisfies Record<keyof NonNullable<Package["scaffolding"]>, 0>),
+);
 
 if (process.argv[2] !== "check") {
   console.error("usage: scaffolding check");

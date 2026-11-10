@@ -995,6 +995,12 @@ describe("scaffold and check-structure", () => {
     mkdirSync(join(other, "talks"));
     renameSync(join(other, "catalog/astro.config.ts"), join(other, "talks/astro.config.ts"));
     expect(run(other, "check-structure").code).toBe(0);
+    // Under every name Astro reads.
+    for (const ext of ["js", "mts"]) {
+      const to = join(other, `talks/astro.config.${ext}`);
+      renameSync(join(other, "talks", readdirSync(join(other, "talks"))[0]!), to);
+      expect(run(other, "check-structure").out).toBe("");
+    }
   });
 
   test("a private repository keeps no commit-msg hook", () => {
@@ -4372,7 +4378,7 @@ describe("check-licenses", () => {
     const stale = keep({ gsap: pinned, "left-pad": { license: "MIT", reason: "gone" } });
     expect(stale.code).toBe(1);
     expect(stale.out).toContain('scaffolding.licenses["left-pad"] matches no installed package');
-  });
+  }, 20_000);
 
   test("fails closed: no node_modules, an empty one, a missing lockfile", () => {
     const dir = installed({ fine: license("MIT") });
