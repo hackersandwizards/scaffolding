@@ -519,18 +519,21 @@ checkout fetches on its own.
   words counts by its first six. A three-letter term, or one word in capitals, matches only in that
   case and in a path or slug in lower case; two one-character words (`K 2`) match only in capitals.
 - `--never <file>` adds the never section from one name per line, under the same salt and build
-  time: the names h&w never shows. Public text and the dictionary drop none of them. A name in
-  capitals or of three letters also gets a hash in lower case, which only `never` reads. The build
-  refuses an empty file and a name under three letters, its legal form dropped. A caller holding
-  the names in memory passes them on a fourth pipe as `--never /dev/fd/3`.
+  time: the names h&w never shows. Public text drops none of them. A name in capitals, of three
+  letters or in the dictionary also gets a hash in lower case, which only `never` reads. The build
+  refuses `--never` without a file, an empty file and a name of fewer than three letters, its legal
+  form dropped. A caller holding the names in memory passes them on a fourth pipe as
+  `--never /dev/fd/3`.
 - Every scan above refuses a never name too, in its own casing: `QZX` and `qzx-workshop` refuse,
-  `bei Qzx` passes. A list without a never section scans as before.
+  `bei Qzx` passes, and a never name in the dictionary refuses nothing there. A list without a never
+  section scans as before.
 
 ### Names h&w never shows
 
 `check-confidential never` reads one JSON object of strings on stdin, `{"<where>": "<text>"}`, such
-as a deck test's strings by slug, and refuses every name of the list's never section in any case.
-It runs in private repositories too, and fetches, keeps and ages the list as the other scans do.
+as a deck test's strings by slug, and refuses every name of the list's never section in any case,
+in a key as in its text. It runs in private repositories too, and fetches, keeps and ages the list
+as the other scans do. A kept copy without a never section is fetched again, at most once an hour.
 
 - Exit 0: no never name. Exit 1: a finding, printed as
   `[check-confidential] <where>: a name h&w never shows from the company records (<text>)`.
@@ -539,7 +542,7 @@ It runs in private repositories too, and fetches, keeps and ages the list as the
   matching nothing fails, since the input holds every string the caller shows.
 - It refuses an input that is empty, not JSON, not an object or holds a value that is not a string,
   and a list whose never section is missing or empty. No allow entry covers either.
-- With `CI=true` it passes with a warning, so a deploy needs no access.
+- With `CI=true` it passes with a warning, so a deploy needs no access and no Git checkout.
 
 A repository with `"scaffolding": { "private": true }` skips the check and keeps no `commit-msg`
 hook, which `check-structure --fix` removes.

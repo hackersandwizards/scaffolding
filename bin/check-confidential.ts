@@ -71,10 +71,31 @@ const SLUG = /[\p{L}\p{N}]+(?:[-_/.][\p{L}\p{N}]+)+/gu;
 const capitals = (w: string) => /^\p{Lu}[\p{Lu}\p{N}]+$/u.test(w);
 
 if (argv[0] === "build") {
-  const terms = readFileSync(argv[1] === "-" ? 0 : argv[1], "utf8")
-    .split("\n")
-    .map((s) => s.trim())
-    .filter(Boolean);
+  const lines = (file: string) =>
+    readFileSync(file === "-" ? 0 : file, "utf8")
+      .split("\n")
+      .map((s) => s.trim())
+      .filter(Boolean);
+  const terms = lines(argv[1]);
+  const LEGAL = /\s+(?:gmbh|ag|se|kg|ug|mbh|co|ltd|inc|llc|plc|bv|sa|sarl|gmbh & co\.? kg)\.?$/i;
+  // The scan reads grams of six words at most, so a longer term counts by its first six.
+  const first = (term: string) => words(term).slice(0, 6);
+  const norm = (term: string) => first(term).join(" ").toLowerCase();
+  const variantsOf = (term: string) =>
+    LEGAL.test(term) ? [term, term.replace(LEGAL, "")] : [term];
+  // The names h&w never shows. An empty section would pass every deck, and a name under three
+  // letters, its legal form dropped, would match ordinary words.
+  const neverFile = argv.includes("--never") ? (arg("--never") ?? "") : undefined;
+  const names = neverFile ? lines(neverFile) : [];
+  const short = names.filter((t) =>
+    variantsOf(t).some((v) => norm(v).replaceAll(" ", "").length < 3),
+  );
+  if (neverFile !== undefined && (!names.length || short.length)) {
+    console.error(
+      `[check-confidential] --never: ${short.length ? `under three letters: ${short.join(", ")}` : "no name"}; not building`,
+    );
+    process.exit(1);
+  }
   const dictFile = "/usr/share/dict/words";
   // Without the dictionary every common word on the list would refuse ordinary text everywhere.
   if (!existsSync(dictFile)) {
@@ -92,59 +113,46 @@ if (argv[0] === "build") {
   }
   const salt = randomBytes(16).toString("hex");
   const h = hasher(salt);
-  const hashes = new Set<string>();
   let maxTokens = 1;
-  const LEGAL = /\s+(?:gmbh|ag|se|kg|ug|mbh|co|ltd|inc|llc|plc|bv|sa|sarl|gmbh & co\.? kg)\.?$/i;
-  // The scan reads grams of six words at most, so a longer term counts by its first six.
-  const first = (term: string) => words(term).slice(0, 6);
-  const norm = (term: string) => first(term).join(" ").toLowerCase();
-  const variantsOf = (term: string) =>
-    LEGAL.test(term) ? [term, term.replace(LEGAL, "")] : [term];
-  /** Adds the variant's hash; answers whether it is a cased term. */
-  const add = (into: Set<string>, variant: string) => {
+  /** The hash the public scans look up, none for a dictionary word, and the variant's casing. */
+  const hashOf = (variant: string) => {
     const tokens = first(variant);
     const n = norm(variant);
-    const cased = tokens.length === 1 && (n.length === 3 || capitals(tokens[0]));
-    into.add(cased ? h(`cs:${tokens[0]}`) : h(n));
     maxTokens = Math.max(maxTokens, tokens.length);
-    return cased;
+    const one = tokens.length === 1;
+    const cased = one && (n.length === 3 || capitals(tokens[0]));
+    const word = one && n.length > 3 && dict.has(n) && !capitals(tokens[0]);
+    return { n, hash: word ? undefined : h(cased ? `cs:${tokens[0]}` : n), anyCase: cased || word };
   };
+  const hashes = new Set<string>();
   for (const term of terms) {
     const variants = variantsOf(term);
     if (variants.some((v) => published.has(norm(v)))) continue;
     for (const variant of variants) {
-      const tokens = first(variant);
-      const n = norm(variant);
-      const word = tokens.length === 1 && n.length > 3 && dict.has(n) && !capitals(tokens[0]);
-      if (n.length >= 3 && !word) add(hashes, variant);
+      const { n, hash } = hashOf(variant);
+      if (n.length >= 3 && hash) hashes.add(hash);
     }
   }
-  // The never section is chosen by hand: no public text and no dictionary word drops a name. A cased
-  // name gets a second hash under "any:", which only the never scan reads, so a public commit keeps
-  // the casing rule above and a deck still refuses the name in any case.
-  const neverFile = arg("--never");
+  // No public text drops a never name. A cased one or a dictionary word also gets a hash under
+  // "any:", which only the never scan reads: a public scan keeps the rules above, and a deck still
+  // refuses the name in any case.
   const never = new Set<string>();
-  if (neverFile) {
-    const names = readFileSync(neverFile, "utf8")
-      .split("\n")
-      .map((s) => s.trim())
-      .filter(Boolean);
-    // An empty section would pass every deck, and a name under three letters, its legal form
-    // dropped, would match ordinary words.
-    const short = names.filter((t) => variantsOf(t).some((v) => norm(v).length < 3));
-    if (!names.length || short.length) {
-      console.error(
-        `[check-confidential] --never: ${short.length ? `under three letters: ${short.join(", ")}` : "no name"}; not building`,
-      );
-      process.exit(1);
+  for (const name of names)
+    for (const variant of variantsOf(name)) {
+      const { n, hash, anyCase } = hashOf(variant);
+      if (hash) never.add(hash);
+      if (anyCase) never.add(h(`any:${n}`));
     }
-    for (const name of names)
-      for (const variant of variantsOf(name))
-        if (add(never, variant)) never.add(h(`any:${norm(variant)}`));
-  }
   const built = new Date().toISOString();
-  const sections = neverFile ? { never: [...never].sort() } : {};
-  console.log(JSON.stringify({ built, salt, maxTokens, hashes: [...hashes].sort(), ...sections }));
+  console.log(
+    JSON.stringify({
+      built,
+      salt,
+      maxTokens,
+      hashes: [...hashes].sort(),
+      never: neverFile ? [...never].sort() : undefined,
+    }),
+  );
   process.exit(0);
 }
 
@@ -164,6 +172,12 @@ if (argv[0] === "purged") {
   process.exit(0);
 }
 
+const neverMode = argv[0] === "never";
+// A deploy needs no access, nor a Git checkout.
+if (neverMode && process.env.CI === "true") {
+  console.error("[check-confidential] CI: never scan skipped");
+  process.exit(0);
+}
 const root = repoRoot();
 const CACHE_DIR = join(root, "node_modules/.cache/scaffolding");
 const CACHE = join(CACHE_DIR, "confidential-terms.json");
@@ -313,13 +327,17 @@ function loadList(optional = false): { list?: TermList; problem?: string; absent
   const file = arg("--list") || process.env.SCAFFOLDING_CONFIDENTIAL_TERMS || undefined;
   let problem: string | undefined;
   const due = age(ATTEMPT) >= HOUR || (age(CACHE) === Infinity && !optional);
-  if (!file && age(CACHE) >= DAY && due) {
+  // A copy fetched before Company OS built the never section is fetched again for the never scan.
+  const old =
+    age(CACHE) >= DAY ||
+    (neverMode && existsSync(CACHE) && !parse(readFileSync(CACHE, "utf8"))?.never?.length);
+  if (!file && old && due) {
     problem = fetchList();
     if (problem && existsSync(CACHE)) warn(`${problem}; using the copy fetched before`);
-  } else if (!file && age(CACHE) >= DAY)
+  } else if (!file && old)
     warn(
       existsSync(CACHE)
-        ? "copy older than a day; next fetch within the hour"
+        ? `copy ${age(CACHE) >= DAY ? "older than a day" : "without a never section"}; next fetch within the hour`
         : "no copy; next fetch within the hour, or now by `check-confidential fetch`",
     );
   const source = file ?? CACHE;
@@ -342,7 +360,6 @@ if (argv[0] === "fetch") {
   process.exit(loaded.problem ? 1 : 0);
 }
 
-const neverMode = argv[0] === "never";
 const CHECK = neverMode ? "never-shown" : "confidential";
 const message = arg("--message-file");
 const commit = arg("--commit");
@@ -352,11 +369,7 @@ const optional =
 const tree = arg("--tree");
 const index = argv.includes("--index");
 // A deploy's audit needs no access; a commit, its message or a push is scanned wherever it is made.
-const skipped = process.env.CI === "true" && Boolean(tree || index || neverMode);
-if (skipped && neverMode) {
-  warn("CI: never scan skipped");
-  process.exit(0);
-}
+const skipped = process.env.CI === "true" && Boolean(tree || index);
 // `private` and the allow list come from the snapshot scanned, so a commit adding a case and its
 // allow entry together is judged as one and an unstaged edit switches no scan off. A message
 // belongs to the commit the index makes. The never scan reads what the working tree renders, and
@@ -405,7 +418,8 @@ else {
       check: CHECK,
       path: "confidential terms",
       text: "",
-      message: "the list has no never section: Company OS has not built one",
+      message:
+        "the list has no never section: Company OS has not built one, or `check-confidential fetch` fetches it now",
     });
 }
 // A public repository's own scans refuse a never name too, under their casing rule.
@@ -428,7 +442,7 @@ function scanText(where: string, text: string, inPath = false) {
       // in capitals, since in lower case they are code (`c => a`).
       const pair = n === 1 && gram.length === 3;
       const counts = pair ? capitals(tokens[i] + tokens[i + 1]) : n || gram.length > 3;
-      if ((counts && bad.has(h(gram))) || (neverMode && bad.has(h(`any:${gram}`))))
+      if ((counts && bad.has(h(gram))) || (neverMode && !n && bad.has(h(`any:${gram}`))))
         found.add(tokens.slice(i, i + n + 1).join(" "));
     }
   }
@@ -806,9 +820,9 @@ else if (argv.includes("--staged") || commit) {
       message: 'nothing to scan: stdin holds no {"<where>": "<text>"} object of strings',
     });
   else {
-    // The caller hands over every string it shows, so an allow entry matching nothing is stale.
     full = true;
-    for (const [where, text] of texts) scanText(where, text as string);
+    // A key may be a slug the deck shows in its address.
+    for (const [where, text] of texts) scanText(where, `${where}\n${text}`);
   }
 } else if (tree || index) {
   full = true;
@@ -849,8 +863,8 @@ else if (argv.includes("--staged") || commit) {
 }
 scanBinaries(binaries);
 
-// A full scan (the index, the gate's step, or a tree) sees every file, so an allow entry matching
-// nothing there is stale. A partial scan (staged, one commit, a message) or one without the list
+// A full scan (the index, the gate's step, a tree, or the never scan, handed every string the caller
+// shows) sees every case, so an allow entry matching nothing there is stale. A partial scan (staged, one commit, a message) or one without the list
 // cannot tell.
 finish(
   "check-confidential",

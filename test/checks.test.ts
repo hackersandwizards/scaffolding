@@ -1915,15 +1915,25 @@ describe("check-confidential never", () => {
   const list = join(dir, "list.json");
   writeFileSync(list, build("Acme Widgets\nMarigold\n").out);
   const env = { SCAFFOLDING_CONFIDENTIAL_TERMS: list, CI: "" };
-  const never = (texts: unknown, at = repo({ "package.json": "{}" }), extra = {}) =>
+  // The never scan reads the working tree's package.json and needs no commit.
+  const plain = repo({ "package.json": "{}" }, false);
+  const never = (texts: unknown, at = plain, extra = {}) =>
     run(at, "check-confidential", ["never"], { ...env, ...extra }, JSON.stringify(texts));
+  const listWith = (section?: unknown) => {
+    const file = join(temp(), "list.json");
+    writeFileSync(
+      file,
+      JSON.stringify({ ...JSON.parse(readFileSync(list, "utf8")), never: section }),
+    );
+    return file;
+  };
 
   test("build keeps every never name, hashed, and a cased one also in any case", () => {
     const built = JSON.parse(readFileSync(list, "utf8"));
     expect(readFileSync(list, "utf8")).not.toMatch(/qzx|zwox|brennwald|marigold/i);
     // Marigold, public and a word, leaves the terms but stays a never name.
     expect(built.hashes).toHaveLength(1);
-    // QZX and ZWOX two each, Brennwald AG and Brennwald one each, Marigold one.
+    // QZX and ZWOX two each, Brennwald AG and Brennwald one each, Marigold only its "any:" one.
     expect(built.never).toHaveLength(7);
   });
 
@@ -1933,12 +1943,16 @@ describe("check-confidential never", () => {
       ["\n\n", "--never: no name"],
       ["QZX\nQZ\n", "under three letters: QZ"],
       ["QZ AG\n", "under three letters: QZ AG"],
+      ["Q 7\n", "under three letters: Q 7"],
     ]) {
       writeFileSync(names, text);
       const r = build("Acme Widgets\n", names);
       expect(r.code).toBe(1);
       expect(r.out).toContain(why);
     }
+    const bare = run(dir, "check-confidential", ["build", "-", "--never"], {}, "Acme Widgets\n");
+    expect(bare.code).toBe(1);
+    expect(bare.out).toContain("--never: no name");
     writeFileSync(names, "QZX AG\n");
     expect(build("Acme Widgets\n", names).code).toBe(0);
   });
@@ -1966,6 +1980,10 @@ describe("check-confidential never", () => {
     const r = never({ "deck/a": "Titel\n" + text });
     expect(r.code).toBe(refused ? 1 : 0);
     if (refused) expect(r.out).toContain("deck/a: a name h&w never shows from the company records");
+  });
+
+  test("a key counts as text: a slug can show the name", () => {
+    expect(never({ "clients/qzx-workshop": "Agenda" }).out).toContain("(qzx)");
   });
 
   test("runs in a private repository too", () => {
@@ -2008,25 +2026,21 @@ describe("check-confidential never", () => {
       expect(r.code).toBe(1);
       expect(r.out).toContain("stdin: nothing to scan");
     }
-    expect(never({ a: "plain text" }, repo({ "package.json": "{}" })).code).toBe(0);
+    expect(never({ a: "plain text" }).code).toBe(0);
   });
 
   test("a list with a missing or empty never section refuses", () => {
-    const at = repo({ "package.json": "{}" });
     for (const section of [undefined, []]) {
-      const old = join(temp(), "old.json");
-      writeFileSync(
-        old,
-        JSON.stringify({ ...JSON.parse(readFileSync(list, "utf8")), never: section }),
-      );
-      const r = never({ a: "plain text" }, at, { SCAFFOLDING_CONFIDENTIAL_TERMS: old });
+      const r = never({ a: "plain text" }, plain, {
+        SCAFFOLDING_CONFIDENTIAL_TERMS: listWith(section),
+      });
       expect(r.code).toBe(1);
       expect(r.out).toContain("the list has no never section");
     }
   });
 
   test("CI skips with a warning", () => {
-    const r = never({ a: "QZX" }, repo({ "package.json": "{}" }), { CI: "true" });
+    const r = never({ a: "QZX" }, plain, { CI: "true" });
     expect(r.code).toBe(0);
     expect(r.out).toContain("CI: never scan skipped");
   });
@@ -2043,11 +2057,11 @@ describe("check-confidential never", () => {
     };
     for (const text of ["QZX", "see qzx-workshop/", "ZWOX", "Brennwald", "brennwald"])
       expect([text, staged(text)]).toEqual([text, 1]);
-    for (const text of ["bei Qzx", "zwox", "Zwox"]) expect([text, staged(text)]).toEqual([text, 0]);
+    // A dictionary word on the never list refuses no ordinary text in public.
+    for (const text of ["bei Qzx", "zwox", "Zwox", "a marigold", "Marigold"])
+      expect([text, staged(text)]).toEqual([text, 0]);
     // A list without a never section scans as before.
-    const old = join(temp(), "old.json");
-    const { never: _never, ...terms } = JSON.parse(readFileSync(list, "utf8"));
-    writeFileSync(old, JSON.stringify(terms));
+    const old = listWith(undefined);
     expect(staged("QZX Brennwald", old)).toBe(0);
     expect(staged("Acme Widgets", old)).toBe(1);
     const msg = join(at, "MSG");
@@ -2060,9 +2074,9 @@ describe("check-confidential list source", () => {
   const names = join(temp(), "names.txt");
   writeFileSync(names, "Acme Widgets GmbH\n");
   const fresh = run(temp(), "check-confidential", ["build", names]).out;
-  const builtDaysAgo = (days: number) =>
+  const builtDaysAgo = (days: number, list = fresh) =>
     JSON.stringify({
-      ...JSON.parse(fresh),
+      ...JSON.parse(list),
       built: new Date(Date.now() - days * 864e5).toISOString(),
     });
   const stubDir = temp();
@@ -2101,8 +2115,8 @@ describe("check-confidential list source", () => {
       CI: "",
       SCAFFOLDING_CONFIDENTIAL_TERMS: "",
     };
-    const check = (extra: Record<string, string> = {}, args = ["--staged"]) =>
-      run(dir, "check-confidential", args, { ...env, ...extra });
+    const check = (extra: Record<string, string> = {}, args = ["--staged"], input?: string) =>
+      run(dir, "check-confidential", args, { ...env, ...extra }, input);
     const calls = () => readFileSync(log, "utf8").split("\n").filter(Boolean).length;
     return { dir, home, check, calls, cache };
   }
@@ -2128,41 +2142,24 @@ describe("check-confidential list source", () => {
       "--never",
       neverNames,
     ]).out;
-    const aged = JSON.stringify({
-      ...JSON.parse(withNever),
-      built: new Date(Date.now() - 10 * 864e5).toISOString(),
-    });
     const deck = JSON.stringify({ a: "QZX" });
     const m = machine({ gh: "ok", remote: withNever });
-    const env = {
-      HOME: m.home,
-      PATH: `${stubDir}:${process.env.PATH}`,
-      GH_STUB: "ok",
-      GH_STUB_FILE: join(m.home, "remote.json"),
-      GH_STUB_LOG: join(m.home, "gh.log"),
-      CI: "",
-      SCAFFOLDING_CONFIDENTIAL_TERMS: "",
-    };
-    expect(run(m.dir, "check-confidential", ["never"], env, deck).out).toContain("(QZX)");
+    expect(m.check({}, ["never"], deck).out).toContain("(QZX)");
     expect(readFileSync(m.cache, "utf8")).toBe(withNever);
-    run(m.dir, "check-confidential", ["never"], env, deck);
+    m.check({}, ["never"], deck);
     expect(m.calls()).toBe(1);
-    const old = machine({ gh: "ok", remote: aged });
-    const r = run(
-      old.dir,
-      "check-confidential",
-      ["never"],
-      {
-        ...env,
-        HOME: old.home,
-        GH_STUB_FILE: join(old.home, "remote.json"),
-        GH_STUB_LOG: join(old.home, "gh.log"),
-      },
-      JSON.stringify({ a: "plain" }),
-    );
+    const r = machine({ gh: "ok", remote: builtDaysAgo(10, withNever) }).check({}, ["never"], deck);
     expect(r.code).toBe(1);
     expect(r.out).toContain("list built 10 days ago, more than 7");
     expect(r.out).toContain("then run it again");
+    // A copy fetched before Company OS built the section is fetched again, at most hourly.
+    const before = machine({ gh: "ok", remote: withNever, cache: fresh, cacheDays: 0.5 });
+    expect(before.check({}, ["never"], deck).out).toContain("(QZX)");
+    expect(before.calls()).toBe(1);
+    const denied = machine({ gh: "deny", cache: fresh, cacheDays: 0.5 });
+    expect(denied.check({}, ["never"], deck).out).toContain("the list has no never section");
+    expect(denied.check({}, ["never"], deck).out).toContain("copy without a never section");
+    expect(denied.calls()).toBe(1);
   });
 
   test("a copy fetched within the day is used without a fetch", () => {
