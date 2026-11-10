@@ -220,7 +220,7 @@ line heights of the first four (`--text-page--line-height` and so on); there the
 `--text-ui` and line height as `var()`s. A program that reads the shell's CSS files itself rather
 than through the build, such as a page that inlines `catalog/catalog.css`, passes each file's text
 through `brandFallbacks(css, tokens)` from `catalog/fallbacks.ts` with the `tokens` of brand's
-`tokens.json`: read raw, the files leave their text unsized and the bar's font unset, with no error.
+`tokens.json`: read raw, the files leave their text unsized and the bar without its size and line height, with no error.
 The home's rail is brand's search field (`hw-search`) over its navigation list (`hw-nav`), so the
 home's stylesheets need brand's `elements.css`, as its tiles need brand's card and pill. The shell
 needs brand v2.5.0 or later, the first with those type steps in `tokens.json`; an older brand
