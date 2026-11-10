@@ -2371,6 +2371,35 @@ describe("scaffolding check", () => {
   });
 });
 
+describe("skeleton install hooks", () => {
+  test("a lock change installs under check-lock, or plainly where node_modules is missing", () => {
+    const dir = repo({ "bun.lock": "a\n" });
+    sh(dir, ["commit", "-q", "--allow-empty", "-m", "a"]);
+    const old = sh(dir, ["rev-parse", "HEAD"]).stdout.toString().trim();
+    write(dir, { "bun.lock": "b\n" });
+    sh(dir, ["commit", "-q", "-am", "b"]);
+    const fake = temp();
+    writeFileSync(join(fake, "bun"), '#!/bin/sh\necho "$*" >> "$BUN_LOG"\n', { mode: 0o755 });
+    const hook = (name: string, args: string[]) => {
+      const log = join(fake, `${name}.log`);
+      spawnSync("/bin/sh", [join(import.meta.dir, "..", "template/.githooks", name), ...args], {
+        cwd: dir,
+        env: { ...process.env, PATH: `${fake}:${process.env.PATH}`, BUN_LOG: log },
+      });
+      return existsSync(log) ? readFileSync(log, "utf8") : "";
+    };
+    const head = sh(dir, ["rev-parse", "HEAD"]).stdout.toString().trim();
+    sh(dir, ["update-ref", "ORIG_HEAD", old]);
+    expect(hook("post-checkout", [old, head, "1"])).toBe("install --frozen-lockfile\n");
+    expect(hook("post-merge", ["0"])).toBe("install --frozen-lockfile\n");
+    mkdirSync(join(dir, "node_modules"));
+    rmSync(join(fake, "post-merge.log"));
+    expect(hook("post-merge", ["0"])).toBe(
+      "run --silent check-lock bun install --frozen-lockfile\n",
+    );
+  });
+});
+
 describe("shared eslint config", () => {
   test("an empty test body or an unused name goes red, a real test stays green", () => {
     const dir = repo({

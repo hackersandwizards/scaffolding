@@ -540,7 +540,8 @@ are read from each pushed branch's tip, by a Git older than 2.40 from the checke
 Checks run locally in the git hooks and in `bun run check`. The `post-merge` and `post-checkout`
 hooks run `bun install --frozen-lockfile` when `bun.lock` or `package.json` changed, under
 `check-lock` without waiting: while a gate or build holds the lock they leave the install to the
-gate, so `node_modules` never changes under a running one. `bun run check` starts with the same
+gate, so `node_modules` never changes under a running one. A checkout without `node_modules` has
+no `check-lock` yet and installs plainly. `bun run check` starts with the same
 install. CI only builds and deploys. A
 repository that publishes GitHub Pages calls the reusable workflow, which runs `bun run build` and
 publishes `dist/`. The caller, `.github/workflows/pages.yml`, is owned: where it exists,
