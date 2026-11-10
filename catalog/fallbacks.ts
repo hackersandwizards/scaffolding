@@ -1,11 +1,19 @@
 /** The shell's CSS with brand's value as the fallback of each var() that names a token in brand's
  * tokens.json, in place of any fallback the shell writes, the bare var()s inside that value filled
- * the same way. Inside brand's own values a fallback stays: it is brand's to write. */
+ * the same way. Inside brand's own values a fallback stays: it is brand's to write. Each
+ * `brand-value(--name)` becomes brand's literal value, which no data-hw-scale redefines, or
+ * `var(--name)` where tokens.json lacks the name. */
 export function brandFallbacks(
   css: string,
   tokens: Record<string, string>,
   seen: string[] = [],
 ): string {
+  css = css.replace(/brand-value\(\s*(--[\w-]+)\s*\)/g, (_, name: string) => {
+    if (!Object.hasOwn(tokens, name)) return `var(${name})`;
+    if (tokens[name]!.includes("var("))
+      throw new Error(`catalog: brand-value(${name}) is ${tokens[name]}, no fixed value`);
+    return tokens[name]!;
+  });
   let out = "";
   let at = 0;
   for (const m of css.matchAll(/var\(\s*(--[\w-]+)\s*([,)])/g)) {

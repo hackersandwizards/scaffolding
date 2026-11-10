@@ -211,10 +211,16 @@ left its page scripts unrun.
 The shell (`catalog/`: Layout, Home, Head, Top, which draws the header, `render.ts`, which draws
 the rail and tiles, and `catalog.css`) reads brand's token roles by name only, and the repository's
 `css` supplies them. Where brand's `tokens.json` holds a name the shell's CSS reads, the build writes
-brand's value as that `var()`'s fallback, in place of any the shell writes. A repository without brand
-supplies the type steps the shell reads in its `css`: `--text-page`, `--text-heading`,
-`--text-subheading`, `--text-ui`, `--text-micro` and the line heights of the first three
-(`--text-page--line-height` and so on).
+brand's value as that `var()`'s fallback, in place of any the shell writes. The bar above a story
+keeps one size whatever `data-hw-scale` the story sets: `chrome.css` writes
+`brand-value(--text-ui)` and `brand-value(--text-ui--line-height)`, which the build replaces with
+brand's unscaled values. A repository without brand supplies the type steps the shell reads in its
+`css`: `--text-page`, `--text-heading`, `--text-subheading`, `--text-ui`, `--text-micro` and the
+line heights of the first four (`--text-page--line-height` and so on); there the bar reads its
+`--text-ui` and line height as `var()`s. A program that reads the shell's CSS files itself rather
+than through the build, such as a page that inlines `catalog/catalog.css`, passes each file's text
+through `brandFallbacks(css, tokens)` from `catalog/fallbacks.ts` with the `tokens` of brand's
+`tokens.json`: read raw, the files leave their text unsized and the bar's font unset, with no error.
 The home's rail is brand's search field (`hw-search`) over its navigation list (`hw-nav`), so the
 home's stylesheets need brand's `elements.css`, as its tiles need brand's card and pill. The shell
 needs brand v2.5.0 or later, the first with those type steps in `tokens.json`; an older brand

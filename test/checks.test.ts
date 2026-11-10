@@ -1794,6 +1794,11 @@ describe("catalog", () => {
     );
     expect(brandFallbacks(css, {})).toBe(css);
     expect(() => brandFallbacks(".x{a:var(--b, calc(1px}", tokens)).toThrow("no closing");
+    // brand-value() is brand's literal, never a var() a scale redefines; without brand, the var().
+    expect(brandFallbacks(".x{font:500 brand-value(--b) / brand-value( --n )}", tokens)).toBe(
+      ".x{font:500 3px / var(--n)}",
+    );
+    expect(() => brandFallbacks(".x{a:brand-value(--a)}", tokens)).toThrow("no fixed value");
   });
 
   test("rewriteRoute: an Astrobook route without a place for an edit fails rather than skip it", () => {
@@ -2261,6 +2266,14 @@ describe("catalog", () => {
     // repository's head, whose own link then wins; without brand the shell writes none.
     expect(build().status).toBe(0);
     expect(links(page(""), "icon")).toEqual(["/assets/logo.svg"]);
+    // Without brand the bar reads the repository's own --text-ui.
+    const brandless = globSync("**/*.{css,html}", { cwd: dist })
+      .map((f) => readFileSync(join(dist, f), "utf8"))
+      .join("");
+    expect(brandless.match(/\.hw-catalog-bar\{[^}]*\}/)?.[0]).toContain(
+      "font:500 var(--text-ui) / var(--text-ui--line-height) var(--font-sans)",
+    );
+    expect(brandless).not.toContain("brand-value");
     // The shell's home holds no foundations: no group of its own. A home with some draws them as
     // Foundations; beside a stories folder of that name the build fails, and a home of whitespace
     // and a comment leaves the folder the one group (compressHTML off, as in the repositories).
@@ -2333,6 +2346,8 @@ describe("catalog", () => {
           "--spacing-app-header": "calc(var(--spacing-strip) + 2rem)",
           "--spacing-strip": "5px",
           "--radius-pill": "77px",
+          "--text-ui": "0.9rem",
+          "--text-ui--line-height": "1.55",
         },
       }),
     });
@@ -2355,6 +2370,9 @@ describe("catalog", () => {
       "var(--radius-pill,77px)",
     ])
       expect(sheets).toContain(fallback);
+    // The bar's size is brand's unscaled UI step.
+    expect(sheets).toMatch(/\.hw-catalog-bar\{[^}]*font:500 \.9rem\s*\/\s*1\.55 /);
+    expect(sheets).not.toContain("brand-value");
     // brand's layer order follows the ground's.
     expect(branded).toContain(
       "<style>@layer hw-catalog-ground;@layer properties, theme, base, components, utilities;</style>",
