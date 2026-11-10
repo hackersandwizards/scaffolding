@@ -65,6 +65,8 @@ function readComments(path: string, text: string): string[] {
   const read: string[] = [];
   let end = 0;
   for (const m of text.matchAll(commentSyntax(path))) {
+    // A quoted string, which the syntax matches only to keep it out of the comments.
+    if (m[0] === m[1]) continue;
     const mark = m.index + m[0].search(/\/[/*]|<!--|#/);
     const gap = text.slice(end, mark);
     end = m.index + m[0].length;

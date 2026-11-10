@@ -62,13 +62,14 @@ export async function serve(
     watcher?.kill("SIGKILL");
   };
   for (const end = Date.now() + timeoutMs; Date.now() < end && !exited;) {
-    if (
-      await fetch(url, { signal: AbortSignal.timeout(Math.max(1, end - Date.now())) }).then(
-        () => true,
-        () => false,
-      )
-    )
-      return { url, stop };
+    const answered = await fetch(url, {
+      signal: AbortSignal.timeout(Math.max(1, end - Date.now())),
+    }).then(
+      () => true,
+      () => false,
+    );
+    // An answer after the server exited came from another process that took the port meanwhile.
+    if (answered && !exited) return { url, stop };
     await new Promise((r) => setTimeout(r, 200));
   }
   stop();

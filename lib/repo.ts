@@ -48,15 +48,26 @@ export function tagCommit(version: string, installed: string | undefined): strin
 /** A file's comments, by its kind: `#` lines for shell, Python, YAML, TOML, Git hooks and the
  * editor and Prettier ignore files, else block, HTML and `//` comments, a `//` in a URL or a
  * string's start excepted. A block comment opens only after a character that ends code or another
- * comment, or after a word when a space follows the mark: a regular expression cannot tell a string
- * from code, and a glob such as "src/*.ts" would read on to the next closing mark. Group 1 is the
- * character before a comment that a replacement keeps. */
-export const commentSyntax = (path: string) =>
-  /\.(?:sh|py|ya?ml|toml)$|(?:^|\/)(?:\.githooks\/[^/.]+|\.editorconfig|\.prettierignore)$/.test(
+ * comment, or after a word when a space follows the mark: a glob such as "src/*.ts" would read on
+ * to the next closing mark. Group 1 is what a replacement keeps: the character before a comment,
+ * or, outside Markdown and HTML, whose apostrophes are prose, a quoted string on one line, matched
+ * as itself so that "x//y" or "issue #12" no longer dropped the code after it as a comment. */
+export const commentSyntax = (path: string) => {
+  const quoted = /\.(?:md|mdx|html?)$/.test(path)
+    ? ""
+    : String.raw`"(?:[^"\\\n]|\\.)*"|'(?:[^'\\\n]|\\.)*'|`;
+  // After a string, the lookbehind ends the match at its closing quote.
+  return /\.(?:sh|py|ya?ml|toml)$|(?:^|\/)(?:\.githooks\/[^/.]+|\.editorconfig|\.prettierignore)$/.test(
     path,
   )
-    ? /(^|\s)#.*/gm
-    : /(^|[\s{};,)>]|\b(?=\/\*\s)|(?<=\*\/))\/\*[\s\S]*?\*\/|<!--[\s\S]*?-->|(?<![:"'`\\])\/\/.*/gm;
+    ? new RegExp(String.raw`(${quoted}^|\s)(?:(?<=["'])|#.*)`, "gm")
+    : new RegExp(
+        String.raw`(${quoted}^|[\s{};,)>]|\b(?=\/\*\s)|(?<=\*\/))(?:(?<=["'])|\/\*[\s\S]*?\*\/)|<!--[\s\S]*?-->|(?<![:"'` +
+          "`" +
+          String.raw`\\])\/\/.*`,
+        "gm",
+      );
+};
 
 /** Exits 2 unless this bun started with `--no-env-file`, and hands the flag to every bun a step
  * starts (README: Environment). */
@@ -164,17 +175,22 @@ export function readPackage(root: string, rev?: string): Package {
   return JSON.parse(git(["show", `${index ? "" : rev}:package.json`], root).toString("utf8"));
 }
 
+// `**/` also stands for no folder at all, as in Git and Bun.Glob: `**/x.ts` covers the root's x.ts.
 const glob = (pattern: string) =>
   new RegExp(
     `^${pattern
-      .split("**")
+      .split(/(\*\*\/?)/)
       .map((part) =>
-        part
-          .split("*")
-          .map((s) => s.replace(/[.+?^${}()|[\]\\]/g, "\\$&"))
-          .join("[^/]*"),
+        part === "**/"
+          ? "(?:.*/)?"
+          : part === "**"
+            ? ".*"
+            : part
+                .split("*")
+                .map((s) => s.replace(/[.+?^${}()|[\]\\]/g, "\\$&"))
+                .join("[^/]*"),
       )
-      .join(".*")}$`,
+      .join("")}$`,
   );
 
 // Folded as the confidential scan reads text: NFKC words joined by one space, in lower case.
@@ -203,27 +219,31 @@ export function applyAllow(
   stale: boolean,
 ): Finding[] {
   const allow: AllowEntry[] = pkg.scaffolding?.allow ?? [];
+  // A path or text that is not a string, or a list of strings, threw inside the match.
+  const text = (v: unknown) =>
+    v === undefined ||
+    typeof v === "string" ||
+    (Array.isArray(v) && v.every((x) => typeof x === "string"));
   const mine = allow.filter((e) => e.check === check);
-  const left = findings.filter((f) => !mine.some((e) => covers(e, f)));
+  const usable = mine.filter((e) => text(e.path) && text(e.text));
+  const left = findings.filter((f) => !usable.some((e) => covers(e, f)));
+  const report = (e: AllowEntry, message: string) =>
+    left.push({ check, path: "package.json", text: JSON.stringify(e), message });
   for (const e of mine) {
-    if (!isReason(e.reason))
-      left.push({
-        check,
-        path: "package.json",
-        text: JSON.stringify(e),
-        message: "allow entry without a reason",
-      });
-    else if (stale)
+    if (!usable.includes(e))
+      report(e, "allow entry's path and text are strings or lists of strings");
+    else if (!isReason(e.reason)) report(e, "allow entry without a reason");
+    else if (stale && !findings.some((f) => covers(e, f))) report(e, "allow entry matches nothing");
+    else if (stale) {
       // Each text and each path of a list is its own exception and dies with its own case.
-      for (const text of Array.isArray(e.text) && e.text.length ? e.text : [e.text])
-        for (const path of Array.isArray(e.path) && e.path.length ? e.path : [e.path])
-          if (!findings.some((f) => covers({ ...e, path }, f, text)))
-            left.push({
-              check,
-              path: "package.json",
-              text: JSON.stringify({ ...e, path, text }),
-              message: "allow entry matches nothing",
-            });
+      const items = (v: string | string[] | undefined) => (Array.isArray(v) ? v : []);
+      for (const path of items(e.path))
+        if (!findings.some((f) => covers({ ...e, path }, f)))
+          report({ ...e, path }, "allow entry matches nothing");
+      for (const t of items(e.text))
+        if (!findings.some((f) => covers(e, f, t)))
+          report({ ...e, text: t }, "allow entry matches nothing");
+    }
   }
   return left;
 }

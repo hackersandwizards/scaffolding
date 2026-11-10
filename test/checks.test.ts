@@ -24,7 +24,7 @@ import { pathToFileURL } from "node:url";
 import { brandFallbacks } from "../catalog/fallbacks.ts";
 import { catalogPath } from "../catalog/path.ts";
 import { rewriteRoute } from "../catalog/route.ts";
-import { installedCommit, tagCommit } from "../lib/repo.ts";
+import { applyAllow, commentSyntax, installedCommit, tagCommit } from "../lib/repo.ts";
 
 const bin = (name: string) => join(import.meta.dir, "..", "bin", `${name}.ts`);
 const PREVIEW = 'ASTRO_PREVIEW_BACKGROUND=1 bun --bun astro preview --root "$PWD/catalog"';
@@ -150,6 +150,55 @@ const acme = {
 
 const installed =
   "hard-coded path into an installed package: import.meta.resolve it through the package's exports (its ./package.json for the folder), run its command from node_modules/.bin, serve a catalog asset by its package path in the preset's copy, or name the exception in scaffolding.allow";
+
+test("allow entries: **/ covers the root, list items die alone, a non-string is a finding", () => {
+  const allow = (entries: object[], findings: [string, string][]) =>
+    applyAllow(
+      { scaffolding: { allow: entries } } as Parameters<typeof applyAllow>[0],
+      "x",
+      findings.map(([path, text]) => ({ check: "x", path, text, message: "m" })),
+      true,
+    ).map((f) => `${f.path}: ${f.message}${f.path === "package.json" ? ` ${f.text}` : ""}`);
+  expect(
+    allow(
+      [{ check: "x", path: "**/x.ts", reason: "r" }],
+      [
+        ["x.ts", "t"],
+        ["a/b/x.ts", "t"],
+      ],
+    ),
+  ).toEqual([]);
+  expect(allow([{ check: "x", path: "a/**/b.ts", reason: "r" }], [["a/b.ts", "t"]])).toEqual([]);
+  const pairs = { check: "x", path: ["a", "b"], text: ["x", "y"], reason: "r" };
+  expect(
+    allow(
+      [pairs],
+      [
+        ["a", "x"],
+        ["b", "y"],
+      ],
+    ),
+  ).toEqual([]);
+  expect(allow([pairs], [["a", "x"]])).toEqual([
+    `package.json: allow entry matches nothing ${JSON.stringify({ ...pairs, path: "b" })}`,
+    `package.json: allow entry matches nothing ${JSON.stringify({ ...pairs, text: "y" })}`,
+  ]);
+  expect(allow([{ check: "x", path: 5, reason: "r" }], [["a", "t"]])).toEqual([
+    "a: m",
+    'package.json: allow entry\'s path and text are strings or lists of strings {"check":"x","path":5,"reason":"r"}',
+  ]);
+});
+
+test("comment syntax keeps a quoted string whole, a comment mark inside it included", () => {
+  const strip = (path: string, text: string) => text.replace(commentSyntax(path), "$1");
+  expect(strip("a.ts", 'const a = "x//y"; const b = "z"; // note')).toBe(
+    'const a = "x//y"; const b = "z"; ',
+  );
+  expect(strip("a.yml", 'run: echo "issue #12" > out # note')).toBe('run: echo "issue #12" > out ');
+  expect(strip("a.sh", "echo it's # note")).toBe("echo it's ");
+  // Prose apostrophes in Markdown never pair up into a string.
+  expect(strip("a.md", "Don't, won't <!-- note -->")).toBe("Don't, won't ");
+});
 
 describe("check-coupling", () => {
   const fx = repo({
@@ -4467,6 +4516,18 @@ describe("serve", () => {
     expect(factor(String(cores * 3))).toBe(3);
     expect(factor(String(cores * 50))).toBe(10);
   });
+
+  test("an answer that arrives after the server exited is not its own", async () => {
+    const { serve } = await import("../lib/serve.ts");
+    const foreign = join(temp(), "foreign.ts");
+    writeFileSync(
+      foreign,
+      "Bun.serve({ hostname: process.env.HOST, port: Number(process.env.PORT), fetch: async () => { await Bun.sleep(3000); return new Response('foreign'); } });\n",
+    );
+    // The command exits while a request to another listener on its port is still open.
+    const command = ["sh", "-c", `${process.execPath} ${foreign} & sleep 1; exit 1`];
+    await expect(serve(command, { timeoutMs: 10_000 })).rejects.toThrow("it exited");
+  }, 20_000);
 
   test("a server that accepts but never answers fails at the timeout", async () => {
     const { serve } = await import("../lib/serve.ts");
