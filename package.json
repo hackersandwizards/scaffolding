@@ -24,6 +24,7 @@
     "./prettier": "./config/prettier.js",
     "./chrome": "./lib/chrome.ts",
     "./serve": "./lib/serve.ts",
+    "./rejection": "./lib/rejection.ts",
     "./catalog": "./catalog/index.ts",
     "./catalog/*": "./catalog/*",
     "./stylelint": "./config/stylelint.js"

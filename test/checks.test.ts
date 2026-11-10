@@ -26,6 +26,7 @@ import { pathToFileURL } from "node:url";
 import { brandFallbacks } from "../catalog/fallbacks.ts";
 import { catalogPath } from "../catalog/path.ts";
 import { rewriteRoute } from "../catalog/route.ts";
+import { rejection } from "../lib/rejection.ts";
 import { applyAllow, commentSyntax, installedCommit, tagCommit } from "../lib/repo.ts";
 
 const bin = (name: string) => join(import.meta.dir, "..", "bin", `${name}.ts`);
@@ -3017,6 +3018,26 @@ describe("shared eslint config", () => {
     expect(r.stdout).not.toContain("h.mjs");
   });
 
+  test("expect().rejects and .resolves go red in a test; rejection() gives the error's text", async () => {
+    const dir = repo({
+      "eslint.config.js": `import base from "${join(import.meta.dir, "..", "config", "eslint.js")}";\nexport default base;\n`,
+      "a.test.ts": 'test("x", async () => { await expect(Promise.reject(1)).rejects.toBe(1); });\n',
+      "b.test.ts":
+        'test("x", async () => { await expect(Promise.resolve(1)).resolves.not.toBe(2); });\n',
+      "c.test.ts": 'test("x", async () => { expect(await Promise.resolve(1)).toBe(1); });\n',
+    });
+    const eslint = join(import.meta.dir, "..", "node_modules", ".bin", "eslint");
+    const r = spawnSync(eslint, ["."], { cwd: dir, encoding: "utf8" });
+    expect(r.stdout).toContain("a.test.ts");
+    expect(r.stdout).toContain("b.test.ts");
+    expect(r.stdout).not.toContain("c.test.ts");
+    expect(r.stdout).toContain("await rejection() from @hackersandwizards/scaffolding/rejection");
+    expect(await rejection(Promise.reject(new Error("no answer")))).toBe("Error: no answer");
+    expect(await rejection(rejection(Promise.resolve({ a: 1 })))).toBe(
+      'Error: expected a rejection, resolved with {"a":1}',
+    );
+  });
+
   test("the astro preset parses an .astro file's TypeScript with its own typescript-eslint", () => {
     // A folder with no node_modules: eslint-plugin-astro looks for the parser from the working
     // directory, where an isolated install of the consumer holds none.
@@ -5574,9 +5595,11 @@ describe("serve", () => {
       b.stop();
     }
     const started = Date.now();
-    await expect(serve([process.execPath, "-e", "process.exit(3)"])).rejects.toThrow("it exited");
+    expect(await rejection(serve([process.execPath, "-e", "process.exit(3)"]))).toContain(
+      "it exited",
+    );
     expect(Date.now() - started).toBeLessThan(5_000);
-    await expect(serve(["/nonexistent-polish-bin"])).rejects.toThrow("it exited");
+    expect(await rejection(serve(["/nonexistent-polish-bin"]))).toContain("it exited");
   });
 
   test("stderr: true passes the server's stderr through; by default it stays quiet", () => {
@@ -5622,14 +5645,14 @@ await serve([process.execPath, "-e", "console.error('boot failed: stack'); proce
     );
     // The command exits while a request to another listener on its port is still open.
     const command = ["sh", "-c", `${process.execPath} ${foreign} & sleep 1; exit 1`];
-    await expect(serve(command, { timeoutMs: 10_000 })).rejects.toThrow("it exited");
+    expect(await rejection(serve(command, { timeoutMs: 10_000 }))).toContain("it exited");
   }, 20_000);
 
   test("a server that accepts but never answers fails at the timeout", async () => {
     const { serve } = await import("../lib/serve.ts");
     const silent = `require("node:net").createServer(() => {}).listen(Number(process.env.PORT), process.env.HOST)`;
     const started = Date.now();
-    await expect(serve([process.execPath, "-e", silent], { timeoutMs: 500 })).rejects.toThrow(
+    expect(await rejection(serve([process.execPath, "-e", silent], { timeoutMs: 500 }))).toContain(
       "no answer",
     );
     expect(Date.now() - started).toBeLessThan(5_000);
