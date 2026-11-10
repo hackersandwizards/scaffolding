@@ -12,7 +12,7 @@ screenshot goes in, and `check-confidential` runs in its own hooks.
 ## Checks
 
 `bun run check` is the full gate, `scaffolding check` run on the package itself. The catalog build
-test builds `test/fixture/` with the preset. The pre-commit hook runs `bun run check:staged`.
+test builds a copy of `test/fixture/` with the preset. The pre-commit hook runs `bun run check:staged`.
 
 ## Releases
 

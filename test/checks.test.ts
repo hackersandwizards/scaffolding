@@ -34,6 +34,13 @@ const PREVIEW = 'ASTRO_PREVIEW_BACKGROUND=1 bun --bun astro preview --root "$PWD
 const made: string[] = [];
 afterAll(() => made.forEach((dir) => rmSync(dir, { recursive: true, force: true })));
 
+// A stopped run skips afterAll: the next run removes its folders, once an hour old, so a run still
+// going keeps its own.
+for (const name of readdirSync(tmpdir()).filter((n) => n.startsWith("scaffolding-test-"))) {
+  const dir = join(tmpdir(), name);
+  const age = Date.now() - (statSync(dir, { throwIfNoEntry: false })?.mtimeMs ?? Date.now());
+  if (age > 3_600_000) rmSync(dir, { recursive: true, force: true });
+}
 function temp() {
   const dir = mkdtempSync(join(tmpdir(), "scaffolding-test-"));
   made.push(dir);
@@ -3145,11 +3152,18 @@ const BRAND_TOKENS = {
 };
 
 describe("catalog", () => {
-  // The package the fixture's homeCss names, for every test that builds or serves the fixture.
+  // The tests build and serve a fresh copy of test/fixture where lint and format never read, so
+  // a stopped run's output reaches neither them nor the next run. Its configs import
+  // ../../../catalog, which the link beside the copy keeps.
+  const work = join(import.meta.dir, "..", "node_modules", ".cache", "scaffolding", "fixture");
+  const fixture = join(work, "test", "fixture");
   beforeAll(() => {
-    const modules = join(import.meta.dir, "fixture", "catalog", "node_modules");
-    made.push(modules);
-    write(join(modules, "@acme", "ui"), {
+    rmSync(work, { recursive: true, force: true });
+    made.push(work);
+    cpSync(join(import.meta.dir, "fixture"), fixture, { recursive: true });
+    symlinkSync(join(import.meta.dir, "..", "catalog"), join(work, "catalog"));
+    // The package the fixture's homeCss names, for every test that builds or serves the fixture.
+    write(join(fixture, "catalog", "node_modules", "@acme", "ui"), {
       "package.json": JSON.stringify({
         name: "@acme/ui",
         version: "1.2.3",
@@ -3158,6 +3172,19 @@ describe("catalog", () => {
       "ui.css": ".acme-ui{color:red}\n",
     });
   });
+  test("a build left in the copy turns neither the gate's lint nor its format red", () => {
+    write(join(fixture, "catalog", "custom", "_astro"), { "x.js": "a;b  ;\n" });
+    for (const command of [
+      ["eslint", "--concurrency=auto", "."],
+      ["prettier", "--check", "--log-level", "warn", "."],
+    ])
+      expect(
+        spawnSync("bun", ["--bun", ...command], {
+          cwd: join(import.meta.dir, ".."),
+          encoding: "utf8",
+        }),
+      ).toMatchObject({ status: 0, stdout: "", stderr: "" });
+  }, 30_000);
   test("catalogPath: the root, or /catalog/ beside the site's own home; dev drops the base", () => {
     expect(catalogPath({ base: "/s", pages: ["types", "about.astro"] })).toBe("/s/");
     for (const page of ["index.astro", "index.html.ts", "index", "[...slug].astro"])
@@ -3222,9 +3249,7 @@ describe("catalog", () => {
   });
 
   test("the preset builds the shell's home into the repository's dist/", async () => {
-    const fixture = join(import.meta.dir, "fixture");
     const dist = join(fixture, "dist");
-    made.push(dist, join(fixture, "catalog", ".astro"), join(fixture, "catalog", "node_modules"));
     const astro = join(import.meta.dir, "..", "node_modules", ".bin", "astro");
     const build = (args: string[] = [], env: Record<string, string> = {}, root = "catalog") =>
       spawnSync(astro, ["build", "--root", root, ...args], {
@@ -3246,7 +3271,6 @@ describe("catalog", () => {
     );
     // An app with no stories folder builds a home without the line that would count nothing.
     const empty = join(fixture, "empty");
-    made.push(empty);
     write(empty, {
       "astro.config.mjs":
         'import { catalog } from "../../../catalog/index.ts";\nexport default { integrations: [catalog({ product: "Fx", css: [], lead: "", header: { component: "../catalog/Header.astro" } })] };\n',
@@ -3592,13 +3616,11 @@ describe("catalog", () => {
     expect(existsSync(join(dist, "fx.txt"))).toBe(false);
     // An outDir the config sets stays; only Astro's default moves to the repository's dist/.
     const custom = join(fixture, "catalog", "custom");
-    made.push(custom);
     expect(build(["--outDir", "./custom"]).status).toBe(0);
     expect(existsSync(join(custom, "index.html"))).toBe(true);
     // A story link ends where Astro writes its page: no slash where a page is a file of its own,
     // unless the site asks for one.
     const files = join(fixture, "catalog", "files.config.mjs");
-    made.push(files);
     for (const [slash, end] of [
       ["ignore", ""],
       ["always", "/"],
@@ -3617,7 +3639,6 @@ describe("catalog", () => {
     // build names its file by file URL, the home's frames, a copied file and a state menu's options
     // included; a link outside the build stays, and no page forwards from /catalog/.
     const disk = join(fixture, "catalog", "disk.config.mjs");
-    made.push(disk);
     writeFileSync(
       disk,
       `import config from "./astro.config.mjs";\nexport default { ...config, build: { assetsPrefix: ${JSON.stringify(pathToFileURL(`${dist}/`).href)} } };\n`,
@@ -3648,7 +3669,6 @@ describe("catalog", () => {
     rmSync(disk);
     // A redirect from "/" would take the catalog's place: the build fails and says why.
     const redirecting = join(fixture, "catalog", "redirecting.config.mjs");
-    made.push(redirecting);
     writeFileSync(
       redirecting,
       'import config from "./astro.config.mjs";\nexport default { ...config, redirects: { "/": "/x/" } };\n',
@@ -3659,7 +3679,6 @@ describe("catalog", () => {
     rmSync(redirecting);
     // A package path outside the package's exports fails the build by name.
     const unexported = join(fixture, "catalog", "unexported.config.mjs");
-    made.push(unexported);
     writeFileSync(
       unexported,
       'import config from "./astro.config.mjs";\nimport { catalog } from "../../../catalog/index.ts";\nexport default { ...config, integrations: [catalog({ product: "Fx", css: [], lead: "", copy: ["@acme/fx/assets/skip.txt"] })] };\n',
@@ -3671,7 +3690,6 @@ describe("catalog", () => {
     rmSync(unexported);
     // A `nav.current` naming no item fails the build by name.
     const misnamed = join(fixture, "catalog", "misnamed.config.mjs");
-    made.push(misnamed);
     writeFileSync(
       misnamed,
       'import config from "./astro.config.mjs";\nimport { catalog } from "../../../catalog/index.ts";\nexport default { ...config, integrations: [catalog({ product: "Fx", css: [], lead: "", nav: { items: [{ name: "Fx", href: "/" }], current: "Fxx" } })] };\n',
@@ -3684,7 +3702,6 @@ describe("catalog", () => {
     rmSync(misnamed);
     const variant = (name: string, options: string) => {
       const file = join(fixture, "catalog", `${name}.config.mjs`);
-      made.push(file);
       writeFileSync(
         file,
         `import config from "./astro.config.mjs";\nimport { catalog } from "../../../catalog/index.ts";\nexport default { ...config, integrations: [catalog({ product: "Fx", css: [], lead: "", header: { component: "./Header.astro" }, ${options} })] };\n`,
@@ -3695,7 +3712,6 @@ describe("catalog", () => {
     };
     // `dashboardCss` replaces `css` on a state's page; a state alone keeps `css`.
     const dash = join(fixture, "catalog", "dash.css");
-    made.push(dash);
     writeFileSync(dash, ".dash{color:red}\n");
     expect(variant("dashed", 'css: ["./fx.css"], dashboardCss: ["./dash.css"]').status).toBe(0);
     const dashCss = styles(page("dashboard/Parts/box-parts/two"));
@@ -3751,7 +3767,6 @@ describe("catalog", () => {
     const homed = join(catalogDir, "homed.config.mjs");
     const ownHome = join(catalogDir, "OwnHome.astro");
     const folder = join(catalogDir, "stories", "Foundations");
-    made.push(homed, ownHome, folder);
     const ownHomeWith = (body: string) =>
       write(catalogDir, {
         "homed.config.mjs":
@@ -3781,7 +3796,6 @@ describe("catalog", () => {
     // Without `nav`, the header lists brand's catalogs.json, the one named as `product` current.
     const brand = join(fixture, "node_modules", "@hackersandwizards", "brand");
     const navless = join(fixture, "catalog", "navless.config.mjs");
-    made.push(join(fixture, "node_modules"), navless);
     write(brand, {
       "package.json": JSON.stringify({
         exports: {
@@ -3928,7 +3942,6 @@ describe("catalog", () => {
     // an endpoint's file stay as written.
     const src = join(fixture, "catalog", "src");
     const pages = join(src, "pages");
-    made.push(src);
     mkdirSync(join(pages, "catalog"), { recursive: true });
     const head = (body: string) =>
       `<html lang="en"><head><title>t</title>${body}</head><body></body></html>\n`;
@@ -3989,15 +4002,12 @@ describe("catalog", () => {
   // swaps pages in place, which drops both until a reload.
   test("dev serves `copy`, and a click in the bar loads the next state in full", async () => {
     const { serve } = await import("../lib/serve.ts");
-    const fixture = join(import.meta.dir, "fixture");
-    made.push(join(fixture, "catalog", ".astro"), join(fixture, "catalog", "node_modules"));
     // Modules at paths a forward would take, as a site whose Astro root holds catalog/ serves its
     // catalog/Head.astro and catalog/stories/ under the base /catalog.
     for (const dir of ["fx", "catalog/stories"]) {
       mkdirSync(join(fixture, "catalog", dir), { recursive: true });
       writeFileSync(join(fixture, "catalog", dir, "mod.css"), "a {\n  color: red;\n}\n");
     }
-    made.push(join(fixture, "catalog", "fx"), join(fixture, "catalog", "catalog"));
     const astro = join(import.meta.dir, "..", "node_modules", ".bin", "astro");
     // ASTRO_DEV_BACKGROUND=1, as the README's dev script: under an agent astro dev otherwise moves
     // into the background and resolves --root from inside the folder.
@@ -4022,7 +4032,6 @@ describe("catalog", () => {
       expect(await css.text()).toBe("a {\n  color: red;\n}\n");
       expect((await fetch(`${server.url}/assets/skip.txt`)).status).toBe(404);
       // Each pattern is globbed once; a file added since is found by a second glob.
-      made.push(join(fixture, "assets", "late.svg"));
       writeFileSync(join(fixture, "assets", "late.svg"), "<svg/>");
       expect((await fetch(`${server.url}/assets/late.svg`)).status).toBe(200);
       // A state's page has its own title in dev too.
