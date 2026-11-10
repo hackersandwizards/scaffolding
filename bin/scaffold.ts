@@ -159,4 +159,18 @@ if (!catalogIn) {
   writeFileSync(tsPath, ts);
 }
 spawnSync("git", ["init", "-q", "-b", "main"], { cwd: target, stdio: "inherit" });
-console.log(`[scaffold] ${target} created. Next: cd ${dir} && bun install && bun run check`);
+const byHand = [
+  `add ${values.repo} to the hub's sync list`,
+  `create hackersandwizards/${values.repo} on GitHub and push to it`,
+  ...(catalogIn ? [] : ["switch Pages on: Settings > Pages > Source: GitHub Actions"]),
+];
+console.log(
+  [
+    `${target} created.`,
+    `Next, in the terminal: cd ${dir} && bun install && bun run check`,
+    "Then by hand:",
+    ...byHand.map((step, i) => `  ${i + 1}. ${step}`),
+  ]
+    .map((line) => `[scaffold] ${line}`)
+    .join("\n"),
+);

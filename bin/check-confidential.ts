@@ -502,7 +502,17 @@ function scanBinaries(files: { where: string; data: Buffer }[]) {
     } else if (!FONT.test(name))
       report(where, entry, `binary file not read: name it with a reason in scaffolding.allow`);
   };
-  for (const { where, data } of files) read(where, where, data);
+  // Each file's text is kept by its content and this reader's code, so a gate reads a file again
+  // only once either changes.
+  const reader = createHash("sha256")
+    .update(readFileSync(import.meta.path))
+    .update(readFileSync(join(import.meta.dir, "../lib/ocr.swift")));
+  const kept = files.map(({ data }) =>
+    join(CACHE_DIR, "read", reader.copy().update(data).digest("hex").slice(0, 32)),
+  );
+  files.forEach(({ where, data }, i) =>
+    existsSync(kept[i]) ? add(where, readFileSync(kept[i], "utf8")) : read(where, where, data),
+  );
   const ocr = images.length ? ocrBinary() : undefined;
   const blocks = new Map<string, string>();
   if (ocr) {
@@ -521,6 +531,12 @@ function scanBinaries(files: { where: string; data: Buffer }[]) {
   for (const { file, where, entry, unread } of images)
     if (blocks.has(file)) add(where, blocks.get(file)!);
     else report(where, entry, unread);
+  // Only a file read whole is kept: one reported as not read is tried again.
+  const unread = new Set(findings.map((f) => f.path));
+  mkdirSync(join(CACHE_DIR, "read"), { recursive: true });
+  files.forEach(({ where }, i) => {
+    if (!unread.has(where) && !existsSync(kept[i])) writeFileSync(kept[i], texts.get(where) ?? "");
+  });
   for (const [where, text] of texts) {
     const nav = OS_NAV.filter((w) => new RegExp(`^${w}$`, "m").test(text));
     if (nav.length >= 3) report(where, nav.join(", "), "Company OS screenshot");

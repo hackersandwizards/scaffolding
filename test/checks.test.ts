@@ -592,6 +592,14 @@ describe("scaffold and check-structure", () => {
     expect(JSON.parse(readFileSync(join(at, "scoped/package.json"), "utf8")).name).toBe(
       "@acme/scoped",
     );
+    expect(run(at, "scaffold", ["inner", "--catalog-in", "x"]).out).toEndWith(
+      [
+        "Next, in the terminal: cd inner && bun install && bun run check",
+        "[scaffold] Then by hand:",
+        "[scaffold]   1. add inner to the hub's sync list",
+        "[scaffold]   2. create hackersandwizards/inner on GitHub and push to it\n",
+      ].join("\n"),
+    );
     for (const name of ['a"b', "Upper"]) {
       const bad = run(at, "scaffold", ["bad", "--name", name]);
       expect(bad.out).toContain("is no npm package name");
@@ -1167,10 +1175,12 @@ describe("check-confidential", () => {
       "[check-confidential] offer.docx: confidential term from the company records (Acme Widgets)",
       "[check-confidential] offer.docx: confidential term from the company records (Jane Q Doe)",
     ];
-    for (const mode of ["--staged", "--index"])
+    for (const mode of ["--staged", "--index", "--index"])
       expect(
         lines(run(dir, "check-confidential", [mode], env).out, "check-confidential").sort(),
       ).toEqual(expected);
+    // Kept by content: the document and the font, never the file not read.
+    expect(readdirSync(join(dir, "node_modules/.cache/scaffolding/read"))).toHaveLength(2);
   });
 
   test.if(process.platform === "darwin")(

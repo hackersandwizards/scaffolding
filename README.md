@@ -54,7 +54,8 @@ an admin or brand release reaches new repositories without a scaffolding release
 catalog or admin area lives in another repository leaves the catalog and brand out with
 `--catalog-in <repo>`, or admin with `--admin-in <repo>`; its `scaffolding.skip` names that
 repository. Registering the repository in
-the hub's sync list, creating it on GitHub and switching Pages on stay steps for a person.
+the hub's sync list, creating it on GitHub and switching Pages on stay steps for a person, which
+`scaffold` prints after its own.
 
 ## The gate
 
@@ -472,7 +473,8 @@ checkout fetches on its own.
   (`pdftoppm`); Office, OpenDocument and other zip files by their entries. Fonts pass unread. Any
   other binary file, or one that cannot be read, refuses the commit until an allow entry names
   its path. OCR uses the macOS Vision framework, so a Linux machine commits no image to a public
-  repository.
+  repository. A file's text is kept by its content in `node_modules/.cache/scaffolding/read/`,
+  so a gate reads it again only once the file or the reader changes.
 - With `CI=true` the `--index` and `--tree` audits skip the term and binary reading, so a deploy
   needs no access. A commit, its message and a push are scanned wherever they are made.
 - `check-confidential fetch` fetches now, for a cloud setup script. `--list <file>` or
