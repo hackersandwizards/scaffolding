@@ -90,13 +90,13 @@ for (const path of skeleton.owned as string[]) {
     "{{version}}",
     own.version,
   );
-  const [before = "", after = ""] = template.split("{{commit}}");
-  const text = readFileSync(at(path), "utf8");
-  const pinned = text.slice(before.length, text.length - after.length);
   if (!commit) {
     add(path, "no installed commit to pin: install the package from its Git tag");
     continue;
   }
+  const [before = "", after = ""] = template.split("{{commit}}");
+  const text = readFileSync(at(path), "utf8");
+  const pinned = text.slice(before.length, text.length - after.length);
   if (
     text.startsWith(before) &&
     text.endsWith(after) &&
@@ -212,7 +212,7 @@ if (fix)
     try {
       repairs.get(f)?.();
     } catch (e) {
-      f.message = (e as Error).message;
+      f.message = `${f.message}: ${(e as Error).message}`;
       repairs.delete(f);
     }
 finish("check-structure", fix ? left.filter((f) => !repairs.has(f)) : left, started);

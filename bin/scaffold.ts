@@ -48,7 +48,8 @@ const home = join(import.meta.dir, "..");
 const own = JSON.parse(readFileSync(join(home, "package.json"), "utf8"));
 
 function newestTag(repo: string): string {
-  const r = spawnSync("git", ["ls-remote", "--tags", "--refs", companyRemote(repo)], {
+  const remote = companyRemote(repo);
+  const r = spawnSync("git", ["ls-remote", "--tags", "--refs", remote], {
     encoding: "utf8",
   });
   const tags = (r.stdout ?? "")
@@ -57,9 +58,7 @@ function newestTag(repo: string): string {
     .filter((tag): tag is string => /^v\d+\.\d+\.\d+$/.test(tag ?? ""))
     .sort((a, b) => Bun.semver.order(a.slice(1), b.slice(1)));
   if (r.status !== 0 || !tags.length) {
-    console.error(
-      `[scaffold] no v<version> tag read from ${companyRemote(repo)}: ${r.stderr ?? ""}`,
-    );
+    console.error(`[scaffold] no v<version> tag read from ${remote}: ${r.stderr ?? ""}`);
     process.exit(1);
   }
   return tags.at(-1)!;
@@ -68,17 +67,13 @@ const pins: Record<string, string> = {};
 if (!catalogIn) pins.brand = newestTag("brand");
 if (!adminIn) pins.admin = newestTag("admin");
 // Read before anything is written, so a failure leaves no half-made repository.
-function pagesCommit(): string {
-  const installed = installedCommit(home);
-  try {
-    if (!installed) throw new Error("no installed commit: install the package from its Git tag");
-    return tagCommit(own.version, installed);
-  } catch (e) {
-    console.error(`[scaffold] the Pages workflow's pin: ${(e as Error).message}`);
-    process.exit(1);
-  }
+let commit = "";
+try {
+  if (!catalogIn) commit = tagCommit(own.version, installedCommit(home));
+} catch (e) {
+  console.error(`[scaffold] the Pages workflow's pin: ${(e as Error).message}`);
+  process.exit(1);
 }
-const commit = catalogIn ? "" : pagesCommit();
 
 cpSync(join(home, "template"), target, { recursive: true });
 if (!catalogIn) cpSync(join(home, "template-catalog"), target, { recursive: true });

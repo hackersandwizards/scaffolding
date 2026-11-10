@@ -594,6 +594,9 @@ describe("scaffold and check-structure", () => {
     const home = temp();
     write(home, { ".bun-tag": "hackersandwizards-scaffolding-0123abc\n" });
     expect(installedCommit(home)).toBe("0123abc");
+    // A dependency bun clones rather than fetches as a tarball: the bare SHA.
+    write(home, { ".bun-tag": `${"a".repeat(40)}\n` });
+    expect(installedCommit(home)).toBe("a".repeat(40));
     // An install that is neither a Git dependency nor the package's own checkout has none.
     expect(installedCommit(temp())).toBeUndefined();
     const base = temp();
@@ -1781,15 +1784,16 @@ describe("catalog", () => {
     const tokens = {
       "--a": "calc(var(--b) + 1px)",
       "--b": "3px",
-      "--c": "color-mix(in srgb, var(--a, red) 5%, white)",
+      "--c": "color-mix(in srgb, var(--a, var(--b)) 5%, white)",
       "--loop": "var(--loop)",
     };
     const css =
       ".x{a:var(--a);b:var( --b , calc(1px + var(--q)));c:var(--n, var(--b));d:var(--c);e:var(--z, 1px);f:var(--loop)}";
     expect(brandFallbacks(css, tokens)).toBe(
-      ".x{a:var(--a, calc(var(--b, 3px) + 1px));b:var(--b, 3px);c:var(--n, var(--b, 3px));d:var(--c, color-mix(in srgb, var(--a, red) 5%, white));e:var(--z, 1px);f:var(--loop, var(--loop))}",
+      ".x{a:var(--a, calc(var(--b, 3px) + 1px));b:var(--b, 3px);c:var(--n, var(--b, 3px));d:var(--c, color-mix(in srgb, var(--a, var(--b)) 5%, white));e:var(--z, 1px);f:var(--loop, var(--loop))}",
     );
     expect(brandFallbacks(css, {})).toBe(css);
+    expect(() => brandFallbacks(".x{a:var(--b, calc(1px}", tokens)).toThrow("no closing");
   });
 
   test("rewriteRoute: an Astrobook route without a place for an edit fails rather than skip it", () => {

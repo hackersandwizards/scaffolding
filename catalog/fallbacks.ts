@@ -13,9 +13,15 @@ export function brandFallbacks(
     if (m.index < at || !Object.hasOwn(tokens, name) || seen.includes(name)) continue;
     let end = m.index + m[0].length;
     if (m[2] === ",") {
-      if (seen.length) continue;
-      for (let depth = 1; depth && end < css.length; end++)
+      let depth = 1;
+      for (; depth && end < css.length; end++)
         depth += css[end] === "(" ? 1 : css[end] === ")" ? -1 : 0;
+      if (depth) throw new Error(`catalog: var(${name}, …) has no closing parenthesis`);
+      if (seen.length) {
+        out += css.slice(at, end);
+        at = end;
+        continue;
+      }
     }
     out += `${css.slice(at, m.index)}var(${name}, ${brandFallbacks(tokens[name]!, tokens, [...seen, name])})`;
     at = end;

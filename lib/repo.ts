@@ -6,12 +6,13 @@ import { join } from "node:path";
 export const companyRemote = (repo: string) =>
   `${process.env.SCAFFOLDING_GIT_BASE ?? "https://github.com/hackersandwizards/"}${repo}.git`;
 
-/** The commit the package at `home` came from, read offline: the short SHA bun writes to .bun-tag
- * for a Git dependency, else the HEAD of the package's own checkout; undefined for any other
- * install. */
+/** The commit the package at `home` came from, read offline: the SHA bun writes to .bun-tag for a
+ * Git dependency (a GitHub tarball's "<owner>-<repo>-<short SHA>", a clone's bare SHA), else the
+ * HEAD of the package's own checkout, which its tests run from; undefined for any other install. */
 export function installedCommit(home: string): string | undefined {
   const tag = join(home, ".bun-tag");
-  if (existsSync(tag)) return /-([0-9a-f]{7,40})$/.exec(readFileSync(tag, "utf8").trim())?.[1];
+  if (existsSync(tag))
+    return /(?:^|-)([0-9a-f]{7,40})$/.exec(readFileSync(tag, "utf8").trim())?.[1];
   const r = spawnSync("git", ["rev-parse", "--show-toplevel", "HEAD"], {
     cwd: home,
     encoding: "utf8",
@@ -23,7 +24,9 @@ export function installedCommit(home: string): string | undefined {
 /** The full commit of this package's tag v<version>, which must be the `installed` one: a short
  * SHA asks the remote, peeled for an annotated tag. Throws where the remote is not read or the
  * tag points elsewhere, which means it moved after the install. */
-export function tagCommit(version: string, installed: string): string {
+export function tagCommit(version: string, installed: string | undefined): string {
+  if (!installed)
+    throw new Error("no installed commit to pin: install the package from its Git tag");
   if (/^[0-9a-f]{40}$/.test(installed)) return installed;
   const remote = companyRemote("scaffolding");
   const tag = `refs/tags/v${version}`;
