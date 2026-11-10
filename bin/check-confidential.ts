@@ -2,7 +2,8 @@
 // 2>/dev/null; exec bun --no-env-file "$0" "$@"
 //   check-confidential --staged               pre-commit: added lines and binary files in the index
 //   --list-optional                           with --staged or --message-file: no list reachable
-//                                             passes with a warning, for outside contributors
+//                                             passes with a warning, for outside contributors, as
+//                                             does a file this machine cannot read (no OCR)
 //   check-confidential --message-file <file>  commit-msg: the commit message
 //   check-confidential --commit <rev>         one commit: its added lines, images, PDFs and message
 //   check-confidential --index                every file of the index, the gate's audit
@@ -263,13 +264,21 @@ function fetchList(): string | undefined {
   renameSync(`${CACHE}.tmp`, CACHE);
 }
 
-function loadList(): { list?: TermList; problem?: string; absent?: boolean } {
+/** `optional`: a hook that passes without a list tries gh at most hourly even without a copy, since
+ * gh may take 20 s offline; a hook that refuses without one tries on every commit. */
+function loadList(optional = false): { list?: TermList; problem?: string; absent?: boolean } {
   const file = arg("--list") || process.env.SCAFFOLDING_CONFIDENTIAL_TERMS || undefined;
   let problem: string | undefined;
-  if (!file && age(CACHE) >= DAY && (age(CACHE) === Infinity || age(ATTEMPT) >= HOUR)) {
+  const due = age(ATTEMPT) >= HOUR || (age(CACHE) === Infinity && !optional);
+  if (!file && age(CACHE) >= DAY && due) {
     problem = fetchList();
     if (problem && existsSync(CACHE)) warn(`${problem}; using the copy fetched before`);
-  } else if (!file && age(CACHE) >= DAY) warn("copy older than a day; next fetch within the hour");
+  } else if (!file && age(CACHE) >= DAY)
+    warn(
+      existsSync(CACHE)
+        ? "copy older than a day; next fetch within the hour"
+        : "no copy; next fetch within the hour, or now by `check-confidential fetch`",
+    );
   const source = file ?? CACHE;
   const list = existsSync(source) ? parse(readFileSync(source, "utf8")) : undefined;
   if (!list)
@@ -306,15 +315,18 @@ const pkg = readPackage(root, tree ?? commit ?? ":");
 if (pkg.scaffolding?.private === true) process.exit(0);
 
 let list: TermList | undefined;
+// No list reachable under --list-optional: the commit passes unscanned for terms.
+let unscanned = false;
 // Kept out of applyAllow: no allow entry may switch the list requirement off.
 const listProblem: Finding[] = [];
 if (skipped) warn("CI: term step skipped; the commit hook is the gate");
 else {
-  const loaded = loadList();
+  const loaded = loadList(optional);
   list = loaded.list;
   // For a public repository's outside contributors, who cannot fetch the list: no list at all
   // passes, a stale or broken one still refuses.
-  if (loaded.absent && optional) warn(`${loaded.problem}; --list-optional: terms not scanned`);
+  unscanned = Boolean(loaded.absent && optional);
+  if (unscanned) warn(`${loaded.problem}; --list-optional: terms not scanned`);
   else if (loaded.problem)
     listProblem.push({
       check: "confidential",
@@ -442,6 +454,14 @@ function scanBinaries(files: { where: string; data: Buffer }[]) {
   const add = (where: string, text: string) =>
     texts.set(where, `${texts.get(where) ?? ""}\n${text}`);
   const images: { file: string; where: string; entry: string; unread: string }[] = [];
+  // A file this machine lacks the tool to read. Where the commit goes unscanned for terms anyway, it
+  // passes with a warning; only the Company OS screenshot check is lost with it.
+  const unreadable = new Set<string>();
+  const notRead = (where: string, entry: string, message: string) => {
+    unreadable.add(where);
+    if (!unscanned) report(where, entry, message);
+    else warn(`${where}${entry && ` (${entry})`}: ${message}; --list-optional: passed unread`);
+  };
   let saved = 0;
   const save = (data: Buffer, name: string) => {
     const file = join(scratch, `${saved++}${extname(name)}`);
@@ -455,13 +475,13 @@ function scanBinaries(files: { where: string; data: Buffer }[]) {
       const file = save(data, "x.pdf");
       const pdf = spawnSync("pdftotext", [file, "-"], { maxBuffer: Infinity });
       if (pdf.status !== 0)
-        return report(where, entry, `PDF not read: install poppler for pdftotext`);
+        return notRead(where, entry, `PDF not read: install poppler for pdftotext`);
       const pages = pdf.stdout.toString().split("\f").slice(0, -1);
       add(where, pages.join("\n"));
       // "page num type width ..." under two header lines, one row per image.
       const listed = spawnSync("pdfimages", ["-list", file]);
       if (listed.status !== 0)
-        return report(where, entry, `PDF not read: install poppler for pdfimages`);
+        return notRead(where, entry, `PDF not read: install poppler for pdfimages`);
       const pictured = new Set(
         listed.stdout
           .toString()
@@ -486,7 +506,7 @@ function scanBinaries(files: { where: string; data: Buffer }[]) {
           out,
         ]);
         if (r.status !== 0)
-          report(
+          notRead(
             where,
             entry,
             `PDF page ${i + 1} holds a scan or an image and was not rendered: install poppler for pdftoppm`,
@@ -555,12 +575,12 @@ function scanBinaries(files: { where: string; data: Buffer }[]) {
   rmSync(scratch, { recursive: true, force: true });
   for (const { file, where, entry, unread } of images)
     if (blocks.has(file)) add(where, blocks.get(file)!);
-    else report(where, entry, unread);
+    else notRead(where, entry, unread);
   // Only a file read whole is kept: one reported as not read is tried again.
   const refused = new Set(findings.map((f) => f.path));
   mkdirSync(join(CACHE_DIR, "read"), { recursive: true });
   files.forEach(({ where }, i) => {
-    if (refused.has(where) || existsSync(kept[i])) return;
+    if (refused.has(where) || unreadable.has(where) || existsSync(kept[i])) return;
     // Renamed into place, so a killed run leaves no part of a text that later reads as whole.
     writeFileSync(`${kept[i]}.${process.pid}`, texts.get(where) ?? "");
     renameSync(`${kept[i]}.${process.pid}`, kept[i]);

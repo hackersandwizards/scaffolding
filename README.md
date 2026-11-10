@@ -490,7 +490,8 @@ checkout fetches on its own.
   its rendering (`pdftoppm`, `pdfimages`); Office, OpenDocument and other zip files by their
   entries. A font, known by its signature rather than its name, passes unread. Any other binary
   file, or one that cannot be read, refuses the commit until an allow entry names its path. OCR
-  uses the macOS Vision framework, so a Linux machine commits no image to a public repository. A file's text is kept by its content in `node_modules/.cache/scaffolding/read/`,
+  uses the macOS Vision framework, so a Linux machine commits no image to a public repository,
+  except under `--list-optional` without a list (below). A file's text is kept by its content in `node_modules/.cache/scaffolding/read/`,
   so a gate reads it again only once the file or the reader changes.
 - A Git LFS file is read from the working tree where it matches its pointer, else from the local
   LFS store; where neither holds it, the scan prints `Git LFS pointer, not read` and goes on.
@@ -500,7 +501,10 @@ checkout fetches on its own.
   `SCAFFOLDING_CONFIDENTIAL_TERMS` reads a list from a file instead.
 - `--list-optional`, with `--staged` or `--message-file`, lets a public repository's own hooks scan
   every commit without blocking an outside contributor: where there is no list and none can be
-  fetched, the scan passes with a warning. A list that is there but invalid or built more than 7 days ago still refuses.
+  fetched, the scan passes with a warning, and so does a file this machine lacks the tool to read
+  (OCR, poppler): no term could match its text, and only the Company OS screenshot check goes with it. Without a copy it asks `gh` at most once an
+  hour, since `gh` can take 20 s offline. A list that is there but invalid or built more than 7 days
+  ago still refuses, and so does an unread file wherever a list is there.
 - `check-confidential build <terms|-> [--public <file>]` turns one term per line into a list stamped
   with its build time. It leaves out every term the public text in `<file>` already carries, and
   refuses to build without `/usr/share/dict/words`. A term of more than six words counts by its

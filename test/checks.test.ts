@@ -1896,6 +1896,54 @@ describe("check-confidential list source", () => {
     expect(none.check({}, ["--index", "--list-optional"]).code).toBe(1);
   });
 
+  test("--list-optional without a list passes a file this machine cannot read, never with a list", () => {
+    const optional = ["--staged", "--list-optional"];
+    const none = machine({ gh: "deny" });
+    // A decodable PNG on a machine whose swiftc fails: no OCR, as off macOS.
+    const png = Buffer.from(
+      "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8DwHwAFBQIAX8jx0gAAAABJRU5ErkJggg==",
+      "base64",
+    );
+    const noOcr = temp();
+    writeFileSync(join(noOcr, "swiftc"), "#!/bin/sh\nexit 1\n", { mode: 0o755 });
+    write(none.dir, { "a.md": "a\n", "talk.pdf": "%PDF-1.4" });
+    writeFileSync(join(none.dir, "shot.png"), png);
+    sh(none.dir, ["add", "a.md", "shot.png", "talk.pdf"]);
+    const PATH = `${noOcr}:${stubDir}:/usr/bin:/bin`;
+    const r = none.check({ PATH }, optional);
+    expect(r.code).toBe(0);
+    expect(r.out).toContain("shot.png: image not read");
+    expect(r.out).toContain("talk.pdf: PDF not read");
+    expect(r.out).toContain("--list-optional: passed unread");
+    // Passed unread is not read: a later scan with the list still refuses it.
+    const list = join(none.home, "list.json");
+    writeFileSync(list, fresh);
+    const strict = none.check({ PATH, SCAFFOLDING_CONFIDENTIAL_TERMS: list }, optional);
+    expect(strict.code).toBe(1);
+    expect(strict.out).toContain("shot.png: image not read");
+    // A stale list refuses, and the unread file is reported, not passed.
+    const stale = machine({ gh: "deny", cache: builtDaysAgo(10), cacheDays: 2 });
+    writeFileSync(join(stale.dir, "shot.png"), png);
+    sh(stale.dir, ["add", "shot.png"]);
+    expect(stale.check({ PATH }, optional).out).not.toContain("passed unread");
+  });
+
+  test("--list-optional without a copy tries gh at most hourly; without it every commit tries", () => {
+    const m = machine({ gh: "deny" });
+    expect(m.check({}, ["--staged", "--list-optional"]).code).toBe(0);
+    const again = m.check({}, ["--staged", "--list-optional"]);
+    expect(again.code).toBe(0);
+    expect(again.out).toContain("next fetch within the hour");
+    expect(m.calls()).toBe(1);
+    expect(m.check().code).toBe(1);
+    expect(m.calls()).toBe(2);
+    const attempt = `${m.cache}.attempt`;
+    const hourAgo = (Date.now() - 3_700_000) / 1000;
+    utimesSync(attempt, hourAgo, hourAgo);
+    m.check({}, ["--staged", "--list-optional"]);
+    expect(m.calls()).toBe(3);
+  });
+
   test("CI skips the audit's term step without fetching, the path rule still holds", () => {
     const m = machine({ gh: "deny" });
     expect(m.check({ CI: "true" }, ["--index"]).code).toBe(0);
