@@ -1795,10 +1795,11 @@ describe("catalog", () => {
     expect(brandFallbacks(css, {})).toBe(css);
     expect(() => brandFallbacks(".x{a:var(--b, calc(1px}", tokens)).toThrow("no closing");
     // brand-value() is brand's literal, never a var() a scale redefines; without brand, the var().
-    expect(brandFallbacks(".x{font:500 brand-value(--b) / brand-value( --n )}", tokens)).toBe(
-      ".x{font:500 3px / var(--n)}",
+    expect(brandFallbacks(".x{a:brand-value(--b);b:brand-value( --n )}", tokens)).toBe(
+      ".x{a:3px;b:var(--n)}",
     );
     expect(() => brandFallbacks(".x{a:brand-value(--a)}", tokens)).toThrow("no fixed value");
+    expect(() => brandFallbacks(".x{a:brand-value(--b, 1px)}", tokens)).toThrow("one custom");
   });
 
   test("rewriteRoute: an Astrobook route without a place for an edit fails rather than skip it", () => {
@@ -2271,7 +2272,7 @@ describe("catalog", () => {
       .map((f) => readFileSync(join(dist, f), "utf8"))
       .join("");
     expect(brandless.match(/\.hw-catalog-bar\{[^}]*\}/)?.[0]).toContain(
-      "font:500 var(--text-ui) / var(--text-ui--line-height) var(--font-sans)",
+      "font:500 1rem var(--font-sans);font-size:var(--text-ui);line-height:var(--text-ui--line-height);",
     );
     expect(brandless).not.toContain("brand-value");
     // The shell's home holds no foundations: no group of its own. A home with some draws them as
@@ -2371,7 +2372,9 @@ describe("catalog", () => {
     ])
       expect(sheets).toContain(fallback);
     // The bar's size is brand's unscaled UI step.
-    expect(sheets).toMatch(/\.hw-catalog-bar\{[^}]*font:500 \.9rem\s*\/\s*1\.55 /);
+    expect(sheets).toMatch(
+      /\.hw-catalog-bar\{[^}]*font:500 1rem var\(--font-sans\);[^}]*font-size:\.9rem;line-height:1\.55;/,
+    );
     expect(sheets).not.toContain("brand-value");
     // brand's layer order follows the ground's.
     expect(branded).toContain(

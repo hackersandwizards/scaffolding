@@ -8,12 +8,18 @@ export function brandFallbacks(
   tokens: Record<string, string>,
   seen: string[] = [],
 ): string {
-  css = css.replace(/brand-value\(\s*(--[\w-]+)\s*\)/g, (_, name: string) => {
-    if (!Object.hasOwn(tokens, name)) return `var(${name})`;
-    if (tokens[name]!.includes("var("))
-      throw new Error(`catalog: brand-value(${name}) is ${tokens[name]}, no fixed value`);
-    return tokens[name]!;
-  });
+  if (!seen.length) {
+    css = css.replace(/brand-value\(\s*(--[\w-]+)\s*\)/g, (_, name: string) => {
+      const value = tokens[name];
+      if (!Object.hasOwn(tokens, name) || value === undefined) return `var(${name})`;
+      if (value.includes("var("))
+        throw new Error(`catalog: brand-value(${name}) is ${value}, no fixed value`);
+      return value;
+    });
+    // The browser drops a declaration holding one silently.
+    if (css.includes("brand-value("))
+      throw new Error("catalog: brand-value() takes one custom property name");
+  }
   let out = "";
   let at = 0;
   for (const m of css.matchAll(/var\(\s*(--[\w-]+)\s*([,)])/g)) {
