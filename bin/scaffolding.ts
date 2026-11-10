@@ -1,6 +1,6 @@
 #!/bin/sh
 // 2>/dev/null; exec bun --no-env-file "$0" "$@"
-import { spawn, spawnSync } from "node:child_process";
+import { spawn } from "node:child_process";
 import { join } from "node:path";
 import {
   isReason,
@@ -10,6 +10,7 @@ import {
   stylelintFlags,
   withoutEnvFile,
 } from "../lib/repo.ts";
+import { machineLoad } from "../lib/serve.ts";
 
 withoutEnvFile("scaffolding");
 
@@ -31,14 +32,26 @@ if (process.argv[2] !== "check") {
 }
 const root = repoRoot();
 const home = join(import.meta.dir, "..");
-// The run check-lock starts carries --locked and goes on to the checks.
+const SIGNALS = ["SIGINT", "SIGTERM", "SIGHUP", "SIGQUIT"] as const;
+// The run check-lock starts carries --locked and goes on to the checks. A signal here goes on to
+// check-lock, which passes it to the locked run's group and holds the lock until that group is
+// empty: ending this process alone left the gate running and the lock held.
 if (process.argv[3] !== "--locked") {
-  const run = spawnSync(
+  const lock = spawn(
     process.execPath,
     [join(home, "bin/check-lock.ts"), process.execPath, import.meta.path, "check", "--locked"],
     { stdio: "inherit", cwd: root },
   );
-  process.exit(run.status ?? 1);
+  for (const signal of SIGNALS) process.on(signal, () => lock.kill(signal));
+  const [code, signal] = await new Promise<[number | null, NodeJS.Signals | null]>((done) =>
+    lock.on("exit", (...end) => done(end)),
+  );
+  // Dying by the signal tells the calling shell it was an interrupt.
+  if (signal) {
+    process.removeAllListeners(signal);
+    process.kill(process.pid, signal);
+  }
+  process.exit(code ?? 1);
 }
 
 const pkg = readPackage(root);
@@ -50,7 +63,8 @@ const fail = (message: string): never => {
 for (const key of Object.keys(config)) if (!KEYS.has(key)) fail(`unknown key scaffolding.${key}`);
 
 const script = (s: string) => (pkg.scripts?.[s] ? `bun run --silent ${s}` : s);
-const bin = (name: string) => `bun ${join(home, "bin", `${name}.ts`)}`;
+// Quoted for `sh -c`: a package path holding a space failed every bin step.
+const bin = (name: string) => `bun '${join(home, "bin", `${name}.ts`).replaceAll("'", `'\\''`)}'`;
 const shared: Record<string, string> = {
   format: "bun --bun prettier --check --log-level warn .",
   lint: "bun --bun eslint --cache --concurrency=auto .",
@@ -98,48 +112,81 @@ for (const [step, reason] of Object.entries(skip)) {
 }
 
 const env = { ...process.env, PATH: `${join(root, "node_modules/.bin")}:${process.env.PATH}` };
-type Result = { name: string; code: number; ms: number; out: string };
+type Result = { name: string; code: number; ms: number };
 
-function run(name: string, line: string, buffered: boolean): Promise<Result> {
-  const started = performance.now();
+// Above one waiting process per core, the steps run one after another: started side by side on a
+// loaded machine, they starved each other past every fixed limit inside them, and a correct tree
+// went red.
+const { load, cores } = machineLoad();
+const serial = load > cores;
+if (serial)
+  console.error(
+    `[scaffolding] load ${Math.round(load)} on ${cores} cores: steps run one after another`,
+  );
+
+const started = performance.now();
+const results: Result[] = [];
+const running = new Map<string, { out: string }>();
+const line = (r: Result) =>
+  `[scaffolding] ${r.code ? "FAIL" : "ok  "} ${r.name} ${(r.ms / 1000).toFixed(1)} s`;
+
+// A step is reported the moment it ends, its output ahead of its line, so a red step shows at once
+// rather than after its slowest sibling, and a gate cut off still shows every step that ended.
+function run(name: string, command: string, buffered: boolean): Promise<Result> {
+  const begun = performance.now();
+  const step = { out: "" };
+  running.set(name, step);
   return new Promise((done) => {
-    const child = spawn("sh", ["-c", line], {
+    const child = spawn("sh", ["-c", command], {
       cwd: root,
       env,
       stdio: buffered ? ["ignore", "pipe", "pipe"] : "inherit",
     });
-    let out = "";
-    child.stdout?.on("data", (d) => (out += d));
-    child.stderr?.on("data", (d) => (out += d));
-    child.on("close", (code) =>
-      done({ name, code: code ?? 1, ms: performance.now() - started, out }),
-    );
+    child.stdout?.on("data", (d) => (step.out += d));
+    child.stderr?.on("data", (d) => (step.out += d));
+    child.on("close", (code) => {
+      running.delete(name);
+      const r = { name, code: code ?? 1, ms: performance.now() - begun };
+      process.stderr.write(step.out);
+      console.error(line(r));
+      results.push(r);
+      done(r);
+    });
   });
 }
 
-// Side by side, reported in a fixed order so the output reads the same on every run. A step named
-// in `after` starts once the step it names, listed before it, has finished, passed or failed.
+// A signal ends the steps through check-lock, which signals the whole group; this prints what the
+// running ones said so far and names them, then dies by the same signal.
+for (const signal of SIGNALS)
+  process.on(signal, () => {
+    for (const [name, step] of running) {
+      process.stderr.write(step.out);
+      console.error(`[scaffolding] stopped ${name} by ${signal}`);
+    }
+    process.removeAllListeners(signal);
+    process.kill(process.pid, signal);
+  });
+
+// A step named in `after` starts once the step it names, listed before it, has finished, passed
+// or failed.
 async function group(
   steps: [string, string][],
   after: Record<string, string> = {},
 ): Promise<boolean> {
-  const buffered = steps.length > 1;
+  // One at a time, a step writes straight to the terminal.
+  const buffered = steps.length > 1 && !serial;
   const runs = new Map<string, Promise<Result>>();
   for (const [n, c] of steps) {
+    if (serial) {
+      runs.set(n, Promise.resolve(await run(n, c, buffered)));
+      continue;
+    }
     const first = runs.get(after[n] ?? "");
     runs.set(n, first ? first.then(() => run(n, c, buffered)) : run(n, c, buffered));
   }
-  const results = await Promise.all(runs.values());
-  for (const r of results) {
-    process.stderr.write(r.out);
-    console.error(
-      `[scaffolding] ${r.code ? "FAIL" : "ok  "} ${r.name} ${(r.ms / 1000).toFixed(1)} s`,
-    );
-  }
-  return results.every((r) => r.code === 0);
+  return (await Promise.all(runs.values())).every((r) => r.code === 0);
 }
 
-const started = performance.now();
 // Install first: a tree a pin-raising merge left behind gets installed, and a lockfile out of step
 // fails under its own name, not a later step's.
 let ok = await group([["install", "bun install --frozen-lockfile"]]);
@@ -152,6 +199,7 @@ const typecheck = config.typecheck ?? "";
 const sync = /\bastro\b/.test(
   [typecheck, ...typecheck.split(/\s+/).map((word) => pkg.scripts?.[word])].join(" "),
 );
+const order = Object.keys(shared);
 if (ok) ok = await group(Object.entries(shared), sync ? { catalog: "typecheck" } : {});
 for (const entry of config.check ?? []) {
   if (!ok) break;
@@ -159,9 +207,12 @@ for (const entry of config.check ?? []) {
     s,
     script(s),
   ]);
+  order.push(...steps.map(([s]) => s));
   ok = await group(steps);
 }
+// The red steps again, in the gate's own order, so the verdict reads the same on every run.
+const red = order.filter((name) => results.some((r) => r.name === name && r.code));
 console.error(
-  `[scaffolding] ${ok ? "passed" : "failed"} in ${((performance.now() - started) / 1000).toFixed(1)} s`,
+  `[scaffolding] ${ok ? "passed" : "failed"} in ${((performance.now() - started) / 1000).toFixed(1)} s${red.length ? `: ${red.join(", ")}` : ""}`,
 );
 process.exit(ok ? 0 : 1);

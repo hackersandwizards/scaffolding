@@ -18,7 +18,7 @@ import {
   utimesSync,
   writeFileSync,
 } from "node:fs";
-import { tmpdir } from "node:os";
+import { availableParallelism, tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { pathToFileURL } from "node:url";
 import { brandFallbacks } from "../catalog/fallbacks.ts";
@@ -116,10 +116,11 @@ function write(dir: string, files: Record<string, string>) {
     writeFileSync(join(dir, path), text);
   }
 }
+// SCAFFOLDING_LOAD 0: the gate runs its steps side by side whatever this machine's load is.
 function run(cwd: string, name: string, args: string[] = [], env: Record<string, string> = {}) {
   const r = spawnSync(process.execPath, ["--no-env-file", bin(name), ...args], {
     cwd,
-    env: { ...process.env, ...env },
+    env: { ...process.env, SCAFFOLDING_LOAD: "0", ...env },
     encoding: "utf8",
   });
   return { code: r.status, out: `${r.stdout}${r.stderr}` };
@@ -1771,6 +1772,84 @@ describe("scaffolding check", () => {
     expect(r.code).toBe(1);
     expect(r.out).toContain("FAIL false");
     expect(r.out).not.toContain("never-ran");
+  });
+
+  test("a step is reported when it ends, and the verdict names the red ones in order", () => {
+    const dir = gate(
+      { skip, check: [["check:slow", "check:fast", "check:also"]] },
+      { "check:slow": "sleep 2; echo slow-done", "check:fast": "exit 1", "check:also": "exit 1" },
+    );
+    const r = run(dir, "scaffolding", ["check"], { CHECK_LOCK: join(dir, ".lock") });
+    expect(r.code).toBe(1);
+    expect(r.out.indexOf("FAIL check:fast")).toBeLessThan(r.out.indexOf("slow-done"));
+    expect(r.out).toMatch(/\[scaffolding\] failed in [\d.]+ s: check:fast, check:also\n/);
+  });
+
+  test("above one waiting process per core the steps run one after another", () => {
+    // Each step fails where the other runs beside it.
+    const body = (me: string, other: string) =>
+      `test -e ${other} && exit 1; touch ${me}; sleep 0.5; test -e ${other} && exit 1; rm ${me}`;
+    const dir = gate(
+      { skip, check: [["check:a", "check:b"]] },
+      {
+        "check:a": body("a.on", "b.on"),
+        "check:b": body("b.on", "a.on"),
+      },
+    );
+    const loaded = run(dir, "scaffolding", ["check"], {
+      CHECK_LOCK: join(dir, ".lock"),
+      SCAFFOLDING_LOAD: "999",
+    });
+    expect(loaded.out).toMatch(/load 999 on \d+ cores: steps run one after another/);
+    expect(loaded.code).toBe(0);
+    const idle = run(dir, "scaffolding", ["check"], { CHECK_LOCK: join(dir, ".lock") });
+    expect(idle.out).not.toContain("one after another");
+    expect(idle.code).toBe(1);
+  });
+
+  test("a signal to the outer runner ends the steps, names them, and frees the lock", async () => {
+    const dir = gate(
+      { skip, check: [["check:fast", "check:slow"]] },
+      { "check:fast": "echo fast-said; exit 1", "check:slow": "sleep 5; touch slow-done" },
+    );
+    const lock = join(dir, ".lock");
+    const gateRun = Bun.spawn([process.execPath, "--no-env-file", bin("scaffolding"), "check"], {
+      cwd: dir,
+      env: { ...process.env, CHECK_LOCK: lock, SCAFFOLDING_LOAD: "0" },
+      stderr: "pipe",
+      stdout: "pipe",
+    });
+    for (const end = Date.now() + 20_000; !existsSync(lock) && Date.now() < end;)
+      await Bun.sleep(50);
+    await Bun.sleep(1_000);
+    gateRun.kill("SIGTERM");
+    const code = await gateRun.exited;
+    const out = `${await new Response(gateRun.stdout).text()}${await new Response(gateRun.stderr).text()}`;
+    expect(code).not.toBe(0);
+    expect(out).toContain("fast-said");
+    expect(out).toContain("FAIL check:fast");
+    expect(out).toContain("stopped check:slow by SIGTERM");
+    expect(existsSync(lock)).toBe(false);
+    await Bun.sleep(5_000);
+    expect(existsSync(join(dir, "slow-done"))).toBe(false);
+  }, 40_000);
+
+  test("a package path holding a space runs every bin step", () => {
+    const home = join(temp(), "with space");
+    for (const folder of ["bin", "lib"])
+      cpSync(join(import.meta.dir, "..", folder), join(home, folder), { recursive: true });
+    const dir = gate({ skip });
+    const r = spawnSync(
+      process.execPath,
+      ["--no-env-file", join(home, "bin/scaffolding.ts"), "check"],
+      {
+        cwd: dir,
+        env: { ...process.env, CHECK_LOCK: join(dir, ".lock"), SCAFFOLDING_LOAD: "0" },
+        encoding: "utf8",
+      },
+    );
+    expect(`${r.stdout}${r.stderr}`).toContain("ok   spaces");
+    expect(r.status).toBe(0);
   });
 
   test("a gate pinning brand goes red without check:retired unless the skip gives a reason", () => {
@@ -4286,6 +4365,24 @@ describe("serve", () => {
     await expect(serve([process.execPath, "-e", "process.exit(3)"])).rejects.toThrow("it exited");
     expect(Date.now() - started).toBeLessThan(5_000);
     await expect(serve(["/nonexistent-polish-bin"])).rejects.toThrow("it exited");
+  });
+
+  test("the load factor is load per core, from 1 up to 10", () => {
+    const factor = (load: string) =>
+      Number(
+        spawnSync(
+          process.execPath,
+          [
+            "-e",
+            `console.log((await import(${JSON.stringify(join(import.meta.dir, "..", "lib", "serve.ts"))})).machineLoad().factor)`,
+          ],
+          { env: { ...process.env, SCAFFOLDING_LOAD: load }, encoding: "utf8" },
+        ).stdout,
+      );
+    const cores = availableParallelism();
+    expect(factor("0")).toBe(1);
+    expect(factor(String(cores * 3))).toBe(3);
+    expect(factor(String(cores * 50))).toBe(10);
   });
 
   test("a server that accepts but never answers fails at the timeout", async () => {

@@ -3,6 +3,16 @@
 // and a server left over from an earlier run answered for the new build.
 import { spawn } from "node:child_process";
 import { createServer } from "node:net";
+import { availableParallelism, loadavg } from "node:os";
+
+/** The machine's one-minute load against its cores (SCAFFOLDING_LOAD stands in for the load), and
+ * how many times a wait for wall time stretches under it: 1 up to one waiting process per core,
+ * load per core above, at most 10. */
+export function machineLoad(): { load: number; cores: number; factor: number } {
+  const load = Number(process.env.SCAFFOLDING_LOAD ?? loadavg()[0]);
+  const cores = availableParallelism();
+  return { load, cores, factor: Math.min(10, Math.max(1, load / cores || 1)) };
+}
 
 /** A port nothing listens on now. */
 export function freePort(): Promise<number> {
@@ -16,10 +26,14 @@ export function freePort(): Promise<number> {
 }
 
 /** Starts `command` with HOST and PORT set, waits until it answers, and hands back its URL and a
- * stop. Fails after `timeoutMs` without an answer, or when the server exits first. */
+ * stop. Fails after `timeoutMs` without an answer (20 s times the machine's load factor), or when
+ * the server exits first. */
 export async function serve(
   command: string[],
-  { env = {}, timeoutMs = 20_000 }: { env?: Record<string, string>; timeoutMs?: number } = {},
+  {
+    env = {},
+    timeoutMs = 20_000 * machineLoad().factor,
+  }: { env?: Record<string, string>; timeoutMs?: number } = {},
 ): Promise<{ url: string; stop: () => void }> {
   const port = await freePort();
   const url = `http://127.0.0.1:${port}`;
