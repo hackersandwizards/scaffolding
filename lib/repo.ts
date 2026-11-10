@@ -50,10 +50,10 @@ export function tagCommit(version: string, installed: string | undefined): strin
  * string's start excepted. A block comment opens only after a character that ends code or another
  * comment, or after a word when a space follows the mark: a glob such as "src/*.ts" would read on
  * to the next closing mark. Group 1 is what a replacement keeps: the character before a comment,
- * or, outside Markdown and HTML, whose apostrophes are prose, a quoted string on one line, matched
+ * or, outside Markdown, HTML and templates, whose apostrophes are prose, a quoted string on one line, matched
  * as itself so that "x//y" or "issue #12" no longer dropped the code after it as a comment. */
 export const commentSyntax = (path: string) => {
-  const quoted = /\.(?:md|mdx|html?)$/.test(path)
+  const quoted = /\.(?:md|mdx|html?|astro|[jt]sx|vue|svelte)$/.test(path)
     ? ""
     : String.raw`"(?:[^"\\\n]|\\.)*"|'(?:[^'\\\n]|\\.)*'|`;
   // After a string, the lookbehind ends the match at its closing quote.
@@ -68,6 +68,14 @@ export const commentSyntax = (path: string) => {
         "gm",
       );
 };
+
+/** Every file path an `exports` value names, a conditional export's included. */
+export const exportTargets = (value: unknown): string[] =>
+  typeof value === "string"
+    ? [value]
+    : value && typeof value === "object"
+      ? Object.values(value).flatMap(exportTargets)
+      : [];
 
 /** The files check-coupling and check-unique-names count as tests, as config/eslint.js globs them. */
 export const TEST = /(?:^|\/)(?:__tests__|tests?|e2e)\/|\.(?:test|spec)\.[cm]?[jt]sx?$/;

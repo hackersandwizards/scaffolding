@@ -10,6 +10,7 @@ import { join, posix } from "node:path";
 import {
   applyAllow,
   commentSyntax,
+  exportTargets,
   finish,
   listFiles,
   readPackage,
@@ -82,14 +83,8 @@ function template(text: string): string[] {
 function consumable(root: string, pkg: Package): Set<string> {
   const packed = new Set(shippedFiles(root, pkg, "spaces"));
   if (!pkg.exports) return packed;
-  const targets = (value: unknown): string[] =>
-    typeof value === "string"
-      ? [value]
-      : value && typeof value === "object"
-        ? Object.values(value).flatMap(targets)
-        : [];
   // A * in an exported path matches across folders.
-  const exported = targets(pkg.exports).map(
+  const exported = exportTargets(pkg.exports).map(
     (t) =>
       new RegExp(
         `^${posix

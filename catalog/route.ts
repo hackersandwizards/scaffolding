@@ -35,8 +35,7 @@ export function rewriteRoute(
       `catalog: Astrobook's route ${file} has no client:load branch for serverOnly to drop`,
     );
   // The bar replaces the sidebar, which listed every state on every state's page, hidden.
-  const code = source
-    .replace(sidebar, kind === "dashboard" ? "hasSidebar={false}" : sidebar)
+  const code = (kind === "dashboard" ? source.replace(sidebar, "hasSidebar={false}") : source)
     .replace(anchor, `$&import "${CSS}${kind}";\n`)
     .replace(lead, "$&\nAstro.locals.hwCatalogLead = args?.lead;");
   return serverOnly ? code.replaceAll(client, " />") : code;

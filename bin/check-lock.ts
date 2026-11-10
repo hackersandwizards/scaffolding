@@ -156,7 +156,9 @@ function dropIfStale(): void {
 
 // Waiters take the lock in the order they came: each holds a ticket named for its arrival, and
 // only the first live one may take it, so a waiter polling at the right moment no longer overtakes
-// one that has waited longer. A dead waiter's ticket is passed over, never deleted by another.
+// one that has waited longer. A dead waiter's ticket is passed over, never deleted by another. A
+// lock free for three polls goes to any waiter: the first live ticket's process may wait for
+// nothing, its pid reused or its waiter stopped.
 const QUEUE = `${LOCK}.queue`;
 let ticket: string | undefined;
 // process.exit skips a finally, so each exit while waiting hands the ticket back itself.
@@ -192,14 +194,17 @@ async function queueForLock(): Promise<boolean> {
     }
   };
   let holder = inode();
+  let freeSince: number | undefined;
   for (;;) {
-    if (first()) {
+    const free = holder === undefined && freeSince !== undefined;
+    if (first() || (free && Date.now() - freeSince! > 3 * POLL_MS)) {
       if (acquire()) return true;
       dropIfStale();
       if (acquire()) return true;
     }
     const now = inode();
     if (now !== holder) [holder, started, spokeAt] = [now, Date.now(), 0];
+    freeSince = now === undefined ? (freeSince ?? Date.now()) : undefined;
 
     const waited = Date.now() - started;
     if (waited > WAIT_MS) {
@@ -311,7 +316,17 @@ if (result.signal && !received) {
     /* the group is already gone */
   }
 }
-while ((received || result.signal) && running(-spawned.pid!)) await sleep(100);
+const stoppedAt = Date.now();
+while ((received || result.signal) && running(-spawned.pid!)) {
+  // After a signal the command took alone, nobody sends the second one that kills: 10 s do.
+  if (!received && Date.now() - stoppedAt > 10_000)
+    try {
+      process.kill(-spawned.pid!, "SIGKILL");
+    } catch {
+      /* the group is already gone */
+    }
+  await sleep(100);
+}
 release();
 if (result.error)
   console.log(`[check-lock] ${command.join(" ")} did not start: ${result.error.message}`);

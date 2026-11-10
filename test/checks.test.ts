@@ -1,5 +1,5 @@
 import { afterAll, beforeAll, describe, expect, test } from "bun:test";
-import { spawnSync } from "node:child_process";
+import { spawn, spawnSync } from "node:child_process";
 import { createHash } from "node:crypto";
 import {
   chmodSync,
@@ -279,8 +279,17 @@ describe("check-coupling", () => {
     const dir = repo({
       "package.json": JSON.stringify({ name: "@hackersandwizards/fx" }),
       "node_modules/@hackersandwizards/brand/package.json": JSON.stringify({
-        exports: { "./tokens.css": "./tokens/tokens.css", "./fonts/*": "./tokens/fonts/*" },
+        exports: {
+          "./tokens.css": "./tokens/tokens.css",
+          "./fonts/*": "./tokens/fonts/*",
+          // A conditional export's target is a target too.
+          "./elements.css": {
+            style: "./elements/elements.css",
+            default: "./elements/elements.css",
+          },
+        },
       }),
+      "src/cond.css": '@import "../node_modules/@hackersandwizards/brand/elements/elements.css";\n',
       "src/fonts.css":
         '@font-face { src: url("../node_modules/@hackersandwizards/brand/tokens/fonts/inter.woff2"); }\n@font-face { src: url(../node_modules/@hackersandwizards/brand/fonts/inter.woff2); }\n@import "../node_modules/@hackersandwizards/brand/tokens.css";\n',
       "src/ok.css": '@import "@hackersandwizards/brand/tokens.css";\n@import "./own.css";\n',
@@ -1316,6 +1325,11 @@ describe("check-confidential", () => {
       expect(found(mode)).toContain(
         "[check-confidential] notes.json: confidential term from the company records (Jane Q Doe)",
       );
+    // A text that only starts like a pointer is read as text.
+    write(dir, { "lfs.md": "version https://git-lfs.github.com/spec/v1\nWe met Acme Widgets.\n" });
+    sh(dir, ["add", "lfs.md"]);
+    for (const mode of ["--staged", "--index"])
+      expect(found(mode)).toContain(`${term.replace("offer.docx", "lfs.md")} (Acme Widgets)`);
   });
 
   test("no setting or name changes what is read, and a damaged archive is refused", () => {
@@ -2025,7 +2039,7 @@ describe("scaffolding check", () => {
       SCAFFOLDING_LOAD: "999",
     });
     expect(loaded.out).toMatch(
-      /load 999 on \d+ cores: tests, build and the repository's steps run one after another/,
+      /load 999 on \d+ cores: test, catalog and the repository's steps run one after another/,
     );
     expect(loaded.code).toBe(0);
     // The per-test limit a test command can pass on, stretched by load per core, ten times at most.
@@ -2061,6 +2075,30 @@ describe("scaffolding check", () => {
     expect(existsSync(lock)).toBe(false);
     await Bun.sleep(5_000);
     expect(existsSync(join(dir, "slow-done"))).toBe(false);
+  }, 40_000);
+
+  test("Ctrl-C, a SIGINT to the terminal's whole group, stops the steps once and names them", async () => {
+    const dir = gate(
+      { skip, check: [["check:fast", "check:slow"]] },
+      { "check:fast": "echo fast-said; exit 1", "check:slow": "sleep 5; touch slow-done" },
+    );
+    const lock = join(dir, ".lock");
+    // Its own group stands in for the terminal's foreground group.
+    const gateRun = spawn(process.execPath, ["--no-env-file", bin("scaffolding"), "check"], {
+      cwd: dir,
+      env: { ...process.env, CHECK_LOCK: lock, SCAFFOLDING_LOAD: "0" },
+      detached: true,
+    });
+    let out = "";
+    gateRun.stdout.on("data", (d) => (out += d));
+    gateRun.stderr.on("data", (d) => (out += d));
+    for (const end = Date.now() + 20_000; !existsSync(lock) && Date.now() < end;)
+      await Bun.sleep(50);
+    await Bun.sleep(1_000);
+    process.kill(-gateRun.pid!, "SIGINT");
+    await new Promise((done) => gateRun.on("close", done));
+    expect(out).toContain("stopped check:slow by SIGINT");
+    expect(existsSync(lock)).toBe(false);
   }, 40_000);
 
   test("a repository pinning puppeteer-core gets Chrome installed once, before the steps", () => {
@@ -4285,6 +4323,16 @@ describe("check-history", () => {
     const noVersion = surface({ name: "fx", files: ["a.ts"] });
     expect(noVersion.code).toBe(1);
     expect(noVersion.out).toContain("bun pm pack listed no files");
+  });
+
+  test("an apostrophe in a template's prose pairs with no other across a comment", () => {
+    const r = run(
+      shipped({ "src/a.astro": "<p>Don't</p> <!-- planted 2026-11-06 --> <p>Can't</p>\n" }),
+      "check-history",
+    );
+    expect(lines(r.out, "history").map((l) => l.replace(/ \(.*/, ""))).toEqual([
+      "[history] src/a.astro: date",
+    ]);
   });
 
   test("reads a block comment touching what precedes it, and a capitalised item", () => {

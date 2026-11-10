@@ -45,7 +45,9 @@ if (process.argv[3] !== "--locked") {
   const lock = spawn(
     process.execPath,
     [join(home, "bin/check-lock.ts"), process.execPath, import.meta.path, "check", "--locked"],
-    { stdio: "inherit", cwd: root },
+    // A group of its own: a terminal's Ctrl-C reaches this process alone, which passes it on once;
+    // reaching check-lock as well, the second copy read as a second signal and killed the gate.
+    { stdio: "inherit", cwd: root, detached: true },
   );
   for (const signal of SIGNALS) process.on(signal, () => lock.kill(signal));
   const [code, signal] = await new Promise<[number | null, NodeJS.Signals | null]>((done) =>
@@ -133,9 +135,8 @@ type Result = { name: string; code: number; ms: number };
 const serial = load > cores;
 if (serial)
   console.error(
-    `[scaffolding] load ${Math.round(load)} on ${cores} cores: tests, build and the repository's steps run one after another`,
+    `[scaffolding] load ${Math.round(load)} on ${cores} cores: test, catalog and the repository's steps run one after another`,
   );
-const quick = new Set(Object.keys(shared).filter((name) => name !== "test" && name !== "catalog"));
 
 const started = performance.now();
 const results: Result[] = [];
@@ -181,10 +182,11 @@ for (const signal of SIGNALS)
   });
 
 // A step named in `after` starts once the step it names, listed before it, has finished, passed
-// or failed.
+// or failed. Under load only the steps named in `quick` still run side by side.
 async function group(
   steps: [string, string][],
   after: Record<string, string> = {},
+  quick = new Set<string>(),
 ): Promise<boolean> {
   const runs = new Map<string, Promise<Result>>();
   const start = (n: string, c: string, buffered: boolean) => {
@@ -222,7 +224,12 @@ const sync = /\bastro\b/.test(
   [typecheck, ...typecheck.split(/\s+/).map((word) => pkg.scripts?.[word])].join(" "),
 );
 const order = Object.keys(shared);
-if (ok) ok = await group(Object.entries(shared), sync ? { catalog: "typecheck" } : {});
+if (ok)
+  ok = await group(
+    Object.entries(shared),
+    sync ? { catalog: "typecheck" } : {},
+    new Set(Object.keys(shared).filter((name) => name !== "test" && name !== "catalog")),
+  );
 for (const entry of config.check ?? []) {
   if (!ok) break;
   const steps = (Array.isArray(entry) ? entry : [entry]).map((s): [string, string] => [

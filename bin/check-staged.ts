@@ -210,14 +210,14 @@ for (const [tool] of active)
     refuseCommit(
       `${tool} not installed: pin it and bun install, or skip.${gateStep[tool]} with a reason`,
     );
-const runs = active.flatMap(([tool, flags]) => {
+const runs = active.flatMap(([tool, args]) => {
   const bin = `node_modules/.bin/${tool}`;
   return [
     ...chunks
       .map((paths) => mine(tool, paths))
       .filter((paths) => paths.length)
       // A staged name starting with `-` would read as an option.
-      .map((paths) => runStagedTool(bin, [...flags, "--", ...paths])),
+      .map((paths) => runStagedTool(bin, [...args, "--", ...paths])),
     ...mine(tool, partial).map(async (path) => {
       const input = stagedContent(path);
       const r = await runStagedTool(bin, stdinFlags[tool](path), input);

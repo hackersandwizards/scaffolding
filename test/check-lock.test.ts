@@ -164,7 +164,6 @@ describe("check-lock serialises the checks", () => {
     closeSync(pipe);
     // The first waiter now holds the claim and blocks opening the FIFO for its re-read.
     await until(() => existsSync(claim), "the claim");
-    expect(existsSync(claim)).toBe(true);
     // The claim lands just before the re-read opens the FIFO.
     await new Promise((go) => setTimeout(go, 300));
     renameSync(lock, fifo);
@@ -250,6 +249,9 @@ describe("check-lock serialises the checks", () => {
     const behind = run(lock, ["echo", "ran"], { CHECK_LOCK_WAIT_MS: "2500" });
     expect(behind.status).toBe(1);
     expect(behind.stdout).not.toContain("ran");
+    // A ticket whose process waits for nothing, a pid reused or a waiter stopped by Ctrl-Z, holds
+    // a free lock up for three polls only.
+    expect(run(lock, ["echo", "ran"], { CHECK_LOCK_WAIT_MS: "20000" }).stdout).toBe("ran\n");
     rmSync(earlier);
     writeFileSync(`${lock}.queue/000000000000001-999999`, "");
     expect(run(lock, ["echo", "ran"]).stdout).toBe("ran\n");
@@ -309,7 +311,6 @@ describe("check-lock wraps a consumer's build", () => {
     });
     const finished = new Promise((go) => check.on("close", go));
     await until(() => existsSync(lock), "the lock");
-    expect(existsSync(lock)).toBe(true);
 
     const build = run(lock, ["sh", "-c", `test -e ${done} && echo built`]);
     await finished;
@@ -479,6 +480,26 @@ describe("check-lock wraps a consumer's build", () => {
     await Bun.sleep(4_000);
     expect(existsSync(done)).toBe(false);
   }, 60_000);
+
+  it("kills a group that outlives a lone signal, so the lock is not held for ever", async () => {
+    const lock = lockPath();
+    const pidFile = `${lock}.pid`;
+    const check = spawn(
+      "bun",
+      [SCRIPT, "sh", "-c", `(trap '' TERM; sleep 60) & echo $$ > ${pidFile}; wait`],
+      { env: { ...process.env, CHECK_LOCK: lock }, stdio: "ignore" },
+    );
+    const finished = new Promise((go) => check.on("close", go));
+    await until(
+      () => existsSync(pidFile) && readFileSync(pidFile, "utf8").endsWith("\n"),
+      "the pid",
+    );
+    const sent = Date.now();
+    process.kill(Number(readFileSync(pidFile, "utf8")), "SIGTERM");
+    await finished;
+    expect(Date.now() - sent).toBeLessThan(30_000);
+    expect(existsSync(lock)).toBe(false);
+  }, 90_000);
 
   it("names a command that cannot start", () => {
     const result = run(lockPath(), ["no-such-command-here"]);

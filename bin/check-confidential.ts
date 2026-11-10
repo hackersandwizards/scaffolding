@@ -171,20 +171,13 @@ if (argv[0] === "prepush") {
   if (findings.length) finish("check-confidential", findings, started);
   // git-lfs stays off unless the push may carry LFS objects or touch a lockable file: it would
   // verify locks against the remote on every push.
-  const common = resolve(root, git(["rev-parse", "--git-common-dir"], root).toString().trim());
-  const storage = spawnSync("git", ["config", "--type=path", "lfs.storage"], {
-    cwd: root,
-  }).stdout.toString();
   // An empty objects folder holds nothing to upload.
   const holdsFile = (dir: string): boolean =>
     existsSync(dir) &&
     readdirSync(dir, { withFileTypes: true }).some(
       (e) => e.isFile() || e.isSymbolicLink() || (e.isDirectory() && holdsFile(join(dir, e.name))),
     );
-  const stores = [
-    join(common, "lfs/objects"),
-    ...(storage.trim() ? [resolve(common, storage.trim(), "objects")] : []),
-  ];
+  const stores = lfsObjectDirs();
   const lfsPath = (local: string) => {
     // latin1 keeps a path's bytes as they are, whatever its encoding. -c lists the paths a merge's
     // resolution changes; what it takes from a side counts through that side's own commits.
@@ -599,7 +592,6 @@ function addedLines(diff: string, paths: string[]) {
 
 let full = false;
 const isBinary = (p: string) => IMAGE.test(p) || /\.pdf$/i.test(p);
-const LFS = "version https://git-lfs";
 /** The blobs `names` (a SHA, `:<path>`, `<rev>:<path>`) name, by one cat-file: a `git show` per
  * file cost 6.6 ms each. An error names the file by its path in `paths`. */
 function objects(names: string[], paths: string[]): Buffer[] {
@@ -616,24 +608,34 @@ function objects(names: string[], paths: string[]): Buffer[] {
   });
 }
 const binaries: { where: string; data: Buffer }[] = [];
-const isLfsPointer = (data: Buffer) => data.subarray(0, LFS.length).toString() === LFS;
+// A pointer is all a blob holds, so a text that only starts like one is still read as text.
+const POINTER =
+  /^version https:\/\/git-lfs\.github\.com\/spec\/v1\n(?:ext-[^\n]*\n)*oid sha256:[0-9a-f]{64}\nsize \d+\n?$/;
+const isLfsPointer = (data: Buffer) => data.length < 1024 && POINTER.test(data.toString());
 const OID = /^oid sha256:([0-9a-f]{64})$/m;
 let lfsStores: string[] | undefined;
+/** The folders of the local Git LFS store's objects: the common Git folder's, and lfs.storage's. */
+function lfsObjectDirs(): string[] {
+  const common = resolve(root, git(["rev-parse", "--git-common-dir"], root).toString().trim());
+  const storage = spawnSync("git", ["config", "--type=path", "lfs.storage"], { cwd: root })
+    .stdout.toString()
+    .trim();
+  return [join(common, "lfs/objects"), ...(storage ? [resolve(common, storage, "objects")] : [])];
+}
+
 /** The file a Git LFS pointer names, from the working tree where it matches the pointer's oid,
  * else from the local LFS store; undefined where neither holds it. */
 function lfsContent(where: string, pointer: Buffer): Buffer | undefined {
-  const oid = OID.exec(pointer.toString())?.[1];
-  if (!oid) return undefined;
-  if (!lfsStores) {
-    const common = resolve(root, git(["rev-parse", "--git-common-dir"], root).toString().trim());
-    const storage = spawnSync("git", ["config", "--type=path", "lfs.storage"], { cwd: root })
-      .stdout.toString()
-      .trim();
-    lfsStores = [join(common, "lfs"), ...(storage ? [resolve(common, storage)] : [])];
-  }
+  const text = pointer.toString();
+  const oid = OID.exec(text)?.[1];
+  const size = Number(/^size (\d+)$/m.exec(text)?.[1]);
+  if (!oid || !Number.isFinite(size)) return undefined;
+  lfsStores ??= lfsObjectDirs();
   const at = join(oid.slice(0, 2), oid.slice(2, 4), oid);
-  for (const file of [join(root, where), ...lfsStores.map((dir) => join(dir, "objects", at))]) {
-    if (!statSync(file, { throwIfNoEntry: false })?.isFile()) continue;
+  for (const file of [join(root, where), ...lfsStores.map((dir) => join(dir, at))]) {
+    // The size rules a differing file out without reading it.
+    const found = statSync(file, { throwIfNoEntry: false });
+    if (!found?.isFile() || found.size !== size) continue;
     const data = readFileSync(file);
     if (createHash("sha256").update(data).digest("hex") === oid) return data;
   }

@@ -15,7 +15,7 @@ import {
 } from "node:fs";
 import { spawnSync } from "node:child_process";
 import { createRequire } from "node:module";
-import { basename, dirname, join, posix, relative } from "node:path";
+import { basename, dirname, join, matchesGlob, posix, relative } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { brandFallbacks } from "./fallbacks.ts";
 import { catalogPath, storiesDir } from "./path.ts";
@@ -114,6 +114,8 @@ const BRAND_ICON = "@hackersandwizards/brand/logos/favicon.svg";
 // Astrobook's URL folders for a state's page and a state alone, passed so its defaults cannot move
 // under the dev redirect and the forwarding pages.
 const SUBPATHS = { dashboardSubpath: "dashboard", previewSubpath: "stories" };
+// The catalog's former pages under /catalog/, as the dev redirect reads them.
+const FORMER = new RegExp(`^/catalog(/(${Object.values(SUBPATHS).join("|")})(/|$)|/?$)`);
 // The cascade layer order alone, exported since brand v1.52.0.
 const BRAND_LAYERS = "@hackersandwizards/brand/layers.css";
 const BRAND_FOCUS = "@hackersandwizards/brand/elements/focus.css";
@@ -294,11 +296,7 @@ export function catalog(options: CatalogOptions): AstroIntegration {
           const unbased = strip(path, dev ? pagesBase : "");
           // Only the catalog's own former pages move, as in the build: a site's page under
           // /catalog/ stays.
-          const now =
-            atRoot &&
-            new RegExp(`^/catalog(/(${Object.values(SUBPATHS).join("|")})(/|$)|/?$)`).test(unbased)
-              ? strip(unbased, "/catalog")
-              : unbased;
+          const now = atRoot && FORMER.test(unbased) ? strip(unbased, "/catalog") : unbased;
           // A file Vite serves, a module under the root such as catalog/Head.astro or a public
           // file, is not a page.
           const file = decoded(path);
@@ -512,10 +510,17 @@ export function catalog(options: CatalogOptions): AstroIntegration {
           }
           const file = path.startsWith(`${base}/`) ? path.slice(base.length + 1) : "";
           if (!file || !fixed.length) return next();
-          // A file added since the last glob is found on the second pass.
+          // A file added since the last glob is found on a second pass, which globs only a pattern
+          // the path or a folder above it matches: every other request misses without a glob.
+          const matched = (pattern: string) => {
+            for (let at = file; at !== "." && at !== "/"; at = posix.dirname(at))
+              if (matchesGlob(at, pattern)) return true;
+            return false;
+          };
           const find = (fresh: boolean) =>
             fixed
               .filter(([, prefix]) => !prefix || file === prefix || file.startsWith(`${prefix}/`))
+              .filter(([pattern]) => !fresh || resolved.has(pattern) || matched(pattern))
               .flatMap(([pattern]) => copied(pattern, fresh))
               .find(([at]) => file === at || file.startsWith(`${at}/`));
           const match = find(false) ?? find(true);

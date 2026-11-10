@@ -6,6 +6,7 @@ import { dirname, join, posix, relative, resolve } from "node:path";
 import {
   applyAllow,
   commentSyntax,
+  exportTargets,
   finish,
   listFiles,
   readPackage,
@@ -71,10 +72,7 @@ function exported(exports: unknown, subpath: string): boolean {
 
 /** Whether a file of the package, named by its path on disk, is the target of an export. */
 function targeted(exports: unknown, subpath: string): boolean {
-  if (!exports || typeof exports !== "object" || Array.isArray(exports)) return false;
-  return Object.values(exports).some(
-    (target) => typeof target === "string" && matches(posix.normalize(target), subpath),
-  );
+  return exportTargets(exports).some((target) => matches(posix.normalize(target), subpath));
 }
 
 const manifests = new Map<string, Record<string, unknown> | null>();
