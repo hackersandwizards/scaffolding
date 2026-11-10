@@ -9,6 +9,7 @@ import {
   repoRoot,
   styleFiles,
   stylelintFlags,
+  submodulePaths,
   withoutEnvFile,
   type Package,
 } from "../lib/repo.ts";
@@ -71,11 +72,15 @@ for (const key of Object.keys(config)) if (!KEYS.has(key)) fail(`unknown key sca
 
 const script = (s: string) => (pkg.scripts?.[s] ? `bun run --silent ${s}` : s);
 // Quoted for `sh -c`: a package path holding a space failed every bin step.
-const bin = (name: string) => `bun '${join(home, "bin", `${name}.ts`).replaceAll("'", `'\\''`)}'`;
+const quote = (s: string) => `'${s.replaceAll("'", `'\\''`)}'`;
+const bin = (name: string) => `bun ${quote(join(home, "bin", `${name}.ts`))}`;
+// A submodule is its own repository's to check: format, lint and styles walk past it.
+const submodules = submodulePaths(root).map((path) => quote(`${path}/**`));
+const ignored = submodules.map((p) => ` --ignore-pattern ${p}`).join("");
 const shared: Record<string, string> = {
-  format: "bun --bun prettier --check --cache --log-level warn .",
-  lint: "bun --bun eslint --cache --concurrency=auto .",
-  styles: `bun --bun stylelint "${styleFiles}" ${stylelintFlags(root).join(" ")}`,
+  format: `bun --bun prettier --check --cache --log-level warn .${submodules.map((p) => ` '!'${p}`).join("")}`,
+  lint: `bun --bun eslint --cache --concurrency=auto .${ignored}`,
+  styles: `bun --bun stylelint "${styleFiles}" ${stylelintFlags(root).join(" ")}${ignored}`,
   typecheck: `bun --bun ${config.typecheck ?? "tsc --noEmit"}`,
   structure: bin("check-structure"),
   coupling: bin("check-coupling"),

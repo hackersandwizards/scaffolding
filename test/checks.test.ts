@@ -2065,6 +2065,27 @@ describe("scaffolding check", () => {
     expect(r.out).toContain("passed");
   });
 
+  test("format, lint and styles walk past a submodule, which its own repository checks", () => {
+    const { format: _f, lint: _l, styles: _s, ...rest } = skip;
+    const inner = repo({
+      "bad.js": "const   unusedThing=1\n",
+      "bad.css": "a{color:red}\n",
+    });
+    const dir = gate({ skip: { ...rest, spaces: "t" } });
+    sh(dir, ["-c", "protocol.file.allow=always", "submodule", "add", "-q", inner, "vendor/inner"]);
+    const pkg = JSON.parse(readFileSync(join(dir, "package.json"), "utf8"));
+    write(dir, {
+      "package.json": `${JSON.stringify(pkg, null, 2)}\n`,
+      "eslint.config.js": `export { default } from "${join(import.meta.dir, "..", "config", "eslint.js")}";\n`,
+      "stylelint.config.js": 'export default { rules: { "color-named": "never" } };\n',
+      "ok.css": "a {\n  color: #f00;\n}\n",
+    });
+    symlinkSync(join(import.meta.dir, "..", "node_modules"), join(dir, "node_modules"));
+    const r = run(dir, "scaffolding", ["check"], { CHECK_LOCK: join(dir, ".lock") });
+    expect(r.out).not.toContain("vendor/inner");
+    expect(r.code).toBe(0);
+  });
+
   test("uniqueNames exempt the names they list, $ included", () => {
     const { "unique-names": _, ...rest } = skip;
     const dir = gate({ skip: rest, uniqueNames: ["$state"] });

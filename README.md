@@ -64,7 +64,8 @@ catalog build once a typecheck that runs Astro has finished:
 format, lint, styles (stylelint), typecheck, structure, coupling, unique names, spaces, confidential,
 history, licenses, the tests, the catalog build (`bun run build`) and admin (the item files, with the pinned
 `@hackersandwizards/admin`'s `admin-check`; a repository without admin pinned needs `skip.admin`). Then the repository's own steps from
-`scaffolding.check`, in order, an inner array side by side. A shared step drops only with a reason, a
+`scaffolding.check`, in order, an inner array side by side. Format, lint and styles walk past every
+submodule `.gitmodules` names, which its own repository checks. A shared step drops only with a reason, a
 non-blank string in `skip`:
 
 ```json
