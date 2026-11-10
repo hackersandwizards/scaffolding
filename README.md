@@ -616,7 +616,7 @@ jobs:
 ## Developing the package
 
 `bun install`, then `bun run check` runs the gate on the package itself: `scaffolding check`, whose
-catalog test builds a copy of `test/fixture/` with the preset, in `node_modules/.cache/scaffolding/fixture/`. A release bumps `version` in `package.json`
+catalog test builds a copy of `test/fixture/` with the preset. A release bumps `version` in `package.json`
 and pushes the tag `v<version>`; its commit names any changed command, argument or exported path.
 
 ## License

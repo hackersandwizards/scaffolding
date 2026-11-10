@@ -34,15 +34,20 @@ const PREVIEW = 'ASTRO_PREVIEW_BACKGROUND=1 bun --bun astro preview --root "$PWD
 const made: string[] = [];
 afterAll(() => made.forEach((dir) => rmSync(dir, { recursive: true, force: true })));
 
-// A stopped run skips afterAll: the next run removes its folders, once an hour old, so a run still
+const cache = join(import.meta.dir, "..", "node_modules", ".cache", "scaffolding");
+// A stopped run skips afterAll: the next run removes its folders once an hour old, so a run still
 // going keeps its own.
-for (const name of readdirSync(tmpdir()).filter((n) => n.startsWith("scaffolding-test-"))) {
-  const dir = join(tmpdir(), name);
-  const age = Date.now() - (statSync(dir, { throwIfNoEntry: false })?.mtimeMs ?? Date.now());
-  if (age > 3_600_000) rmSync(dir, { recursive: true, force: true });
-}
-function temp() {
-  const dir = mkdtempSync(join(tmpdir(), "scaffolding-test-"));
+for (const root of [tmpdir(), cache])
+  for (const name of existsSync(root) ? readdirSync(root) : [])
+    if (name.startsWith("scaffolding-test-"))
+      try {
+        const dir = join(root, name);
+        if (Date.now() - statSync(dir).mtimeMs > 3_600_000)
+          rmSync(dir, { recursive: true, force: true });
+      } catch {} // another run removed it first
+function temp(root = tmpdir()) {
+  mkdirSync(root, { recursive: true });
+  const dir = mkdtempSync(join(root, "scaffolding-test-"));
   made.push(dir);
   return dir;
 }
@@ -3152,15 +3157,18 @@ const BRAND_TOKENS = {
 };
 
 describe("catalog", () => {
-  // The tests build and serve a fresh copy of test/fixture where lint and format never read, so
-  // a stopped run's output reaches neither them nor the next run. Its configs import
-  // ../../../catalog, which the link beside the copy keeps.
-  const work = join(import.meta.dir, "..", "node_modules", ".cache", "scaffolding", "fixture");
-  const fixture = join(work, "test", "fixture");
+  // The tests build and serve a copy of test/fixture's own files, one per run, where lint and
+  // format never read, so a stopped run's output reaches neither them nor the next run. Its
+  // configs import ../../../catalog, which the link beside the copy keeps.
+  let fixture = "";
+  const astro = join(import.meta.dir, "..", "node_modules", ".bin", "astro");
   beforeAll(() => {
-    rmSync(work, { recursive: true, force: true });
-    made.push(work);
-    cpSync(join(import.meta.dir, "fixture"), fixture, { recursive: true });
+    const work = temp(cache);
+    fixture = join(work, "test", "fixture");
+    const source = join(import.meta.dir, "fixture");
+    const own = ["ls-files", "-z", "--cached", "--others", "--exclude-standard"];
+    for (const file of spawnSync("git", own, { cwd: source, encoding: "utf8" }).stdout.split("\0"))
+      if (file) cpSync(join(source, file), join(fixture, file));
     symlinkSync(join(import.meta.dir, "..", "catalog"), join(work, "catalog"));
     // The package the fixture's homeCss names, for every test that builds or serves the fixture.
     write(join(fixture, "catalog", "node_modules", "@acme", "ui"), {
@@ -3172,19 +3180,25 @@ describe("catalog", () => {
       "ui.css": ".acme-ui{color:red}\n",
     });
   });
-  test("a build left in the copy turns neither the gate's lint nor its format red", () => {
-    write(join(fixture, "catalog", "custom", "_astro"), { "x.js": "a;b  ;\n" });
-    for (const command of [
-      ["eslint", "--concurrency=auto", "."],
-      ["prettier", "--check", "--log-level", "warn", "."],
-    ])
-      expect(
-        spawnSync("bun", ["--bun", ...command], {
-          cwd: join(import.meta.dir, ".."),
-          encoding: "utf8",
-        }),
-      ).toMatchObject({ status: 0, stdout: "", stderr: "" });
-  }, 30_000);
+  test("a build left in the copy is a file the gate's lint and format skip", () => {
+    const left = join(fixture, "catalog", "custom", "_astro", "x.js");
+    write(dirname(left), { "x.js": "a;b  ;\n" });
+    const run = (...args: string[]) =>
+      spawnSync("bun", ["--bun", ...args, left], {
+        cwd: join(import.meta.dir, ".."),
+        encoding: "utf8",
+      });
+    const lint = run("eslint");
+    expect(lint.status).toBe(0);
+    expect(lint.stdout).toContain("File ignored");
+    expect(
+      run("prettier", "--check", "--log-level", "warn", "--no-error-on-unmatched-pattern"),
+    ).toMatchObject({
+      status: 0,
+      stdout: "",
+      stderr: "",
+    });
+  });
   test("catalogPath: the root, or /catalog/ beside the site's own home; dev drops the base", () => {
     expect(catalogPath({ base: "/s", pages: ["types", "about.astro"] })).toBe("/s/");
     for (const page of ["index.astro", "index.html.ts", "index", "[...slug].astro"])
@@ -3250,7 +3264,6 @@ describe("catalog", () => {
 
   test("the preset builds the shell's home into the repository's dist/", async () => {
     const dist = join(fixture, "dist");
-    const astro = join(import.meta.dir, "..", "node_modules", ".bin", "astro");
     const build = (args: string[] = [], env: Record<string, string> = {}, root = "catalog") =>
       spawnSync(astro, ["build", "--root", root, ...args], {
         cwd: fixture,
@@ -4008,7 +4021,6 @@ describe("catalog", () => {
       mkdirSync(join(fixture, "catalog", dir), { recursive: true });
       writeFileSync(join(fixture, "catalog", dir, "mod.css"), "a {\n  color: red;\n}\n");
     }
-    const astro = join(import.meta.dir, "..", "node_modules", ".bin", "astro");
     // ASTRO_DEV_BACKGROUND=1, as the README's dev script: under an agent astro dev otherwise moves
     // into the background and resolves --root from inside the folder.
     const server = await serve(
