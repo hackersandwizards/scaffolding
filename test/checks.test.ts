@@ -1018,6 +1018,60 @@ describe("scaffold and check-structure", () => {
     expect(out).toContain("core.hooksPath must be .githooks");
   });
 
+  test("the tests pass the gate's SCAFFOLDING_TEST_TIMEOUT_MS on, in the command, its script or a vitest config", () => {
+    const other = join(parent, "timeout");
+    run(parent, "scaffold", ["timeout", "--catalog-in", "x", "--admin-in", "x"]);
+    install(other);
+    write(other, { "bun.lock": "" });
+    sh(other, ["config", "core.hooksPath", ".githooks"]);
+    const pkg = JSON.parse(readFileSync(join(other, "package.json"), "utf8"));
+    const structure = (
+      scaffolding: object,
+      scripts: object,
+      files: Record<string, string> = {},
+    ) => {
+      write(other, {
+        "package.json": JSON.stringify({
+          ...pkg,
+          scripts: { ...pkg.scripts, ...scripts },
+          scaffolding: {
+            ...pkg.scaffolding,
+            skip: { ...pkg.scaffolding.skip, test: undefined },
+            ...scaffolding,
+          },
+        }),
+        ...files,
+      });
+      return lines(run(other, "check-structure").out, "check-structure");
+    };
+    const red = [
+      "[check-structure] package.json: scaffolding.test passes no SCAFFOLDING_TEST_TIMEOUT_MS on: bun test --timeout ${SCAFFOLDING_TEST_TIMEOUT_MS:-5000}, or vitest's testTimeout read from it (test)",
+    ];
+    expect(structure({ test: "test" }, { test: "bun test" })).toEqual(red);
+    expect(
+      structure(
+        { test: "test" },
+        { test: "bun test --timeout ${SCAFFOLDING_TEST_TIMEOUT_MS:-5000}" },
+      ),
+    ).toEqual([]);
+    expect(structure({ test: "vitest run" }, {})).toEqual([
+      red[0].replace("(test)", "(vitest run)"),
+    ]);
+    expect(
+      structure(
+        { test: "vitest run" },
+        {},
+        {
+          "vitest.config.ts":
+            "export default { test: { testTimeout: Number(process.env.SCAFFOLDING_TEST_TIMEOUT_MS ?? 5000) } };\n",
+        },
+      ),
+    ).toEqual([]);
+    // A skipped test step runs nothing to pass it to.
+    rmSync(join(other, "vitest.config.ts"));
+    expect(structure({ skip: pkg.scaffolding.skip }, {})).toEqual([]);
+  });
+
   test("a repository with a surface carries the catalog; every gate step is a check:<what> script", () => {
     const other = join(parent, "surface");
     run(parent, "scaffold", ["surface", "--catalog-in", "x", "--admin-in", "x"]);

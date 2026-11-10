@@ -219,6 +219,25 @@ if (existsSync(at("package.json"))) {
   const scripts = [...skeleton.package.scripts, ...(surface ? skeleton.catalog.scripts : [])];
   for (const script of scripts as string[])
     if (!pkg.scripts?.[script]) add("package.json", `script ${script} missing`, script);
+  // The gate stretches a test's limit under load only through this variable, and no runner reads it
+  // unasked: bun takes it as a flag, vitest from its config.
+  const test = pkg.scaffolding?.test;
+  if (test && !isReason(pkg.scaffolding?.skip?.test)) {
+    const configs = listFiles(root, false).filter((p) =>
+      /^vite(?:st)?\.config\.[cm]?[jt]s$/.test(p),
+    );
+    const read = [
+      test,
+      pkg.scripts?.[test] ?? "",
+      ...configs.map((p) => readFileSync(at(p), "utf8")),
+    ];
+    if (!read.some((text) => text.includes("SCAFFOLDING_TEST_TIMEOUT_MS")))
+      add(
+        "package.json",
+        "scaffolding.test passes no SCAFFOLDING_TEST_TIMEOUT_MS on: bun test --timeout ${SCAFFOLDING_TEST_TIMEOUT_MS:-5000}, or vitest's testTimeout read from it",
+        test,
+      );
+  }
   for (const step of (pkg.scaffolding?.check ?? []).flat())
     if (!/^check:[a-z0-9][\w:-]*$/.test(step) || !pkg.scripts?.[step])
       add("package.json", "a step of scaffolding.check is a script named check:<what>", step);
