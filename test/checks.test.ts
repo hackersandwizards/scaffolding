@@ -2292,7 +2292,7 @@ describe("catalog", () => {
     expect(build(["--config", "homed.config.mjs"]).status).toBe(0);
     const folderOnly = readFileSync(join(dist, "index.html"), "utf8");
     expect(folderOnly.match(/id="foundations"/g)).toHaveLength(1);
-    expect(folderOnly).not.toContain("hw-catalog-text");
+    expect(folderOnly).not.toContain('class="hw-catalog-text"');
     rmSync(folder, { recursive: true });
     rmSync(homed);
     rmSync(ownHome);
@@ -2355,7 +2355,6 @@ describe("catalog", () => {
       "var(--radius-pill,77px)",
     ])
       expect(sheets).toContain(fallback);
-    expect(sheets).not.toContain("var(--text-page,1.5rem)");
     // brand's layer order follows the ground's.
     expect(branded).toContain(
       "<style>@layer hw-catalog-ground;@layer properties, theme, base, components, utilities;</style>",
@@ -2404,6 +2403,13 @@ describe("catalog", () => {
         "/assets/logo.svg",
       ]);
     }
+    // The shell's type sizes are brand's tokens.json steps, first in brand v2.5.0.
+    writeFileSync(join(brand, "package.json"), JSON.stringify({ version: "2.4.1" }));
+    const older = build();
+    expect(older.status).not.toBe(0);
+    expect(older.stdout + older.stderr).toContain(
+      "needs @hackersandwizards/brand v2.5.0 or later, installed is v2.4.1",
+    );
     rmSync(join(fixture, "node_modules"), { recursive: true });
     // The build adds no robots tag to a page of the repository's own; one with a tag of its own and
     // an endpoint's file stay as written.

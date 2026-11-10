@@ -48,7 +48,7 @@
   .hw-catalog-count {
     color: var(--hw-cat-muted);
     font-family: var(--font-mono);
-    font-size: var(--text-micro, 0.75rem);
+    font-size: var(--text-micro);
     font-weight: 400;
   }
   /* The tile grid ends a rem further in than the page's container: at its 1rem alone the tiles
@@ -59,7 +59,7 @@
   .hw-catalog-main h1 {
     margin: 0;
     font-family: var(--font-mono);
-    font-size: var(--text-page, 1.5rem);
+    font-size: var(--text-page);
     line-height: 1.25;
   }
   /* The running text at one measure and leading: a paragraph of the main or of a group of markup,
@@ -83,8 +83,8 @@
   :where(.hw-catalog-text > h3, .hw-catalog-text > :not(section) > h3) {
     margin: 2.5rem 0 0.5rem;
     font-family: var(--font-mono);
-    font-size: var(--text-subheading, 1rem);
-    line-height: var(--text-subheading--line-height, 1.35);
+    font-size: var(--text-subheading);
+    line-height: var(--text-subheading--line-height);
   }
   :where(
     .hw-catalog-text > :first-child,
@@ -94,12 +94,12 @@
   }
   .hw-catalog-lead {
     margin: 0.5rem 0 0;
-    font-size: var(--text-subheading, 1rem);
+    font-size: var(--text-subheading);
   }
   .hw-catalog-provenance {
     margin: 0.5rem 0 0;
     color: var(--hw-cat-muted);
-    font-size: var(--text-ui, 0.875rem);
+    font-size: var(--text-ui);
   }
   .hw-catalog-provenance > span {
     display: inline-block;
@@ -111,7 +111,7 @@
   .hw-catalog-group > h2 {
     margin: 0 0 1rem;
     font-family: var(--font-mono);
-    font-size: var(--text-heading, 1.25rem);
+    font-size: var(--text-heading);
     line-height: 1.3;
   }
   .hw-catalog-grid {
@@ -172,12 +172,12 @@
     object-fit: contain;
   }
   .hw-catalog-name {
-    font-size: var(--text-ui, 0.875rem);
+    font-size: var(--text-ui);
     font-weight: 600;
   }
   .hw-catalog-note {
     color: var(--hw-cat-muted);
-    font-size: var(--text-ui, 0.875rem);
+    font-size: var(--text-ui);
   }
   .hw-catalog [hidden] {
     display: none;

@@ -327,12 +327,13 @@ export function catalog(options: CatalogOptions): AstroIntegration {
             throw new Error(`catalog copy: ${pattern} is no file in the exports of ${owner}`);
           }
         }
-        // The home's rail is brand's hw-search over its hw-nav, released in brand v1.47.0: an older
-        // brand draws it unstyled, with no error of its own.
+        // The home's rail is brand's hw-search over its hw-nav (brand v1.47.0), and the shell's type
+        // sizes are brand's --text-* steps from tokens.json (brand v2.5.0): an older brand draws
+        // them unstyled or at inherited sizes, with no error of its own.
         const brand = installed("@hackersandwizards/brand", root)?.split(".").map(Number);
-        if (brand && (brand[0] ?? 0) * 1000 + (brand[1] ?? 0) < 1047)
+        if (brand && (brand[0] ?? 0) * 1000 + (brand[1] ?? 0) < 2005)
           throw new Error(
-            `catalog: the home's rail needs @hackersandwizards/brand v1.47.0 or later, installed is v${brand.join(".")}`,
+            `catalog: the shell needs @hackersandwizards/brand v2.5.0 or later, installed is v${brand.join(".")}`,
           );
         const sheets = [
           ...options.css,
