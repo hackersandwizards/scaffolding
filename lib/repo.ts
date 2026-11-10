@@ -132,7 +132,7 @@ export const stylelintFlags = (root: string) => [
 ];
 
 /** `term`: the text is a bare term, which an allow entry names whole. */
-/** `name`: the term stands in the file's path, which an entry's `path` "file names" also covers. */
+/** `name`: the term stands in the file's path, the one finding an entry with "file names" covers. */
 export type Finding = {
   check: string;
   path: string;
@@ -237,11 +237,19 @@ const fold = (s: string) =>
 const textCovers = (text: string, f: Finding) =>
   f.term ? fold(f.text) === fold(text) : f.text.includes(text);
 
-const covers = (entry: AllowEntry, f: Finding, text = entry.text) =>
-  entry.check === f.check &&
-  (entry.path === undefined ||
-    [entry.path].flat().some((p) => glob(p).test(f.path) || (p === "file names" && f.name))) &&
-  (text === undefined || [text].flat().some((t) => textCovers(t, f)));
+// "file names" in `path` keeps the entry to terms in a file's path: alone in every file, beside
+// paths in those files only, so a term in the same files' text stays red.
+const NAMES = "file names";
+const covers = (entry: AllowEntry, f: Finding, text = entry.text) => {
+  const paths = entry.path === undefined ? [] : [entry.path].flat();
+  const globs = paths.filter((p) => p !== NAMES);
+  return (
+    entry.check === f.check &&
+    (!paths.includes(NAMES) || f.name === true) &&
+    (!globs.length || globs.some((p) => glob(p).test(f.path))) &&
+    (text === undefined || [text].flat().some((t) => textCovers(t, f)))
+  );
+};
 
 /**
  * Drops each finding a `scaffolding.allow` entry of `pkg` covers, and reports every entry of this
@@ -274,8 +282,10 @@ export function applyAllow(
     else if (stale) {
       // Each text and each path of a list is its own exception and dies with its own case.
       const items = (v: string | string[] | undefined) => (Array.isArray(v) ? v : []);
-      for (const path of items(e.path))
-        if (!findings.some((f) => covers({ ...e, path }, f)))
+      // "file names" qualifies the paths beside it, which each keep it.
+      const names = items(e.path).includes(NAMES) ? [NAMES] : [];
+      for (const path of items(e.path).filter((p) => p !== NAMES))
+        if (!findings.some((f) => covers({ ...e, path: [...names, path] }, f)))
           report({ ...e, path }, "allow entry matches nothing");
       for (const t of items(e.text))
         if (!findings.some((f) => covers(e, f, t)))

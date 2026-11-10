@@ -1686,11 +1686,11 @@ describe("check-confidential", () => {
     ]);
   });
 
-  test("one entry's path list covers a person's folder, file names and package.json", () => {
+  test("one entry's path list covers a person's folder; package.json and a gone path die alone", () => {
     const allow = [
       {
         check: "confidential",
-        path: ["people/jane-q-doe/**", "file names", "package.json", "gone/**"],
+        path: ["people/jane-q-doe/**", "package.json", "gone/**"],
         text: "Jane Q Doe",
         reason: "test",
       },
@@ -1713,8 +1713,11 @@ describe("check-confidential", () => {
     ]);
   });
 
-  test("a term in a file's path is that file's: an entry naming the file covers it, file names all", () => {
-    const files = { "people/acme-widgets.md": "x\n", "notes/acme-widgets.md": "x\n" };
+  test("a term in a file's path is that file's: an entry naming the file covers it, file names all; with file names, the paths keep the names alone", () => {
+    const files = {
+      "people/acme-widgets.md": "Acme Widgets\n",
+      "notes/acme-widgets.md": "x\n",
+    };
     const scan = (allow: object[]) =>
       lines(
         run(
@@ -1726,10 +1729,20 @@ describe("check-confidential", () => {
         "check-confidential",
       );
     const entry = { check: "confidential", text: "Acme Widgets", reason: "test" };
-    expect(scan([{ ...entry, path: "people/**" }])).toEqual([
-      "[check-confidential] notes/acme-widgets.md: confidential term from the company records in the file's path (acme widgets)",
+    const content =
+      "[check-confidential] people/acme-widgets.md: confidential term from the company records (Acme Widgets)";
+    const notes =
+      "[check-confidential] notes/acme-widgets.md: confidential term from the company records in the file's path (acme widgets)";
+    expect(scan([{ ...entry, path: "people/**" }])).toEqual([notes]);
+    expect(scan([{ ...entry, path: "file names" }])).toEqual([content]);
+    // The entry says it is for the file names: the term in the same file's text stays red.
+    expect(scan([{ ...entry, path: ["file names", "people/**"] }])).toEqual([notes, content]);
+    const gone = { ...entry, path: ["file names", "people/**", "gone/**"] };
+    expect(scan([gone])).toEqual([
+      notes,
+      content,
+      `[check-confidential] package.json: allow entry matches nothing (${JSON.stringify({ ...gone, path: "gone/**" })})`,
     ]);
-    expect(scan([{ ...entry, path: "file names" }])).toEqual([]);
   });
 
   test.if(process.platform === "darwin")(
