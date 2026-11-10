@@ -364,7 +364,8 @@ this rule as a pure function, for a reader such as the admin hub: `pages` are th
 drops. The preset calls it too.
 
 Every catalog page carries the `lead` as its `<meta name="description">`, or a state's own where
-its story sets `args.lead`, so a repository's head adds none. Every page, but for a build opened
+its story sets `args.lead`, so a repository's head adds none. A state's page and a state alone are
+titled "Component: State – Product catalog", the home "Product catalog". Every page, but for a build opened
 from disk, carries a `<link rel="canonical">`, so a repository's head adds none either: its own URL, and for a state
 alone the state's page under `/dashboard/`. It is absolute where Astro's `site` is set and
 root-relative otherwise, so a published catalog sets `site`. Where the repository resolves

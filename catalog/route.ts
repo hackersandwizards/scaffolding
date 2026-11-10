@@ -6,6 +6,22 @@ const lead = /^const \{[^}:]*\bargs\b[^}:]*\} = parseStoryNamedExport\([^\n]*\);
 const client = " client:load />";
 const sidebar = "hasSidebar={true}";
 
+const configImport = "import config from 'virtual:astrobook/global-config.mjs'\n";
+const titleTag = "<title>{config.title}</title>";
+
+/** Astrobook's layout (`source`), its one `<title>` for every page replaced by each page's own from
+ * `pageTitle` in `words` (the module's path). A layout that reads otherwise fails the build. */
+export function retitleLayout(source: string, words: string): string {
+  if (!source.includes(configImport) || !source.includes(titleTag))
+    throw new Error("catalog: Astrobook's layout has no <title>{config.title}</title> to retitle");
+  return source
+    .replace(
+      configImport,
+      `$&import storyModules from 'virtual:astrobook/story-modules.mjs'\nimport { pageTitle } from ${JSON.stringify(words)}\n`,
+    )
+    .replace(titleTag, "<title>{pageTitle(storyModules, Astro.props.story, config.title)}</title>");
+}
+
 /**
  * One route Astrobook wrote under dashboard/ or stories/ (`file`, relative to the codegen folder),
  * rewritten: its route's CSS imported after Astrobook's client import, before the story's; the

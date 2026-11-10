@@ -2673,6 +2673,13 @@ describe("catalog", () => {
       expect(page(p)).not.toMatch(robots);
     for (const p of ["", "dashboard/Parts/box-parts/two", "stories/Parts/box-parts/two"])
       expect(page(p)).toContain('<meta name="description" content="Lead.">');
+    // Each state's page and state alone has a title of its own, the home the catalog's.
+    expect(page("")).toContain("<title>Fx catalog</title>");
+    for (const p of ["dashboard/Parts/box-parts/one", "stories/Parts/box-parts/one"])
+      expect(page(p)).toContain("<title>Box parts: One – Fx catalog</title>");
+    expect(page("dashboard/Parts/many-parts/two-pd-fs")).toContain(
+      "<title>Many parts: Two PDFs – Fx catalog</title>",
+    );
     // A state whose args carry a lead describes itself by it.
     for (const p of ["dashboard/Parts/box-parts/one", "stories/Parts/box-parts/one"])
       expect(page(p)).toContain('<meta name="description" content="The first box.">');
@@ -3388,6 +3395,10 @@ describe("catalog", () => {
       made.push(join(fixture, "assets", "late.svg"));
       writeFileSync(join(fixture, "assets", "late.svg"), "<svg/>");
       expect((await fetch(`${server.url}/assets/late.svg`)).status).toBe(200);
+      // A state's page has its own title in dev too.
+      expect(
+        await (await fetch(`${server.url}/fx/dashboard/Parts/box-parts/one/`)).text(),
+      ).toContain("<title>Box parts: One – Fx catalog</title>");
       // `admin`: in dev the header links the repository's page in the local hub; the fixture's
       // repository is this checkout.
       expect(await (await fetch(`${server.url}/`)).text()).toMatch(

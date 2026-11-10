@@ -20,3 +20,17 @@ export function label(name: string, words = wordsOf(name)): string {
     .map((w, i) => (i && sentence && /^\p{Lu}?\p{Ll}+$/u.test(w) ? w.toLowerCase() : w))
     .join(" ");
 }
+
+/** A page's title: on a state's page and a state alone "<component>: <state> – <catalog>", so each
+ * reads apart in a search result or a tab; elsewhere the catalog's. */
+export function pageTitle(
+  modules: { name: string; stories: { id: string; name: string }[] }[],
+  story: string | undefined,
+  catalog: string,
+): string {
+  for (const m of modules) {
+    const state = m.stories.find((s) => s.id === story);
+    if (state) return `${label(m.name)}: ${label(state.name)} – ${catalog}`;
+  }
+  return catalog;
+}

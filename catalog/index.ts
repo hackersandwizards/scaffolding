@@ -19,7 +19,7 @@ import { basename, dirname, join, matchesGlob, posix, relative } from "node:path
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { brandFallbacks } from "./fallbacks.ts";
 import { catalogPath, storiesDir } from "./path.ts";
-import { CSS, rewriteRoute } from "./route.ts";
+import { CSS, retitleLayout, rewriteRoute } from "./route.ts";
 
 export { renderCatalog } from "./render.ts";
 export type { CatalogData, CatalogGroup, CatalogItem } from "./render.ts";
@@ -453,6 +453,12 @@ export function catalog(options: CatalogOptions): AstroIntegration {
                 name: "scaffolding-catalog-fallbacks",
                 enforce: "pre" as const,
                 // Every stylesheet beside this file is the shell's.
+                // Astrobook's layout as loaded, before Astro compiles it: each page gets its own
+                // title. The bare file only: its <style> blocks come as queries on the same path.
+                load: (id: string) =>
+                  id.endsWith("/@astrobook/ui/dist/components/layout.astro")
+                    ? retitleLayout(readFileSync(id, "utf8"), join(import.meta.dirname, "words.ts"))
+                    : undefined,
                 transform: (code: string, id: string) => {
                   const file = id.split("?")[0]!;
                   return dirname(file) === import.meta.dirname && file.endsWith(".css")
