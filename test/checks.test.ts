@@ -838,6 +838,33 @@ describe("scaffold and check-structure", () => {
     ]);
   });
 
+  test("the skeleton's MCP and SessionStart blocks: a differing one goes red, --fix writes it in", () => {
+    const other = fixture(
+      "entries",
+      {},
+      {
+        ".mcp.json":
+          '{ "mcpServers": { "own": { "command": "x" }, "chrome-devtools": { "command": "old" } } }\n',
+        ".claude/settings.json": '{ "model": "x" }\n',
+      },
+    );
+    expect(lines(run(other, "check-structure").out, "check-structure")).toEqual([
+      "[check-structure] .mcp.json: differs from the skeleton (check-structure --fix) (mcpServers.chrome-devtools)",
+      "[check-structure] .claude/settings.json: differs from the skeleton (check-structure --fix) (hooks.SessionStart)",
+    ]);
+    run(other, "check-structure", ["--fix"]);
+    expect(run(other, "check-structure").code).toBe(0);
+    const template = (path: string) =>
+      JSON.parse(readFileSync(join(import.meta.dir, "..", "template", path), "utf8"));
+    const mcp = JSON.parse(readFileSync(join(other, ".mcp.json"), "utf8"));
+    expect(mcp.mcpServers).toEqual({
+      own: { command: "x" },
+      "chrome-devtools": template(".mcp.json").mcpServers["chrome-devtools"],
+    });
+    const settings = JSON.parse(readFileSync(join(other, ".claude/settings.json"), "utf8"));
+    expect(settings).toEqual({ model: "x", ...template(".claude/settings.json") });
+  });
+
   test("the retired install guard goes red", () => {
     const guard = "scripts/repo/only-bun.cjs";
     const other = fixture("only-bun", {}, { [guard]: "\n" });
@@ -4931,6 +4958,43 @@ describe("chrome", () => {
       process.env = saved;
     }
   });
+});
+
+describe("chrome-mcp", () => {
+  test("starts the pinned chrome-devtools MCP server, which opens a page in Chrome for Testing", async () => {
+    const server = Bun.spawn([process.execPath, "--no-env-file", bin("chrome-mcp")], {
+      cwd: join(import.meta.dir, ".."),
+      stdin: "pipe",
+      stdout: "pipe",
+      stderr: "ignore",
+    });
+    let out = "";
+    void (async () => {
+      for await (const chunk of server.stdout) out += new TextDecoder().decode(chunk);
+    })();
+    const call = async (id: number, method: string, params: object) => {
+      server.stdin.write(`${JSON.stringify({ jsonrpc: "2.0", id, method, params })}\n`);
+      for (const end = Date.now() + 60_000; Date.now() < end; await Bun.sleep(100)) {
+        const line = out.split("\n").find((l) => l.includes(`"id":${id}`));
+        if (line) return JSON.parse(line).result;
+      }
+      throw new Error(`no answer to ${method}`);
+    };
+    try {
+      const init = await call(1, "initialize", {
+        protocolVersion: "2025-06-18",
+        capabilities: {},
+        clientInfo: { name: "test", version: "0" },
+      });
+      expect(init.serverInfo.version).toBe(ownPackage.dependencies["chrome-devtools-mcp"]);
+      server.stdin.write('{"jsonrpc":"2.0","method":"notifications/initialized"}\n');
+      const pages = await call(2, "tools/call", { name: "list_pages", arguments: {} });
+      expect(pages.content[0].text).toContain("about:blank");
+    } finally {
+      server.kill("SIGTERM");
+      await server.exited;
+    }
+  }, 120_000);
 });
 
 describe("serve", () => {

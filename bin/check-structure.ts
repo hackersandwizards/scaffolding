@@ -162,6 +162,43 @@ else {
       );
 }
 
+// A block every repository keeps alike inside a file that is otherwise its own: the skeleton's value
+// at each key path. --fix writes it in, formatted as the repository's prettier would.
+for (const [path, keys] of Object.entries<string[][]>(skeleton.entries)) {
+  if (!exists(path)) continue;
+  const template = JSON.parse(readFileSync(join(home, "template", path), "utf8"));
+  let file: Record<string, unknown>;
+  try {
+    file = JSON.parse(readFileSync(at(path), "utf8"));
+  } catch {
+    add(path, "not JSON");
+    continue;
+  }
+  const value = (o: unknown, key: string[]) =>
+    key.reduce<unknown>((v, k) => (v as Record<string, unknown> | undefined)?.[k], o);
+  const differ = keys.filter(
+    (key) => JSON.stringify(value(file, key)) !== JSON.stringify(value(template, key)),
+  );
+  if (!differ.length) continue;
+  for (const key of differ) {
+    let o = file as Record<string, unknown>;
+    for (const k of key.slice(0, -1)) o = (o[k] ??= {}) as Record<string, unknown>;
+    o[key.at(-1)!] = value(template, key);
+  }
+  const text = `${JSON.stringify(file, null, 2)}\n`;
+  const formatted = prettier
+    ? await prettier.format(text, {
+        ...(await prettier.resolveConfig(at(path))),
+        filepath: at(path),
+      })
+    : text;
+  add(
+    path,
+    "differs from the skeleton (check-structure --fix)",
+    differ.map((key) => key.join(".")).join(", "),
+    () => writeFileSync(at(path), formatted),
+  );
+}
 if (existsSync(at("package.json"))) {
   if (pkg.type !== skeleton.package.type)
     add("package.json", `type must be ${skeleton.package.type}`);

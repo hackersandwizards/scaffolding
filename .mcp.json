@@ -1,3 +1,8 @@
 {
-  "mcpServers": {}
+  "mcpServers": {
+    "chrome-devtools": {
+      "command": "bun",
+      "args": ["run", "--cwd", "${CLAUDE_PROJECT_DIR:-.}", "--silent", "chrome-mcp"]
+    }
+  }
 }

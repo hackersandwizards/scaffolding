@@ -10,6 +10,10 @@
     ".githooks/post-checkout"
   ],
   "owned": [".github/workflows/pages.yml"],
+  "entries": {
+    ".mcp.json": [["mcpServers", "chrome-devtools"]],
+    ".claude/settings.json": [["hooks", "SessionStart"]]
+  },
   "present": [
     "README.md",
     "LICENSE",

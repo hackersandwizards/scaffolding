@@ -3,5 +3,18 @@
     "type": "command",
     "command": "bash .claude/statusline-command.sh"
   },
-  "advisorModel": "claude-fable-5-2"
+  "advisorModel": "claude-fable-5-2",
+  "hooks": {
+    "SessionStart": [
+      {
+        "matcher": "startup",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "git fetch -q origin main && { [ \"$CLAUDE_CODE_REMOTE\" != true ] || git switch -q main; } && git merge --ff-only -q origin/main || echo \"main not switched to or origin/main not merged, fix it per git.md\"; bun install --frozen-lockfile || echo \"bun install --frozen-lockfile failed: run it again before your gate\""
+          }
+        ]
+      }
+    ]
+  }
 }
