@@ -3238,6 +3238,23 @@ exec "${process.execPath}" "$@"
     expect(sh(dir, ["worktree", "remove", tree]).status).toBe(0);
   });
 
+  test("a switch back from an unborn branch keeps an untracked post-commit and installs nothing", () => {
+    const dir = consumer();
+    sh(dir, ["add", "-A"]);
+    sh(dir, ["commit", "-qm", "hooks"]);
+    sh(dir, ["config", "core.hooksPath", ".githooks"]);
+    mkdirSync(join(dir, "node_modules"));
+    writeFileSync(join(dir, ".githooks/post-commit"), "#!/bin/sh\n");
+    const bun = fakeBun();
+    const branch = sh(dir, ["branch", "--show-current"]).stdout.toString().trim();
+    for (const args of [["--orphan", "unborn"], [branch]])
+      expect(spawnSync("git", ["switch", "-q", ...args], { cwd: dir, env: env(bun) }).status).toBe(
+        0,
+      );
+    expect(existsSync(join(dir, ".githooks/post-commit"))).toBe(true);
+    expect(existsSync(bun.log)).toBe(false);
+  });
+
   test("the MCP server starts after the install, with nothing but the server on stdout", () => {
     const dir = consumer();
     const bun = fakeBun();
@@ -3423,7 +3440,8 @@ describe("shared eslint config", () => {
     const unused = "const unusedThing = 1;\nexport {};\n";
     const dir = repo({
       "eslint.config.js": `import base from "${join(import.meta.dir, "..", "config", "eslint.js")}";\nexport default base;\n`,
-      ".gitmodules": '[submodule "vendor/sub"]\n\tpath = vendor/sub\n\turl = ../sub.git\n',
+      // A name may hold a space.
+      ".gitmodules": '[submodule "vendor sub"]\n\tpath = vendor/sub\n\turl = ../sub.git\n',
       "vendor/sub/a.ts": unused,
       "packages/web/dist/b.js": unused,
       "c.ts": unused,
@@ -5388,10 +5406,25 @@ describe("raise-pins", () => {
     expect(() => process.kill(pid, 0)).toThrow();
   });
 
+  test("a SCAFFOLDING_FETCH_WAIT_S that is no whole number above 0 is 20 s, and a long one is capped", async () => {
+    const remote = join(packages(["a"]), "a");
+    const saved = { ...process.env };
+    try {
+      for (const wait of ["-1", "1e10", "99999999999"]) {
+        process.env.SCAFFOLDING_FETCH_WAIT_S = wait;
+        expect(await newestTag(remote)).toBe("v1.10.0");
+      }
+    } finally {
+      process.env = saved;
+    }
+  });
+
   test("a scaffolding raise commits what check-structure --fix wrote, unless --fix rewrote an edit", () => {
     const base = packages(["scaffolding"]);
     const fix = { check: "true", "check-structure": "echo fixed > skeleton.txt" };
     const dir = consumer(base, fix, ["scaffolding"]);
+    // git status lists an untracked nested repository as a directory.
+    sh(dir, ["init", "-q", "nested"]);
     expect(run(dir, "raise-pins", ["--commit"], identity).code).toBe(0);
     expect(sh(dir, ["show", "--name-only", "--format=", "HEAD"]).stdout.toString()).toContain(
       "skeleton.txt",
@@ -6081,13 +6114,14 @@ describe("chrome", () => {
   test("on an empty cache, concurrent calls share one install, a found path is kept, a failed install runs again", async () => {
     const { chromeBinaryAsync } = await import("../lib/chrome.ts");
     const dir = temp();
-    const chrome = join(dir, "chrome");
+    const rel = join("chrome", "mac_arm-11.0.1", "chrome-x", "chrome");
+    const chrome = join(dir, "empty-cache", rel);
     const log = join(dir, "installs.log");
     const flag = join(dir, "install-fails");
-    // Stands in for @puppeteer/browsers: logs each run, fails while the flag file exists.
+    // Stands in for @puppeteer/browsers: logs each run, fails while the flag file exists, else
+    // unpacks into the folder after --path.
     write(dir, {
-      chrome: "",
-      "bin/bunx": `#!/bin/sh\necho run >> "${log}"\nsleep 0.3\n[ -e "${flag}" ] && exit 1\necho "${chrome}"\n`,
+      "bin/bunx": `#!/bin/sh\necho run >> "${log}"\nsleep 0.3\n[ -e "${flag}" ] && exit 1\nwhile [ "$1" != --path ]; do shift; done\nmkdir -p "$(dirname "$2/${rel}")"\n: > "$2/${rel}"\necho "$2/${rel}"\n`,
       "install-fails": "",
     });
     chmodSync(join(dir, "bin/bunx"), 0o755);
@@ -6204,6 +6238,12 @@ describe("chrome", () => {
       utimesSync(join(dir, "cache2/chrome/11.0.1-chrome-x.zip"), old, old);
       expect(chromeBinary()).toBe(join(dir, "cache2", rel));
       expect(existsSync(join(dir, "cache2/chrome/11.0.1-chrome-x.zip"))).toBe(false);
+      // An unpack that threw leaves the build's folder without its executable, and no archive.
+      process.env.PUPPETEER_CACHE_DIR = join(dir, "cache3");
+      write(join(dir, "cache3"), {
+        [join("chrome", `${platform}-11.0.1`, "chrome-x", "partial")]: "",
+      });
+      expect(chromeBinary()).toBe(join(dir, "cache3", rel));
     } finally {
       process.env = saved;
     }

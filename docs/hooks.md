@@ -2,7 +2,8 @@
 
 Checks run locally in the git hooks and in `bun run check`. The `post-merge` and `post-checkout`
 hooks run `.githooks/install` when `bun.lock` or `package.json` changed, and `post-checkout` in a
-new worktree too, saying so on stderr: `bun install --frozen-lockfile` under `check-lock` without
+new worktree too, which has no `node_modules` (a switch away from an unborn branch that finds
+`node_modules` installs nothing), saying so on stderr: `bun install --frozen-lockfile` under `check-lock` without
 waiting, silent when it installs. Behind a network that never answers, an install that must
 download waits with no end (a failing DNS lookup ends it within seconds), so `post-checkout`,
 `post-merge` and the MCP server's start run it with `CHECK_LOCK_RUN_S` at 60 unless set: past it

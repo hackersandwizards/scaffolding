@@ -4,7 +4,7 @@
 // dependency order, installing after each; then runs the gate once and reports per package. With
 // --commit, a green gate commits package.json, bun.lock and what check-structure --fix wrote.
 import { spawnSync } from "node:child_process";
-import { existsSync, readFileSync, writeFileSync } from "node:fs";
+import { existsSync, readFileSync, statSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { help } from "../lib/help.ts";
 import { git, newestTag, readPackage, repoRoot, underLock, withoutEnvFile } from "../lib/repo.ts";
@@ -25,7 +25,6 @@ await underLock(root, args);
 const say = (line: string) => console.log(`[raise-pins] ${line}`);
 const succeeds = (command: string[]) =>
   spawnSync(command[0]!, command.slice(1), { stdio: "inherit" }).status === 0;
-// Paths with a change against HEAD, untracked ones included.
 const changed = () =>
   new Set(
     git(["status", "--porcelain=v1", "-z", "--untracked-files=all", "--no-renames"], root)
@@ -34,6 +33,9 @@ const changed = () =>
       .filter(Boolean)
       .map((entry) => entry.slice(3)),
   );
+// A path git lists may be a directory: a submodule or an untracked nested repository.
+const read = (path: string) =>
+  statSync(path, { throwIfNoEntry: false })?.isFile() ? readFileSync(path, "utf8") : undefined;
 const MANIFESTS = ["package.json", "bun.lock"];
 if (!existsSync("bun.lock")) {
   say("no bun.lock: run bun install and commit it first");
@@ -116,7 +118,6 @@ for (const [at, { name, spec, url, from }] of ordered.entries()) {
   raised.push(`${name.slice("@hackersandwizards/".length)} ${to}`);
   // A raise of this package brings its skeleton files, which the commit takes with it.
   if (name !== "@hackersandwizards/scaffolding") continue;
-  const read = (path: string) => (existsSync(path) ? readFileSync(path, "utf8") : undefined);
   const before = new Map([...changed()].map((path) => [path, read(path)]));
   if (!succeeds(["bun", "run", "check-structure", "--fix"])) blocked = failed = true;
   for (const path of changed())

@@ -1,6 +1,7 @@
 #!/bin/sh
-# $3 = 1 is a branch checkout. It installs where bun.lock or package.json changed, and in a new
-# worktree (an all-zero old HEAD), which has no node_modules, so pre-commit would refuse every commit.
+# $3 = 1 is a branch checkout. It installs where bun.lock or package.json changed, and where an
+# all-zero old HEAD (a new worktree, or a switch away from an unborn branch) finds no node_modules,
+# without which pre-commit would refuse every commit.
 [ "$3" = 1 ] || exit 0
 case $1 in
 *[!0]*)
@@ -8,6 +9,7 @@ case $1 in
   [ $? -eq 1 ] || exit 0
   ;;
 *)
+  [ -e node_modules ] && exit 0
   # The post-commit Git LFS writes ahead of the tracked hooks (docs/hooks.md); ls-files lists no
   # ignored file, so an ignored one goes too.
   git ls-files --error-unmatch .githooks/post-commit >/dev/null 2>&1 || rm -f .githooks/post-commit

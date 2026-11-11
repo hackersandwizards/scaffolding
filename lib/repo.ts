@@ -11,7 +11,9 @@ export const companyRemote = (repo: string) =>
  * the key, and nothing in ssh or git ends that wait. git runs in a process group of its own, so the
  * timeout ends ssh with it. git's own error goes to stderr. */
 export async function newestTag(remote: string): Promise<string | undefined> {
-  const wait = Number(process.env.SCAFFOLDING_FETCH_WAIT_S) || 20;
+  // A bound that is no whole number of seconds above 0 is the default, as in session-start.
+  const set = process.env.SCAFFOLDING_FETCH_WAIT_S ?? "";
+  const wait = /^\d*[1-9]\d*$/.test(set) ? Number(set) : 20;
   const git = spawn("git", ["ls-remote", "--tags", "--refs", remote], {
     detached: true,
     stdio: ["ignore", "pipe", "inherit"],
@@ -19,12 +21,15 @@ export async function newestTag(remote: string): Promise<string | undefined> {
   });
   let out = "";
   git.stdout.on("data", (chunk) => (out += chunk));
-  const timer = setTimeout(() => {
-    console.error(`git ls-remote ${remote}: no answer within ${wait} s`);
-    try {
-      process.kill(-git.pid!, "SIGTERM");
-    } catch {} // the group is already gone
-  }, wait * 1000);
+  const timer = setTimeout(
+    () => {
+      console.error(`git ls-remote ${remote}: no answer within ${wait} s`);
+      try {
+        process.kill(-git.pid!, "SIGTERM");
+      } catch {} // the group is already gone
+    },
+    Math.min(wait * 1000, 2 ** 31 - 1),
+  );
   const code = await new Promise<number | null>((done) => {
     git.on("error", () => done(null));
     git.on("close", done);

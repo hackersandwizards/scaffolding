@@ -73,7 +73,8 @@ keeps one size whatever `data-hw-scale` the story sets: `chrome.css` writes
 `brand-value(--text-ui)` and `brand-value(--text-ui--line-height)`, which the build replaces with
 brand's unscaled values. A repository without brand supplies the type steps the shell reads in its
 `css`: `--text-page`, `--text-heading`, `--text-subheading`, `--text-ui`, `--text-micro` and the
-line heights of the first four (`--text-page--line-height` and so on), and `--spacing-app-header`,
+line heights of the first four (`--text-page--line-height` and so on), `--container-measure`, the
+running text's width, and `--spacing-app-header`,
 its header's height, under which the rail sticks and the groups scroll to; there the bar reads its
 `--text-ui` and line height as `var()`s. A program that reads the shell's CSS files itself rather
 than through the build, such as a page that inlines `catalog/catalog.css`, passes each file's text
@@ -166,7 +167,7 @@ The options beyond those above:
   headings start at `h3`, under that group's `h2`: an `h3` of the slot or of a wrapper element in
   it takes the `h2`'s face at `--text-subheading` and its line height, 2.5rem above and 0.5rem
   below, and the slot's first element sits 1rem under the `h2`, unless a class of the repository's
-  sets its own. Its running text takes the lead's measure (48rem) and leading (1.5), unless a class
+  sets its own. Its running text takes brand's measure (`--container-measure`) and leading (1.5), unless a class
   of the repository's sets its own: a paragraph of the slot, of a wrapper element in it, or of a
   `details` or `section` in that wrapper. A paragraph deeper down, in the slot's own grid or tile,
   keeps its width.

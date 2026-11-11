@@ -23,7 +23,7 @@ checkout fetches on its own.
 - A Git LFS file is read from the working tree where it matches its pointer, else from the local
   LFS store; where neither holds it, the scan prints `Git LFS pointer, not read` and goes on.
 - With `CI=true` the `--index` and `--tree` audits skip the term and binary reading, so a deploy
-  needs no access. A commit, its message and a push are scanned wherever they are made.
+  needs no access; a binary file under `docs/agent-work/` is refused there unread. A commit, its message and a push are scanned wherever they are made.
 - `check-confidential fetch` fetches now, for a cloud setup script. `--list <file>` or
   `SCAFFOLDING_CONFIDENTIAL_TERMS` reads a list from a file instead.
 - `--list-optional`, with `--staged` or `--message-file`, lets a public repository's own hooks scan
@@ -36,7 +36,7 @@ checkout fetches on its own.
   into a list stamped with its build time. It leaves out every term the public text in `<file>`
   already carries, and refuses to build without `/usr/share/dict/words`. A term of more than six
   words counts by its first six. A three-letter term, or one word in capitals, matches only in that
-  case and in a path or slug in lower case; two one-character words (`K 2`) match only in capitals.
+  case, and one in capitals also in a path or slug in lower case; two one-character words (`K 2`) match only in capitals.
 - `--never <file>` adds the never section from one name per line, under the same salt and build
   time: the names h&w never shows. Public text drops none of them. A name in capitals, of three
   letters or in the dictionary also gets a hash in lower case, which only `never` reads. The build

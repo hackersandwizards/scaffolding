@@ -8,13 +8,14 @@ export function submodulePaths(root = process.cwd()) {
   if (!existsSync(join(root, ".gitmodules"))) return [];
   const listed = spawnSync(
     "git",
-    ["config", "--file", ".gitmodules", "--get-regexp", "^submodule\\..*\\.path$"],
+    ["config", "-z", "--file", ".gitmodules", "--get-regexp", "^submodule\\..*\\.path$"],
     { cwd: root, encoding: "utf8" },
   );
+  // A submodule's name may hold a space, so -z, where git ends the key with a line break.
   return listed.status === 0
     ? listed.stdout
-        .split("\n")
+        .split("\0")
         .filter(Boolean)
-        .map((line) => line.slice(line.indexOf(" ") + 1))
+        .map((entry) => entry.slice(entry.indexOf("\n") + 1))
     : [];
 }

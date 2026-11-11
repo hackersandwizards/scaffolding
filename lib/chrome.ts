@@ -139,11 +139,15 @@ function place(staged: string | undefined, output: string): string | undefined {
   try {
     const installed = output.trim();
     const rel = relative(staged, installed);
-    if (!installed || rel.startsWith("..")) return installed || undefined;
+    if (!installed || rel.startsWith("..")) return undefined;
     const [kind, build] = rel.split(sep);
     const folder = join(cache(), kind);
     mkdirSync(folder, { recursive: true });
-    const died = existsSync(join(folder, build)) && stateOf(folder, build) === "died";
+    // A build folder with no archive and no executable is an unpack that threw: @puppeteer/browsers
+    // deletes the archive either way.
+    const state = existsSync(join(folder, build)) ? stateOf(folder, build) : undefined;
+    const path = join(cache(), rel);
+    const died = state === "died" || (state === "whole" && !existsSync(path));
     for (const name of archivesOf(build, readdirSync(folder)))
       if (writtenAgo(join(folder, name)) >= UNPACK_WAIT_MS)
         rmSync(join(folder, name), { force: true });
@@ -157,7 +161,6 @@ function place(staged: string | undefined, output: string): string | undefined {
     } catch {
       /* another install moved the same build in first */
     }
-    const path = join(cache(), rel);
     return existsSync(path) && stateOf(folder, build) === "whole" ? path : undefined;
   } catch {
     return undefined;

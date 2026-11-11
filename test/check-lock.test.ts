@@ -40,22 +40,14 @@ interface Run {
 }
 
 const run = (lock: string, args: string[], env: Record<string, string> = {}): Run => {
-  try {
-    return {
-      status: 0,
-      stdout: execFileSync("bun", [SCRIPT, ...args], {
-        encoding: "utf-8",
-        stdio: ["ignore", "pipe", "pipe"],
-        env: { ...process.env, CHECK_LOCK: lock, ...env },
-        // A wait that never ends would otherwise hang the test past the runner's own timeout.
-        timeout: 20_000,
-      }),
-      stderr: "",
-    };
-  } catch (error) {
-    const failure = error as { status: number; stdout: string; stderr: string };
-    return { status: failure.status, stdout: failure.stdout, stderr: failure.stderr };
-  }
+  const { status, stdout, stderr } = spawnSync("bun", [SCRIPT, ...args], {
+    encoding: "utf-8",
+    stdio: ["ignore", "pipe", "pipe"],
+    env: { ...process.env, CHECK_LOCK: lock, ...env },
+    // A wait that never ends would otherwise hang the test past the runner's own timeout.
+    timeout: 20_000,
+  });
+  return { status: status ?? -1, stdout, stderr };
 };
 
 const heldBy = (lock: string, pid: number): void =>

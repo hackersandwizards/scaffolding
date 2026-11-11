@@ -4,8 +4,8 @@
 catalog build once a typecheck that runs Astro has finished:
 format, lint, styles (stylelint), typecheck, structure, coupling, unique names, spaces, confidential,
 history, licenses, the tests, the catalog build (`bun run build`) and admin (the item files, with the pinned
-`@hackersandwizards/admin`'s `admin-check`; a repository without admin pinned needs `skip.admin`). Then the repository's own steps from
-`scaffolding.check`, in order, an inner array side by side. Format, lint and styles walk past every
+`@hackersandwizards/admin`'s `admin-check`; a repository without admin pinned needs `skip.admin`). Once those pass, the repository's own steps from
+`scaffolding.check`, in order, an inner array side by side; a red one stops those after it. Format, lint and styles walk past every
 submodule `.gitmodules` names, which its own repository checks. A shared step drops only with a reason, a
 non-blank string in `skip`:
 
@@ -67,7 +67,7 @@ reads every file again once one config returns to `"jsx"`.
 in a shipped file says how to use the code and why, and the history behind it goes to the commit
 message. The step reads the comments of every text file `bun pm pack` lists, without their marks
 and with consecutive comment lines joined, so an id or a score wrapped across a line break counts.
-It flags review scores and panels, a comparison of two scores (`7.94 against 7.29`, `8.4 vs 7.9`;
+It flags review scores and panels (the words reviewer, persona and scored too), a comparison of two scores (`7.94 against 7.29`, `8.4 vs 7.9`;
 a three-part version or a number after a capitalised name such as `Python 3.11` is none), dates (a one-digit month counts only before a year, a closing bracket or a comma, so `only 4.7.` closing a sentence is none), decision ids, item ids (the generic `AB-1` form and the repository's own
 `docs/agent-work/items/` names), paths to review notes and the founders' names. It first checks each
 pattern against a line that shipped once, so a pattern that stops matching turns the step red. A
@@ -99,7 +99,7 @@ path, joined or as path segments: code takes a file through
 `import.meta.resolve("@hackersandwizards/brand/logos/mark.svg")`, which the package's `exports`
 answer (its folder through its `./package.json`), and a command from `node_modules/.bin`; a catalog
 page or its data names a file the preset's `copy` serves by its package path. Comments, a
-Python docstring, `package.json`'s `scaffolding` field, a path after a Tailwind `@source` and the
+Python docstring, `package.json`'s `scaffolding.allow` entries, a path after a Tailwind `@source` and the
 repository's own package are not checked; a `.css` path counts like any other. A script whose job is to read what is installed, or a test
 whose strings are data, keeps its path with an exception (below) narrowed by `text`.
 
