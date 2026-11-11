@@ -2,7 +2,7 @@
 
 Public package `@hackersandwizards/scaffolding`: the repository skeleton (`template/`,
 `skeleton.json`, and `template-catalog/`, which `scaffold` adds unless told the catalog lives
-elsewhere), the gate commands in `bin/`, the shared configs in `config/` and the catalog
+elsewhere), the gate commands in `bin/` (check-lock in `template/.githooks/`, as a skeleton file), the shared configs in `config/` and the catalog
 shell with its preset in `catalog/`. Repositories install it by Git tag and run the
 commands through `bun run`. README.md says what each command checks.
 
