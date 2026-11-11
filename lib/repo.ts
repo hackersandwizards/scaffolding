@@ -106,21 +106,7 @@ const styleGlob = new Bun.Glob(styleFiles);
 // The gate's glob skips dot folders, dot files and node_modules; a staged path is named explicitly.
 export const styled = (path: string) =>
   styleGlob.match(path) && !/(^|\/)(\.|node_modules\/)/.test(path);
-/** The repository's submodule paths, from .gitmodules. The gate's tools walk the tree into them, while
- * each submodule's own repository checks its files. */
-export function submodulePaths(root: string): string[] {
-  const listed = spawnSync(
-    "git",
-    ["config", "--file", ".gitmodules", "--get-regexp", "^submodule\\..*\\.path$"],
-    { cwd: root, encoding: "utf8" },
-  );
-  return listed.status === 0
-    ? listed.stdout
-        .split("\n")
-        .filter(Boolean)
-        .map((line) => line.slice(line.indexOf(" ") + 1))
-    : [];
-}
+export { submodulePaths } from "../config/submodules.js";
 
 export const stylelintFlags = (root: string) => [
   ...(existsSync(join(root, "stylelint.config.js")) ? ["--config", "stylelint.config.js"] : []),

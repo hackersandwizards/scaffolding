@@ -1,5 +1,5 @@
 {
   "extends": "./config/tsconfig.bun.json",
-  "compilerOptions": { "allowImportingTsExtensions": true },
+  "compilerOptions": { "allowImportingTsExtensions": true, "allowJs": true },
   "include": ["bin/**/*.ts", "lib/**/*.ts", "catalog/**/*.ts", "test/**/*.ts", "template/**/*.ts"]
 }

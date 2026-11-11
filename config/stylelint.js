@@ -2,6 +2,7 @@ import { createRequire } from "node:module";
 import { isAbsolute, join } from "node:path";
 import postcssHtml from "postcss-html";
 import unknownProperties from "stylelint-value-no-unknown-custom-properties";
+import { submodulePaths } from "./submodules.js";
 
 // A self-closing <style set:html={…} /> holds no CSS of its own and is blanked first, its line
 // breaks kept: postcss-html would read the rest of the file as CSS. An attribute may hold ">".
@@ -25,6 +26,7 @@ export default function styles({ importFrom = [] } = {}) {
         : resolve(file);
   return {
     plugins: [unknownProperties],
+    ignoreFiles: submodulePaths(root).map((path) => `${path}/**`),
     overrides: [{ files: ["**/*.astro"], customSyntax: astro }],
     rules: {
       "csstools/value-no-unknown-custom-properties": [

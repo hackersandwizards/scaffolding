@@ -3,6 +3,7 @@ import js from "@eslint/js";
 import prettier from "eslint-config-prettier/flat";
 import globals from "globals";
 import tseslint from "typescript-eslint";
+import { submodulePaths } from "./submodules.js";
 
 // The files check-coupling and check-unique-names count as tests.
 const code = "{js,jsx,ts,tsx,mjs,cjs,mts,cts}";
@@ -14,10 +15,11 @@ export default [
     ignores: [
       "node_modules/**",
       "coverage/**",
-      "dist/**",
+      "**/dist/**",
       "**/.astro/**",
       ".claude/**",
       ".githooks/**",
+      ...submodulePaths().map((path) => `${path}/**`),
     ],
   },
   js.configs.recommended,

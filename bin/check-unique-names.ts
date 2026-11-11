@@ -26,7 +26,8 @@ function scriptSource(file: string): string {
 const sites = new Map<string, string[]>();
 const root = repoRoot();
 const pkg = readPackage(root);
-const frameworkNames = new Set([pkg.scaffolding?.uniqueNames ?? []].flat());
+// Astro requires getStaticPaths by name in every dynamic page.
+const frameworkNames = new Set(["getStaticPaths", pkg.scaffolding?.uniqueNames ?? []].flat());
 const files = listFiles(root, false).filter(
   // .githooks/ holds the skeleton's copies, which the shared eslint config skips too.
   (file) =>

@@ -2703,7 +2703,7 @@ describe("scaffolding check", () => {
 
   test("a package path holding a space runs every bin step", () => {
     const home = join(temp(), "with space");
-    for (const folder of ["bin", "lib", "template/.githooks"])
+    for (const folder of ["bin", "lib", "config", "template/.githooks"])
       cpSync(join(import.meta.dir, "..", folder), join(home, folder), { recursive: true });
     const dir = gate({ skip });
     const r = spawnSync(
@@ -3311,6 +3311,22 @@ describe("shared eslint config", () => {
       expect(r.stdout).toContain(file);
     expect(r.stdout).not.toContain("b.test.ts");
     expect(r.stdout).not.toContain("h.mjs");
+  });
+
+  test("a submodule's files and a dist folder at any depth are not linted", () => {
+    const unused = "const unusedThing = 1;\nexport {};\n";
+    const dir = repo({
+      "eslint.config.js": `import base from "${join(import.meta.dir, "..", "config", "eslint.js")}";\nexport default base;\n`,
+      ".gitmodules": '[submodule "vendor/sub"]\n\tpath = vendor/sub\n\turl = ../sub.git\n',
+      "vendor/sub/a.ts": unused,
+      "packages/web/dist/b.js": unused,
+      "c.ts": unused,
+    });
+    const eslint = join(import.meta.dir, "..", "node_modules", ".bin", "eslint");
+    const r = spawnSync(eslint, ["."], { cwd: dir, encoding: "utf8" });
+    expect(r.stdout).toContain("c.ts");
+    expect(r.stdout).not.toContain("vendor/sub");
+    expect(r.stdout).not.toContain("dist/b.js");
   });
 
   test("expect().rejects and .resolves go red in a test; rejection() gives the error's text", async () => {
@@ -4811,6 +4827,26 @@ describe("shared stylelint config", () => {
     const gone = spawnSync(stylelint, ["src/ok.css"], { cwd: dir, encoding: "utf8" });
     expect(gone.status).not.toBe(0);
   });
+
+  test("a submodule's files are not linted", () => {
+    const config = join(import.meta.dir, "..", "config", "stylelint.js");
+    const dir = repo({
+      "package.json": JSON.stringify({ name: "fx", type: "module" }),
+      "node_modules/@hackersandwizards/brand/package.json": JSON.stringify({
+        exports: { "./tokens.root.css": "./tokens.root.css" },
+      }),
+      "node_modules/@hackersandwizards/brand/tokens.root.css": ":root { --color-ink: #000; }\n",
+      "stylelint.config.js": `import styles from "${config}";\nexport default styles();\n`,
+      ".gitmodules": '[submodule "sub"]\n\tpath = sub\n\turl = ../sub.git\n',
+      "sub/a.css": "a { color: var(--color-nope); }\n",
+      "b.css": "a { color: var(--color-nope); }\n",
+    });
+    const stylelint = join(import.meta.dir, "..", "node_modules", ".bin", "stylelint");
+    const r = spawnSync(stylelint, ["**/*.css"], { cwd: dir, encoding: "utf8" });
+    const out = `${r.stdout}${r.stderr}`;
+    expect(out).toContain("b.css");
+    expect(out).not.toContain("sub/a.css");
+  });
 });
 
 describe("check-staged", () => {
@@ -5080,6 +5116,16 @@ describe("check-unique-names", () => {
     expect(stale.out).toContain("allow entry matches nothing");
   });
 
+  test("Astro's getStaticPaths may repeat without a uniqueNames entry", () => {
+    const page = "---\nexport function getStaticPaths() { return []; }\n---\n<p>a</p>\n";
+    const dir = repo({
+      "src/pages/[a].astro": page,
+      "src/pages/b/[b].astro": page,
+      "package.json": "{}",
+    });
+    expect(run(dir, "check-unique-names").code).toBe(0);
+  });
+
   test("a file with a non-ASCII name is read", () => {
     const dir = repo({
       "src/a.ts": code["src/a.ts"],
@@ -5111,7 +5157,12 @@ describe("check-unique-names", () => {
     const dir = repo({ ...code, "package.json": "{}" });
     const own = join(import.meta.dir, "..");
     const pkg = join(dir, "node_modules/@hackersandwizards/scaffolding");
-    for (const path of ["package.json", "bin/check-unique-names.ts", "lib/repo.ts"])
+    for (const path of [
+      "package.json",
+      "bin/check-unique-names.ts",
+      "lib/repo.ts",
+      "config/submodules.js",
+    ])
       write(pkg, { [path]: readFileSync(join(own, path), "utf8") });
     symlinkSync(join(own, "node_modules", consumerTs), join(dir, "node_modules/typescript"));
     symlinkSync(join(own, "node_modules/@typescript"), join(dir, "node_modules/@typescript"));
