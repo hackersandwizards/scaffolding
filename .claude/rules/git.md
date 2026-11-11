@@ -76,8 +76,9 @@ Other sessions share this working tree and its index.
   delegate's `isolation: worktree`, is allowed where it pays off, which `parallel-session` weighs.
   It starts from `origin/main`, so this tree's uncommitted and unpushed work is absent there. The
   hooks need its dependencies before its first commit: where its `.githooks/post-checkout` installs
-  them, as scaffolding's skeleton does, run `bun install --frozen-lockfile` only after an
-  `[install]` line on stderr; elsewhere run it yourself. Its
+  them, as scaffolding's skeleton does, run `bun install --frozen-lockfile` only where the hook
+  printed an `[install]` line on stderr, and always in a worktree the harness made, whose hook
+  output you never see; elsewhere run it yourself. Its
   commits reach `main` within the same delegate run (`git fetch`, `git rebase origin/main`,
   `git push origin HEAD:main`). Where Git LFS files show as modified with no change and stop
   that rebase, `git checkout -- <path>` inside the worktree clears them. Outside a contributor's

@@ -1,4 +1,4 @@
 interface:
   display_name: "Dependency updates"
-  short_description: "Raise every dependency, majors included, with the repo's tooling"
+  short_description: "Raise every dependency, majors included, or only our own pins"
   default_prompt: "Use $dependency-updates to update this repository's dependencies."

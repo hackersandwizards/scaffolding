@@ -1,7 +1,7 @@
 ---
 name: delegation
 description: >-
-  Launch, wait on, prod, stop and check a delegate (an Agent-tool subagent or a `claude -p` run),
+  Launch, prod, stop and check a delegate (an Agent-tool subagent or a `claude -p` run),
   which model tier and effort to run Codex at, how Codex hands authored copy to Claude, and what
   Claude starts Codex for: before starting any delegate, when running or configuring Codex, or when
   either side needs copy written.
@@ -19,7 +19,7 @@ description: >-
 - A nested `claude -p` names `--model` and `--effort` (the brief's, else your own at `high`), or the
   repository's settings choose and results stop being comparable. Under `claude -p`, run
   `/simplify`, `/code-review` and `/security-review` as nested `claude -p ... "<skill> <scope>;
-  report findings only" > <scratch>/<skill>.txt`: through the Skill tool a review skill ends the run.
+  report findings only" > <scratch>/<run>-<name>.txt`: through the Skill tool a review skill ends the run.
 - A delegate's Skill tool runs in the session's start folder: a review of another repository runs
   `claude -p` inside that repository.
 - Prefix every scratch file with its run: delegates share the scratchpad, and a resume guard adopts

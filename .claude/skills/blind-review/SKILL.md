@@ -52,8 +52,9 @@ none, because receipt".
    legibility, typography or logo detail at full size or as a full-resolution crop of that detail.
    An image costs `⌈width / 28⌉ × ⌈height / 28⌉` tokens, up to 4,784 at a 2,576 px long edge.
    Check: every image is at its real display size in context, at 1000 px or at full resolution,
-   and before any reviewer starts, no two images of the same view, the current state's included,
-   are pixel-identical at full resolution: on a match, stop and fix the build or the shot.
+   and before any reviewer starts, no candidate's image of a view that candidate changes is
+   pixel-identical at full resolution to the current state's or another candidate's: on a match,
+   stop and fix the build or the shot.
    Score a design that depends on a platform's settings (a device background, a lock screen) in
    the platform's default state, each default taken from the vendor's documentation. Check: the
    report names the default state and its source.
