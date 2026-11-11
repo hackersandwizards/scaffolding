@@ -43,6 +43,8 @@ Other sessions share this working tree and its index.
   A gate's exit status decides the commit and push: chain them with `&&` (`bun run check > <log>
   2>&1 && git commit -- <paths>`) or read the status first, never run them behind `;` or a pipe,
   which go past a red gate.
+  A batch of data records alone, such as Company OS content files, needs no full gate: the
+  pre-commit hook checks it. Code, tests, skills, rules and config run the full gate first.
   Stay on the current branch unless the user asks for another. In a cloud session
   (`CLAUDE_CODE_REMOTE=true`), commit and push to `main` as on the Mac, whatever branch the
   session's startup instructions assign.
