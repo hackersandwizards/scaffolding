@@ -5737,6 +5737,14 @@ describe("chrome", () => {
     try {
       expect(cachedChrome()).toBe(newest);
       expect(cachedChrome({ shell: true })).toBe(shell);
+      // An install under way, or one that died, keeps its archive beside the build's folder, which
+      // already holds the executable while the rest is still being unpacked.
+      const unpacking = plant("chrome", `${platform}-11.0.1`, exe);
+      write(cache, { "chrome/11.0.1-chrome-x.zip": "" });
+      expect(cachedChrome()).toBe(newest);
+      rmSync(join(cache, "chrome/11.0.1-chrome-x.zip"));
+      expect(cachedChrome()).toBe(unpacking);
+      rmSync(join(cache, "chrome", `${platform}-11.0.1`), { recursive: true });
       // A consumer's puppeteer-core decides the build, the shell's absent pin finds nothing.
       const consumer = temp();
       write(consumer, {
@@ -5791,6 +5799,104 @@ describe("chrome", () => {
       process.env = saved;
     }
   });
+
+  // An install over the unpack took the half-unpacked folder and deleted the archive marking it.
+  test("waits for another job's unpack of the build instead of installing over it", async () => {
+    const { chromeBinary, chromeBinaryAsync } = await import("../lib/chrome.ts");
+    const dir = temp();
+    const cache = join(dir, "cache");
+    const platform =
+      process.platform === "darwin" ? (process.arch === "arm64" ? "mac_arm" : "mac") : "linux";
+    const exe =
+      process.platform === "darwin"
+        ? "Google Chrome for Testing.app/Contents/MacOS/Google Chrome for Testing"
+        : "chrome";
+    let chrome = join(cache, "chrome", `${platform}-11.0.1`, "chrome-x", exe);
+    let archive = join(cache, "chrome", "11.0.1-chrome-x.zip");
+    const log = join(dir, "installs.log");
+    write("/", { [chrome]: "", [archive]: "" });
+    write(dir, {
+      "bin/bunx": `#!/bin/sh\necho run >> "${log}"\necho "${chrome}"\n`,
+      "node_modules/puppeteer-core/package.json": JSON.stringify({
+        name: "puppeteer-core",
+        type: "module",
+        exports: { "./internal/*": "./lib/puppeteer/*" },
+      }),
+      "node_modules/puppeteer-core/lib/puppeteer/revisions.js":
+        "export const PUPPETEER_REVISIONS = { chrome: '11.0.1' };\n",
+    });
+    chmodSync(join(dir, "bin/bunx"), 0o755);
+    const saved = { ...process.env };
+    const cwd = process.cwd();
+    process.env.PATH = `${join(dir, "bin")}:${process.env.PATH}`;
+    process.env.PUPPETEER_CACHE_DIR = cache;
+    delete process.env.CHROME_BINARY;
+    process.chdir(dir);
+    try {
+      setTimeout(() => rmSync(archive), 1_500);
+      expect(await chromeBinaryAsync()).toBe(chrome);
+      expect(existsSync(archive)).toBe(false);
+      expect(existsSync(log)).toBe(false);
+      // The blocking form, in a cache of its own, from a second process that ends the unpack.
+      process.env.PUPPETEER_CACHE_DIR = join(dir, "cache2");
+      chrome = join(dir, "cache2", "chrome", `${platform}-11.0.1`, "chrome-x", exe);
+      archive = join(dir, "cache2", "chrome", "11.0.1-chrome-x.zip");
+      write("/", { [chrome]: "", [archive]: "" });
+      Bun.spawn(["sh", "-c", `sleep 1.5; rm "${archive}"`]);
+      expect(chromeBinary()).toBe(chrome);
+      expect(existsSync(archive)).toBe(false);
+      expect(existsSync(log)).toBe(false);
+    } finally {
+      process.chdir(cwd);
+      process.env = saved;
+    }
+  }, 30_000);
+
+  // An install that died left its archive beside a half-unpacked build, which a gate took for 15
+  // minutes, and an install in the cache's own folder returned that build as it stood.
+  test("installs into a folder of its own and replaces a build whose install died", async () => {
+    const { cachedChrome, chromeBinary } = await import("../lib/chrome.ts");
+    const dir = temp();
+    const cache = join(dir, "cache");
+    const platform =
+      process.platform === "darwin" ? (process.arch === "arm64" ? "mac_arm" : "mac") : "linux";
+    const exe =
+      process.platform === "darwin"
+        ? "Google Chrome for Testing.app/Contents/MacOS/Google Chrome for Testing"
+        : "chrome";
+    const rel = join("chrome", `${platform}-11.0.1`, "chrome-x", exe);
+    const archive = join(cache, "chrome", "11.0.1-chrome-x.zip");
+    write(cache, { [rel]: "half", "chrome/11.0.1-chrome-x.zip": "" });
+    const old = new Date(Date.now() - 600_000);
+    utimesSync(archive, old, old);
+    // Stands in for @puppeteer/browsers: unpacks into the folder after --path.
+    write(dir, {
+      "bin/bunx": `#!/bin/sh\nwhile [ "$1" != --path ]; do shift; done\nmkdir -p "$(dirname "$2/${rel}")"\nprintf whole > "$2/${rel}"\necho "$2/${rel}"\n`,
+    });
+    chmodSync(join(dir, "bin/bunx"), 0o755);
+    const saved = { ...process.env };
+    process.env.PATH = `${join(dir, "bin")}:${process.env.PATH}`;
+    process.env.PUPPETEER_CACHE_DIR = cache;
+    delete process.env.CHROME_BINARY;
+    try {
+      expect(cachedChrome({ anyBuild: true })).toBeUndefined();
+      const started = Date.now();
+      expect(chromeBinary()).toBe(join(cache, rel));
+      expect(Date.now() - started).toBeLessThan(5_000);
+      expect(readFileSync(join(cache, rel), "utf-8")).toBe("whole");
+      expect(existsSync(archive)).toBe(false);
+      expect(readdirSync(cache).filter((name) => name.startsWith(".install-"))).toEqual([]);
+      expect(cachedChrome({ anyBuild: true })).toBe(join(cache, rel));
+      // A download killed before its unpack leaves the archive alone, which read as a build that died.
+      process.env.PUPPETEER_CACHE_DIR = join(dir, "cache2");
+      write(join(dir, "cache2"), { "chrome/11.0.1-chrome-x.zip": "" });
+      utimesSync(join(dir, "cache2/chrome/11.0.1-chrome-x.zip"), old, old);
+      expect(chromeBinary()).toBe(join(dir, "cache2", rel));
+      expect(existsSync(join(dir, "cache2/chrome/11.0.1-chrome-x.zip"))).toBe(false);
+    } finally {
+      process.env = saved;
+    }
+  }, 30_000);
 });
 
 describe("chrome-mcp", () => {
