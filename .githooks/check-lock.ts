@@ -202,25 +202,26 @@ async function queueForLock(): Promise<boolean> {
   let spokeAt = 0;
   // By pid and start, which a holder rewriting its own lock keeps; by inode where the lock is no
   // plain file or unreadable, since a read of a lock path a test made a FIFO would take the contents
-  // meant for the staleness check.
-  const holderId = () => {
+  // meant for the staleness check. One read per poll serves the wait too: a second read let a
+  // holder of this command release in between and read as another command.
+  const look = () => {
     try {
       const stat = statSync(LOCK);
-      const holder = stat.isFile() ? readHolder() : undefined;
-      return holder ? `${holder.pid} ${holder.startedAt}` : `inode ${stat.ino}`;
+      const read = stat.isFile() ? readHolder() : undefined;
+      return { id: read ? `${read.pid} ${read.startedAt}` : `inode ${stat.ino}`, read };
     } catch {
-      return undefined;
+      return { id: undefined, read: undefined };
     }
   };
-  let holder = holderId();
+  let holder = look().id;
   for (;;) {
     if (first()) {
       if (acquire()) return true;
       dropIfStale();
       if (acquire()) return true;
     }
-    const now = holderId();
-    if (now !== holder) [holder, started, spokeAt] = [now, Date.now(), 0];
+    const now = look();
+    if (now.id !== holder) [holder, started, spokeAt] = [now.id, Date.now(), 0];
 
     const waited = Date.now() - started;
     // At least: a first poll in the millisecond the wait began measures 0, and a wait of 0 slept.
@@ -229,9 +230,8 @@ async function queueForLock(): Promise<boolean> {
     // this one little to do. So is a free lock, no file at its path, which only a waiter ahead in
     // the queue leaves free (live, or not yet 6 s unrenewed): four installs at once gave up when it
     // was free at two polls in a row. A path that is there but holds no readable holder is given up on.
-    const givesUp = () =>
-      holder !== undefined && readHolder()?.command?.join("\0") !== command.join("\0");
-    if (waited >= Math.max(WAIT_MS, FULL_WAIT_MS) || (waited >= WAIT_MS && givesUp())) {
+    const givesUp = now.id !== undefined && now.read?.command?.join("\0") !== command.join("\0");
+    if (waited >= Math.max(WAIT_MS, FULL_WAIT_MS) || (waited >= WAIT_MS && givesUp)) {
       console.error(
         `[check-lock] ${holderName()} still holds ${LOCK} after ${Math.round(waited / 1000)}s; not running "${command.join(" ")}" beside it. Retry once it finishes.`,
       );
