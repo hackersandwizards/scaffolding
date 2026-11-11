@@ -6,7 +6,7 @@ new worktree too, which has no `node_modules` (a switch away from an unborn bran
 `node_modules` installs nothing), saying so on stderr: `bun install --frozen-lockfile` under `check-lock` without
 waiting, silent when it installs. Behind a network that never answers, an install that must
 download waits with no end (a failing DNS lookup ends it within seconds), so `post-checkout`,
-`post-merge` and the MCP server's start run it with `CHECK_LOCK_RUN_S` at 60 unless set: past it
+`post-merge`, the SessionStart hook and the MCP server's start run it with `CHECK_LOCK_RUN_S` at 60 unless set: past it
 `check-lock` stops the install and frees the lock, `install` names the command to run by hand and
 where, and the checkout or the merge goes on. Claude Code gives up on the server's start after
 `MCP_TIMEOUT`; the bound ends an install that start left running. While a gate or build holds the
@@ -38,7 +38,7 @@ are read from each pushed branch's tip, by a Git older than 2.40 from the checke
 
 Claude Code's `SessionStart` hook runs `.githooks/session-start`: it fetches `main` into
 `origin/main` within 20 s (`SCAFFOLDING_FETCH_WAIT_S`, whole seconds above 0, at most about 24 days), since an SSH remote can wait for a person to approve the key, says
-how many commits `origin/main` is ahead, and runs `.githooks/install`, with no bound. It moves no
+how many commits `origin/main` is ahead, and runs `.githooks/install`, bounded at 60 s as above. It moves no
 branch, since a fast-forward succeeds with another session's uncommitted file in the shared tree and moves `HEAD`
 under it; the session merges itself. In a cloud session (`CLAUDE_CODE_REMOTE=true`), whose
 checkout is its own, it switches to `main`, starting it from `origin/main` in a clone of one other
