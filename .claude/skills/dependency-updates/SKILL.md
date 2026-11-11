@@ -39,9 +39,11 @@ With the argument `pins`, raise only the `@hackersandwizards/*` pins, in each re
    "Script not found". Skip a repository with no `node_modules/.bin/raise-pins` after it, and name
    it: it pins a scaffolding older than v5.18.0.
 3. `bun run raise-pins --commit`. Read its `[raise-pins]` lines, never its exit status: a pin it
-   keeps (no tag read from the remote, a name without the scope) exits 1 after a green commit too.
+   keeps because it read no tag from the remote exits 1 after a green commit too. A pin whose name
+   lacks the scope is left out without a line.
 4. After a `committed` line, push. A rejected push repeats steps 1 and 4 once. After `gate red`,
-   change nothing: the raise stays uncommitted in `package.json` and `bun.lock`, and every later
+   fix what broke as step 2 says, then commit and push. A run whose approval excludes fixes changes
+   nothing instead: the raise stays uncommitted in `package.json` and `bun.lock`, and every later
    `raise-pins` there stops at its uncommitted-manifest check until a session fixes or reverts it.
 
 Report per repository: its `[raise-pins]` lines, the commit and push, or the skip and its reason. A
