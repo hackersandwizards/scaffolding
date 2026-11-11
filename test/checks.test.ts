@@ -3222,6 +3222,13 @@ describe("skeleton SessionStart hook", () => {
     expect(sh(single, ["rev-parse", "--abbrev-ref", "main@{upstream}"]).stdout.toString()).toBe(
       "origin/main\n",
     );
+    // Each start without a main, as after a switch that failed, added main's refspec once more.
+    sh(single, ["switch", "-q", "work"]);
+    sh(single, ["branch", "-q", "-D", "main"]);
+    expect(start(single, { PATH: path, CLAUDE_CODE_REMOTE: "true" }).stdout).toBe("");
+    expect(sh(single, ["config", "--get-all", "remote.origin.fetch"]).stdout.toString()).toBe(
+      "+refs/heads/work:refs/remotes/origin/work\n+refs/heads/main:refs/remotes/origin/main\n",
+    );
   });
 
   // setTimeout ran a delay past 2^31 - 1 ms at once, and the fetch was stopped as it began.

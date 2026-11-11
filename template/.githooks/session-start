@@ -43,8 +43,10 @@ fetched=$?
 if [ "$fetched" -eq 0 ]; then
   if [ "$CLAUDE_CODE_REMOTE" = true ]; then
     # A clone of one other branch has no fetch refspec for main, without which `git switch main`
-    # neither starts main from origin/main nor sets it as main's upstream.
-    { git show-ref -q --verify refs/heads/main || git remote set-branches --add origin main; } &&
+    # neither starts main from origin/main nor sets it as main's upstream. Replaced, not added: a
+    # start after a failed switch added it again.
+    { git show-ref -q --verify refs/heads/main ||
+      git config --replace-all remote.origin.fetch "$ref" '^[+]?refs/heads/main:'; } &&
       git switch -q main && git merge --ff-only -q origin/main ||
       echo "main not switched to or origin/main not merged: fix it per git.md"
   else
