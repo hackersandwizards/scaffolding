@@ -44,8 +44,8 @@ bun run check
 ```
 
 It writes the configs that import the package. In an existing repository,
-`bun run check-structure --fix` writes the skeleton's hooks and owned files and names what else is
-missing, apart from `eslint.config.js`: copy
+`bun run check-structure --fix` writes the skeleton's hooks and owned files and names the other files
+and settings the skeleton requires, which leave out `eslint.config.js`: copy
 [`template/eslint.config.js.tmpl`](template/eslint.config.js.tmpl) with `{{eslint}}` as `eslint`, or
 `eslint/astro` where the repository has Astro files. The exports most repositories import, all of them in [Configs](docs/configs.md):
 
