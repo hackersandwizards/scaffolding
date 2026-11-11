@@ -3027,6 +3027,26 @@ exec "${process.execPath}" "$@"
     expect(checkout.status).toBe(0);
   });
 
+  // Offline, a new worktree's install waited on the network with no end, and `worktree add` with it.
+  test("a new worktree's install past CHECK_LOCK_RUN_S is stopped, its lock released, and the checkout goes on", () => {
+    const dir = consumer();
+    const bun = fakeBun();
+    const checkout = spawnSync(
+      join(dir, ".githooks/post-checkout"),
+      ["0".repeat(40), head(dir), "1"],
+      {
+        cwd: dir,
+        env: env(bun, { BUN_SLEEP: "30", CHECK_LOCK_RUN_S: "1" }),
+        encoding: "utf8",
+        timeout: 15_000,
+      },
+    );
+    expect(checkout.status).toBe(0);
+    expect(checkout.stderr).toContain(`run it in ${realpathSync(dir)} before your gate`);
+    expect(existsSync(join(dir, "node_modules/.check.lock"))).toBe(false);
+    expect(read(bun.log)).toBe("start locked\n");
+  }, 20_000);
+
   // The MCP server's start and the SessionStart hook install at the same moment.
   test("two first installs at once wait for each other, the second without a word", async () => {
     const dir = consumer();

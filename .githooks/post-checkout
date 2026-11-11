@@ -9,5 +9,7 @@ case $1 in
   ;;
 *) echo "[post-checkout] installing node_modules in the new worktree (bun install --frozen-lockfile)" >&2 ;;
 esac
-# install names a skip or a failure on stderr; the checkout's exit status stays its own.
-"$(dirname "$0")/install" || true
+# install names a skip or a failure on stderr; the checkout's exit status stays its own. Offline, an
+# install that must download waits on a network that never answers with no end, and the checkout
+# with it: check-lock stops it after CHECK_LOCK_RUN_S seconds.
+CHECK_LOCK_RUN_S=${CHECK_LOCK_RUN_S:-60} "$(dirname "$0")/install" || true

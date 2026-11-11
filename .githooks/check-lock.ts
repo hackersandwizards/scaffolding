@@ -39,6 +39,11 @@ const FULL_WAIT_MS = 15 * 60 * 1000;
 const WAIT_MS = Number(process.env.CHECK_LOCK_WAIT_MS || FULL_WAIT_MS);
 // NaN would never compare greater, and the wait would never end.
 if (!Number.isFinite(WAIT_MS)) throw new Error("CHECK_LOCK_WAIT_MS must be a number of ms");
+// The whole run, the wait for the lock included, in seconds; unset or 0 is unbounded.
+const RUN_S = Number(process.env.CHECK_LOCK_RUN_S || 0);
+if (!Number.isFinite(RUN_S)) throw new Error("CHECK_LOCK_RUN_S must be a number of seconds");
+// From a signal the command took alone, or the end of RUN_S, to the SIGKILL of its group.
+const KILL_MS = 10_000;
 const POLL_MS = 2_000;
 const SPEAK_MS = 30_000;
 
@@ -103,11 +108,8 @@ const live = (holder: Holder): boolean =>
 // An unreadable lock is a half-written or corrupt one, and nobody can prove it is live. A live
 // holder is never reclaimed on age: a slow run under load outlasted any bound and a second check
 // ran beside it. A reused pid reads as live too, which ends in the wait timeout, not an overlap.
-const stale = (raw: string | undefined): raw is string => {
-  if (raw === undefined) return false;
-  const holder = parseHolder(raw);
-  return !(holder && live(holder));
-};
+const stale = (raw: string | undefined, holder: Holder | undefined): raw is string =>
+  raw !== undefined && !(holder && live(holder));
 
 /**
  * Link fails when the name exists, so the filesystem decides the winner of a race, and the
@@ -134,7 +136,7 @@ const acquire = (): boolean =>
 
 function dropIfStale(): void {
   const raw = readLock();
-  if (!stale(raw)) return;
+  if (!stale(raw, parseHolder(raw))) return;
   // Deleting by name after the read deleted a fresh lock another waiter wrote in between. A claim,
   // named for these exact contents, lets one waiter delete them, and while they sit at the lock path
   // no acquire can replace them, so the re-read under the claim stays true until the delete.
@@ -245,7 +247,7 @@ async function queueForLock(): Promise<boolean> {
       id: read ? `${read.pid} ${read.startedAt}` : `inode ${stat.ino}`,
       read,
       // What dropIfStale removes: the first waiter reclaims it within a poll.
-      stale: stale(raw),
+      stale: stale(raw, read),
     };
   };
   let holder = look().id;
@@ -320,6 +322,23 @@ function onSignal(signal: NodeJS.Signals): void {
   received ??= signal;
 }
 for (const signal of SIGNALS) process.on(signal, onSignal);
+// Past RUN_S the run stops as on SIGTERM, and its command is killed KILL_MS later; it exits 124,
+// as timeout(1) does, since no interrupt reached it. A signal that came first keeps its own course.
+let timedOut = false;
+function stop(): void {
+  if (received) return;
+  console.error(
+    `[check-lock] "${command.join(" ")}" not done after ${RUN_S} s (CHECK_LOCK_RUN_S): stopping it`,
+  );
+  if (!child) {
+    leave();
+    process.exit(124);
+  }
+  timedOut = true;
+  onSignal("SIGTERM");
+  setTimeout(() => onSignal("SIGTERM"), KILL_MS);
+}
+const bound = RUN_S > 0 ? setTimeout(stop, RUN_S * 1000) : undefined;
 let held = false;
 try {
   if (process.env.SCAFFOLDING_LOCKED !== LOCK) held = await waitForLock();
@@ -372,6 +391,7 @@ const result = await new Promise<{
   child.on("error", (error) => done({ status: null, signal: null, error }));
   child.on("exit", (status, signal) => done({ status, signal }));
 });
+clearTimeout(bound);
 // A command killed by a signal sent to it alone, not to check-lock, left its steps running in its
 // group while the lock was released; so the rest of the group gets the same signal. Only after a
 // signal: a command that exits on its own may leave a process behind on purpose.
@@ -381,8 +401,8 @@ if (result.signal && !received) {
 }
 const stoppedAt = Date.now();
 while ((received || result.signal) && running(-child.pid!)) {
-  // After a signal the command took alone, nobody sends the second one that kills: 10 s do.
-  if (!received && Date.now() - stoppedAt > 10_000) killGroup("SIGKILL");
+  // After a signal the command took alone, nobody sends the second one that kills: KILL_MS do.
+  if (!received && Date.now() - stoppedAt > KILL_MS) killGroup("SIGKILL");
   await sleep(100);
 }
 release();
@@ -395,9 +415,9 @@ else if (result.status !== 0) {
   );
 }
 // Dying by the signal tells the calling shell it was an interrupt, so a loop of builds stops.
-if (received) {
+if (received && !timedOut) {
   process.removeAllListeners(received);
   process.kill(process.pid, received);
 }
 // A signalled child reports a null status, and exiting 0 there would hide a killed gate.
-process.exit(result.status ?? 1);
+process.exit(timedOut ? 124 : (result.status ?? 1));

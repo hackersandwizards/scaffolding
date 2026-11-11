@@ -732,6 +732,38 @@ describe("check-lock wraps a consumer's build", () => {
     expect(existsSync(lock)).toBe(false);
   }, 90_000);
 
+  // A command that ignores the SIGTERM at the bound is killed 10 s later.
+  it("stops a command past CHECK_LOCK_RUN_S, kills it 10 s later, and releases the lock", () => {
+    const lock = lockPath();
+    const started = Date.now();
+    const result = spawnSync("bun", [SCRIPT, "sh", "-c", "trap '' TERM; sleep 60"], {
+      encoding: "utf-8",
+      env: { ...process.env, CHECK_LOCK: lock, CHECK_LOCK_RUN_S: "1" },
+      timeout: 40_000,
+    });
+    expect(result.status).toBe(124);
+    expect(result.stderr).toContain("not done after 1 s (CHECK_LOCK_RUN_S): stopping it");
+    expect(Date.now() - started).toBeLessThan(30_000);
+    expect(existsSync(lock)).toBe(false);
+  }, 60_000);
+
+  // A wait of 0 waits in full for a holder of the same command, which may be an unbounded install.
+  it("stops its wait for the lock past CHECK_LOCK_RUN_S, and leaves the holder's lock alone", () => {
+    const lock = lockPath();
+    const holder = JSON.stringify({ pid: process.pid, startedAt: Date.now(), command: ["true"] });
+    writeFileSync(lock, holder);
+    const started = Date.now();
+    const result = spawnSync("bun", [SCRIPT, "true"], {
+      encoding: "utf-8",
+      env: { ...process.env, CHECK_LOCK: lock, CHECK_LOCK_WAIT_MS: "0", CHECK_LOCK_RUN_S: "1" },
+      timeout: 20_000,
+    });
+    expect(result.status).toBe(124);
+    expect(result.stderr).toContain("not done after 1 s (CHECK_LOCK_RUN_S): stopping it");
+    expect(Date.now() - started).toBeLessThan(15_000);
+    expect(readFileSync(lock, "utf8")).toBe(holder);
+  }, 30_000);
+
   it("names a command that cannot start", () => {
     const result = run(lockPath(), ["no-such-command-here"]);
     expect(result.status).toBe(1);

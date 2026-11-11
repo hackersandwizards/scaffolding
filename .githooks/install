@@ -18,6 +18,6 @@ SCAFFOLDING_LOCKED= CHECK_LOCK_WAIT_MS=0 bun --no-env-file "$hooks/check-lock.ts
 status=$?
 if [ "$status" -ne 0 ]; then
   cat "$log" >&2
-  echo "[install] bun install --frozen-lockfile did not run or failed (above): run it before your gate" >&2
+  echo "[install] bun install --frozen-lockfile did not run or failed (above): run it in $(pwd -P) before your gate" >&2
 fi
 exit "$status"
