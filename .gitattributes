@@ -11,3 +11,12 @@
 /package.json -export-ignore
 /README.md -export-ignore
 /LICENSE -export-ignore
+# docs/ itself, then only the files the README links.
+/docs -export-ignore
+/docs/* export-ignore
+/docs/commands.md -export-ignore
+/docs/gate.md -export-ignore
+/docs/configs.md -export-ignore
+/docs/catalog.md -export-ignore
+/docs/confidential.md -export-ignore
+/docs/hooks.md -export-ignore

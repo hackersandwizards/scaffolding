@@ -4,7 +4,7 @@ Public package `@hackersandwizards/scaffolding`: the repository skeleton (`templ
 `skeleton.json`, and `template-catalog/`, which `scaffold` adds unless told the catalog lives
 elsewhere), the gate commands in `bin/` (check-lock in `template/.githooks/`, as a skeleton file), the shared configs in `config/` and the catalog
 shell with its preset in `catalog/`. Repositories install it by Git tag and run the
-commands through `bun run`. README.md says what each command checks.
+commands through `bun run`. docs/commands.md says what each command checks.
 
 This repository is public. No client, deal, invoice, person record, term list or Company OS
 screenshot goes in, and `check-confidential` runs in its own hooks.

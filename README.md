@@ -3,8 +3,22 @@
 How hackers&wizards sets up a code repository, as a package each repository pins by Git tag: the
 skeleton every repository starts from, the commands its gate runs, the configs it shares and the
 shell of its catalog.
+The tokens and elements a catalog draws come from [brand](https://github.com/hackersandwizards/brand),
+the item files and their hub from [admin](https://github.com/hackersandwizards/admin).
 
-To work on the package itself, see [Developing the package](#developing-the-package).
+| You want                                          | Go to                                                 |
+| ------------------------------------------------- | ----------------------------------------------------- |
+| To add the gate to a repository                   | [Install](#install), then [Use](#use)                 |
+| To start a new repository                         | [A new repository](docs/commands.md#a-new-repository) |
+| To know why a gate step is red, or keep a finding | [The gate](docs/gate.md)                              |
+| To get a commit past a refused confidential term  | [The confidential-terms check](docs/confidential.md)  |
+| To build a catalog                                | [The catalog](docs/catalog.md)                        |
+| To set up ESLint, Prettier, TypeScript, stylelint | [Configs](docs/configs.md)                            |
+| To know what the git hooks and CI run             | [Hooks and CI](docs/hooks.md)                         |
+| To change this package                            | [Work on the package](#work-on-the-package)           |
+| To know whether you may use it                    | [License](#license)                                   |
+
+## Install
 
 ```sh
 bun add -d git+https://github.com/hackersandwizards/scaffolding.git#vX.Y.Z
@@ -14,626 +28,65 @@ bun add -d git+https://github.com/hackersandwizards/scaffolding.git#vX.Y.Z
 bun 1.3 or newer, gitleaks (`brew install gitleaks`), `pdftotext` and `pdftoppm` from poppler, and
 on macOS `swiftc` for the OCR helper, built once per checkout into `node_modules/.cache/scaffolding/`.
 A commit in a repository without `scaffolding.private` also needs a `gh` login in the `trainers` team:
-the confidential-terms check (below) fetches its list with it. The commit and push hooks run the
-package's commands from `node_modules`, so each checkout needs `bun install` first; a new worktree
-gets it from `post-checkout`. Without it the hook stops and says so.
+the [confidential-terms check](docs/confidential.md) fetches its list with it. The commit and push
+hooks run the package's commands from `node_modules`, so each checkout needs `bun install` first; a
+new worktree gets it from `post-checkout`. Without it the hook stops and says so.
+
+## Use
+
+In any checkout that installs the package, `scaffold` writes a new repository, this version pinned:
+
+```sh
+bun run scaffold ../my-repo
+cd ../my-repo && bun install && bun run check
+```
+
+It writes the configs that import the package. An existing repository takes the same files from
+[`template/`](template), then runs `bun run check-structure --fix`. The exports most repositories import, all of them in
+[Configs](docs/configs.md):
+
+- `./prettier`, `./eslint`, `./eslint/astro`, `./stylelint`: the shared format and lint configs.
+- `./tsconfig/bun.json`, `./tsconfig/astro.json`: the base for `"extends"`.
+- `./catalog`: the catalog preset for an Astro config ([The catalog](docs/catalog.md)).
+- `./rejection`: the error a promise rejects with, as text, in a test.
+- `./serve`, `./chrome`: a gate server on a free port, and Chrome for Testing.
 
 ## Commands
 
-| Command                   | Runs in                                   | Checks                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                         |
-| ------------------------- | ----------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `scaffold <dir>`          | once                                      | Creates a repository from `template/` and `template-catalog/` with this version pinned (below).                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                |
-| `scaffolding check`       | `bun run check`                           | The whole gate, below.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                         |
-| `check-structure [--fix]` | `bun run check`                           | The repository against `skeleton.json`, the catalog, the gate's script names and test timeout (below) and every `bin` target and hook stored and checked out executable (100755). `LICENSE` is required only where `scaffolding.private` is not set, the `.agents/skills` link only where `.claude/skills` exists. In `.mcp.json` the `chrome-devtools` server and in `.claude/settings.json` the `SessionStart` hook with the `startup` matcher (`.githooks/session-start`, below) match the skeleton's; the repository's other `SessionStart` hooks and the rest of each file stay its own. `--fix` writes the identical and owned files, those two blocks, the `.agents/skills` link, the hooks path and the `bin` and hook modes, and nothing where `skip.structure` is set or an `allow` entry covers the path.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                           |
-| `check-confidential`      | pre-commit, commit-msg, push, a deck test | Terms from a hashed list, Company OS screenshots, text in images, PDFs and Office files (an unread binary file fails), commits purged from history; with `never`, the names h&w never shows in a deck's strings.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                               |
-| `check-staged`            | pre-commit                                | gitleaks on the index, then `check-coupling` (unless `skip.coupling`) and `check-confidential` (always), then prettier and eslint on the staged files and stylelint on the staged CSS and Astro ones, each refused when not installed unless `skip.format`, `skip.lint` or `skip.styles` drops the step; `check:skills` when `.claude/` is staged, with the staged paths, deletions included, in `VALIDATE_SKILLS_PATHS`; `admin-check` when an item is.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                       |
-| `check-lock <command>`    | `scaffolding check`, a build              | Runs the command once no other locked command runs in the checkout, so a build never rewrites the output a running gate reads (`"build": "check-lock astro build"`; first in the script, since the lock sits in `node_modules` where it starts, so `check-lock sh -c 'cd catalog && astro build'`). Inside a locked command, the gate's own build step included, it runs at once. Waiters take the lock in the order they came: a waiter renews its ticket every poll, the next waiter removes a ticket whose process is gone or that went unrenewed for 6 s. A waiter gives up after 15 minutes behind one holder, counted again whenever the lock passes on to another holder, not when the holder rewrites its own lock. A shorter `CHECK_LOCK_WAIT_MS` (an empty one is unset) gives up only on a live holder of another command or a lock path no waiter can reclaim (a directory, a file it cannot read): a holder running the same command is waited for in full, as are a free lock while a waiter ahead in the queue takes its turn and a dead holder's or unparsable lock, which the waiter ahead reclaims. `CHECK_LOCK_RUN_S` (unset, empty or 0: none) bounds the whole run, the wait included, in seconds: at the bound `check-lock` says so on stderr, stops as on a SIGTERM to it, kills the command 10 s later and exits 124, unless a signal came first. A signal to `check-lock`, or one that killed the command alone, goes to the command's whole process group, and the lock stays until that group has exited (a second signal kills it, as do 10 s after a signal the command took alone), also where a SIGKILL then ended `check-lock`; where a SIGKILL to the caller's group ended `check-lock` alone before any signal, until the command has exited; the command runs without a controlling terminal, so it cannot open `/dev/tty`. |
-| `chrome-mcp [flag...]`    | `.mcp.json`                               | The chrome-devtools MCP server this package pins (`chrome-devtools-mcp`), headless and isolated, on Chrome for Testing: `CHROME_BINARY`, else the build `puppeteer-core` pins, else the newest cached build, passing over one whose download archive still lies beside it (an install under way, waited for up to 2 minutes, or one that died), before `./chrome` installs one into a folder of its own and moves it into the cache whole, in place of a build whose install died; further flags go to the server. The skeleton's `.mcp.json` runs `.githooks/install` first and then `bun run --silent chrome-mcp` in `$CLAUDE_PROJECT_DIR`, so in a fresh clone it waits for the first install, its own or the SessionStart hook's, for up to 60 s (`CHECK_LOCK_RUN_S`, below). An install longer than Claude Code's MCP start timeout (`MCP_TIMEOUT`, 30 s by default) still fails the server: reconnect it with `/mcp`.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                    |
-| `raise-pins [--commit]`   | a consumer, by hand or on a schedule      | Raises every `@hackersandwizards/*` Git pin (`git+…#vX.Y.Z`) to the newest `v` tag of its remote, a package after the pinned packages it depends on, with `bun install` after each and `check-structure --fix` after scaffolding's, under `check-lock`; a tag read ends after `SCAFFOLDING_FETCH_WAIT_S` seconds (20), and a pin whose tag is not read or that does not install keeps its version. Then `bun run check` once, and one line per package and one for the gate. With `--commit`, a green gate commits the raises that installed (`package.json`, `bun.lock` and the files `check-structure --fix` wrote, by name) unless `--fix` failed or rewrote a file holding an uncommitted change; it pushes nothing. It exits 1 where any pin kept its version. It refuses to start without `bun.lock` or while `package.json` or `bun.lock` hold an uncommitted change. Without a commit the raise stays in those two files, and the next run refuses until they are committed or reverted.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                               |
+Each runs as `bun run <command>`, and [Commands](docs/commands.md) has the detail of each.
 
-The gate and `check-staged` also run these files from `bin/` by path; they are steps, not commands,
-so a new install links none of them into `node_modules/.bin`. A link to one is left from an install
-before v0.9.0, which bun keeps: it still runs, since every file in `bin/` is stored executable, and
-deleting it changes nothing for the gate.
-
-| Step                    | Runs in                     | Checks                                                                                                                                                                                                                                                                                                                                                                                                                 |
-| ----------------------- | --------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `check-coupling.ts`     | `bun run check`, pre-commit | No path leaves the repository (a `../` climb, also after `./`, a variable or a command, and a home-folder path outside this checkout under the folder that holds it, such as `~/dev`, whether or not anything is cloned there), no import past a package's `exports`, every Git dependency pinned to a tag `node_modules` holds, no disk path into a company package outside a stylesheet, and the CSS origin (below). |
-| `check-unique-names.ts` | `bun run check`             | Every module-scope function name outside tests and `.githooks/` (the skeleton's copies) is defined once.                                                                                                                                                                                                                                                                                                               |
-| `check-spaces.ts`       | `bun run check`             | No line break in an `.astro` template where text meets an inline tag (below).                                                                                                                                                                                                                                                                                                                                          |
-| `check-licenses.ts`     | `bun run check`, pre-commit | Every installed package's licence is on the allow list or an exception pins it (below); in pre-commit when `bun.lock` or `package.json` is staged, unless `skip.licenses`.                                                                                                                                                                                                                                             |
-| `check-history.ts`      | `bun run check`             | No comment in a file the package ships (`bun pm pack`) names a review score, a date, a decision or item id, a review note or a founder (below).                                                                                                                                                                                                                                                                        |
-
-## A new repository
-
-`scaffold <dir> [--port <port>] [--name <package>]` (port 4600 and the folder's name by default;
-a name npm would refuse stops it before it writes a file) writes the skeleton from `template/` (with an empty `docs/agent-work/` for the items) and the catalog
-from `template-catalog/` (`catalog/astro.config.ts` on the preset with the Pages `site`,
-`base: "/<name>"` without the name's scope, and the port, an example component and story,
-`stylelint.config.js`, the scripts `dev`, `catalog`, `build` and `preview`, the Pages workflow,
-and ESLint's Astro config with `eslint-plugin-astro`, so the `.astro` files are linted), and pins brand and admin to the newest tag on their remotes, so
-an admin or brand release reaches new repositories without a scaffolding release. A repository whose
-catalog or admin area lives in another repository leaves the catalog and brand out with
-`--catalog-in <repo>`, or admin with `--admin-in <repo>`; its `scaffolding.skip` names that
-repository. Registering the repository in
-the hub's sync list, creating it on GitHub and switching Pages on stay steps for a person, which
-`scaffold` prints after its own.
+- `scaffold <dir>`: creates a repository from the skeleton with this version pinned.
+- `scaffolding check`: the whole gate, behind `bun run check`.
+- `check-structure [--fix]`: the repository against the skeleton; `--fix` writes it.
+- `check-staged`: the pre-commit checks on the staged files.
+- `check-confidential`: confidential terms, Company OS screenshots and purged commits.
+- `check-lock <command>`: runs the command once no other locked command runs in the checkout.
+- `chrome-mcp`: the chrome-devtools MCP server on Chrome for Testing, for `.mcp.json`.
+- `raise-pins [--commit]`: raises every `@hackersandwizards/*` pin to its newest tag, then gates.
 
 ## The gate
 
-`scaffolding check` runs `bun install --frozen-lockfile`, then the shared steps side by side, the
-catalog build once a typecheck that runs Astro has finished:
-format, lint, styles (stylelint), typecheck, structure, coupling, unique names, spaces, confidential,
-history, licenses, the tests, the catalog build (`bun run build`) and admin (the item files, with the pinned
-`@hackersandwizards/admin`'s `admin-check`; a repository without admin pinned needs `skip.admin`). Then the repository's own steps from
-`scaffolding.check`, in order, an inner array side by side. Format, lint and styles walk past every
-submodule `.gitmodules` names, which its own repository checks. A shared step drops only with a reason, a
-non-blank string in `skip`:
+Moved to [docs/gate.md](docs/gate.md), its paragraphs Output and load and Environment included.
 
-```json
-{
-  "scaffolding": {
-    "test": "test:coverage",
-    "typecheck": "astro check",
-    "uniqueNames": ["GET", "POST"],
-    "skip": { "catalog": "no surface" },
-    "check": ["check:refs", ["check:markers", "check:elements"]]
-  }
-}
-```
+## Documentation
 
-Where the repository installs `puppeteer-core`, the gate installs the Chrome for Testing build it
-pins right after `bun install`, once, so steps that start Chrome never download it side by side.
+- [Commands](docs/commands.md): every command and gate step, and what `scaffold` writes.
+- [The gate](docs/gate.md): its steps, load, environment, exceptions and licences.
+- [Configs](docs/configs.md): every export and how to use it.
+- [The catalog](docs/catalog.md): the preset, its options and what the shell draws.
+- [The confidential-terms check](docs/confidential.md): the list, what it reads, never names.
+- [Hooks and CI](docs/hooks.md): the install hooks, SessionStart, pre-push and Pages.
 
-**Output and load.** Each step prints its output and its `ok` or `FAIL` line the moment it ends, and
-the last line names the red steps in the gate's order. A signal to `bun run check` reaches every
-step, and each step still running prints what it said so far and `stopped <step> by <signal>`.
+## Work on the package
 
-Where the one-minute load average is above the core count, the gate says so in its first line: the
-quick shared checks still run side by side, then `test`, `catalog` and the repository's own steps
-one after another. `SCAFFOLDING_LOAD=<n>` replaces the measured load. Load per core also stretches
-`serve`'s default wait (below), at most ten times, and sets `SCAFFOLDING_TEST_TIMEOUT_MS` for every
-step: 5000 ms on an idle machine. bun takes a per-test limit only as a flag, so the repository's
-test command passes it on, `"test": "bun test --timeout ${SCAFFOLDING_TEST_TIMEOUT_MS:-5000}"`;
-vitest takes `--testTimeout=${SCAFFOLDING_TEST_TIMEOUT_MS:-5000}` or reads the variable in its
-config. Without it every test keeps its 5 s limit however loaded the machine is, so
-`check-structure` goes red where neither `scaffolding.test`, the script it names nor a root
-`vitest.config.*` or `vite.config.*` names `SCAFFOLDING_TEST_TIMEOUT_MS`.
+- `bun install`
+- `bun run check`: the gate on the package itself.
 
-**Environment.** No step sees a variable that only the checkout's `.env` set. Bun loads `.env`
-into every `bun` process it starts, so every bin here starts `bun --no-env-file` through a `#!/bin/sh` line and a second line that is a shell command and a TypeScript comment at once, which also runs under BusyBox `env` (Alpine refuses `env -S`), and the gate and
-`check-staged` pass it to every `bun` a step starts through `BUN_OPTIONS`; a tool that reads `.env` itself, such as
-Vite, still does. Run them as their bins (`bun run check`); `bun bin/scaffolding.ts` without
-`--no-env-file` exits 2. A step that needs a value gets it from the environment that starts the gate.
-
-**Spaces.** Astro's default `compressHTML`, `"jsx"`, drops a line break where text meets an inline tag
-(HTML's inline elements, such as `small` or `time`): "drawn by" on one line and `<code>brand</code>` on
-the next render as "drawn bybrand". `true` and `false` keep each such break as a space, so a wrapped
-link carries a space inside its underline and a bare break before punctuation shows as a space. The
-template keeps the default, and the step flags a line ending in text, or in an
-expression after words of its own (`by {name}`), whose next line starts with an inline tag, and an
-inline closing tag, wrapped before its `>` too, whose next line starts with a word, an opening
-bracket, a quote, a dash or one expression that draws no element (`{name}.`, `{name} <em>`). The fix is
-the `{" "}` prettier itself writes, or joining the lines. A line of expressions alone counts for
-neither: most lay out sibling elements. A break no space belongs in, such as an
-icon in a flex row, gets an allow entry with `text`. Where every `astro.config.*` in the repository
-sets `compressHTML` to `true` or `false`, the step reads only the `.astro` files a consumer can compile under its own setting: those
-`bun pm pack` lists, as History below, and where package.json has `exports`, of those only the ones an
-exported path names and the files they import by a relative path. There it also
-flags an inline closing tag or text whose next line holds one expression whose first element is
-inline (`{n > 0 && <span>{n}</span>}`): the package's pages show that space, a consumer's do not. It
-reads every file again once one config returns to `"jsx"`.
-
-**History.** What a package ships is public wherever a consumer serves or bundles it, so a comment
-in a shipped file says how to use the code and why, and the history behind it goes to the commit
-message. The step reads the comments of every text file `bun pm pack` lists, without their marks
-and with consecutive comment lines joined, so an id or a score wrapped across a line break counts.
-It flags review scores and panels, a comparison of two scores (`7.94 against 7.29`, `8.4 vs 7.9`;
-a three-part version or a number after a capitalised name such as `Python 3.11` is none), dates (a one-digit month counts only before a year, a closing bracket or a comma, so `only 4.7.` closing a sentence is none), decision ids, item ids (the generic `AB-1` form and the repository's own
-`docs/agent-work/items/` names), paths to review notes and the founders' names. It first checks each
-pattern against a line that shipped once, so a pattern that stops matching turns the step red. A
-repository whose `package.json` declares no `files`, `exports` or `bin` ships nothing, and passes;
-one that does needs a `version` for `bun pm pack`. A
-date that is an example of a format, or a comparison of plain decimals such as `1.5 against 1.25`,
-gets an allow entry with `text`, which reads the comment without its marks.
-
-A repository that pins `@hackersandwizards/brand` lists `check:retired` in `scaffolding.check`, brand's
-`brand-retired` over the folders its build writes (`"check:retired": "brand-retired dist"`), or
-gives `skip.retired` a reason; the gate goes red otherwise. `scaffold` writes that step for a
-repository with its catalog.
-
-`uniqueNames` lists names the framework dictates, which the unique-names step lets repeat;
-Astro's `getStaticPaths` needs no entry. Every step in `scaffolding.check` is a script named
-`check:<what>`. `scaffolding.private` in the index skips the confidential scan; in the working
-tree, the history step.
-
-## Configs
-
-| Export                                         | Use                                                                                                                                                                                                                                                                                                                              |
-| ---------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `./eslint`, `./eslint/astro`                   | `export default [...base, ...]` in `eslint.config.js`; browser, Node and Bun globals; in a test, an empty test body and `expect().rejects` or `.resolves`, which bun waits for in a nested event loop that broke a shared puppeteer connection, go red; `dist/` at any depth and every submodule `.gitmodules` names are skipped |
-| `./tsconfig/bun.json`, `./tsconfig/astro.json` | `"extends"` in `tsconfig.json`; `include` and `paths` stay in the repository                                                                                                                                                                                                                                                     |
-| `./prettier`                                   | `"prettier": "@hackersandwizards/scaffolding/prettier"` in `package.json`, `.astro` included; a config adding plugins lists `...base.plugins` first                                                                                                                                                                              |
-| `./stylelint`                                  | `export default styles({ importFrom: [...] })` in `stylelint.config.js`; every submodule `.gitmodules` names is skipped                                                                                                                                                                                                          |
-| `./chrome`, `./serve`                          | Chrome for Testing, the build the repository's `puppeteer-core` pins (newest cached without one), with the shared flags; a gate server on a port the system hands out, answering within 20 s times `machineLoad().factor` unless `timeoutMs` says otherwise, its stderr passed through with `stderr: true`                       |
-| `./rejection`                                  | `expect(await rejection(promise)).toContain("...")` in a test: the error the promise rejects with, as text; a promise that resolves fails the test, naming its value's first 200 characters, and the trace names the calling line                                                                                                |
-
-TypeScript comes as two packages until typescript-eslint can read TypeScript 7, which ships no
-compiler API yet: `"typescript": "npm:@typescript/typescript6@…"` for the TypeScript 6 API it
-imports, and `"@typescript/native": "npm:typescript@7…"` for `tsc`. A plain `typescript` 7 breaks
-lint; the alias alone leaves no `tsc`. The unique-names step parses with its own TypeScript 6
-and runs beside either.
-
-The stylelint base lets a stylesheet, and the `<style>` blocks of an Astro component, read only the
-custom properties brand's `tokens.root.css` (from the repository's installed brand), the files in
-`importFrom` and the same file define. An `importFrom` entry starting with `./`, or a bare file
-name, is a file of the repository; any other path with a slash is a package's. The base cannot load
-without brand installed, so a repository without brand gives `skip.styles` a reason. A property a
-component sets from its markup (a `style` attribute) is read with a fallback,
-`var(--accent, transparent)`.
-
-## The catalog
-
-Every repository with a surface has a catalog: the scripts `dev`, `catalog` and
-`build`, its stories, once it has any, in `catalog/stories/` of the Astro app, and an Astro config using the preset. In a
-repository whose only Astro app is the catalog, that config is `catalog/astro.config.ts`, its stories
-are in `catalog/stories/` and the build lands in the repository's `dist/` unless the config sets an
-`outDir` other than Astro's default `./dist`; in an Astro app it is the app's own config,
-in any folder, such as `talks/astro.config.ts` with `talks/catalog/stories/`.
-
-```ts
-import { defineConfig } from "astro/config";
-import { catalog } from "@hackersandwizards/scaffolding/catalog";
-
-export default defineConfig({
-  integrations: [
-    catalog({
-      product: "Dokumente",
-      lead: "Every document type of the engine.",
-      css: ["@hackersandwizards/brand/tokens.root.css", "@hackersandwizards/brand/elements.css"],
-      previewSize: [794, 1123],
-      groupOrder: ["Typen", "Komponenten"],
-    }),
-  ],
-});
-```
-
-The catalog is the site's home, unless the site has a home of its own (`pages/index.*`, a
-`pages/index/` folder or a top-level catch-all `pages/[...x]` under Astro's `srcDir`); then it lives
-at `/catalog/`. A `redirects` entry for `/` fails the build where the catalog is the home.
-`/catalog/` after the base opens the catalog wherever it lives: a catalog at the root answers every
-page under `/catalog/` too, a forwarding page in the build and a redirect in dev, and the shell's
-own links, the header's `current` item and a state's back link, read `/catalog/`. A build opened
-from disk and a page of the site's own at `/catalog/` forward nothing; there those links name the
-home.
-
-A build whose `build.assetsPrefix` is a `file://` URL is opened from disk: there every link and frame
-to a page of the build names its file by file URL (`…/stories/x/index.html`), since a root-relative
-path would resolve to the disk's root and a folder opens as a listing. Such a build does not serve
-over HTTP.
-
-The home is the catalog's one index: its rail names every file under its group's label (on a phone
-the groups alone, as chips) and its tiles draw each file. A page that opens an entry in place marks
-that entry's rail name, and only it, with `aria-current`; the shell draws it with an accent wash and
-edge, darkens its group's label and, on a phone, marks the group's chip. A group's label never takes
-a fill of its own. While the home scrolls, the shell's script marks the label of the group being read
-with `aria-current="true"`, drawn in the accent with the same edge: the last group whose top has
-passed a third of the window, else the first group; where the last group's end shows, the group the address
-names where its top shows, else the last group, so a click on a group near the end marks it. On a phone
-that group's chip takes the open entry's look. The rail's names scroll under the search to keep
-that label in view; a mark another script set stays. Without script nothing is marked. Astrobook draws each state, its sidebar
-hidden on every page. A state's page carries a bar instead: back to the home, the file's folder and name, the
-theme toggle, a link to the state alone, and the states: previous and next, with the left and right
-arrow keys too, the position ("10 of 38"), and between them a link per state, or above 12 states a
-menu grouped by a word three or more state names share (`BlockImage` under Block, `AccentTheme`
-under Theme). The bar, rather than a list beside the canvas, keeps the canvas at full width, less the room of brand's focus ring (`--hw-focus-room`, brand v2.10.0 or later, defined where
-`elements/focus.css` loads), which the shell sets as `<main>`'s padding around the
-story so its scrolling edge never cuts off a focused control's ring; a story's own padding on `<main>`
-wins. A state alone keeps the same room where it fills the window, not inside a tile's frame. A story's file name, on its tile, in the rail and in the bar, and each camelCase state read in
-sentence case (`GridSlide` as "Grid slide"; the search still finds `GridSlide`), `PrimaryOnNight` as "Primary on night", and keeps whole an acronym, a plural acronym
-(`TwoPDFs` as "Two PDFs") and a few names with inner capitals (GitHub, GitLab, LinkedIn, YouTube,
-JavaScript, TypeScript, OpenAI), which reads better than the export name or Title Case. A name with underscores marks its words and keeps each in its
-author's case, the first capitalised: `Angebot_ohne_Preise` reads "Angebot ohne Preise", where
-`AngebotOhnePreise` would read "Angebot ohne preise". So a German or proper-noun word after the
-first goes in an underscore name. Every page loads in full rather than through Astrobook's client
-router, which swapped pages in place and so dropped what a repository's `head` sets on `<html>` and
-left its page scripts unrun.
-
-The shell (`catalog/`: Layout, Home, Head, Top, which draws the header, `render.ts`, which draws
-the rail and tiles, and `catalog.css`) reads brand's token roles by name only, and the repository's
-`css` supplies them. Where brand's `tokens.json` holds a name the shell's CSS reads, the build writes
-brand's value as that `var()`'s fallback, in place of any the shell writes. The bar above a story
-keeps one size whatever `data-hw-scale` the story sets: `chrome.css` writes
-`brand-value(--text-ui)` and `brand-value(--text-ui--line-height)`, which the build replaces with
-brand's unscaled values. A repository without brand supplies the type steps the shell reads in its
-`css`: `--text-page`, `--text-heading`, `--text-subheading`, `--text-ui`, `--text-micro` and the
-line heights of the first four (`--text-page--line-height` and so on), and `--spacing-app-header`,
-its header's height, under which the rail sticks and the groups scroll to; there the bar reads its
-`--text-ui` and line height as `var()`s. A program that reads the shell's CSS files itself rather
-than through the build, such as a page that inlines `catalog/catalog.css`, passes each file's text
-through `brandFallbacks(css, tokens)` from `catalog/fallbacks.ts` with the `tokens` of brand's
-`tokens.json`: read raw, the files leave their text unsized and the bar without its size and line height, with no error.
-The home's rail is brand's search field (`hw-search`) over its navigation list (`hw-nav`), so the
-home's stylesheets need brand's `elements.css`, as its tiles need brand's card and pill. The shell
-needs brand v2.10.0 or later, the first with both those type steps in `tokens.json` and
-`--hw-focus-room`; an older brand installed fails the build.
-The shapes the shell draws itself follow brand's rule: the brand corner for a preview, the small
-corner for the state menu, the theme toggle and the link to a state alone, round for the phone's
-group chips, the state chips and the arrows.
-The options beyond those above:
-
-- `previewSize`: the tile preview's viewport in CSS px, drawn whole and scaled to the tile, for
-  every group (`[794, 1123]`) or per group (`{ Pages: [1440, 900] }`); a tile without one draws its
-  state at three quarters, centred on the state's own ground and shrunk where it is taller than the
-  tile: the element the state marks `data-hw-preview` alone, such as a specimen under its spec text,
-  fitted to what it paints and cut to any box inside the mark clipping it, on the ground around it, the rest of the
-  page hidden; else the only child of `<main>`, else `<main>`. A sized tile draws the mark alone too
-  and keeps its window size. A non-empty value is a selector for the part inside the marked element
-  to draw (`data-hw-preview=".part"`); one that selects nothing draws the whole mark and logs an
-  error in the console. A key naming no story group fails the build.
-- `themeToggle`: `false` leaves the "Dark theme" button out of a state's bar and `data-hw-night` off
-  every page, for a site without a dark theme. The button reads and writes the choice under
-  `theme`, the key brand's `ThemeToggle` keeps, so a choice made on the repository's own pages holds
-  in its catalog and back.
-- `storyScale`: brand's `data-hw-scale` on every page that draws a story, a state's page and the
-  state alone, such as `"screen"`; without it such a page keeps what the repository's `head` sets,
-  else brand's default. The home is always `"dense"`.
-- `title`: default "Catalog".
-- `href`: where the header's lockup links, default the site's root (Astro's `base`).
-- `admin`: under `astro dev`, a header link to the repository's page in the local admin hub,
-  `http://admin.localhost:4329/<repo>/dashboard`, `<repo>` named as the hub names it (`admin.name`
-  in `package.json`, else the checkout's folder). A built page carries none.
-- `previews`: draw each tile's first state; `false` for states that load slowly. A tile's frame
-  loads once the home reports its first paint and the tile comes within 200 px of the view, so the
-  frames neither hold the first paint back nor load all at once; without script none loads. A
-  hidden page, such as a headless check's tab without focus, never paints: it loads every frame at
-  once.
-  `"srcdoc"` is for a site whose pages refuse framing, such as by `X-Frame-Options: DENY`: each tile
-  fetches its state's page and draws its HTML, so no frame load starts that the header would block
-  and a script would cancel. It needs HTTP, not a build opened from disk.
-- `homeCss`: the stylesheets the home loads, default `css`. The tiles frame each state, so the home
-  needs only the tokens, faces and brand's elements its header, rail and tiles read and what its
-  foundations draw, such as
-  `["@hackersandwizards/brand/tokens.root.css", "@hackersandwizards/brand/fonts.css", "@hackersandwizards/brand/elements.css"]`.
-  `css` loads on a state alone and, without `dashboardCss`, on a state's page; the header's CSS and
-  the shell's own on the home and a state's page, never on a state alone. The shell brings its
-  chrome's ground and text colour, read from brand's tokens in a layer below every other, and its
-  box sizing, so it draws the same with or without a reset in the lists; its faces come only from
-  the lists. The home's version line names each package that `css`, `homeCss`, `dashboardCss` and
-  `htmlClass`'s focus ring load a stylesheet from; a home without stories draws no such line.
-- The shell's own styles (its `chrome.css` and the header's CSS) sit inline on the home and every state's page, so they cost no render-blocking request.
-- `dashboardCss`: the stylesheets a state's page loads, default `css`. The page draws its story
-  inline; where a repository's stories draw their state alone in an iframe there, which loads `css`,
-  the page needs only the tokens and faces its header and bar read and what it draws around the
-  frame, such as `["@hackersandwizards/brand/tokens.root.css", "@hackersandwizards/brand/fonts.css"]`,
-  and the focus ring where the page sets `hw-focus-ring` (see `htmlClass`).
-- `htmlClass`: classes on `<html>` of every page, set before the body draws, such as
-  `["hw-focus-ring"]` for brand's focus ring. With that class every page loads brand's
-  `elements/focus.css` ahead of its lists. A `head` that sets the class itself lists
-  `"@hackersandwizards/brand/elements/focus.css"` in each list that leaves out `elements.css`, or
-  that list's pages draw no focus ring.
-- `previewStates`: the states a tile draws and links first, each the story's export name in kebab
-  case, such as `["light", "loaded-dark"]` for `Light` and `LoadedDark`. An entry that names no
-  story's state fails the build.
-- `head`: the repository's own `<head>` component, rendered on every page. Ahead of it every page
-  declares the cascade layer order: the shell's ground first, then, where the repository resolves
-  brand v1.52.0 or later, brand's `layers.css`, so a head on such a brand declares no order of its
-  own.
-- `header`: default brand's `AppHeader`, `header.css` and `night.css`. The admin link, the `nav`
-  option's links and whatever the home's `nav` slot holds sit in that order in one `hw-header-nav`
-  group at the bar's right; a `nav` of class `hw-header-nav` passed there lays its items into that
-  group.
-- `nav`: the header's links on the home and on every state's page, which then carries the header
-  above its bar, such as `{ items: catalogs, current: "Slides" }` with brand's `catalogs.json`. Each
-  item is `{ name, href }`, an href starting with one `/` counting from the base. The item named
-  `current` links to the catalog as above and carries `aria-current`: `"page"` on the home, `"true"`
-  on a state's page, whose header stays above the scrolling story. A `current` that names no item
-  fails the build. The links render as brand's catalog list does (`hw-header-link` in a
-  `nav.hw-header-nav` with `data-hw-catalogs`). Without `nav`, the header lists brand's
-  `catalogs.json` where the repository resolves `@hackersandwizards/brand`, the item named as
-  `product` current; a catalog the list leaves out marks none.
-- `home`: a page of the repository that renders `Home.astro`, its foundations in the default slot
-  and a control such as a theme toggle in the `nav` slot. Every home opens on the tiles: the slot
-  draws after the last group as the group "Foundations", the rail's last entry, hidden while the
-  search holds a word. A slot holding only whitespace draws no group. Two groups whose names make
-  the same anchor, such as a filled slot and a stories folder Foundations, fail the build. Its own
-  headings start at `h3`, under that group's `h2`: an `h3` of the slot or of a wrapper element in
-  it takes the `h2`'s face at `--text-subheading` and its line height, 2.5rem above and 0.5rem
-  below, and the slot's first element sits 1rem under the `h2`, unless a class of the repository's
-  sets its own. Its running text takes the lead's measure (48rem) and leading (1.5), unless a class
-  of the repository's sets its own: a paragraph of the slot, of a wrapper element in it, or of a
-  `details` or `section` in that wrapper. A paragraph deeper down, in the slot's own grid or tile,
-  keeps its width.
-- `copy`: files the built pages reach by a relative path rather than through Vite. A glob, relative
-  to the repository, lands each match in the build at the same path. A package path of a package
-  the repository declares, or of its own, such as `@hackersandwizards/brand/logos/icon-maskable-512.png`,
-  names one file through the package's `exports` (any other fails the build by name) and lands it
-  at that path, so a page under the
-  base `/mail` names it as `/mail/@hackersandwizards/brand/logos/icon-maskable-512.png` or by the relative
-  path there. `astro dev` serves each at its path. A pattern matching nothing fails the
-  build, and so does, with `CI=true`, a copied file that is still a Git LFS pointer.
-- `serverOnly`: every story is an Astro component, so each state renders on the server only;
-  Astrobook's `client:load` branch for framework components, which bundles every story module for
-  the browser, Node imports included, is dropped. A route without that branch fails the build.
-
-A project Pages site, published under `/<repo>/`, sets Astro's `base: "/<repo>"` in its
-`defineConfig`; the catalog's links and the header's default link follow it in the build. `astro
-dev` leaves the base out: it serves as if the base were `/` and redirects a page under the base
-there, so only the build serves under the base, and a config sets it without a branch for dev. A
-file Vite serves, a module under the Astro root such as `/catalog/Head.astro` or a file in
-`public/`, stays where it is. A base ending in `/catalog`
-mounts the catalog under a host with a home of its own, such as a Worker's site: the build leaves
-out `public/`, which the host serves, and writes no forwarding pages.
-
-`catalogPath({ base, pages, dev })` from `@hackersandwizards/scaffolding/catalog/path.ts` states
-this rule as a pure function, for a reader such as the admin hub: `pages` are the entries of
-`srcDir/pages`, and it returns the catalog's path, `/` or `/catalog/` after the base, which `dev`
-drops. The preset calls it too.
-
-Every catalog page carries the `lead` as its `<meta name="description">`, or a state's own where
-its story sets `args.lead`, so a repository's head adds none. A state's page and a state alone are
-titled "Component: State – Product catalog", the home "Product catalog". Every page, but for a build opened
-from disk, carries a `<link rel="canonical">`, so a repository's head adds none either: its own URL, and for a state
-alone the state's page under `/dashboard/`. It is absolute where Astro's `site` is set and
-root-relative otherwise, so a published catalog sets `site`. Where the repository resolves
-`@hackersandwizards/brand`, every page carries brand's favicon; a `<link rel="icon">` in the
-repository's `head` comes later and wins, while a `/favicon.ico` without a link no longer shows.
-A state's `args.lead` is the same prop its component takes, so it describes that page too. The shell writes no robots tag, so search engines may index the catalog. A repository
-that wants the whole catalog out of the index sets the tag in its `head`; a single page of its own
-sets it in that page. Unless `themeToggle` is `false`, every page but a state alone carries `data-hw-night`, so brand's `night.css`
-turns it under the theme toggle while a tile's preview keeps its own theme. The shell's own card and pill on the home carry `data-hw-shell`, for a
-check of the repository's elements to skip.
-
-`astro dev` starts quietly: Vite's start-up scan reads the stories and the components they import,
-Astro adds the components under `srcDir`, and the preset pre-bundles the client router Astrobook's layout
-loads, so no dependency is found only when the first page loads. Slides' catalog, 240 pages without
-an `optimizeDeps` list of its own, found none late.
-Vite still says "Re-optimizing dependencies because lockfile has changed" once after each change to
-`bun.lock`; a dependency the scan cannot reach goes into the repository's `optimizeDeps.include`.
-
-Under an agent, `astro dev` and `astro preview` move themselves into the background, and with
-`--root catalog` that background server resolves `catalog` from inside `catalog/`: dev waits 30 s
-for it and fails, preview finds no `catalog/catalog/dist`. `ASTRO_DEV_BACKGROUND=1` and
-`ASTRO_PREVIEW_BACKGROUND=1` keep each in the foreground and change nothing for a person. Under Bun 1.4.4 a relative `--root` makes preview look for Astrobook's routes under the root (`ENOENT` for `catalog/astrobook/pages/app.astro`), and with `"$PWD/catalog"` it serves:
-
-```json
-{
-  "dev": "ASTRO_DEV_BACKGROUND=1 bun --bun astro dev --root catalog",
-  "catalog": "bun run dev",
-  "preview": "ASTRO_PREVIEW_BACKGROUND=1 bun --bun astro preview --root \"$PWD/catalog\""
-}
-```
-
-**CSS origin.** In a repository's sources, a stylesheet from a company package comes only from
-brand's `exports`; the shell's styles load only under `catalog/`; an engine's stylesheet loads where
-the engine's `package.json` lists it in `scaffolding.styles`, the stylesheets its components render
-with (`"styles": ["./styles/slides.css"]`); no other company package's CSS loads outside its own
-repository. In a stylesheet, a path into `node_modules` names the file on disk and passes where an
-`exports` entry targets it, a font or image under a `/*` export included.
-
-**Installed paths.** Code, markup and data (every file `check-coupling` reads but stylesheets, Python
-included, `package.json` with its scripts and tests included) name no `node_modules/@hackersandwizards/...`
-path, joined or as path segments: code takes a file through
-`import.meta.resolve("@hackersandwizards/brand/logos/mark.svg")`, which the package's `exports`
-answer (its folder through its `./package.json`), and a command from `node_modules/.bin`; a catalog
-page or its data names a file the preset's `copy` serves by its package path. Comments, a
-Python docstring, `package.json`'s `scaffolding` field, a path after a Tailwind `@source` and the
-repository's own package are not checked; a `.css` path counts like any other. A script whose job is to read what is installed, or a test
-whose strings are data, keeps its path with an exception (below) narrowed by `text`.
-
-## Exceptions
-
-A finding a repository keeps goes in its `package.json` with the reason:
-
-```json
-{
-  "scaffolding": {
-    "allow": [
-      {
-        "check": "coupling",
-        "path": "src/copy/*.test.ts",
-        "reason": "expected output, not an import"
-      }
-    ]
-  }
-}
-```
-
-`path` takes `*` within a folder and `**` across folders (`**/x.ts` covers the root's `x.ts` too), or a list of such paths, such as a
-person's folder for their name. A confidential term in a file's path is that file's finding, so an
-entry naming the file covers it with the file's text. `"file names"` keeps an entry to terms in a
-file's path: alone it covers them in every file, beside other paths in those files only, so
-`["file names", "marks/**"]` with a company's name keeps `marks/<name>.svg` and refuses the name
-inside the file. package.json is
-scanned without its own allow entries, so a term an entry names needs no entry for package.json. `text` narrows an entry to findings
-containing it, or for a confidential term the whole term in any case, its accents composed or
-not and its punctuation read as a space: `"Jane Doe"` keeps `JANE DOE`, never `Jane Doe Consulting`.
-`text` may be a list, each item its own exception. An entry without a reason fails, and so does an entry, or
-an item of its list, that no longer matches anything.
-For `check: "unique-names"`, `path` exempts the definition sites it covers, such as a copy another
-repository syncs in.
-
-## Licences
-
-`check-licenses` reads bun's own `bun pm licenses --json`: every package of `bun.lock` installed in
-`node_modules`, Git tags included, offline. Each licence must be on the allow list: MIT, MIT-0, ISC,
-Apache-2.0, BSD-2-Clause, BSD-3-Clause, 0BSD, BlueOak-1.0.0, CC0-1.0, CC-BY-4.0, Python-2.0,
-PSF-2.0, Unlicense, Zlib, WTFPL, OFL-1.1, MPL-2.0. In an SPDX expression an `OR` passes when one
-side does, an `AND` only when every side does, and `WITH` keeps the base licence, so
-`(MIT OR GPL-3.0-or-later)` passes and `Apache-2.0 AND LGPL-3.0-or-later` fails. A licence string
-that is not an expression (`Unknown`, `SEE LICENSE IN LICENSE`, a URL) fails. A bun error, output
-that is not the expected JSON, or no package listed fails with "run bun install". So does bun's
-warning that `bun.lock` entries are not installed, unless no installed package and no workspace
-needs one: Tailwind's `@tailwindcss/oxide-wasm32-wasi` uses its bundled copies, and the top-level
-entries bun skips serve only packages left out on this platform.
-
-Shipped exceptions, which may match nothing: `@hackersandwizards/*` (our own packages) and sharp's
-LGPL libvips builds (`@img/sharp-libvips-*`, `@img/sharp-win32-*`, `@img/sharp-wasm32`, each with
-its exact licence string), a shared library loaded on our own machines and conveyed in nothing we
-hand out. A repository keeps any other package with its exact licence string and a reason, a `*`
-at the end matching a name prefix:
-
-```json
-{
-  "scaffolding": {
-    "licenses": {
-      "elkjs": { "license": "EPL-2.0", "reason": "dev only, never conveyed" }
-    }
-  }
-}
-```
-
-An entry without a reason, matching no installed package, or whose licence string no longer
-matches the installed one fails, so a new version under another licence goes red again. A red
-finding names the package, its licence, `bun pm why <name>` and the entry to paste.
-
-## The confidential-terms check
-
-The package holds the mechanism and no terms. The list of salted hashes lives in the private
-repository `hackersandwizards/confidential-terms`, which Company OS rebuilds. `check-confidential`
-fetches it with the person's own `gh` login and keeps the copy for a day in the repository's
-`node_modules/.cache/scaffolding/`. The command writes nothing outside the repository, so each
-checkout fetches on its own.
-
-- No list, or a list built more than 7 days ago: every check refuses. The fix is `gh auth login`
-  with an account in the `trainers` team.
-- A copy older than a day is fetched again, at most once an hour. If that fails, the old copy
-  counts, with a warning.
-- A list built more than 3 days ago prints a warning: Company OS has stopped rebuilding it.
-- Added lines, file names and the whole commit message count, comment lines included.
-- Binary files are read: images by OCR, every frame and page, and a transparent one on a white
-  and a black ground; PDFs with `pdftotext`, and a page without text or with an image by OCR of
-  its rendering (`pdftoppm`, `pdfimages`); Office, OpenDocument and other zip files by their
-  entries. A font, known by its signature rather than its name, passes unread. Any other binary
-  file, or one that cannot be read, refuses the commit until an allow entry names its path. OCR
-  uses the macOS Vision framework, so a Linux machine commits no image to a public repository,
-  except under `--list-optional` without a list (below). A file's text is kept by its content in `node_modules/.cache/scaffolding/read/`,
-  so a gate reads it again only once the file or the reader changes.
-- A Git LFS file is read from the working tree where it matches its pointer, else from the local
-  LFS store; where neither holds it, the scan prints `Git LFS pointer, not read` and goes on.
-- With `CI=true` the `--index` and `--tree` audits skip the term and binary reading, so a deploy
-  needs no access. A commit, its message and a push are scanned wherever they are made.
-- `check-confidential fetch` fetches now, for a cloud setup script. `--list <file>` or
-  `SCAFFOLDING_CONFIDENTIAL_TERMS` reads a list from a file instead.
-- `--list-optional`, with `--staged` or `--message-file`, lets a public repository's own hooks scan
-  every commit without blocking an outside contributor: where there is no list and none can be
-  fetched, the scan passes with a warning, and so does a file this machine lacks the tool to read
-  (OCR, poppler): no term could match its text, and only the Company OS screenshot check goes with it. Without a copy it asks `gh` at most once an
-  hour, since `gh` can take 20 s offline. A list that is there but invalid or built more than 7 days
-  ago still refuses, and so does an unread file wherever a list is there.
-- `check-confidential build <terms|-> [--public <file>] [--never <file>]` turns one term per line
-  into a list stamped with its build time. It leaves out every term the public text in `<file>`
-  already carries, and refuses to build without `/usr/share/dict/words`. A term of more than six
-  words counts by its first six. A three-letter term, or one word in capitals, matches only in that
-  case and in a path or slug in lower case; two one-character words (`K 2`) match only in capitals.
-- `--never <file>` adds the never section from one name per line, under the same salt and build
-  time: the names h&w never shows. Public text drops none of them. A name in capitals, of three
-  letters or in the dictionary also gets a hash in lower case, which only `never` reads. The build
-  refuses `--never` without a file, an empty file and a name of fewer than three letters, its legal
-  form dropped. `--never -` reads the names from stdin after a NUL byte, so `build - --never -`
-  takes the terms, a NUL byte and the never names on one pipe, and no plain list touches the disk.
-- Every scan above refuses a never name too, in its own casing: `QZX` and `qzx-workshop` refuse,
-  `bei Qzx` passes, and a never name in the dictionary refuses nothing there. A list without a never
-  section scans as before.
-
-### Names h&w never shows
-
-`check-confidential never` reads one JSON object on stdin, `{"<where>": <value>}`, such as a deck
-test's decks by slug, and refuses every name of the list's never section in any case, in a key as
-in its text. A value is a string or any JSON: its object keys and every string in it are its text,
-so a deck goes in as it is; each string is scanned apart. It runs in private repositories too, and fetches, keeps and ages the list
-as the other scans do. A kept copy without a never section is fetched again, at most once an hour.
-
-- Exit 0: no never name. Exit 1: a finding, printed as
-  `[check-confidential] <where>: a name h&w never shows from the company records (<text>)`.
-- An exception is an allow entry in the working tree's `package.json` with
-  `"check": "never-shown"`, a `path` glob over the `<where>` keys, the `text` and a reason. An entry
-  matching nothing fails, since the input holds every string the caller shows.
-- It refuses an input that is empty, not JSON, not an object or holds a value with neither a string nor an object key,
-  and a list whose never section is missing or empty. No allow entry covers either.
-- With `CI=true` it passes with a warning, so a deploy needs no access and no Git checkout.
-
-A repository with `"scaffolding": { "private": true }` skips the check and keeps no `commit-msg`
-hook, which `check-structure --fix` removes.
-
-`check-confidential purged <sha>... > .confidential-purged.json` writes the list of purged
-commits: after a history rewrite, the pre-push hook refuses a push from an old clone that still
-carries one of them, whatever its tracking refs or fetched pull requests point at. It reads the list
-in the pushing checkout and the one on the remote's default branch, which it fetches within 20 s for
-a push carrying commits, so a clone made before the list is refused too. A remote without a list, or
-out of reach, adds nothing; a list that does not parse, there or in the checkout, refuses the push
-and says where. A repository that
-already has the list keeps its salt and entries and gets the new ones added; with the file emptied
-by the redirect, the staged copy counts.
-
-The pre-push hook then hands the refs to `git lfs pre-push` where the push may carry LFS objects or
-touch a lockable file. That is the case where the repository's LFS store holds a file (`lfs/objects`
-in its Git directory, or under `lfs.storage`). It is also the case where a commit new to the remote
-being pushed to changes a path whose `filter` attribute is `lfs` or that is `lockable`
-(`.git/info/attributes` included). Git LFS reads the pushed commits itself, so a branch bringing LFS
-files the checked-out tree lacks still sends its objects. A commit counts as new until that remote's
-own tracking refs or the tips git reports for it hold it, so a push to a second remote still sends
-objects only `origin` has. Any other push never starts git-lfs, which would otherwise verify locks
-against the remote on every push. A `.lfsconfig` alone starts nothing: git-lfs checks locks only on
-the files a push changes. Where git-lfs should run and is not on `PATH`, as under a client's
-narrower `PATH`, the push is refused. So a file committed raw under an LFS path on a machine without
-git-lfs is caught there. Where git-lfs runs, it decides as it does without this hook. The attributes
-are read from each pushed branch's tip, by a Git older than 2.40 from the checked-out tree.
-
-## Pipelines
-
-Checks run locally in the git hooks and in `bun run check`. The `post-merge` and `post-checkout`
-hooks run `.githooks/install` when `bun.lock` or `package.json` changed, and `post-checkout` in a
-new worktree too, saying so on stderr: `bun install --frozen-lockfile` under `check-lock` without
-waiting, silent when it installs. Behind a network that never answers, an install that must
-download waits with no end (a failing DNS lookup ends it within seconds), so `post-checkout`,
-`post-merge` and the MCP server's start run it with `CHECK_LOCK_RUN_S` at 60 unless set: past it
-`check-lock` stops the install and frees the lock, `install` names the command to run by hand and
-where, and the checkout or the merge goes on. Claude Code gives up on the server's start after
-`MCP_TIMEOUT`; the bound ends an install that start left running. While a gate or build holds the
-lock it installs nothing, so `node_modules` never changes under a running one, and says so on
-stderr with the command to run; it names a failed install the same way. An install finding another under way (the MCP server's start and the
-SessionStart hook run at once) waits for it, as `check-lock` waits for a holder running its own
-command. The script runs the skeleton's copy of `check-lock` (`.githooks/check-lock.ts`), so a first
-install, before `node_modules` holds the package, takes the lock as every later one does. It clears
-`SCAFFOLDING_LOCKED`, so a git command a gate runs in its own checkout installs nothing beside the
-gate. `bun run check` starts with the same install.
-
-Claude Code's `SessionStart` hook runs `.githooks/session-start`: it fetches `main` into
-`origin/main` within 20 s (`SCAFFOLDING_FETCH_WAIT_S`, whole seconds above 0, at most about 24 days), since an SSH remote can wait for a person to approve the key, says
-how many commits `origin/main` is ahead, and runs `.githooks/install`, with no bound. It moves no
-branch, since a fast-forward succeeds with another session's uncommitted file in the shared tree and moves `HEAD`
-under it; the session merges itself. In a cloud session (`CLAUDE_CODE_REMOTE=true`), whose
-checkout is its own, it switches to `main`, starting it from `origin/main` in a clone of one other
-branch, and fast-forwards. It prints only what the session must
-act on, since its output is the session's context. CI only builds and deploys. A
-repository that publishes GitHub Pages calls the reusable workflow, which runs `bun run build` and
-publishes `dist/`. The caller, `.github/workflows/pages.yml`, is owned: where it exists,
-`check-structure` compares it with the skeleton's (`template-catalog/`) with this version filled in, and
-`--fix` writes it, so a pin raise is `bun add` plus `check-structure --fix`. The caller grants the
-workflow `pages: write` and `id-token: write`, so it names the tag's full commit, which no tag move
-changes. The check reads it offline: the commit must start with the short SHA bun recorded in the
-installed package's `.bun-tag`. Run from an install, `--fix` and `scaffold` read the full commit
-with `git ls-remote` and refuse a tag that no longer points at the installed commit. Run from this
-package's own checkout, they pin its HEAD:
-
-```yaml
-jobs:
-  pages:
-    uses: hackersandwizards/scaffolding/.github/workflows/pages.yml@<full commit of vX.Y.Z> # vX.Y.Z
-    permissions:
-      contents: read
-      pages: write
-      id-token: write
-```
-
-## Developing the package
-
-`bun install`, then `bun run check` runs the gate on the package itself: `scaffolding check`, whose
-catalog test builds a copy of `test/fixture/` with the preset. A release bumps `version` in `package.json`
-and pushes the tag `v<version>`; its commit names any changed command, argument or exported path.
+A release bumps `version` and pushes the tag `v<version>`; [CLAUDE.md](CLAUDE.md) has the rules.
 
 ## License
+
+Maintained by hackers&wizards.
 
 [PolyForm Strict 1.0.0](LICENSE): free for noncommercial and personal use, no redistribution or
 derived works. The name hackers&wizards and its logos are not licensed.

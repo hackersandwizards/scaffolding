@@ -148,7 +148,7 @@ export const exportTargets = (value: unknown): string[] =>
 export const TEST = /(?:^|\/)(?:__tests__|tests?|e2e)\/|\.(?:test|spec)\.[cm]?[jt]sx?$/;
 
 /** Exits 2 unless this bun started with `--no-env-file`, and hands the flag to every bun a step
- * starts (README: Environment). */
+ * starts (docs/gate.md: Environment). */
 export function withoutEnvFile(name: string) {
   if (!process.execArgv.includes("--no-env-file")) {
     console.error(`[${name}] run it as its bin or with \`bun --no-env-file\`, so .env stays out`);

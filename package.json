@@ -37,7 +37,13 @@
     "template-catalog",
     "skeleton.json",
     "config",
-    "catalog"
+    "catalog",
+    "docs/commands.md",
+    "docs/gate.md",
+    "docs/configs.md",
+    "docs/catalog.md",
+    "docs/confidential.md",
+    "docs/hooks.md"
   ],
   "engines": {
     "bun": ">=1.3.0",

@@ -1,0 +1,24 @@
+# Configs
+
+| Export                                         | Use                                                                                                                                                                                                                                                                                                                              |
+| ---------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `./eslint`, `./eslint/astro`                   | `export default [...base, ...]` in `eslint.config.js`; browser, Node and Bun globals; in a test, an empty test body and `expect().rejects` or `.resolves`, which bun waits for in a nested event loop that broke a shared puppeteer connection, go red; `dist/` at any depth and every submodule `.gitmodules` names are skipped |
+| `./tsconfig/bun.json`, `./tsconfig/astro.json` | `"extends"` in `tsconfig.json`; `include` and `paths` stay in the repository                                                                                                                                                                                                                                                     |
+| `./prettier`                                   | `"prettier": "@hackersandwizards/scaffolding/prettier"` in `package.json`, `.astro` included; a config adding plugins lists `...base.plugins` first                                                                                                                                                                              |
+| `./stylelint`                                  | `export default styles({ importFrom: [...] })` in `stylelint.config.js`; every submodule `.gitmodules` names is skipped                                                                                                                                                                                                          |
+| `./chrome`, `./serve`                          | Chrome for Testing, the build the repository's `puppeteer-core` pins (newest cached without one), with the shared flags; a gate server on a port the system hands out, answering within 20 s times `machineLoad().factor` unless `timeoutMs` says otherwise, its stderr passed through with `stderr: true`                       |
+| `./rejection`                                  | `expect(await rejection(promise)).toContain("...")` in a test: the error the promise rejects with, as text; a promise that resolves fails the test, naming its value's first 200 characters, and the trace names the calling line                                                                                                |
+
+TypeScript comes as two packages until typescript-eslint can read TypeScript 7, which ships no
+compiler API yet: `"typescript": "npm:@typescript/typescript6@…"` for the TypeScript 6 API it
+imports, and `"@typescript/native": "npm:typescript@7…"` for `tsc`. A plain `typescript` 7 breaks
+lint; the alias alone leaves no `tsc`. The unique-names step parses with its own TypeScript 6
+and runs beside either.
+
+The stylelint base lets a stylesheet, and the `<style>` blocks of an Astro component, read only the
+custom properties brand's `tokens.root.css` (from the repository's installed brand), the files in
+`importFrom` and the same file define. An `importFrom` entry starting with `./`, or a bare file
+name, is a file of the repository; any other path with a slash is a package's. The base cannot load
+without brand installed, so a repository without brand gives `skip.styles` a reason. A property a
+component sets from its markup (a `style` attribute) is read with a fallback,
+`var(--accent, transparent)`.

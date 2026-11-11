@@ -4305,7 +4305,7 @@ describe("catalog", () => {
       mkdirSync(join(fixture, "catalog", dir), { recursive: true });
       writeFileSync(join(fixture, "catalog", dir, "mod.css"), "a {\n  color: red;\n}\n");
     }
-    // ASTRO_DEV_BACKGROUND=1, as the README's dev script: under an agent astro dev otherwise moves
+    // ASTRO_DEV_BACKGROUND=1, as the dev script in docs/catalog.md: under an agent astro dev otherwise moves
     // into the background and resolves --root from inside the folder.
     const server = await serve(
       [
