@@ -28,7 +28,7 @@ handling that prevents data loss, security measures, or accessibility basics.
   full one before the deploy.
 - A git hook holds only what is irreversible or takes under about a second, run over the staged
   changes: the secret scan, format and lint, and checks of that size such as scaffolding's
-  `check-staged` set or a repository's own `validate:skills` when `.claude/` is staged. CI builds, runs the integration tests a deploy needs, deploys and applies Terraform after
+  `check-staged` set or a repository's own `check:skills` when `.claude/` is staged. CI builds, runs the integration tests a deploy needs, deploys and applies Terraform after
   a plan. A schedule runs only to notice an absence no commit reveals, such as a new advisory
   against an unchanged lockfile.
 - Start every tool the project installs through `bun run`: a package.json script where one fits,

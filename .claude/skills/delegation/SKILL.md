@@ -34,7 +34,7 @@ Codex hands Claude every piece of prose a human reads. An agent's own conversati
 with the user (replies, questions, status, explanations, technical answers) it writes itself.
 
 ```bash
-claude -p "Write the <mail/message>. Facts: sender+signature, recipients, language, purpose, must/must-not facts, new mail or reply. For mails: subject line AND body. Output only the text."
+claude -p --model opus --effort high "Write the <mail/message>. Facts: sender+signature, recipients, language, purpose, must/must-not facts, new mail or reply. For mails: subject line AND body. Output only the text."
 ```
 
 Check facts (names, dates, links, recipients, language, signature), content correctness, and

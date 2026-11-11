@@ -16,7 +16,8 @@ Work through each repository you are given, one at a time.
    and CI images, Terraform providers and modules, and anything else pinned to an outside version.
    Package managers do not report a newer tag of a git dependency (`git+ssh://…#vX`, our own
    `@hackersandwizards/*` included): read the newest tag with `git ls-remote --tags <url>` and raise
-   the pin to it. Clear every open security advisory, replacing a dependency no release fixes.
+   the pin to it. A pin written as a commit with the tag as a trailing comment keeps that form: take
+   the tag's commit from `ls-remote` (its `^{}` line where annotated) and update the comment. Clear every open security advisory, replacing a dependency no release fixes.
 2. Fix what the updates break until the checks the repository's `CLAUDE.md` names are green. Roll
    back only an update you cannot make green.
 3. Commit everything as one commit and push it. Nothing changed means no commit.

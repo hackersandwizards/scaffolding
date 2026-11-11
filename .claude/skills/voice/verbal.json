@@ -6,18 +6,18 @@
     "rule": "Customer-facing copy writes the company hackers&wizards, inside a quoted client statement too."
   },
   "claim": {
-    "en": "Agents pay off when your people ship together.",
-    "de": "KI-Agenten lohnen sich, wenn eure Leute gemeinsam liefern.",
+    "en": "Faster releases with agents, when your people are in tune.",
+    "de": "Schnellere Releases mit KI-Agenten, wenn eure Leute eingespielt sind.",
     "word": {
-      "en": "together",
-      "de": "gemeinsam"
+      "en": "releases",
+      "de": "Releases"
     },
-    "since": "2026-11-08"
+    "since": "2026-11-10"
   },
   "headline": {
-    "en": "Your teams have agents. Once all roles are in tune, your releases speed up.",
-    "de": "Eure Teams haben Agenten. Wenn alle Rollen zusammenspielen, werden eure Releases schneller.",
-    "since": "2026-11-08"
+    "en": "Faster releases with the agents your teams already have. Once all roles are in tune.",
+    "de": "Schnellere Releases mit den Agenten, die eure Teams schon haben. Sobald alle Rollen zusammenspielen.",
+    "since": "2026-11-10"
   },
   "mission": {
     "en": "We bring every role that builds our clients' products into flow with agentic engineering, as one team.",
@@ -152,6 +152,42 @@
       "text": "Your teams have agents. Once every role is in step, your releases speed up.",
       "lang": "en",
       "retired": "2026-11-08",
+      "replacedBy": "headline"
+    },
+    {
+      "text": "Agents pay off when your people ship together.",
+      "lang": "en",
+      "retired": "2026-11-10",
+      "replacedBy": "claim"
+    },
+    {
+      "text": "KI-Agenten lohnen sich, wenn eure Leute gemeinsam liefern.",
+      "lang": "de",
+      "retired": "2026-11-10",
+      "replacedBy": "claim"
+    },
+    {
+      "text": "Agents pay off when your people are in tune.",
+      "lang": "en",
+      "retired": "2026-11-10",
+      "replacedBy": "claim"
+    },
+    {
+      "text": "KI-Agenten lohnen sich, wenn eure Leute eingespielt sind.",
+      "lang": "de",
+      "retired": "2026-11-10",
+      "replacedBy": "claim"
+    },
+    {
+      "text": "Your teams have agents. Once all roles are in tune, your releases speed up.",
+      "lang": "en",
+      "retired": "2026-11-10",
+      "replacedBy": "headline"
+    },
+    {
+      "text": "Eure Teams haben Agenten. Wenn alle Rollen zusammenspielen, werden eure Releases schneller.",
+      "lang": "de",
+      "retired": "2026-11-10",
       "replacedBy": "headline"
     }
   ]

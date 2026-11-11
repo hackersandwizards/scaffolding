@@ -50,4 +50,4 @@ A cold pitch, a proposal opener or speaker outreach takes its shape from `postur
 |------|---------|
 | `signature-phrases.md` | Benedikt's measured calibration anchors, how to pull real email exemplars from his mailbox, and his spoken slogan catalogue. Use when ghostwriting from a transcript or anchoring a draft that needs more voice depth than `personal-voice.md` gives |
 | `verbal.json` | Brand's facts, copied from `@hackersandwizards/brand` (version in `verbal.source`): name, claim DE/EN, mission, vision, position, boilerplate, values, terms, retired lines. Quote them from here, never from memory |
-| `brand-vocabulary.md` | Verbatim offerings and value props, written positioning vocabulary, the competitive frame, approved performance language. Use when positioning in proposals or sales decks, or citing numbers |
+| `brand-vocabulary.md` | Verbatim offerings and value props, written positioning vocabulary, the competitive frame. Use when positioning in proposals or sales decks |

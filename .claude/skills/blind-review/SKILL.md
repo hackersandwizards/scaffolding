@@ -50,7 +50,9 @@ none, because receipt".
    presence to 1000 px on its long side (`sips -Z 1000 in.png --out out.png`); give one judged on
    legibility, typography or logo detail at full size or as a full-resolution crop of that detail.
    An image costs `⌈width / 28⌉ × ⌈height / 28⌉` tokens, up to 4,784 at a 2,576 px long edge.
-   Check: every image is at its real display size in context, at 1000 px or at full resolution.
+   Check: every image is at its real display size in context, at 1000 px or at full resolution,
+   and before any reviewer starts, no two images of the same view, the current state's included,
+   are pixel-identical at full resolution: on a match, stop and fix the build or the shot.
    Score a design that depends on a platform's settings (a device background, a lock screen) in
    the platform's default state, each default taken from the vendor's documentation. Check: the
    report names the default state and its source.
@@ -58,7 +60,10 @@ none, because receipt".
    link and the page it opens, the post and the profile behind it), and ask each reviewer which
    question the artifact leaves open. Check: the brief names the steps shown.
    A change to how a control is operated is judged on measured task runs (clicks, keystrokes,
-   pointer travel per typical task) beside the screenshots. Check: the brief carries those numbers.
+   pointer travel per typical task) beside the screenshots, never on a count alone: where a variant
+   adds a control that commits an answer or an action, the reviewer sees the screen at the moment
+   of that click and says what they have read by then. Check: the brief carries those numbers and
+   that screen.
    Build every candidate to the system's current rules for that ground and surface (the asset cut,
    the type allowed on it), except the one rule the comparison tests. Check: before scoring, each
    candidate is checked against those rules and the report names any it breaks.
@@ -97,7 +102,7 @@ can merge `origin/main` and reinstall: start reviewers from a directory outside 
 review, or read `git reflog -3` afterwards and rebuild a before baseline whose `HEAD` moved.
 
 ```bash
-claude -p --model opus --strict-mcp-config --no-session-persistence --allowedTools=Read "<prompt>"
+claude -p --model opus --effort medium --strict-mcp-config --no-session-persistence --allowedTools=Read "<prompt>"
 codex exec -m gpt-6.1-sol -c model_reasoning_effort="high" --skip-git-repo-check --ephemeral -s read-only "<prompt>" < /dev/null
 ```
 

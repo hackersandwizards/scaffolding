@@ -87,6 +87,9 @@ matches what the recipient used last. A new thread to several recipients takes t
 all share, never the language of the sender's existing thread with one of them. No prior history: DACH region, German names or a `.de`
 domain mean German, an international name means English. If still uncertain, write English.
 
+A slide deck is in English, a German client's included, unless the person names another language
+for that deck.
+
 ## German orthography
 
 Always proper Umlaute and Sonderzeichen (ä, ö, ü, ß, Ä, Ö, Ü), never ASCII fallbacks like `ae`,

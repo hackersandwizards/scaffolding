@@ -66,13 +66,6 @@ Firm name casing: preserve the firm's canonical capitalization even where its ow
 it in lowercase in signatures or emails. The single exception is a verbatim quote from partner-side
 material, such as a legal clause lifted from their template.
 
-## Performance language: approved patterns
-
-Every figure here falls under Measures and figures in `brand-voice.md`.
-Each cites metric, target, and source:
-
-- "~90% of developers already use AI" (DORA 2025)
-
 ## About-section voice
 
 h&w bio copy on the website, podcasts and conference programmes is `boilerplate` in `verbal.json`.

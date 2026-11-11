@@ -70,11 +70,12 @@ Other sessions share this working tree and its index.
   message, a record body or a run transcript, and is often unrecorded.
 - Work in the shared checkout by default. A worktree, made with `git worktree add` or by a
   delegate's `isolation: worktree`, is allowed where it pays off, which `parallel-session` weighs.
-  It starts from `origin/main`, so this tree's uncommitted and unpushed work is absent there. Its
+  It starts from `origin/main`, so this tree's uncommitted and unpushed work is absent there, and
+  without dependencies: install them before its first commit, since the hooks need them. Its
   commits reach `main` within the same delegate run (`git fetch`, `git rebase origin/main`,
   `git push origin HEAD:main`). Where Git LFS files show as modified with no change and stop
-  that rebase, `git checkout -- <path>` inside the worktree clears them. Never push a branch and never open a pull request. A release
-  (version bump and tag) while another session works in the same checkout goes from a detached
-  worktree on `origin/main` holding only your commits: read the version there, gate there, push,
-  and tag once the push has landed; after a rejected push fetch and bump again from the new
-  `origin/main`.
+  that rebase, `git checkout -- <path>` inside the worktree clears them. Outside a contributor's
+  fork, never push a branch and never open a pull request. A release (version bump and tag) while
+  another session works in the same checkout goes from a detached worktree on `origin/main`
+  holding only your commits: read the version there, gate there, push, and tag once the push has
+  landed; after a rejected push fetch and bump again from the new `origin/main`.

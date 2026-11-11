@@ -2,7 +2,7 @@
 // `prettier --check`, `eslint` and `stylelint` on the staged files. Check, never write: re-staging a
 // rewritten file would sweep another session's unstaged lines in that file into this commit. A file
 // whose working tree differs from the index is checked from the index on stdin, so those unstaged
-// lines neither pass nor block this commit. A repository defining a `validate:skills` script also
+// lines neither pass nor block this commit. A repository defining a `check:skills` script also
 // runs it whenever the index touches `.claude/`; that validator reads the working tree.
 import { spawn, spawnSync } from "node:child_process";
 import { existsSync, readFileSync } from "node:fs";
@@ -25,9 +25,12 @@ if (scan.status !== 0) process.exit(1);
 const pkg = JSON.parse(readFileSync("package.json", "utf8"));
 // Deletions count: removing a file can break a link the validator checks. Any status but 0
 // (no change) runs it, so a failing git diff fails closed.
-const skills =
-  Boolean(pkg.scripts?.["validate:skills"]) &&
+const claudeStaged =
   spawnSync("git", ["diff", "--cached", "--quiet", "--", ".claude"]).status !== 0;
+// The script's former name would otherwise turn the validation off without a word.
+if (claudeStaged && pkg.scripts?.["validate:skills"] && !pkg.scripts["check:skills"])
+  refuseCommit("rename the script validate:skills to check:skills: check-staged runs check:skills");
+const skills = Boolean(pkg.scripts?.["check:skills"]) && claudeStaged;
 
 const listed = spawnSync("git", ["diff", "--cached", "--name-only", "--diff-filter=ACMR", "-z"], {
   encoding: "utf8",
@@ -180,7 +183,7 @@ const runs = active.flatMap(([tool, flags]) => {
     }),
   ];
 });
-if (skills) runs.push(runStagedTool(process.execPath, ["run", "validate:skills"]));
+if (skills) runs.push(runStagedTool(process.execPath, ["run", "check:skills"]));
 
 // Concurrent for speed, reported in a fixed order so the output reads the same on every run.
 let failed = false;

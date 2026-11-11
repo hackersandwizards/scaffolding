@@ -1,8 +1,9 @@
 #!/usr/bin/env bun
 /**
  * Pairs of agent memories that say one thing twice (duplicate) or one thing with two values
- * (conflict), across every owner's directory, since a memory finding closes fleet-wide. Memory files
- * are compared with memory files and MEMORY.md index lines with index lines.
+ * (conflict, a value only one note carries included, since "at 9" against "at 9:30" is one), across
+ * every owner's directory, since a memory finding closes fleet-wide. Memory files are compared with
+ * memory files and MEMORY.md index lines with index lines.
  *
  * Usage: bun .claude/skills/polish/memory-twins.ts [memory root]
  */
@@ -122,9 +123,8 @@ export function classifyMemoryPair(a: Note, b: Note): PairClass {
   )
     return "different";
   if (notesLookAlike(a, b)) {
-    const sa = a.values.map(comparable).sort();
-    const sb = b.values.map(comparable).sort();
-    return sameSeq(sa, sb) ? "duplicate" : "conflict";
+    // In order, not sorted: two values swapping places are a conflict.
+    return sameSeq(a.values.map(comparable), b.values.map(comparable)) ? "duplicate" : "conflict";
   }
   return differing?.length === 1 ? "conflict" : "different";
 }

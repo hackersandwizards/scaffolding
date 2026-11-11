@@ -42,10 +42,13 @@ of repeating the question. The open points for the person's return are the items
 
 Every item: `kind` and `status` (`open`, `assumed` or `decided`; `work` and `goal` are only ever
 `open`). Every item but a goal: `priority` (1 to 3, 1 costs most if missed) and `owner` (who
-answers, or for work who moves next; a decision for Stefan sets `owner: Stefan`). Optional:
-`order`, `area`, `due` (ISO date), `evidence`. A decision or review may carry `options` (each
-`key`, `label`, optional `detail`, and `score` and `noise` from a blind review), `recommended` (an
-option key; a list where `multiple: true` lets the person pick several) and `images` (option key to
+answers, or for work who moves next: one name, with any later steps in the body; a decision for
+Stefan sets `owner: Stefan`). The body's first sentence after the title states what the owner
+does, in under 120 characters; context follows. Optional:
+`order`, `area` (one of backoffice, company, marketing, sales, delivery, finance, people, product,
+legal, software-engineering, brand), `due` (ISO date), `evidence`. A decision or review may carry
+`options` (each `key`, `label`, optional `detail`, and `score` and `noise` from a blind review),
+`recommended` (an option key; a list where `multiple: true` lets the person pick several) and `images` (option key to
 an image or a list of them, each a file name or `{src, caption}`, or a list for the item as a
 whole). A table, such as scores per criterion, goes in the body as Markdown. `assumed` states `assumption` or
 `recommended`. `decided` means the person's own answer and states `decision` and `by`, with
@@ -81,12 +84,20 @@ items up.
 
 1. At start, read `docs/agent-work/items/` in every repo the work touches. Where no goal item
    exists and the work spans sessions or delegates, create `goal.md` with the goal quoted from
-   the person's message. A work item outside the session's goal waits for its own session,
-   whoever owns it. Check: the goal item quotes the person.
+   the person's message; another repo's goal goes to a session in that repo. A work item outside
+   the session's goal waits for its own session, whoever owns it. Check: the goal item quotes the
+   person.
 2. Every message from the person that adds, decides or changes work gets its item in the same
-   turn. A pasted block from the page ("Copy answers") holds one `repo:id: choice, note` line per
-   answer: write each into its repo (step 4), commit, and confirm every id with
-   its commit; report an id that is unknown or already decided. Check: `git diff` shows the item.
+   turn. A block pasted from the page ("Copy answers") holds one `repo:id: ` line per answer,
+   then, comma-separated and each only where given: `agree` or `veto` on an assumed item, each
+   pick as `key (Label)` or a bare `key`, or `done` for work marked done, and the note. The note
+   may hold commas, so read the picks against the item's option keys. A line ending
+   `; answered <time>, before the question or its options changed` is checked against the item's
+   current question and options before anyone acts on it; where the pick no longer fits, the item
+   stays open and the report says so. Write each answer for this repo into
+   its item (step 4), commit, and confirm the id with its commit; an answer for another repo goes,
+   quoted, to a session in that repo. Report an id that is unknown or already decided. Check:
+   `git diff` shows the item.
 3. A delegate's brief names the items it owns by `id`, quotes the item format, and says whether
    the delegate works in the shared checkout or a worktree. A delegate writes only its own item
    files and commits them with their paths named. After merging another session's work, read
@@ -124,6 +135,12 @@ writes briefs, reads reports, keeps items current, and hands every ready batch t
 delegate. When a delegate finishes, stop the servers and browsers it started and delete its
 scratch then, not at session end. Check: no process or scratch folder of a finished delegate
 remains.
+
+An unattended `claude -p` run starts detached through `${CLAUDE_SKILL_DIR}/run.sh`;
+`net-watch.sh` beside it relaunches one a dropped connection ended, `watch.sh` prints each that
+finished. A start of `net-watch.sh` replaces the one already watching that run folder; it reads
+`runs` every minute and exits once every run it lists has ended, so a changed list needs no
+restart and a later wave a new start. Each script's first lines give its usage.
 
 ## Shared checkout or worktree
 

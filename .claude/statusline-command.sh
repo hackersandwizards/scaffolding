@@ -38,10 +38,13 @@ RL5_RED=80   RL5_YELLOW=50
 
 STATUS_CACHE_TTL=300   STATUS_FETCH_TIMEOUT=5
 
-# $TMPDIR is mode 700 on macOS. The /tmp fallback is not, so every value read
-# back out of these caches is validated before use.
-CACHE_DIR="${TMPDIR:-/tmp}"
+# $TMPDIR is mode 700 on macOS. Without it the caches go to the user's own cache
+# dir, never the shared /tmp, and umask keeps them unreadable to other users. Every
+# value read back is still validated before use.
+umask 077
+CACHE_DIR="${TMPDIR:-${XDG_CACHE_HOME:-$HOME/.cache}}"
 CACHE_DIR="${CACHE_DIR%/}"
+[[ -d $CACHE_DIR ]] || mkdir -p "$CACHE_DIR"
 
 format_countdown() {
     local secs="$1" var="$2"

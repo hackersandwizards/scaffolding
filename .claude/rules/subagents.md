@@ -39,10 +39,13 @@
   paths in its report, and you delete them with literal absolute paths. While any delegate runs,
   never delete scratch by a keep-list glob: a delegate's folder need not match the prefix you gave
   it. A headless `claude -p` run prompts nobody and removes its own scratch.
+- A nested `claude -p` names `--model` and `--effort`: the values the brief or the skill gives,
+  else your own model at `high`. Without them the repository's settings choose, and results from
+  two repositories stop being comparable.
 - Under `claude -p`, run `/simplify`, `/code-review` and `/security-review` each as a nested
-  `claude -p "<skill> <scope>; report findings only" > <scratch file>` and read the file: called
-  through the Skill tool, a review skill ends the run on its own output, and its fan-out needs
-  background agents the run would wait on.
+  `claude -p --model <model> --effort <level> "<skill> <scope>; report findings only" > <scratch>`
+  and read that file: called through the Skill tool, a review skill ends the run on its own output,
+  and its fan-out needs background agents the run would wait on.
 - Check that SendMessage is available before fanning out: a fan-out you cannot prod runs serially
   in your own context. Prod a quiet agent with SendMessage for its findings and do other work
   meanwhile. Never spawn a replacement for a silent agent, and never end a turn while a phase is
@@ -74,8 +77,9 @@
 - Before putting a question to a principal, re-read what you told the delegate. Decide it in the
   instruction, or hold the work and ask, never both.
 - Before building or changing Claude Code artifacts (skills, rules, subagents, hooks, settings,
-  MCP), consult the `claude-code-guide` agent or the official docs. A rule asserting how the system
-  behaves is checked against the system before it is written and before it is leaned on.
+  MCP), consult the official docs, or the `claude-code-guide` agent where the session's agent list
+  offers it. A rule asserting how the system behaves is checked against the system before it is
+  written and before it is leaned on.
 - Add an MCP server, permission or hook at project scope (`.mcp.json` or `.claude/settings.json` in
   the folder it serves), never `settings.local.json` or user scope, unless the person names that
   scope.

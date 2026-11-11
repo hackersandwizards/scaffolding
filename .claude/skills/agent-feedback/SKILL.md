@@ -136,7 +136,7 @@ deletes those lines in every repo at once. A declared fork drifting from the hub
 working: leave it, and never lift it into the hub. Build that loop over a shell array: an unquoted
 parameter does not word-split in zsh, so the loop runs once against the whole list and reports no
 drift. Count the comparisons it made and check that number against repos x artifacts less the
-declared forks before believing a green result.
+declared forks and `OMITTED` pairs before believing a green result.
 
 The hub is a git repository of its own: commit the hub copy there with its paths named, then run
-the sync script, which commits and pushes the mirrors in every configured repository itself. It first commits every dirty hub path, so read the hub's `git status --porcelain` before running it. A dirty path you did not write defers the sync: copy the files you committed from hub `HEAD` into the current repository's mirror and report the other repositories as pending.
+the sync script, which commits and pushes the mirrors in every configured repository itself. It first commits every dirty rule, mirrored skill and `statusline-command.sh` in the hub, so read the hub's `git status --porcelain` before running it. A dirty one you did not write defers the sync: copy the files you committed from hub `HEAD` into the current repository's mirror and report the other repositories as pending. Name a repository held for a reason git cannot show, such as a deploy hold, with `--hold <path suffix>`: the sync leaves it, and every repository with unpushed commits no sync wrote, untouched and prints each as `pending:`, a line the report carries.
