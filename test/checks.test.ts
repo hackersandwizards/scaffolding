@@ -2915,6 +2915,7 @@ describe("skeleton install hooks", () => {
 case "$*" in
   "install --frozen-lockfile")
     [ -e node_modules/.check.lock ] && held=" locked" || held=
+    echo "$CHECK_LOCK_RUN_S" > "${fake}/bound"
     echo "start$held" >> "$BUN_LOG"
     sleep "\${BUN_SLEEP:-0}"
     echo end >> "$BUN_LOG"
@@ -2925,7 +2926,7 @@ exec "${process.execPath}" "$@"
 `,
       { mode: 0o755 },
     );
-    return { fake, log: join(fake, "bun.log") };
+    return { fake, log: join(fake, "bun.log"), bound: join(fake, "bound") };
   };
   // A consumer with the hooks as the skeleton ships them, check-lock's copy among them.
   const consumer = (files: Record<string, string> = {}) => {
@@ -2940,6 +2941,11 @@ exec "${process.execPath}" "$@"
     ...more,
   });
   const read = (path: string) => (existsSync(path) ? readFileSync(path, "utf8") : "");
+  // The MCP server's start in dir, from the skeleton's .mcp.json, its project folder as the last argument.
+  const mcp = JSON.parse(readFileSync(join(import.meta.dir, "../template/.mcp.json"), "utf8"))
+    .mcpServers["chrome-devtools"];
+  const mcpStart = (dir: string, options: Parameters<typeof spawnSync>[2]) =>
+    spawnSync(mcp.command, [...mcp.args.slice(0, -1), dir], options);
   const head = (dir: string) => sh(dir, ["rev-parse", "HEAD"]).stdout.toString().trim();
   /** The post-checkout arguments of a checkout that changed bun.lock. */
   const lockChange = (dir: string) => {
@@ -3047,6 +3053,37 @@ exec "${process.execPath}" "$@"
     expect(read(bun.log)).toBe("start locked\n");
   }, 20_000);
 
+  // Behind a network that never answers, an install waited with no end, and the checkout, the
+  // merge or the MCP server's start with it.
+  test.each(["post-checkout", "post-merge", "MCP server's start"])(
+    "%s bounds its install at 60 s unless CHECK_LOCK_RUN_S is set",
+    (caller) => {
+      const dir = consumer();
+      const bun = fakeBun();
+      const args = lockChange(dir);
+      sh(dir, ["update-ref", "ORIG_HEAD", args[0]]);
+      const start = (bound?: string) => {
+        const options = { cwd: dir, env: env(bun) as Record<string, string | undefined> };
+        if (bound === undefined) delete options.env.CHECK_LOCK_RUN_S;
+        else options.env.CHECK_LOCK_RUN_S = bound;
+        if (caller === "MCP server's start") return mcpStart(dir, options);
+        return spawnSync(
+          join(dir, ".githooks", caller),
+          caller === "post-merge" ? ["0"] : args,
+          options,
+        );
+      };
+      start();
+      expect(read(bun.bound)).toBe("60\n");
+      start("5");
+      expect(read(bun.bound)).toBe("5\n");
+      // An empty one too, in the hooks; Claude Code expands .mcp.json's default itself and keeps it.
+      if (caller === "MCP server's start") return;
+      start("");
+      expect(read(bun.bound)).toBe("60\n");
+    },
+  );
+
   // The MCP server's start and the SessionStart hook install at the same moment.
   test("two first installs at once wait for each other, the second without a word", async () => {
     const dir = consumer();
@@ -3148,14 +3185,9 @@ exec "${process.execPath}" "$@"
   });
 
   test("the MCP server starts after the install, with nothing but the server on stdout", () => {
-    const dir = consumer({
-      ".mcp.json": readFileSync(join(import.meta.dir, "../template/.mcp.json"), "utf8"),
-    });
+    const dir = consumer();
     const bun = fakeBun();
-    const { command, args } = JSON.parse(readFileSync(join(dir, ".mcp.json"), "utf8")).mcpServers[
-      "chrome-devtools"
-    ];
-    const start = spawnSync(command, [...args.slice(0, -1), dir], {
+    const start = mcpStart(dir, {
       cwd: tmpdir(),
       env: env(bun, { BUN_EXIT: "1" }),
       encoding: "utf8",

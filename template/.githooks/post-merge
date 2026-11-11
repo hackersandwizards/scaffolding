@@ -1,5 +1,6 @@
 #!/bin/sh
 # Installs where bun.lock or package.json changed; install names a skip or a failure on stderr.
+# check-lock stops it after CHECK_LOCK_RUN_S seconds, as in post-checkout.
 git diff --quiet ORIG_HEAD HEAD -- bun.lock package.json 2>/dev/null
 [ $? -eq 1 ] || exit 0
-exec "$(dirname "$0")/install"
+CHECK_LOCK_RUN_S=${CHECK_LOCK_RUN_S:-60} exec "$(dirname "$0")/install"

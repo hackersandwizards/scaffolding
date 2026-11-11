@@ -4,7 +4,7 @@
       "command": "sh",
       "args": [
         "-c",
-        "cd \"$0\" && { .githooks/install; exec bun run --silent chrome-mcp; }",
+        "cd \"$0\" && { CHECK_LOCK_RUN_S=${CHECK_LOCK_RUN_S:-60} .githooks/install; exec bun run --silent chrome-mcp; }",
         "${CLAUDE_PROJECT_DIR:-.}"
       ]
     }
