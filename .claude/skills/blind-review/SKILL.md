@@ -37,8 +37,9 @@ none, because receipt".
 1. Before the first draft, or before the first round where a draft exists, fix the medium, the
    audience and the real display size. Check: every reviewer prompt names all three.
 2. Take the personas from the real target audience. Fix the criteria before scoring; for visual
-   work "breathing room, not cramped" and "visual calm" are criteria of their own. Check: the
-   criteria list is written before any score exists.
+   work "breathing room, not cramped", "visual calm" and "ours: made for this company, could not be
+   any other's" are criteria of their own. Check: the criteria list is written before any score
+   exists.
 3. Brief unprimed: each reviewer gets only its role, the artifacts and the same criteria, with no
    score, rationale, hypothesis, preference, rule text under test, or hint of which version is current, new or whose.
    Use neutral labels, in file paths and names too, and a shuffled order per reviewer. Score the unchanged current state

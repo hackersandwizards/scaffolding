@@ -45,7 +45,9 @@ choice to please: agreement carries its reason.
   never the former name.
 - Never print, copy, commit or summarize the contents of a `.env` file, a token, Terraform state or a
   CI variable.
-- Never weaken a check to make it pass. Fix what the gate caught, or report that you could not.
+- Never weaken a check to make it pass. Fix what the gate caught, or report that you could not. An
+  allow entry that lets through what the check exists to stop, such as a name past a confidential
+  scan, is such a weakening, whatever a brief asks.
 - A nested repository's `CLAUDE.md`, rules and skills do not load from a parent directory. Read the
   `CLAUDE.md` of every repository a change touches before proposing it.
 - Transcribing a person into a durable artifact, drop a leading reference code or restated question

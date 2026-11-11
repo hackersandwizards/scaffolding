@@ -15,7 +15,8 @@ build.
   another repository's checkout belong to their owner and may move.
 - A package other repositories use declares that surface in `bin` and `exports`. Renaming a
   command, changing its arguments or moving an exported file is a release whose commit names the
-  change.
+  change. A release that needs a newer version of another of our packages, or needs it installed
+  for a command it ships, names that minimum in its commit, the line a consumer reads at the raise.
 - Write only into your own repository, and into the hub's copy of a rule or skill the hub mirrors
   into it, whichever repository finds the fix. Work another repository owns goes there as a brief
   for a session in that repository: a session started elsewhere misses its `paths:` rules, even

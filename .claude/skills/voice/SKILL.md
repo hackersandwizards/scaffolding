@@ -41,6 +41,7 @@ Layers 1-3 are positive: write from them. Layer 4 is a filter: check the draft a
 | `content-formula.md` | Post-length content: LinkedIn essays, blog articles, talk arcs | Six beats, the research-backed pattern |
 | `negotiation.md` | Pricing pushback, advisor or partner setup, speaker fees, training scope, scope creep, asking for visibility, intros or access | Tactics and h&w-specific phrasings |
 | `intro-framework.md` | 30-second self-introduction | NSFAG: Name, Same, Fame, Aim, Game |
+| `readme.md` | Writing or rewriting a README | What it holds per repository kind, line budgets, where removed text goes, the rewrite procedure |
 
 A cold pitch, a proposal opener or speaker outreach takes its shape from `postures.md`, "Pitch and positioning".
 

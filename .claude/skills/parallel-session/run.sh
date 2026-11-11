@@ -18,7 +18,7 @@ P="$(cat $S/$name.md)
 
 $(cat $S/$(cat $S/$name.common 2>/dev/null || echo common.md))
 
-Model: this run is on $model at effort $effort. Every nested \`claude -p\` you start names its model: \`--model $model --effort $effort\` for your own review skills, and \`--model claude-opus-5-5 --effort medium\` for a blind-review persona unless your brief names another reviewer model. A call without \`--model\` takes the machine's default, so its scores are not comparable."
+Model: this run is on $model at effort $effort. Every nested \`claude -p\` you start names its model: \`--model $model --effort $effort\` for your own review skills unless your brief names their effort, and \`--model claude-opus-5-5 --effort medium\` for a blind-review persona unless your brief names another reviewer model. A call without \`--model\` takes the machine's default, so its scores are not comparable."
 # cswap execs claude, so the stop reaches the run itself; one between the launch and pid=$! is caught
 # on the next line. With no launch, wait returns at once; the second wait lets the run end before EXIT.
 (( stopped )) || { ANTHROPIC_MODEL=$model CLAUDE_CODE_PRINT_BG_WAIT_CEILING_MS=0 cswap run $acct -- -p "$P" --model $model --effort $effort --fallback-model claude-opus-5-5 --permission-mode bypassPermissions > $S/$name.log 2>&1 </dev/null & pid=$! }

@@ -42,14 +42,24 @@ handling that prevents data loss, security measures, or accessibility basics.
   where LFS is used. `scaffolding check` serialises `bun run check` itself. npm is stopped by
   `"engines": {"npm": "please-use-bun"}` in `package.json` with `engine-strict=true` in `.npmrc`; no
   install script guards the package manager, and a package other repositories install carries no
-  `preinstall`, since a consumer's install-script check rejects it.
+  `preinstall`, since a consumer's install-script check rejects it. Read `bun install`'s `Blocked N
+  postinstall` with `bun pm untrusted`: a `prepare` of one of our own packages that acts only inside
+  that package's own checkout needs no trust and no report line; name any other blocked script with
+  its package in the report.
 - Remove or replace a dependency with a known vulnerability before excusing it. An audit
   exception names the advisory ID.
 - A browser that code or an MCP server starts is Chrome for Testing with a profile from `mkdtemp`
   under the OS temp folder, removed after the run, and `--use-mock-keychain --password-store=basic`,
   which puppeteer and Playwright pass themselves and a direct launch adds.
-- A run that needs a running app starts its own on a free port and stops it by PID when done. It
-  never stops or restarts a server it did not start.
+- Screenshots compared across two builds use software drawing (`--disable-gpu`), a fresh profile
+  with the cache off per build, the same waits with animations stopped and lazy images loaded, and
+  each image's pixel size read back. Shoot each build twice: a difference between one build's own
+  two shots is noise, never a finding.
+- A run that needs a running app starts its own on a port it probed free on IPv4 and IPv6
+  (`lsof -nP -iTCP:<port> -sTCP:LISTEN` prints nothing), reads the listener's PID as its own before
+  the first request it measures or captures, and stops it by PID when done. It never stops a server
+  it did not start, except a dev server of the person's that needs a restart to load a change this
+  session made: restart that one by its listener's PID and name it in the report.
 - A trial of a forward-looking automation over past items gives each item only the data that
   existed when the automation would have acted: records from git history as of then, mail before
   then. Items still ahead run as the real test, and the brief states the cutoff.

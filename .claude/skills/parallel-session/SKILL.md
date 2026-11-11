@@ -160,8 +160,7 @@ so each worktree's full gate runs beside the others.
   there unless its config ignores the path.
 - A hand-made worktree goes outside the repo with no branch:
   `git worktree add --detach <scratchpad>/<run>-wt origin/main`.
-- The delegate installs the repo's dependencies in its worktree (`bun install` in os) before its
-  first commit, since the hook needs them. It commits there, then runs `git fetch`, `git rebase origin/main` and
+- The delegate commits in its worktree, then runs `git fetch`, `git rebase origin/main` and
   `git push origin HEAD:main`, repeating on rejection, before its run ends. Check:
   `git log origin/main..HEAD` prints nothing.
 - Remove each worktree as soon as its delegate's work is on `main`, while the session goes on, so

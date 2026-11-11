@@ -119,6 +119,13 @@ reader's context, so the citation goes. A `paths:`-scoped rule loads only after 
 fired, so its clause is inlined. A name appearing as data, a field value, a channel, an area, is not
 a reference and stays.
 
+Before building or changing Claude Code artifacts (skills, rules, subagents, hooks, settings, MCP),
+consult the official docs, or the `claude-code-guide` agent where the session's agent list offers
+it. A rule asserting how the system behaves is checked against the system before it is written and
+before it is leaned on. Add an MCP server, permission or hook at project scope (`.mcp.json` or
+`.claude/settings.json` in the folder it serves), never `settings.local.json` or user scope, unless
+the person names that scope.
+
 ## Mirrors and sync
 
 A participant repository, a training repository without our `CLAUDE.md` at its root that

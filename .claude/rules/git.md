@@ -65,13 +65,17 @@ Other sessions share this working tree and its index.
   commit <path>` answering `no changes added to commit` usually means another session swept your
   edit into its own commit: find it with `git log -m -S` before editing again,
   since a plain `-S` skips merge diffs.
+- In a public repository a commit message carries no company data and no person's words: name
+  what a request asked, never quote it, a brief's verbatim quotation included.
 - The commit author is the machine's git identity for every session. An agent commit is marked only
   by its `Co-Authored-By` line, so git history never says who decided a change: that evidence is a
   message, a record body or a run transcript, and is often unrecorded.
 - Work in the shared checkout by default. A worktree, made with `git worktree add` or by a
   delegate's `isolation: worktree`, is allowed where it pays off, which `parallel-session` weighs.
-  It starts from `origin/main`, so this tree's uncommitted and unpushed work is absent there, and
-  without dependencies: install them before its first commit, since the hooks need them. Its
+  It starts from `origin/main`, so this tree's uncommitted and unpushed work is absent there. The
+  hooks need its dependencies before its first commit: where its `.githooks/post-checkout` installs
+  them, as scaffolding's skeleton does, run `bun install --frozen-lockfile` only after an
+  `[install]` line on stderr; elsewhere run it yourself. Its
   commits reach `main` within the same delegate run (`git fetch`, `git rebase origin/main`,
   `git push origin HEAD:main`). Where Git LFS files show as modified with no change and stop
   that rebase, `git checkout -- <path>` inside the worktree clears them. Outside a contributor's

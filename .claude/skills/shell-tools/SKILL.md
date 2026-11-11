@@ -3,7 +3,8 @@ name: shell-tools
 description: >-
   The zsh traps of the Bash tool (a bare `=word`, an unmatched glob, a function named like an alias),
   preferred CLI tools on this machine and the GNU/BSD portability rule. Load before the first Bash
-  command of a run, and for scripts that must run on macOS and Linux.
+  command of a run and again after the context is compacted, and for scripts that must run on
+  macOS and Linux.
 ---
 
 # Shell tools
@@ -29,7 +30,7 @@ Prefer these over their classic equivalents.
 - `jq`'s `strftime` renders UTC, while `date` renders local time. Bucketing an epoch timestamp
   into a day through `jq` puts everything before local 02:00 on the previous day.
 - `rg` skips dot-directories, so `rg <pattern> .` reports zero hits across every skill, rule, agent and memory under `.claude/`. Pass `--hidden`, name the directory, or use `git grep`. A "no references remain" sweep run without it cannot fail.
-- `rg` with no path argument searches stdin wherever stdin is a pipe or a file, a tool call included, and hangs until the timeout, leaving an empty result file that reads as zero hits. Pass a path (`.`) and `</dev/null`. It also skips binary files, so count PDFs by file name with `git ls-files` or `fd`.
+- `rg` with no path argument searches stdin wherever stdin is a pipe or a file, a tool call included, and hangs until the timeout, leaving an empty result file that reads as zero hits. Pass a path (`.`) and `</dev/null`. An `rg` meant to filter a pipe keeps its stdin: `</dev/null` there replaces the pipe and also reads as zero hits. It also skips binary files, so count PDFs by file name with `git ls-files` or `fd`.
 - Judge a content-search hit by its matching line (`rg -n`), never by its file's name: a topic's
   page often sits as a link line inside a hub page. Search the user's words and their synonyms
   before leaving the repository.
@@ -70,6 +71,10 @@ Prefer these over their classic equivalents.
   `"packageManager": "bun@<version>"`, and those lines in its README and CLAUDE.md. A participant
   repository, a training repository without our `CLAUDE.md` at its root that participants build in
   the training, uses npm and node instead, in commands, lockfile, `packageManager`, README and MCP config, because most participants have no bun.
+- A bun script outside a project resolves a bare import (`import sharp from "sharp"`) from its own
+  folder, finds no `node_modules` and auto-installs, which can hang with no output and no CPU. Run
+  it with `bun --no-install` and import the project's package by the absolute path of the file its
+  `exports` names (`<project>/node_modules/sharp/dist/index.mjs`): a miss then fails at once.
 - `bun` instead of `node` for running scripts, and `bunx` instead of `npx` for a package the project
   does not install, outside a participant repository
 - `bun install -g` for globals at `~/.bun/bin`

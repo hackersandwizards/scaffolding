@@ -19,6 +19,10 @@
     "de": "Schnellere Releases mit den Agenten, die eure Teams schon haben. Sobald alle Rollen zusammenspielen.",
     "since": "2026-11-10"
   },
+  "descriptor": {
+    "en": "Training and mentoring in agentic engineering",
+    "de": "Schulung und Mentoring in Agentic Engineering"
+  },
   "mission": {
     "en": "We bring every role that builds our clients' products into flow with agentic engineering, as one team.",
     "de": "Wir bringen jede Rolle, die die Produkte unserer Kunden baut, als ein Team in den Flow mit Agentic Engineering.",
