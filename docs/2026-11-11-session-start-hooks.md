@@ -96,9 +96,13 @@ Hook B, then the merge it names, run at once by the session, while the gate runs
 10 rounds): `HEAD` reached `origin/main` 10/10. In the 9 rounds where the merge landed while the
 gate still ran, `node_modules` held the old versions of 7 packages after the gate ended, since the
 `post-merge` install skipped behind the gate's lock and said so on stderr. In the tenth the gate
-had ended first and the install ran. The gate was green in rounds 0 to 6. Rounds 7 to 9 went red,
-first run and rerun, because Chrome did not start: from 08:10 another job's install of Chrome for
-Testing 157 into the shared puppeteer cache stood half written, its `unzip` waiting on input.
+had ended first and the install ran. The gate was green in the 7 rounds 0 to 6. Rounds 7 to 9 are
+left out: they went red, first run and rerun, because Chrome for Testing 157 did not start. From
+08:10 to about 08:25 another job's install of that build into the shared puppeteer cache stood
+half written, its `unzip` waiting on input. The documents test that failed changes its working
+directory to a temporary folder before it prints, and from there `cachedChrome()` takes the newest
+build in the cache (157) rather than the one the checkout pins (156). Round 9's gate went red at
+114 s, before its hooks started at 125 s.
 
 Four sessions at once in the larger consumer, no gate, 10 rounds per row:
 
@@ -114,9 +118,10 @@ Four sessions at once in the larger consumer, no gate, 10 rounds per row:
   rewriting. Hook B: 0 of 30, since it moves nothing and skips the install while the gate holds the
   lock. With `bun.lock` unchanged each hook had one red round in 30, both timeouts, both green when
   run again.
-- **Current at the start.** Hook A brought `HEAD` to `origin/main` with nothing stale in 30 of 30
-  rounds behind and in every concurrent round. Hook B moved `HEAD` in none and told the session
-  how far it is behind in every round where its fetch succeeded.
+- **Current at the start.** Behind with no other session, hook A brought `HEAD` to `origin/main`
+  with nothing stale in 30 of 30 rounds. In the concurrent rounds `HEAD` reached `origin/main` in
+  every round. Hook B moved `HEAD` in none and told the session how far it is behind in every round
+  where its fetch succeeded.
 - **Stale `node_modules`.** Hook A: 1 round of 30 with `bun.lock` changed, 14 packages, 8
   sessions. Hook B: none, as nothing moved. Once the session ran the merge hook B names during a
   gate, 9 of 9 such rounds left 7 packages stale.
@@ -131,8 +136,9 @@ Four sessions at once in the larger consumer, no gate, 10 rounds per row:
   default) and hook B for 21 s.
 - **Uncommitted work.** No hook lost an edit in 60 rounds. Hook A refuses the merge where the
   fast-forward touches the edited file.
-- **The fix in v5.17.1.** Hook B at v5.16.0 skipped the install in 3 of 40 starts with the lock
-  free; at v5.17.1 in 0 of 40.
+- **The fix in v5.17.1.** Hook B at v5.16.0 skipped the install with the lock free in 3 of 40
+  starts in the run the table shows, and in 4 of 40 in an earlier run of the same case; at v5.17.1
+  in 0 of 40.
 
 ## Not measured
 
