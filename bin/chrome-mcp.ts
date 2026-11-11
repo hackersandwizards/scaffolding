@@ -9,6 +9,9 @@ import { readFileSync } from "node:fs";
 import { createRequire } from "node:module";
 import { dirname, join } from "node:path";
 import { cachedChrome, chromeBinary, INSTALL_HINT, NO_KEYCHAIN } from "../lib/chrome.ts";
+import { help } from "../lib/help.ts";
+
+help("chrome-mcp");
 
 // Any cached build before a download of about 570 MB, which the server's start waits for: a
 // browser an agent drives needs no pinned build, a test comparing pixels does.

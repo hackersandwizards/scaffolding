@@ -3,6 +3,7 @@
 import { spawn } from "node:child_process";
 import { existsSync } from "node:fs";
 import { join } from "node:path";
+import { help } from "../lib/help.ts";
 import {
   isReason,
   readPackage,
@@ -17,6 +18,7 @@ import {
 } from "../lib/repo.ts";
 import { machineLoad } from "../lib/serve.ts";
 
+help("scaffolding");
 withoutEnvFile("scaffolding");
 
 // Every key of the Package type's scaffolding and no other, or typecheck fails.

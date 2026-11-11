@@ -16,6 +16,7 @@ import {
   writeFileSync,
 } from "node:fs";
 import { basename, dirname, join, posix } from "node:path";
+import { help } from "../lib/help.ts";
 import {
   applyAllow,
   finish,
@@ -29,6 +30,7 @@ import {
   type Finding,
 } from "../lib/repo.ts";
 
+help("check-structure");
 const started = performance.now();
 const fix = process.argv.includes("--fix");
 const root = repoRoot();

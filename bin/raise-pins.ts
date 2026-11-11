@@ -6,8 +6,10 @@
 import { spawnSync } from "node:child_process";
 import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
+import { help } from "../lib/help.ts";
 import { git, newestTag, readPackage, repoRoot, underLock, withoutEnvFile } from "../lib/repo.ts";
 
+help("raise-pins");
 withoutEnvFile("raise-pins");
 const args = process.argv.slice(2).filter((arg) => arg !== "--locked");
 if (args.some((arg) => arg !== "--commit")) {

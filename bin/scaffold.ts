@@ -12,10 +12,12 @@ import {
   writeFileSync,
 } from "node:fs";
 import { basename, dirname, join, resolve } from "node:path";
+import { help } from "../lib/help.ts";
 import { companyRemote, installedCommit, newestTag, tagCommit } from "../lib/repo.ts";
 
 const usage =
   "usage: scaffold <dir> [--name <package name>] [--port <port>] [--catalog-in <repo>] [--admin-in <repo>]";
+help("scaffold", usage);
 const dir = process.argv[2];
 if (!dir || dir.startsWith("-")) {
   console.error(usage);

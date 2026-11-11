@@ -292,8 +292,16 @@ async function queueForLock(): Promise<boolean> {
 }
 
 const command = process.argv.slice(2);
+// A skeleton file runs without the package beside it, so its help names where the rest stands.
+const USAGE = "usage: check-lock <command> [args...]";
+if (command[0] === "--help") {
+  console.log(
+    `${USAGE}\nRuns the command under the checkout's lock: docs/commands.md of @hackersandwizards/scaffolding.`,
+  );
+  process.exit(0);
+}
 if (command.length === 0) {
-  console.error("usage: check-lock <command> [args...]");
+  console.error(USAGE);
   process.exit(2);
 }
 

@@ -7,6 +7,7 @@ import { spawn, spawnSync } from "node:child_process";
 import { existsSync, mkdirSync, mkdtempSync, rmSync } from "node:fs";
 import { availableParallelism } from "node:os";
 import { join } from "node:path";
+import { help } from "../lib/help.ts";
 import {
   isReason,
   readPackage,
@@ -16,6 +17,7 @@ import {
   withoutEnvFile,
 } from "../lib/repo.ts";
 
+help("check-staged");
 withoutEnvFile("check:staged");
 
 function refuseCommit(message: string): never {

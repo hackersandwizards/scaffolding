@@ -222,6 +222,31 @@ test("comment syntax keeps a quoted string whole, a comment mark inside it inclu
   expect(strip("a.md", "Don't, won't <!-- note -->")).toBe("Don't, won't ");
 });
 
+// Before anything else runs: in an empty folder outside a repository, with neither gitleaks nor a
+// Chrome to find.
+test("every command answers --help first on stdout, and check-lock passes a later --help on", () => {
+  const dir = temp();
+  const env = { PATH: "/usr/bin:/bin", HOME: dir };
+  const help = (path: string, args = ["--help"]) =>
+    spawnSync(process.execPath, ["--no-env-file", join(import.meta.dir, "..", path), ...args], {
+      cwd: dir,
+      env,
+      encoding: "utf8",
+    });
+  for (const [name, path] of Object.entries<string>(ownPackage.bin)) {
+    const r = help(path);
+    expect({ name, status: r.status, stderr: r.stderr, usage: r.stdout.split("\n")[0] }).toEqual({
+      name,
+      status: 0,
+      stderr: "",
+      usage: expect.stringMatching(new RegExp(`^usage: ${name}( |$)`)),
+    });
+    // Its row of docs/commands.md, which the skeleton's copy of check-lock has no way to read.
+    if (name !== "check-lock") expect(r.stdout).toContain("\nRuns in: ");
+  }
+  expect(help(ownPackage.bin["check-lock"], ["echo", "--help"]).stdout).toBe("--help\n");
+});
+
 describe("check-coupling", () => {
   const fx = repo({
     "package.json": JSON.stringify(fixturePackage, null, 2),
@@ -3182,6 +3207,35 @@ exec "${process.execPath}" "$@"
     expect(added.stderr).toContain("[post-checkout] installing node_modules in the new worktree");
     expect(read(bun.log)).toBe("start locked\nend\n");
     expect(existsSync(join(tree, "node_modules"))).toBe(true);
+  });
+
+  // Git LFS writes its hooks while it checks out a file ahead of .githooks/; a smudge filter that
+  // writes post-commit stands in for it.
+  test.each([
+    ["an untracked", {}, false],
+    ["an ignored", { ".gitignore": "node_modules\n.githooks/post-commit\n" }, false],
+    ["a tracked", { ".githooks/post-commit": "#!/bin/sh\n" }, true],
+  ] as const)("a new worktree keeps %s post-commit only where git tracks it", (_, files, kept) => {
+    const dir = consumer({
+      ".gitattributes": ".claude/* filter=plant\n",
+      ".claude/a": "a\n",
+      ...files,
+    });
+    sh(dir, ["add", "-A"]);
+    sh(dir, ["commit", "-qm", "hooks"]);
+    sh(dir, ["config", "core.hooksPath", ".githooks"]);
+    sh(dir, [
+      "config",
+      "filter.plant.smudge",
+      "mkdir -p .githooks && : > .githooks/post-commit && cat",
+    ]);
+    const tree = join(temp(), "tree");
+    spawnSync("git", ["worktree", "add", "-q", "--detach", tree], {
+      cwd: dir,
+      env: env(fakeBun()),
+    });
+    expect(existsSync(join(tree, ".githooks/post-commit"))).toBe(kept);
+    expect(sh(dir, ["worktree", "remove", tree]).status).toBe(0);
   });
 
   test("the MCP server starts after the install, with nothing but the server on stdout", () => {

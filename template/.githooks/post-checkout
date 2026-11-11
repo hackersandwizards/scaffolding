@@ -7,7 +7,13 @@ case $1 in
   git diff --quiet "$1" "$2" -- bun.lock package.json 2>/dev/null
   [ $? -eq 1 ] || exit 0
   ;;
-*) echo "[post-checkout] installing node_modules in the new worktree (bun install --frozen-lockfile)" >&2 ;;
+*)
+  # Git LFS writes its hooks into .githooks/ when it checks out an LFS file ahead of that folder; git
+  # then writes the hooks it tracks over theirs, and an untracked post-commit stays, which makes `git
+  # worktree remove` refuse the worktree. Only a tracked one stays, an ignored one does not.
+  git ls-files --error-unmatch .githooks/post-commit >/dev/null 2>&1 || rm -f .githooks/post-commit
+  echo "[post-checkout] installing node_modules in the new worktree (bun install --frozen-lockfile)" >&2
+  ;;
 esac
 # install names a skip or a failure on stderr; the checkout's exit status stays its own. Offline, an
 # install that must download waits on a network that never answers with no end, and the checkout

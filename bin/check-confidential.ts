@@ -38,6 +38,7 @@ import {
 } from "node:fs";
 import { extname, join, resolve } from "node:path";
 import { inflateRawSync } from "node:zlib";
+import { help } from "../lib/help.ts";
 import {
   applyAllow,
   finish,
@@ -47,6 +48,10 @@ import {
   repoRoot,
   type Finding,
 } from "../lib/repo.ts";
+
+const USAGE =
+  "usage: check-confidential --staged | --message-file <file> [--list-optional] | --commit <rev> | --index | --tree <rev> | never | prepush | fetch | build <terms|-> [--public <file>] [--never <file>] | purged <sha>...";
+help("check-confidential", USAGE);
 
 const TERMS_REPO = "hackersandwizards/confidential-terms";
 const HOUR = 3_600_000;
@@ -910,9 +915,7 @@ else if (argv.includes("--staged") || commit) {
     else scanText(path, ownText(path, data[i].toString("utf8")));
   });
 } else {
-  console.error(
-    "usage: check-confidential --staged | --message-file <file> [--list-optional] | --commit <rev> | --index | --tree <rev> | never | prepush | fetch | build <terms|-> [--public <file>] [--never <file>] | purged <sha>...",
-  );
+  console.error(USAGE);
   process.exit(2);
 }
 scanBinaries(binaries);
