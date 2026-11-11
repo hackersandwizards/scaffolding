@@ -268,18 +268,15 @@ describe("check-lock serialises the checks", () => {
     expect(same.stderr).toBe("");
   }, 30_000);
 
-  it("lets the first live waiter take the lock and removes a dead one's ticket", () => {
+  it("lets a ticket that is not renewed hold a free lock for three polls, and removes a dead one", () => {
     const lock = lockPath();
     mkdirSync(`${lock}.queue`);
+    // A ticket whose process waits for nothing, a pid reused or a waiter stopped by Ctrl-Z.
     const earlier = `${lock}.queue/000000000000001-${process.pid}`;
     writeFileSync(earlier, "");
-    const behind = run(lock, ["echo", "ran"], { CHECK_LOCK_WAIT_MS: "2500" });
-    expect(behind.status).toBe(1);
-    expect(behind.stdout).not.toContain("ran");
-    // A ticket whose process waits for nothing, a pid reused or a waiter stopped by Ctrl-Z, holds
-    // a free lock up for three polls only.
-    expect(run(lock, ["echo", "ran"], { CHECK_LOCK_WAIT_MS: "20000" }).stdout).toBe("ran\n");
-    // Unrenewed for three polls, the ticket is gone by now.
+    const started = Date.now();
+    expect(run(lock, ["echo", "ran"], { CHECK_LOCK_WAIT_MS: "0" }).stdout).toBe("ran\n");
+    expect(Date.now() - started).toBeGreaterThanOrEqual(5_900);
     expect(existsSync(earlier)).toBe(false);
     writeFileSync(`${lock}.queue/000000000000001-999999`, "");
     expect(run(lock, ["echo", "ran"]).stdout).toBe("ran\n");
@@ -323,6 +320,43 @@ describe("check-lock serialises the checks", () => {
     expect(await first).toBe(0);
     expect(await second).toBe(0);
   }, 60_000);
+
+  // Four installs at once: one that found the lock free at two polls in a row, the others taking
+  // their turns in between, gave up although nobody held it.
+  it("waits under a wait of 0 while the lock is free and a live waiter is ahead", async () => {
+    const lock = lockPath();
+    mkdirSync(`${lock}.queue`);
+    const ahead = `${lock}.queue/000000000000001-${process.pid}`;
+    writeFileSync(ahead, "");
+    const child = spawn("bun", [SCRIPT, "echo", "ran"], {
+      env: { ...process.env, CHECK_LOCK: lock, CHECK_LOCK_WAIT_MS: "0" },
+      stdio: ["ignore", "pipe", "pipe"],
+    });
+    let [stdout, stderr] = ["", ""];
+    child.stdout.on("data", (chunk: Buffer) => (stdout += chunk));
+    child.stderr.on("data", (chunk: Buffer) => (stderr += chunk));
+    const status = new Promise<number | null>((done) => child.on("close", done));
+    await until(() => readdirSync(`${lock}.queue`).length > 1, "the waiter's ticket");
+    // The waiter ahead renews its ticket for three polls, then leaves.
+    for (let i = 0; i < 6; i++) {
+      writeFileSync(ahead, "");
+      await new Promise((go) => setTimeout(go, 1_000));
+    }
+    expect(child.exitCode).toBe(null);
+    expect(stdout).toBe("");
+    rmSync(ahead);
+    expect(await status).toBe(0);
+    expect(stderr).toBe("");
+    expect(stdout).toBe("ran\n");
+  }, 30_000);
+
+  it("gives up under a wait of 0 on a lock path that holds no readable holder", () => {
+    const lock = lockPath();
+    mkdirSync(lock);
+    const result = run(lock, ["echo", "ran"], { CHECK_LOCK_WAIT_MS: "0" });
+    expect(result.status).toBe(1);
+    expect(result.stdout).not.toContain("ran");
+  }, 30_000);
 
   it("reads an empty wait as the default, not as a wait of 0", async () => {
     const lock = lockPath();
