@@ -350,6 +350,107 @@ describe("check-lock serialises the checks", () => {
     expect(stdout).toBe("ran\n");
   }, 30_000);
 
+  // A waiter that was not first read a dead holder's lock, or one that did not parse, as another
+  // command and gave up on it, while the waiter ahead was reclaiming it.
+  for (const [what, contents] of [
+    ["a dead holder's lock", JSON.stringify({ pid: 999_999, startedAt: 1, command: ["other"] })],
+    ["a lock that does not parse", "not json"],
+  ])
+    it(`waits under a wait of 0 behind a waiter ahead that reclaims ${what}`, async () => {
+      const lock = lockPath();
+      mkdirSync(`${lock}.queue`);
+      const ahead = `${lock}.queue/000000000000001-${process.pid}`;
+      writeFileSync(ahead, "");
+      writeFileSync(lock, contents);
+      const child = spawn("bun", [SCRIPT, "echo", "ran"], {
+        env: { ...process.env, CHECK_LOCK: lock, CHECK_LOCK_WAIT_MS: "0" },
+        stdio: ["ignore", "pipe", "pipe"],
+      });
+      let [stdout, stderr] = ["", ""];
+      child.stdout.on("data", (chunk: Buffer) => (stdout += chunk));
+      child.stderr.on("data", (chunk: Buffer) => (stderr += chunk));
+      const status = new Promise<number | null>((done) => child.on("close", done));
+      // The waiter ahead renews its ticket, however slow the waiter's start.
+      const renew = setInterval(() => writeFileSync(ahead, ""), 1_000);
+      await until(
+        () => readdirSync(`${lock}.queue`).length > 1 || child.exitCode !== null,
+        "the waiter's ticket",
+      );
+      await new Promise((go) => setTimeout(go, 1_000));
+      clearInterval(renew);
+      expect(child.exitCode).toBe(null);
+      // The waiter ahead reclaims the lock and leaves.
+      rmSync(lock);
+      rmSync(ahead);
+      expect(await status).toBe(0);
+      expect(stderr).toBe("");
+      expect(stdout).toBe("ran\n");
+    }, 30_000);
+
+  // The queue folder removed while a waiter waited, or a ticket it could not remove, failed the
+  // poll, and the command ran beside the live holder as if the lock were unusable.
+  for (const [what, disturb] of [
+    ["the queue folder is removed", (queue: string) => rmSync(queue, { recursive: true })],
+    ["a ticket it cannot remove", (queue: string) => mkdirSync(`${queue}/000000000000001-999999`)],
+    [
+      "the queue path becomes a file",
+      (queue: string) => {
+        rmSync(queue, { recursive: true });
+        writeFileSync(queue, "");
+      },
+    ],
+  ] as const)
+    it(`keeps waiting behind a live holder when ${what}`, async () => {
+      const lock = lockPath();
+      heldBy(lock, process.pid);
+      const child = spawn("bun", [SCRIPT, "echo", "ran"], {
+        env: { ...process.env, CHECK_LOCK: lock },
+        stdio: ["ignore", "pipe", "pipe"],
+      });
+      let [stdout, stderr] = ["", ""];
+      child.stdout.on("data", (chunk: Buffer) => (stdout += chunk));
+      child.stderr.on("data", (chunk: Buffer) => (stderr += chunk));
+      const status = new Promise<number | null>((done) => child.on("close", done));
+      await until(
+        () => existsSync(`${lock}.queue`) && readdirSync(`${lock}.queue`).length > 0,
+        "the ticket",
+      );
+      disturb(`${lock}.queue`);
+      await new Promise((go) => setTimeout(go, 4_500));
+      expect(stdout).toBe("");
+      expect(stderr).toBe("");
+      rmSync(lock);
+      expect(await status).toBe(0);
+      expect(stdout).toBe("ran\n");
+    }, 30_000);
+
+  // A ticket it could not remove ended the poll's reading of the queue, so every waiter read itself
+  // as first and took a free lock ahead of a live waiter.
+  it("keeps its place behind a live waiter ahead when a ticket cannot be removed", async () => {
+    const lock = lockPath();
+    mkdirSync(`${lock}.queue/000000000000001-999999`, { recursive: true });
+    const ahead = `${lock}.queue/000000000000002-${process.pid}`;
+    writeFileSync(ahead, "");
+    const renew = setInterval(() => writeFileSync(ahead, ""), 1_000);
+    const child = spawn("bun", [SCRIPT, "echo", "ran"], {
+      env: { ...process.env, CHECK_LOCK: lock },
+      stdio: ["ignore", "pipe", "pipe"],
+    });
+    let stdout = "";
+    child.stdout.on("data", (chunk: Buffer) => (stdout += chunk));
+    const status = new Promise<number | null>((done) => child.on("close", done));
+    try {
+      await until(() => readdirSync(`${lock}.queue`).length > 2, "the waiter's ticket");
+      await new Promise((go) => setTimeout(go, 3_000));
+      expect(stdout).toBe("");
+    } finally {
+      clearInterval(renew);
+      rmSync(ahead, { force: true });
+    }
+    expect(await status).toBe(0);
+    expect(stdout).toBe("ran\n");
+  }, 30_000);
+
   it("gives up under a wait of 0 on a lock path that holds no readable holder", () => {
     const lock = lockPath();
     mkdirSync(lock);

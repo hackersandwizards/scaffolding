@@ -1,7 +1,7 @@
 #!/bin/sh
 // 2>/dev/null; exec bun --no-env-file "$0" "$@"
 // A skeleton file of @hackersandwizards/scaffolding at the version package.json pins: check-structure
-// --fix writes it, and the gate fails a copy that differs.
+// --fix writes it, and the gate fails a copy that differs unless `skip.structure` is set.
 
 import { type ChildProcess, spawn } from "node:child_process";
 import { createHash } from "node:crypto";
@@ -78,8 +78,7 @@ function parseHolder(raw: string | undefined): Holder | undefined {
 }
 
 const readHolder = (): Holder | undefined => parseHolder(readLock());
-const holderName = (): string => {
-  const holder = readHolder();
+const holderName = (holder: Holder | undefined): string => {
   if (!holder) return "pid unknown";
   return holder.group && !running(holder.pid)
     ? `command ${holder.group} of dead pid ${holder.pid}`
@@ -99,6 +98,16 @@ function running(pid: number): boolean {
 // A command that exits on its own may leave a process behind on purpose, which holds nothing.
 const commandRuns = ({ group, signalled }: Holder): boolean =>
   running(signalled ? -group! : group!);
+const live = (holder: Holder): boolean =>
+  running(holder.pid) || (holder.group !== undefined && commandRuns(holder));
+// An unreadable lock is a half-written or corrupt one, and nobody can prove it is live. A live
+// holder is never reclaimed on age: a slow run under load outlasted any bound and a second check
+// ran beside it. A reused pid reads as live too, which ends in the wait timeout, not an overlap.
+const stale = (raw: string | undefined): raw is string => {
+  if (raw === undefined) return false;
+  const holder = parseHolder(raw);
+  return !(holder && live(holder));
+};
 
 /**
  * Link fails when the name exists, so the filesystem decides the winner of a race, and the
@@ -125,12 +134,7 @@ const acquire = (): boolean =>
 
 function dropIfStale(): void {
   const raw = readLock();
-  if (raw === undefined) return;
-  const holder = parseHolder(raw);
-  // An unreadable lock is a half-written or corrupt one, and nobody can prove it is live. A live
-  // holder is never reclaimed on age: a slow run under load outlasted any bound and a second check
-  // ran beside it. A reused pid reads as live too, which ends in the wait timeout, not an overlap.
-  if (holder && (running(holder.pid) || (holder.group && commandRuns(holder)))) return;
+  if (!stale(raw)) return;
   // Deleting by name after the read deleted a fresh lock another waiter wrote in between. A claim,
   // named for these exact contents, lets one waiter delete them, and while they sit at the lock path
   // no acquire can replace them, so the re-read under the claim stays true until the delete.
@@ -169,26 +173,43 @@ const QUEUE = `${LOCK}.queue`;
 const TICKET_MS = 3 * POLL_MS;
 let ticket: string | undefined;
 // process.exit skips a finally, so each exit while waiting hands the ticket back itself.
-const leave = () => ticket && rmSync(`${QUEUE}/${ticket}`, { force: true });
+const leave = () => {
+  try {
+    if (ticket) rmSync(`${QUEUE}/${ticket}`, { force: true });
+  } catch {
+    /* a queue that fails costs the order only */
+  }
+};
+// The queue only orders the waiters; the lock keeps the commands apart. So a queue that fails, its
+// folder removed or a ticket that cannot be removed, costs the order, never the lock: an error here
+// had run the command beside the holder.
 function first(): boolean {
-  writeFileSync(`${QUEUE}/${ticket}`, "");
-  const live = readdirSync(QUEUE).filter((name) => {
-    const path = `${QUEUE}/${name}`;
-    let mtime: number;
-    try {
-      mtime = statSync(path).mtimeMs;
-    } catch {
-      return false; // removed meanwhile, or no ticket this waiter can read
-    }
-    if (running(Number(name.split("-")[1])) && Date.now() - mtime < TICKET_MS) return true;
-    rmSync(path, { force: true });
-    return false;
-  });
-  return live.sort()[0] === ticket;
+  try {
+    mkdirSync(QUEUE, { recursive: true });
+    writeFileSync(`${QUEUE}/${ticket}`, "");
+    const tickets = readdirSync(QUEUE).filter((name) => {
+      const path = `${QUEUE}/${name}`;
+      let mtime: number;
+      try {
+        mtime = statSync(path).mtimeMs;
+      } catch {
+        return false; // removed meanwhile, or no ticket this waiter can read
+      }
+      if (running(Number(name.split("-")[1])) && Date.now() - mtime < TICKET_MS) return true;
+      try {
+        rmSync(path, { force: true });
+      } catch {
+        /* passed over all the same */
+      }
+      return false;
+    });
+    return tickets.sort()[0] === ticket;
+  } catch {
+    return true;
+  }
 }
 
 async function waitForLock(): Promise<boolean> {
-  mkdirSync(QUEUE, { recursive: true });
   ticket = `${String(Date.now()).padStart(15, "0")}-${process.pid}`;
   try {
     return await queueForLock();
@@ -204,14 +225,28 @@ async function queueForLock(): Promise<boolean> {
   // plain file or unreadable, since a read of a lock path a test made a FIFO would take the contents
   // meant for the staleness check. One read per poll serves the wait too: a second read let a
   // holder of this command release in between and read as another command.
+  const free = { id: undefined, read: undefined, stale: false };
   const look = () => {
+    let stat;
     try {
-      const stat = statSync(LOCK);
-      const read = stat.isFile() ? readHolder() : undefined;
-      return { id: read ? `${read.pid} ${read.startedAt}` : `inode ${stat.ino}`, read };
+      stat = statSync(LOCK);
     } catch {
-      return { id: undefined, read: undefined };
+      return free;
     }
+    let raw: string | undefined;
+    try {
+      if (stat.isFile()) raw = readFileSync(LOCK, "utf8");
+    } catch (error) {
+      // Released between the two reads: free, not a path no waiter can reclaim.
+      if ((error as { code?: string }).code === "ENOENT") return free;
+    }
+    const read = parseHolder(raw);
+    return {
+      id: read ? `${read.pid} ${read.startedAt}` : `inode ${stat.ino}`,
+      read,
+      // What dropIfStale removes: the first waiter reclaims it within a poll.
+      stale: stale(raw),
+    };
   };
   let holder = look().id;
   for (;;) {
@@ -228,12 +263,18 @@ async function queueForLock(): Promise<boolean> {
     // A shorter wait gives up on another command only. One held by this same command, such as the
     // two installs a session's start begins at once, is waited for in full, since that run leaves
     // this one little to do. So is a free lock, no file at its path, which only a waiter ahead in
-    // the queue leaves free (live, or not yet 6 s unrenewed): four installs at once gave up when it
-    // was free at two polls in a row. A path that is there but holds no readable holder is given up on.
-    const givesUp = now.id !== undefined && now.read?.command?.join("\0") !== command.join("\0");
+    // the queue leaves free (live, or renewed within TICKET_MS): four installs at once gave up when
+    // it was free at two polls in a row. So is a stale lock, a dead holder's or one that does not
+    // parse, for as long as the queue gives the waiter ahead to reclaim it; a live waiter's claim
+    // can keep it from that. A path no waiter can reclaim, such as a folder or a file it cannot
+    // read, is given up on.
+    const givesUp =
+      now.id !== undefined &&
+      (!now.stale || waited >= TICKET_MS) &&
+      now.read?.command?.join("\0") !== command.join("\0");
     if (waited >= Math.max(WAIT_MS, FULL_WAIT_MS) || (waited >= WAIT_MS && givesUp)) {
       console.error(
-        `[check-lock] ${holderName()} still holds ${LOCK} after ${Math.round(waited / 1000)}s; not running "${command.join(" ")}" beside it. Retry once it finishes.`,
+        `[check-lock] ${holderName(now.read)} still holds ${LOCK} after ${Math.round(waited / 1000)}s; not running "${command.join(" ")}" beside it. Retry once it finishes.`,
       );
       leave();
       process.exit(1);
@@ -241,7 +282,7 @@ async function queueForLock(): Promise<boolean> {
     if (waited - spokeAt >= SPEAK_MS) {
       spokeAt = waited;
       console.warn(
-        `[check-lock] waiting ${Math.round(waited / 1000)}s for ${holderName()} to finish`,
+        `[check-lock] waiting ${Math.round(waited / 1000)}s for ${holderName(now.read)} to finish`,
       );
     }
     await sleep(POLL_MS);
