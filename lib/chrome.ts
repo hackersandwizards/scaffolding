@@ -33,7 +33,7 @@ function pinnedBuild(shell?: boolean): string | undefined {
 }
 
 // Pinned: bunx runs the newest published release of an unpinned package.
-const BROWSERS = "@puppeteer/browsers@3.2.6";
+const BROWSERS = "@puppeteer/browsers@3.2.7";
 const install = (shell?: boolean, path = cache()) => [
   BROWSERS,
   "install",
