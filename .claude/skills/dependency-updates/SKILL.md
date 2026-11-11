@@ -42,7 +42,7 @@ With the argument `pins`, raise only the `@hackersandwizards/*` pins, in each re
    keeps because it read no tag from the remote exits 1 after a green commit too. A pin whose name
    lacks the scope is left out without a line.
 4. After a `committed` line, push. A rejected push repeats steps 1 and 4 once. After `gate red`,
-   fix what broke as step 2 says, then commit and push. A run whose approval excludes fixes changes
+   fix what broke as step 2 of the first list says, then commit and push. A run whose approval excludes fixes changes
    nothing instead: the raise stays uncommitted in `package.json` and `bun.lock`, and every later
    `raise-pins` there stops at its uncommitted-manifest check until a session fixes or reverts it.
 
