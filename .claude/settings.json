@@ -1,4 +1,9 @@
 {
+  "model": "opus",
+  "effortLevel": "medium",
+  "env": {
+    "CLAUDE_CODE_SUBAGENT_MODEL": "opus"
+  },
   "statusLine": {
     "type": "command",
     "command": "bash .claude/statusline-command.sh"

@@ -1,4 +1,9 @@
 {
+  "model": "opus",
+  "effortLevel": "medium",
+  "env": {
+    "CLAUDE_CODE_SUBAGENT_MODEL": "opus"
+  },
   "hooks": {
     "SessionStart": [
       {
