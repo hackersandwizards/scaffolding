@@ -12,7 +12,7 @@ import {
   writeFileSync,
 } from "node:fs";
 import { basename, dirname, join, resolve } from "node:path";
-import { companyRemote, installedCommit, tagCommit } from "../lib/repo.ts";
+import { companyRemote, installedCommit, newestTag, tagCommit } from "../lib/repo.ts";
 
 const usage =
   "usage: scaffold <dir> [--name <package name>] [--port <port>] [--catalog-in <repo>] [--admin-in <repo>]";
@@ -52,25 +52,18 @@ const adminIn = option("--admin-in");
 const home = join(import.meta.dir, "..");
 const own = JSON.parse(readFileSync(join(home, "package.json"), "utf8"));
 
-function newestTag(repo: string): string {
+async function newestTagOf(repo: string): Promise<string> {
   const remote = companyRemote(repo);
-  const r = spawnSync("git", ["ls-remote", "--tags", "--refs", remote], {
-    encoding: "utf8",
-  });
-  const tags = (r.stdout ?? "")
-    .split("\n")
-    .map((line) => line.split("refs/tags/")[1])
-    .filter((tag): tag is string => /^v\d+\.\d+\.\d+$/.test(tag ?? ""))
-    .sort((a, b) => Bun.semver.order(a.slice(1), b.slice(1)));
-  if (r.status !== 0 || !tags.length) {
-    console.error(`[scaffold] no v<version> tag read from ${remote}: ${r.stderr ?? ""}`);
+  const tag = await newestTag(remote);
+  if (!tag) {
+    console.error(`[scaffold] no v<version> tag read from ${remote}`);
     process.exit(1);
   }
-  return tags.at(-1)!;
+  return tag;
 }
 const pins: Record<string, string> = {};
-if (!catalogIn) pins.brand = newestTag("brand");
-if (!adminIn) pins.admin = newestTag("admin");
+if (!catalogIn) pins.brand = await newestTagOf("brand");
+if (!adminIn) pins.admin = await newestTagOf("admin");
 // Read before anything is written, so a failure leaves no half-made repository.
 let commit = "";
 try {

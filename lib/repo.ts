@@ -1,10 +1,77 @@
-import { spawnSync } from "node:child_process";
+import { spawn, spawnSync } from "node:child_process";
 import { existsSync, readFileSync, realpathSync } from "node:fs";
 import { join } from "node:path";
 
 /** A company repository's remote; the tests point SCAFFOLDING_GIT_BASE at local stand-ins. */
 export const companyRemote = (repo: string) =>
   `${process.env.SCAFFOLDING_GIT_BASE || "https://github.com/hackersandwizards/"}${repo}.git`;
+
+/** The highest v<major>.<minor>.<patch> tag `remote` holds, or undefined where none is read within
+ * SCAFFOLDING_FETCH_WAIT_S seconds (20 by default): an SSH remote waits for a person to approve
+ * the key, and nothing in ssh or git ends that wait. git runs in a process group of its own, so the
+ * timeout ends ssh with it. git's own error goes to stderr. */
+export async function newestTag(remote: string): Promise<string | undefined> {
+  const wait = Number(process.env.SCAFFOLDING_FETCH_WAIT_S) || 20;
+  const git = spawn("git", ["ls-remote", "--tags", "--refs", remote], {
+    detached: true,
+    stdio: ["ignore", "pipe", "inherit"],
+    env: { ...process.env, GIT_TERMINAL_PROMPT: "0" },
+  });
+  let out = "";
+  git.stdout.on("data", (chunk) => (out += chunk));
+  const timer = setTimeout(() => {
+    console.error(`git ls-remote ${remote}: no answer within ${wait} s`);
+    try {
+      process.kill(-git.pid!, "SIGTERM");
+    } catch {} // the group is already gone
+  }, wait * 1000);
+  const code = await new Promise<number | null>((done) => {
+    git.on("error", () => done(null));
+    git.on("close", done);
+  });
+  clearTimeout(timer);
+  if (code !== 0) return undefined;
+  return out
+    .split("\n")
+    .map((line) => line.split("refs/tags/")[1])
+    .filter((tag): tag is string => /^v\d+\.\d+\.\d+$/.test(tag ?? ""))
+    .sort((a, b) => Bun.semver.order(a.slice(1), b.slice(1)))
+    .at(-1);
+}
+
+export const SIGNALS = ["SIGINT", "SIGTERM", "SIGHUP", "SIGQUIT"] as const;
+/**
+ * Runs this command again under the checkout's lock with `--locked` appended, and exits as that run
+ * does; the run carrying `--locked` returns at once and goes on. A signal here goes on to
+ * check-lock, which passes it to the locked run's group and holds the lock until that group is
+ * empty: ending this process alone left the run going and the lock held.
+ */
+export async function underLock(root: string, args: string[]): Promise<void> {
+  if (process.argv.includes("--locked")) return;
+  const lock = spawn(
+    process.execPath,
+    [
+      join(import.meta.dir, "..", "template/.githooks/check-lock.ts"),
+      process.execPath,
+      process.argv[1]!,
+      ...args,
+      "--locked",
+    ],
+    // A group of its own: a terminal's Ctrl-C reaches this process alone, which passes it on once;
+    // reaching check-lock as well, the second copy read as a second signal and killed the run.
+    { stdio: "inherit", cwd: root, detached: true },
+  );
+  for (const signal of SIGNALS) process.on(signal, () => lock.kill(signal));
+  const [code, signal] = await new Promise<[number | null, NodeJS.Signals | null]>((done) =>
+    lock.on("exit", (...end) => done(end)),
+  );
+  // Dying by the signal tells the calling shell it was an interrupt.
+  if (signal) {
+    process.removeAllListeners(signal);
+    process.kill(process.pid, signal);
+  }
+  process.exit(code ?? 1);
+}
 
 /** The commit the package at `home` came from, read offline: the SHA bun writes to .bun-tag for a
  * Git dependency (a GitHub tarball's "<owner>-<repo>-<short SHA>", a clone's bare SHA), else the

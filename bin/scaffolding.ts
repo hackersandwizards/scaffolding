@@ -10,6 +10,8 @@ import {
   styleFiles,
   stylelintFlags,
   submodulePaths,
+  SIGNALS,
+  underLock,
   withoutEnvFile,
   type Package,
 } from "../lib/repo.ts";
@@ -38,35 +40,7 @@ if (process.argv[2] !== "check") {
 }
 const root = repoRoot();
 const home = join(import.meta.dir, "..");
-const SIGNALS = ["SIGINT", "SIGTERM", "SIGHUP", "SIGQUIT"] as const;
-// The run check-lock starts carries --locked and goes on to the checks. A signal here goes on to
-// check-lock, which passes it to the locked run's group and holds the lock until that group is
-// empty: ending this process alone left the gate running and the lock held.
-if (process.argv[3] !== "--locked") {
-  const lock = spawn(
-    process.execPath,
-    [
-      join(home, "template/.githooks/check-lock.ts"),
-      process.execPath,
-      import.meta.path,
-      "check",
-      "--locked",
-    ],
-    // A group of its own: a terminal's Ctrl-C reaches this process alone, which passes it on once;
-    // reaching check-lock as well, the second copy read as a second signal and killed the gate.
-    { stdio: "inherit", cwd: root, detached: true },
-  );
-  for (const signal of SIGNALS) process.on(signal, () => lock.kill(signal));
-  const [code, signal] = await new Promise<[number | null, NodeJS.Signals | null]>((done) =>
-    lock.on("exit", (...end) => done(end)),
-  );
-  // Dying by the signal tells the calling shell it was an interrupt.
-  if (signal) {
-    process.removeAllListeners(signal);
-    process.kill(process.pid, signal);
-  }
-  process.exit(code ?? 1);
-}
+await underLock(root, ["check"]);
 
 const pkg = readPackage(root);
 const config = pkg.scaffolding ?? {};

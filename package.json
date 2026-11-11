@@ -14,7 +14,8 @@
     "check-staged": "bin/check-staged.ts",
     "check-lock": "template/.githooks/check-lock.ts",
     "chrome-mcp": "bin/chrome-mcp.ts",
-    "scaffolding": "bin/scaffolding.ts"
+    "scaffolding": "bin/scaffolding.ts",
+    "raise-pins": "bin/raise-pins.ts"
   },
   "exports": {
     "./eslint": "./config/eslint.js",

@@ -27,7 +27,7 @@ import { brandFallbacks } from "../catalog/fallbacks.ts";
 import { catalogPath } from "../catalog/path.ts";
 import { rewriteRoute } from "../catalog/route.ts";
 import { rejection } from "../lib/rejection.ts";
-import { applyAllow, commentSyntax, installedCommit, tagCommit } from "../lib/repo.ts";
+import { applyAllow, commentSyntax, installedCommit, newestTag, tagCommit } from "../lib/repo.ts";
 
 const bin = (name: string) => join(import.meta.dir, "..", "bin", `${name}.ts`);
 const PREVIEW = 'ASTRO_PREVIEW_BACKGROUND=1 bun --bun astro preview --root "$PWD/catalog"';
@@ -5172,6 +5172,160 @@ describe("check-unique-names", () => {
     });
     expect(`${r.stdout}${r.stderr}`).toContain("twice is defined 2 times");
     expect(r.status).toBe(1);
+  });
+});
+
+describe("raise-pins", () => {
+  // Local stand-ins for company packages: b depends on a, and each has tags v1.0.0 to v1.10.0.
+  function packages(names = ["a", "b"]) {
+    const base = temp();
+    for (const name of names) {
+      const dir = join(base, name);
+      mkdirSync(dir);
+      sh(dir, ["init", "-q", "-b", "main"]);
+      for (const version of ["1.0.0", "1.2.0", "1.10.0"]) {
+        const deps = name === "b" ? { "@hackersandwizards/a": `git+file://${base}/a#v1.0.0` } : {};
+        write(dir, {
+          "package.json": JSON.stringify({
+            name: `@hackersandwizards/${name}`,
+            version,
+            dependencies: deps,
+          }),
+        });
+        sh(dir, ["add", "-A"]);
+        sh(dir, ["commit", "-qm", version]);
+        sh(dir, ["tag", `v${version}`]);
+      }
+    }
+    return base;
+  }
+  function consumer(base: string, scripts: Record<string, string>, names = ["b", "a"]) {
+    const dependencies = Object.fromEntries(
+      names.map((name) => [`@hackersandwizards/${name}`, `git+file://${base}/${name}#v1.0.0`]),
+    );
+    const pkg = { name: "c", private: true, scripts, dependencies };
+    const dir = repo({ "package.json": `${JSON.stringify(pkg, null, 2)}\n` }, false);
+    const env = { ...process.env, BUN_INSTALL_CACHE_DIR: cacheDir };
+    expect(spawnSync("bun", ["install"], { cwd: dir, env }).status).toBe(0);
+    sh(dir, ["add", "-A"]);
+    sh(dir, ["commit", "-qm", "init"]);
+    return dir;
+  }
+  const version = (dir: string, name: string) =>
+    JSON.parse(
+      readFileSync(join(dir, "node_modules/@hackersandwizards", name, "package.json"), "utf8"),
+    ).version;
+  // Fixture clones get new commits every run: a cache of their own keeps them out of the user's.
+  const cacheDir = temp();
+  const identity = {
+    BUN_INSTALL_CACHE_DIR: cacheDir,
+    GIT_AUTHOR_NAME: "t",
+    GIT_AUTHOR_EMAIL: "t@t",
+    GIT_COMMITTER_NAME: "t",
+    GIT_COMMITTER_EMAIL: "t@t",
+  };
+
+  test("raises each pin to the newest tag in dependency order, gates, and commits only with --commit", () => {
+    const base = packages();
+    const dir = consumer(base, { check: "true" });
+    const r = run(dir, "raise-pins", [], identity);
+    expect(r.code).toBe(0);
+    expect(lines(r.out, "raise-pins")).toEqual([
+      "[raise-pins] @hackersandwizards/a: v1.0.0 -> v1.10.0",
+      "[raise-pins] @hackersandwizards/b: v1.0.0 -> v1.10.0",
+      "[raise-pins] gate green with a v1.10.0, b v1.10.0",
+    ]);
+    expect(readFileSync(join(dir, "package.json"), "utf8")).toContain(`${base}/a#v1.10.0"`);
+    expect(version(dir, "a")).toBe("1.10.0");
+    expect(sh(dir, ["rev-list", "--count", "HEAD"]).stdout.toString().trim()).toBe("1");
+
+    sh(dir, ["checkout", "--", "package.json", "bun.lock"]);
+    const committed = run(dir, "raise-pins", ["--commit"], identity);
+    expect(committed.code).toBe(0);
+    expect(sh(dir, ["log", "-1", "--format=%s"]).stdout.toString().trim()).toBe(
+      "pins: raise a v1.10.0, b v1.10.0",
+    );
+    expect(sh(dir, ["status", "--porcelain"]).stdout.toString()).toBe("");
+    const again = run(dir, "raise-pins", ["--commit"], identity);
+    expect(lines(again.out, "raise-pins")).toContain(
+      "[raise-pins] nothing raised, so the gate did not run",
+    );
+  });
+
+  test("a remote not read keeps its pin and leaves the other raises to commit", () => {
+    const base = packages();
+    const dir = consumer(base, { check: "true" });
+    renameSync(join(base, "b"), join(base, "b-gone"));
+    const r = run(dir, "raise-pins", ["--commit"], identity);
+    expect(r.code).toBe(1);
+    expect(r.out).toContain("[raise-pins] @hackersandwizards/b: no v<version> tag read from");
+    expect(sh(dir, ["log", "-1", "--format=%s"]).stdout.toString().trim()).toBe(
+      "pins: raise a v1.10.0",
+    );
+  });
+
+  test("a tag read over SSH that never answers ends within SCAFFOLDING_FETCH_WAIT_S, ssh with it", async () => {
+    const dir = temp();
+    const hang = join(dir, "ssh");
+    writeFileSync(hang, `#!/bin/sh\necho $$ > ${dir}/pid\nexec sleep 30\n`, { mode: 0o755 });
+    const env = { ...process.env };
+    Object.assign(process.env, { GIT_SSH_COMMAND: hang, SCAFFOLDING_FETCH_WAIT_S: "1" });
+    try {
+      const started = Date.now();
+      expect(await newestTag("ssh://git@github.com/acme/none.git")).toBeUndefined();
+      expect(Date.now() - started).toBeLessThan(5_000);
+    } finally {
+      process.env = env;
+    }
+    const pid = Number(readFileSync(join(dir, "pid"), "utf8"));
+    await new Promise((r) => setTimeout(r, 200));
+    expect(() => process.kill(pid, 0)).toThrow();
+  });
+
+  test("a scaffolding raise commits what check-structure --fix wrote, unless --fix rewrote an edit", () => {
+    const base = packages(["scaffolding"]);
+    const fix = { check: "true", "check-structure": "echo fixed > skeleton.txt" };
+    const dir = consumer(base, fix, ["scaffolding"]);
+    expect(run(dir, "raise-pins", ["--commit"], identity).code).toBe(0);
+    expect(sh(dir, ["show", "--name-only", "--format=", "HEAD"]).stdout.toString()).toContain(
+      "skeleton.txt",
+    );
+
+    const edited = consumer(base, { ...fix, "check-structure": "echo fixed > edited.txt" }, [
+      "scaffolding",
+    ]);
+    write(edited, { "edited.txt": "committed\n" });
+    sh(edited, ["add", "edited.txt"]);
+    sh(edited, ["commit", "-qm", "edited"]);
+    write(edited, { "edited.txt": "someone's edit\n" });
+    const r = run(edited, "raise-pins", ["--commit"], identity);
+    expect(r.code).toBe(1);
+    expect(r.out).toContain("check-structure --fix rewrote edited.txt");
+    expect(sh(edited, ["log", "-1", "--format=%s"]).stdout.toString().trim()).toBe("edited");
+  });
+
+  test("a commit its hook refuses leaves nothing staged and says so", () => {
+    const dir = consumer(packages(["a"]), { check: "true" }, ["a"]);
+    write(dir, { "hooks/pre-commit": "#!/bin/sh\nexit 1\n" });
+    chmodSync(join(dir, "hooks/pre-commit"), 0o755);
+    sh(dir, ["config", "core.hooksPath", "hooks"]);
+    const r = run(dir, "raise-pins", ["--commit"], identity);
+    expect(r.code).toBe(1);
+    expect(r.out).toContain("[raise-pins] the commit failed (above)");
+    expect(sh(dir, ["diff", "--cached", "--name-only"]).stdout.toString()).toBe("");
+  });
+
+  test("a red gate commits nothing; an uncommitted package.json stops it before any change", () => {
+    const dir = consumer(packages(), { check: "exit 1" }, ["a"]);
+    const r = run(dir, "raise-pins", ["--commit"], identity);
+    expect(r.code).toBe(1);
+    expect(r.out).toContain(
+      "[raise-pins] nothing committed: package.json and bun.lock keep the raise",
+    );
+    expect(sh(dir, ["rev-list", "--count", "HEAD"]).stdout.toString().trim()).toBe("1");
+    const dirty = run(dir, "raise-pins", [], identity);
+    expect(dirty.code).toBe(1);
+    expect(dirty.out).toContain("uncommitted change");
   });
 });
 
