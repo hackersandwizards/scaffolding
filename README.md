@@ -6,17 +6,17 @@ shell of its catalog.
 The tokens and elements a catalog draws come from [brand](https://github.com/hackersandwizards/brand),
 the item files and their hub from [admin](https://github.com/hackersandwizards/admin).
 
-| You want                                          | Go to                                                 |
-| ------------------------------------------------- | ----------------------------------------------------- |
-| To add the gate to a repository                   | [Install](#install), then [Use](#use)                 |
-| To start a new repository                         | [A new repository](docs/commands.md#a-new-repository) |
-| To know why a gate step is red, or keep a finding | [The gate](docs/gate.md)                              |
-| To get a commit past a refused confidential term  | [The confidential-terms check](docs/confidential.md)  |
-| To build a catalog                                | [The catalog](docs/catalog.md)                        |
-| To set up ESLint, Prettier, TypeScript, stylelint | [Configs](docs/configs.md)                            |
-| To know what the git hooks and CI run             | [Hooks and CI](docs/hooks.md)                         |
-| To change this package                            | [Work on the package](#work-on-the-package)           |
-| To know whether you may use it                    | [License](#license)                                   |
+| You want                                          | Go to                                                |
+| ------------------------------------------------- | ---------------------------------------------------- |
+| To add the gate to a repository                   | [Install](#install), then [Use](#use)                |
+| To start a new repository                         | [Use](#use)                                          |
+| To know why a gate step is red, or keep a finding | [The gate](docs/gate.md)                             |
+| To know why a commit was refused for a term       | [The confidential-terms check](docs/confidential.md) |
+| To build a catalog                                | [The catalog](docs/catalog.md)                       |
+| To set up ESLint, Prettier, TypeScript, stylelint | [Configs](docs/configs.md)                           |
+| To know what the git hooks and CI run             | [Hooks and CI](docs/hooks.md)                        |
+| To change this package                            | [Work on the package](#work-on-the-package)          |
+| To know whether you may use it                    | [Maintainer and license](#maintainer-and-license)    |
 
 ## Install
 
@@ -38,12 +38,14 @@ In any checkout that installs the package, `scaffold` writes a new repository, t
 
 ```sh
 bun run scaffold ../my-repo
-cd ../my-repo && bun install && bun run check
+cd ../my-repo
+bun install
+bun run check
 ```
 
 It writes the configs that import the package. An existing repository takes the same files from
-[`template/`](template), then runs `bun run check-structure --fix`. The exports most repositories import, all of them in
-[Configs](docs/configs.md):
+[`template/`](template), then runs `bun run check-structure --fix`. The exports most repositories
+import, all of them in [Configs](docs/configs.md):
 
 - `./prettier`, `./eslint`, `./eslint/astro`, `./stylelint`: the shared format and lint configs.
 - `./tsconfig/bun.json`, `./tsconfig/astro.json`: the base for `"extends"`.
@@ -53,10 +55,10 @@ It writes the configs that import the package. An existing repository takes the 
 
 ## Commands
 
-Each runs as `bun run <command>`, and [Commands](docs/commands.md) has the detail of each.
+Each runs through `bun run`, and [Commands](docs/commands.md) has the detail of each.
 
 - `scaffold <dir>`: creates a repository from the skeleton with this version pinned.
-- `scaffolding check`: the whole gate, behind `bun run check`.
+- `scaffolding check`: the whole gate, the script `check`.
 - `check-structure [--fix]`: the repository against the skeleton; `--fix` writes it.
 - `check-staged`: the pre-commit checks on the staged files.
 - `check-confidential`: confidential terms, Company OS screenshots and purged commits.
@@ -66,7 +68,8 @@ Each runs as `bun run <command>`, and [Commands](docs/commands.md) has the detai
 
 ## The gate
 
-Moved to [docs/gate.md](docs/gate.md), its paragraphs Output and load and Environment included.
+`bun run check` runs the shared steps side by side, then the repository's own. Each step, Output
+and load, Environment and the exceptions a repository keeps are in [docs/gate.md](docs/gate.md).
 
 ## Documentation
 
@@ -74,7 +77,7 @@ Moved to [docs/gate.md](docs/gate.md), its paragraphs Output and load and Enviro
 - [The gate](docs/gate.md): its steps, load, environment, exceptions and licences.
 - [Configs](docs/configs.md): every export and how to use it.
 - [The catalog](docs/catalog.md): the preset, its options and what the shell draws.
-- [The confidential-terms check](docs/confidential.md): the list, what it reads, never names.
+- [The confidential-terms check](docs/confidential.md): the list, what it reads, the names h&w never shows.
 - [Hooks and CI](docs/hooks.md): the install hooks, SessionStart, pre-push and Pages.
 
 ## Work on the package
@@ -84,7 +87,7 @@ Moved to [docs/gate.md](docs/gate.md), its paragraphs Output and load and Enviro
 
 A release bumps `version` and pushes the tag `v<version>`; [CLAUDE.md](CLAUDE.md) has the rules.
 
-## License
+## Maintainer and license
 
 Maintained by hackers&wizards.
 
