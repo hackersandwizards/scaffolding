@@ -17,6 +17,9 @@ build.
   command, changing its arguments or moving an exported file is a release whose commit names the
   change. A release that needs a newer version of another of our packages, or needs it installed
   for a command it ships, names that minimum in its commit, the line a consumer reads at the raise.
+- Pins follow releases twice over: whoever releases a package raises the consumers it reaches in
+  the same pass, and every consumer catches up twice a day on what a release wave left behind, both
+  through the `pins` mode of `dependency-updates`.
 - Write only into your own repository, and into the hub's copy of a rule or skill the hub mirrors
   into it, whichever repository finds the fix. Work another repository owns goes there as a brief
   for a session in that repository: a session started elsewhere misses its `paths:` rules, even

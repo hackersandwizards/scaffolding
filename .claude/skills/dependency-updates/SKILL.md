@@ -3,8 +3,9 @@ name: dependency-updates
 description: >-
   Update a repository's dependencies: raise every external dependency of every kind to its newest
   release, majors included, with the repository's own tooling, clear advisories, fix what breaks, one
-  commit per repository. Use for "dependency updates", "update dependencies", "fix advisories",
-  "Abhängigkeiten aktualisieren".
+  commit per repository; with `pins`, raise only our own package pins. Use for "dependency
+  updates", "update dependencies", "fix advisories", "Abhängigkeiten aktualisieren", "raise the
+  pins", "raise the consumers".
 ---
 
 # Dependency updates
@@ -26,3 +27,22 @@ Keep one version per tool on the machine, the newest; an older one only for a na
 
 Report per repository: the commit hash or "nothing to update", and each dependency or advisory left
 behind, with the failing check or advisory ID.
+
+## Pins only
+
+With the argument `pins`, raise only the `@hackersandwizards/*` pins, in each repository given:
+
+1. `git fetch` and `git merge origin/<default branch>`. Skip a repository whose branch then holds
+   commits `origin` lacks, and name it: its push would carry another session's work.
+2. `bun install --frozen-lockfile`, so `node_modules` holds the scaffolding the merged lockfile
+   pins: a checkout or merge hook can leave an older one installed, and `raise-pins` then answers
+   "Script not found". Skip a repository with no `node_modules/.bin/raise-pins` after it, and name
+   it: it pins a scaffolding older than v5.18.0.
+3. `bun run raise-pins --commit`. Read its `[raise-pins]` lines, never its exit status: a pin it
+   keeps (no tag read from the remote, a name without the scope) exits 1 after a green commit too.
+4. After a `committed` line, push. A rejected push repeats steps 1 and 4 once. After `gate red`,
+   change nothing: the raise stays uncommitted in `package.json` and `bun.lock`, and every later
+   `raise-pins` there stops at its uncommitted-manifest check until a session fixes or reverts it.
+
+Report per repository: its `[raise-pins]` lines, the commit and push, or the skip and its reason. A
+red gate or an uncommitted-manifest stop is `blocked`, every run it recurs.
