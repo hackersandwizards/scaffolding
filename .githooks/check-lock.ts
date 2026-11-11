@@ -174,9 +174,13 @@ function first(): boolean {
   writeFileSync(`${QUEUE}/${ticket}`, "");
   const live = readdirSync(QUEUE).filter((name) => {
     const path = `${QUEUE}/${name}`;
-    const stat = statSync(path, { throwIfNoEntry: false });
-    if (!stat) return false;
-    if (running(Number(name.split("-")[1])) && Date.now() - stat.mtimeMs < TICKET_MS) return true;
+    let mtime: number;
+    try {
+      mtime = statSync(path).mtimeMs;
+    } catch {
+      return false; // removed meanwhile, or no ticket this waiter can read
+    }
+    if (running(Number(name.split("-")[1])) && Date.now() - mtime < TICKET_MS) return true;
     rmSync(path, { force: true });
     return false;
   });

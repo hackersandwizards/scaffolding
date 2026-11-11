@@ -212,28 +212,31 @@ if (argv[0] === "prepush") {
       .split("\n")
       .filter(Boolean),
   );
-  const parse = (list: string) => {
-    const { salt, hashes } = JSON.parse(list) as { salt: string; hashes: string[] };
-    return { bad: new Set(hashes), h: hasher(salt) };
+  const purged: { bad: Set<string>; h: (sha: string) => string }[] = [];
+  const add = (list: string, where: string) => {
+    // `purged <sha> > .confidential-purged.json` leaves the file empty where it fails.
+    if (!list.trim()) return;
+    try {
+      const { salt, hashes } = JSON.parse(list) as { salt: string; hashes: string[] };
+      purged.push({ bad: new Set(hashes), h: hasher(salt) });
+    } catch {
+      report("push", ".confidential-purged.json", `${where} does not parse: repair it, then push`);
+    }
   };
   const file = join(root, ".confidential-purged.json");
-  const purged = existsSync(file) ? [parse(readFileSync(file, "utf8"))] : [];
+  if (existsSync(file)) add(readFileSync(file, "utf8"), "the list in this checkout");
   // A clone older than the list carries the purged commits without it, so the list on the remote's
-  // default branch counts too: fetched into a ref of its own, since another session's fetch rewrites
-  // FETCH_HEAD, and within 20 s. A remote without a list, or out of reach, adds nothing, and one
-  // whose list does not parse is named and skipped, so the push that repairs it still goes.
-  const ref = "refs/scaffolding/remote-purged";
+  // default branch counts too: fetched into a ref of this run's own within 20 s. A remote without a
+  // list, or out of reach, adds nothing.
   if (commits.length) {
-    const fetched = spawnSync(
-      "git",
-      ["fetch", "-q", "--no-tags", argv[2] ?? argv[1], `+HEAD:${ref}`],
-      {
-        cwd: root,
-        env: { ...process.env, GIT_TERMINAL_PROMPT: "0" },
-        stdio: "ignore",
-        timeout: 20_000,
-      },
-    );
+    const ref = `refs/scaffolding/remote-purged-${process.pid}`;
+    const fetch = ["fetch", "-q", "--no-tags", "--no-write-fetch-head"];
+    const fetched = spawnSync("git", [...fetch, argv[2] ?? argv[1], `+HEAD:${ref}`], {
+      cwd: root,
+      env: { ...process.env, GIT_TERMINAL_PROMPT: "0" },
+      stdio: "ignore",
+      timeout: 20_000,
+    });
     const list = spawnSync("git", ["show", `${ref}:.confidential-purged.json`], {
       cwd: root,
       encoding: "utf8",
@@ -241,13 +244,7 @@ if (argv[0] === "prepush") {
     });
     spawnSync("git", ["update-ref", "-d", ref], { cwd: root });
     if (fetched.status === 0 && list.status === 0)
-      try {
-        purged.push(parse(list.stdout));
-      } catch {
-        console.warn(
-          "[check-confidential] the remote's .confidential-purged.json does not parse: skipped",
-        );
-      }
+      add(list.stdout, "the list on the remote's default branch");
   }
   for (const c of commits)
     if (purged.some(({ bad, h }) => bad.has(h(c))))

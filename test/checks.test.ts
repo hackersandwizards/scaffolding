@@ -1879,6 +1879,9 @@ describe("check-confidential", () => {
     sh(dir, ["update-ref", "refs/remotes/origin/pr/1", purged]);
     expect(push(purged).status).toBe(1);
     expect(push(purged, "backup").status).toBe(1);
+    // The redirect of a `purged` that failed leaves the list empty.
+    write(dir, { ".confidential-purged.json": "" });
+    expect(push(clean).status).toBe(0);
   });
 
   test("a clone older than the list is refused by the list on the remote's default branch", () => {
@@ -1907,27 +1910,27 @@ describe("check-confidential", () => {
     });
     expect(push.stderr).toContain("purged from this repository's history");
     expect(push.status).toBe(1);
-    // A list on the remote that does not parse leaves the push that repairs it possible.
+    // A list that does not parse, on the remote or here, refuses the push and says where.
     sh(dir, ["checkout", "-q", "main"]);
     write(dir, { ".confidential-purged.json": "{" });
     sh(dir, ["commit", "-qam", "broken"]);
     sh(dir, ["push", "-q", remote, "HEAD:refs/heads/main"]);
+    sh(dir, ["checkout", "-q", "HEAD~1", "--", ".confidential-purged.json"]);
     write(dir, { "c.md": "c\n" });
     sh(dir, ["add", "c.md"]);
-    sh(dir, ["commit", "-qm", "c"]);
-    sh(dir, ["checkout", "-q", "HEAD~2", "--", ".confidential-purged.json"]);
-    sh(dir, ["commit", "-qm", "repair"]);
-    const repair = spawnSync(
+    sh(dir, ["commit", "-qam", "c"]);
+    const tip = sh(dir, ["rev-parse", "HEAD"]).stdout.toString().trim();
+    const broken = spawnSync(
       process.execPath,
       [bin("check-confidential"), "prepush", "x", remote],
       {
         cwd: dir,
-        input: `refs/heads/main ${sh(dir, ["rev-parse", "HEAD"]).stdout.toString().trim()} refs/heads/main ${"0".repeat(40)}\n`,
+        input: `refs/heads/y ${tip} refs/heads/y ${"0".repeat(40)}\n`,
         encoding: "utf8",
       },
     );
-    expect(repair.stderr).toContain("does not parse: skipped");
-    expect(repair.status).toBe(0);
+    expect(broken.stderr).toContain("the list on the remote's default branch does not parse");
+    expect(broken.status).toBe(1);
   });
 
   test("purged adds to the repository's list under its salt, a redirect's empty file included", () => {

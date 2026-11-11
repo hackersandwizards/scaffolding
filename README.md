@@ -557,8 +557,10 @@ hook, which `check-structure --fix` removes.
 `check-confidential purged <sha>... > .confidential-purged.json` writes the list of purged
 commits: after a history rewrite, the pre-push hook refuses a push from an old clone that still
 carries one of them, whatever its tracking refs or fetched pull requests point at. It reads the list
-in the pushing checkout and the one on the remote's default branch, which it fetches, so a clone
-made before the list is refused too; a remote without a list, or out of reach, adds nothing. A repository that
+in the pushing checkout and the one on the remote's default branch, which it fetches within 20 s for
+a push carrying commits, so a clone made before the list is refused too. A remote without a list, or
+out of reach, adds nothing; a list that does not parse, there or in the checkout, refuses the push
+and says where. A repository that
 already has the list keeps its salt and entries and gets the new ones added; with the file emptied
 by the redirect, the staged copy counts.
 
