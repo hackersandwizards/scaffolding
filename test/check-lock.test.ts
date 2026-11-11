@@ -764,6 +764,14 @@ describe("check-lock wraps a consumer's build", () => {
     expect(readFileSync(lock, "utf8")).toBe(holder);
   }, 30_000);
 
+  it("reads a CHECK_LOCK_RUN_S past setTimeout's range as a long bound, not as none left", () => {
+    const result = run(lockPath(), ["sh", "-c", "sleep 1; echo ran"], {
+      CHECK_LOCK_RUN_S: "2147484",
+    });
+    expect(result.status).toBe(0);
+    expect(result.stdout).toBe("ran\n");
+  });
+
   it("names a command that cannot start", () => {
     const result = run(lockPath(), ["no-such-command-here"]);
     expect(result.status).toBe(1);

@@ -336,9 +336,10 @@ function stop(): void {
   }
   timedOut = true;
   onSignal("SIGTERM");
-  setTimeout(() => onSignal("SIGTERM"), KILL_MS);
+  setTimeout(() => killGroup("SIGKILL"), KILL_MS);
 }
-const bound = RUN_S > 0 ? setTimeout(stop, RUN_S * 1000) : undefined;
+// setTimeout runs a delay past 2^31 - 1 ms (about 24.8 days) at once.
+const bound = RUN_S > 0 ? setTimeout(stop, Math.min(RUN_S * 1000, 2 ** 31 - 1)) : undefined;
 let held = false;
 try {
   if (process.env.SCAFFOLDING_LOCKED !== LOCK) held = await waitForLock();
@@ -415,9 +416,10 @@ else if (result.status !== 0) {
   );
 }
 // Dying by the signal tells the calling shell it was an interrupt, so a loop of builds stops.
-if (received && !timedOut) {
+if (timedOut) process.exit(124);
+if (received) {
   process.removeAllListeners(received);
   process.kill(process.pid, received);
 }
 // A signalled child reports a null status, and exiting 0 there would hide a killed gate.
-process.exit(timedOut ? 124 : (result.status ?? 1));
+process.exit(result.status ?? 1);
