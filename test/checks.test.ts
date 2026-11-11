@@ -2648,15 +2648,21 @@ describe("scaffolding check", () => {
       { skip, changed: { "docs/**": ["check:docs"] }, check: [["check:docs", "check:src"]] },
       {
         check: `bun --no-env-file ${JSON.stringify(bin("scaffolding"))} check`,
-        // Takes the refs and the hook's arguments, and passes.
-        "check-confidential": "sh -c 'cat > /dev/null' sh",
+        // Keeps the refs it was handed, takes the hook's arguments, and passes.
+        "check-confidential": "sh -c 'cat > \"$REFS_LOG\"' sh",
         "check:docs": "true",
         "check:src": "echo src-red; exit 1",
       },
     );
     mkdirSync(join(dir, "node_modules"));
     write(dir, { "docs/a.md": "a\n" });
-    const env = { ...process.env, SCAFFOLDING_LOAD: "0", CHECK_LOCK: join(temp(), "lock") };
+    const refs = join(temp(), "refs");
+    const env = {
+      ...process.env,
+      SCAFFOLDING_LOAD: "0",
+      CHECK_LOCK: join(temp(), "lock"),
+      REFS_LOG: refs,
+    };
     expect(run(dir, "scaffolding", ["check", "--changed"], env).code).toBe(0);
     sh(dir, ["add", "docs/a.md"]);
     sh(dir, ["commit", "-qm", "docs"]);
@@ -2670,6 +2676,9 @@ describe("scaffolding check", () => {
     const branch = push("HEAD:refs/heads/main");
     expect(`${branch.stdout}${branch.stderr}`).toContain("FAIL check:src");
     expect(branch.status).not.toBe(0);
+    // check-confidential got the refs git handed the hook, line for line.
+    const head = sh(dir, ["rev-parse", "HEAD"]).stdout.toString().trim();
+    expect(readFileSync(refs, "utf8")).toBe(`HEAD ${head} refs/heads/main ${"0".repeat(40)}\n`);
     // Control: a tag carries no branch, and the gate does not run.
     sh(dir, ["tag", "v1"]);
     const tag = push("refs/tags/v1");
