@@ -22,6 +22,10 @@ In a new worktree `post-checkout` also deletes `.githooks/post-commit` unless gi
 writes its hooks there when it checks out an LFS file ahead of `.githooks/`, git writes the hooks it
 tracks over theirs, and the post-commit left behind made `git worktree remove` refuse the worktree.
 
+After `check-confidential prepush` and Git LFS (below), a push that carries a branch (a remote ref
+under `refs/heads/` and a local commit, not a deletion) runs the whole gate, `bun run check`, once over the working tree, and a red gate stops the
+push; a tag alone runs none.
+
 The pre-push hook hands the refs to `git lfs pre-push` where the push may carry LFS objects or
 touch a lockable file. That is the case where the repository's LFS store holds a file (`lfs/objects`
 in its Git directory, or under `lfs.storage`). It is also the case where a commit new to the remote

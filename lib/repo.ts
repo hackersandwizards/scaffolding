@@ -249,6 +249,7 @@ export type Package = {
     check?: (string | string[])[];
     styles?: string[];
     licenses?: Record<string, { license?: string; reason?: unknown }>;
+    changed?: Record<string, string[]>;
   };
   [field: string]: unknown;
 };

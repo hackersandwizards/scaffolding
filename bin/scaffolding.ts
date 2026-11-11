@@ -1,6 +1,6 @@
 #!/bin/sh
 // 2>/dev/null; exec bun --no-env-file "$0" "$@"
-import { spawn } from "node:child_process";
+import { spawn, spawnSync } from "node:child_process";
 import { existsSync } from "node:fs";
 import { join } from "node:path";
 import { help } from "../lib/help.ts";
@@ -33,16 +33,19 @@ const KEYS = new Set(
     check: 0,
     styles: 0,
     licenses: 0,
+    changed: 0,
   } satisfies Record<keyof NonNullable<Package["scaffolding"]>, 0>),
 );
 
-if (process.argv[2] !== "check") {
-  console.error("usage: scaffolding check");
+const args = process.argv.slice(2).filter((a) => a !== "--locked");
+const changed = args[1] === "--changed";
+if (args[0] !== "check" || args.length > (changed ? 2 : 1)) {
+  console.error("usage: scaffolding check [--changed]");
   process.exit(2);
 }
 const root = repoRoot();
 const home = join(import.meta.dir, "..");
-await underLock(root, ["check"]);
+await underLock(root, args);
 
 const pkg = readPackage(root);
 const config = pkg.scaffolding ?? {};
@@ -104,6 +107,65 @@ for (const [step, reason] of Object.entries(skip)) {
   if (!isReason(reason)) fail(`scaffolding.skip.${step} has no reason`);
   delete shared[step];
 }
+
+// scaffolding.changed maps a path glob to the steps a change there needs. Every step it names
+// exists, so a typo goes red on the whole gate too, not only where --changed would skip it.
+const named = new Set([
+  ...Object.keys(shared),
+  ...Object.keys(skip),
+  ...(config.check ?? []).flat(),
+]);
+for (const [glob, steps] of Object.entries(config.changed ?? {}))
+  for (const step of Array.isArray(steps) ? steps : [steps])
+    if (!named.has(step)) fail(`scaffolding.changed["${glob}"] names no step: ${step}`);
+
+// --changed runs the quick shared checks and the steps scaffolding.changed maps the changed paths
+// to: the commits not yet on the upstream, staged and unstaged changes and untracked files. The whole
+// gate runs where a path maps to no step, where it is a file every step reads, where the repository
+// declares no map, and where git cannot list the changes.
+const WHOLE = [
+  "package.json",
+  "bun.lock",
+  "bunfig.toml",
+  "**/tsconfig*.json",
+  "**/eslint.config.*",
+  "**/prettier.config.*",
+  "**/.prettierrc*",
+  ".prettierignore",
+  "**/stylelint.config.*",
+  "**/astro.config.*",
+];
+const selected = changed ? changedSteps() : undefined;
+function changedSteps(): Set<string> | undefined {
+  const whole = (why: string) =>
+    void console.error(`[scaffolding] --changed: ${why}: the whole gate runs`);
+  if (!config.changed) return whole("package.json declares no scaffolding.changed");
+  const git = (...a: string[]) => spawnSync("git", a, { cwd: root, encoding: "utf8" });
+  const upstream = git("rev-parse", "--verify", "-q", "@{upstream}").stdout.trim();
+  const base = upstream ? git("merge-base", upstream, "HEAD").stdout.trim() : "HEAD";
+  const diff = git("diff", "--name-only", "--no-renames", "-z", base);
+  const untracked = git("ls-files", "--others", "--exclude-standard", "-z");
+  if (!base || diff.status || untracked.status) return whole("git could not list the changes");
+  const paths = [...new Set(`${diff.stdout}${untracked.stdout}`.split("\0").filter(Boolean))];
+  const steps = new Set<string>();
+  for (const path of paths) {
+    if (WHOLE.some((g) => new Bun.Glob(g).match(path)))
+      return whole(`${path} is read by every step`);
+    const hits = Object.entries(config.changed).filter(([g]) => new Bun.Glob(g).match(path));
+    if (!hits.length) return whole(`${path} maps to no step in scaffolding.changed`);
+    for (const [, s] of hits) for (const step of s) steps.add(step);
+  }
+  console.error(
+    `[scaffolding] --changed: ${paths.length} paths since ${upstream ? upstream.slice(0, 9) : "HEAD"}`,
+  );
+  return steps;
+}
+// A step --changed leaves out says so, so the skip leaves a trace.
+const runs = (name: string) => {
+  if (!selected || selected.has(name)) return true;
+  console.error(`[scaffolding] skipped ${name}: no changed path maps to it`);
+  return false;
+};
 
 const { load, cores, factor } = machineLoad();
 // A test runner's per-test limit (bun's and vitest's default 5 s), stretched as serve's wait is;
@@ -216,20 +278,20 @@ const typecheck = config.typecheck ?? "";
 const sync = /\bastro\b/.test(
   [typecheck, ...typecheck.split(/\s+/).map((word) => pkg.scripts?.[word])].join(" "),
 );
+const quick = (name: string) => name !== "test" && name !== "catalog";
 const order = Object.keys(shared);
 if (ok)
   ok = await group(
-    Object.entries(shared),
+    Object.entries(shared).filter(([name]) => quick(name) || runs(name)),
     sync ? { catalog: "typecheck" } : {},
-    new Set(Object.keys(shared).filter((name) => name !== "test" && name !== "catalog")),
+    new Set(Object.keys(shared).filter(quick)),
     1,
   );
 for (const entry of config.check ?? []) {
   if (!ok) break;
-  const steps = (Array.isArray(entry) ? entry : [entry]).map((s): [string, string] => [
-    s,
-    script(s),
-  ]);
+  const steps = (Array.isArray(entry) ? entry : [entry])
+    .filter(runs)
+    .map((s): [string, string] => [s, script(s)]);
   order.push(...steps.map(([s]) => s));
   ok = await group(steps);
 }

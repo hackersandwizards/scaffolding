@@ -21,6 +21,22 @@ non-blank string in `skip`:
 }
 ```
 
+**Changed paths.** `scaffolding check --changed` (`bun run check --changed`) runs install and the
+quick shared steps, and of `test`, `catalog` and the repository's own steps only those that
+`scaffolding.changed` maps a changed path to: a path glob to the steps a change there needs. The
+changed paths are the commits not yet on the upstream, the staged and unstaged changes and the
+untracked files. Each step it leaves out prints `skipped <step>: no changed path maps to it`. The
+whole gate runs, saying why, where a path matches no glob, where it is `package.json`, `bun.lock`,
+`bunfig.toml` or a config every step reads (`tsconfig*.json`, `eslint.config.*`,
+`prettier.config.*`, `.prettierrc*`, `.prettierignore`, `stylelint.config.*`, `astro.config.*`),
+where the repository declares no map, and where git cannot list the changes. A step the map names
+that the gate lacks is red on every run. The pre-push hook runs the whole gate once
+([Hooks and CI](hooks.md)), so a step `--changed` skipped still goes red before the push.
+
+```json
+{ "changed": { "docs/**": ["check:refs"], "src/**": ["test", "catalog", "check:markers"] } }
+```
+
 Where the repository installs `puppeteer-core`, the gate installs the Chrome for Testing build it
 pins right after `bun install`, once, so steps that start Chrome never download it side by side.
 

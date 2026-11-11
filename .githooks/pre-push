@@ -1,5 +1,10 @@
 #!/bin/sh
 # check-confidential prepush refuses commits purged from history (.confidential-purged.json),
 # then hands the refs to Git LFS where the push may carry LFS objects or touch a lockable file.
+# A push carrying a branch's commits then runs the whole gate once: a commit ran only the steps its
+# changes map to (scaffolding check --changed), so nothing reaches the remote unchecked.
 [ -d node_modules ] || { echo "$(basename "$0"): no node_modules in this checkout: run bun install, then try again" >&2; exit 1; }
-exec bun run --silent check-confidential prepush "$@"
+refs=$(cat)
+{ [ -z "$refs" ] || printf '%s\n' "$refs"; } | bun run --silent check-confidential prepush "$@" || exit
+printf '%s\n' "$refs" | awk '$3 ~ /^refs\/heads\// && $2 !~ /^0+$/ { found = 1 } END { exit !found }' || exit 0
+exec bun run --silent check

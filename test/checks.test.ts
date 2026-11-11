@@ -2608,6 +2608,75 @@ describe("scaffolding check", () => {
     }
   });
 
+  test("--changed runs the steps the changed paths map to, and the whole gate where one maps to none", () => {
+    const changed = { "docs/**": ["check:docs"], "src/**": ["check:src"] };
+    const dir = gate(
+      { skip, changed, check: [["check:docs", "check:src"]] },
+      { "check:docs": "echo docs-ran", "check:src": "echo src-ran" },
+    );
+    // The lock outside the checkout: an untracked file there is a changed path.
+    const lock = { CHECK_LOCK: join(temp(), "lock") };
+    write(dir, { "docs/a.md": "a\n" });
+    const mapped = run(dir, "scaffolding", ["check", "--changed"], lock);
+    expect(mapped.out).toContain("docs-ran");
+    expect(mapped.out).not.toContain("src-ran");
+    expect(mapped.out).toContain("[scaffolding] skipped check:src: no changed path maps to it");
+    expect(mapped.code).toBe(0);
+    // Control: a path no glob maps runs every step.
+    write(dir, { "other.txt": "x\n" });
+    const unmapped = run(dir, "scaffolding", ["check", "--changed"], lock);
+    expect(unmapped.out).toContain(
+      "other.txt maps to no step in scaffolding.changed: the whole gate runs",
+    );
+    expect(unmapped.out).toContain("src-ran");
+    expect(unmapped.out).not.toContain("skipped");
+    // A file every step reads runs every step too.
+    rmSync(join(dir, "other.txt"));
+    write(dir, { "bunfig.toml": "\n" });
+    expect(run(dir, "scaffolding", ["check", "--changed"], lock).out).toContain("src-ran");
+    // A step the map names that the gate lacks is red, on the whole gate too.
+    const typo = gate({ skip, changed: { "docs/**": ["check:dosc"] }, check: ["check:docs"] });
+    expect(run(typo, "scaffolding", ["check"], lock).out).toContain(
+      'scaffolding.changed["docs/**"] names no step: check:dosc',
+    );
+  });
+
+  test("a push carrying a branch runs the whole gate, so a step --changed skipped still goes red", () => {
+    const remote = temp();
+    sh(remote, ["init", "-q", "--bare"]);
+    const dir = gate(
+      { skip, changed: { "docs/**": ["check:docs"] }, check: [["check:docs", "check:src"]] },
+      {
+        check: `bun --no-env-file ${JSON.stringify(bin("scaffolding"))} check`,
+        // Takes the refs and the hook's arguments, and passes.
+        "check-confidential": "sh -c 'cat > /dev/null' sh",
+        "check:docs": "true",
+        "check:src": "echo src-red; exit 1",
+      },
+    );
+    mkdirSync(join(dir, "node_modules"));
+    write(dir, { "docs/a.md": "a\n" });
+    const env = { ...process.env, SCAFFOLDING_LOAD: "0", CHECK_LOCK: join(temp(), "lock") };
+    expect(run(dir, "scaffolding", ["check", "--changed"], env).code).toBe(0);
+    sh(dir, ["add", "docs/a.md"]);
+    sh(dir, ["commit", "-qm", "docs"]);
+    const hooks = join(import.meta.dir, "..", "template/.githooks");
+    const push = (ref: string) =>
+      spawnSync("git", ["-c", `core.hooksPath=${hooks}`, "push", "-q", remote, ref], {
+        cwd: dir,
+        env,
+        encoding: "utf8",
+      });
+    const branch = push("HEAD:refs/heads/main");
+    expect(`${branch.stdout}${branch.stderr}`).toContain("FAIL check:src");
+    expect(branch.status).not.toBe(0);
+    // Control: a tag carries no branch, and the gate does not run.
+    sh(dir, ["tag", "v1"]);
+    const tag = push("refs/tags/v1");
+    expect(tag.stderr).not.toContain("check:src");
+    expect(tag.status).toBe(0);
+  }, 30_000);
+
   test("a failing step fails the gate and stops the later ones", () => {
     const dir = gate({ skip, check: ["false", "echo never-ran"] });
     const r = run(dir, "scaffolding", ["check"], { CHECK_LOCK: join(dir, ".lock") });
