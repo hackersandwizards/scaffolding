@@ -3079,8 +3079,8 @@ exec "${process.execPath}" "$@"
   }, 20_000);
 
   // Behind a network that never answers, an install waited with no end, and the checkout, the
-  // merge or the MCP server's start with it.
-  test.each(["post-checkout", "post-merge", "MCP server's start"])(
+  // merge, the session's start or the MCP server's start with it.
+  test.each(["post-checkout", "post-merge", "session-start", "MCP server's start"])(
     "%s bounds its install at 60 s unless CHECK_LOCK_RUN_S is set",
     (caller) => {
       const dir = consumer();

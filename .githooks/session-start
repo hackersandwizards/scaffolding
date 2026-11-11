@@ -4,7 +4,8 @@
 # what the session must act on. It moves no branch in a checkout other sessions share: a
 # fast-forward succeeds with another session's uncommitted file in the tree and moves HEAD under
 # it. The session merges per git.md. A cloud session's checkout is its own, so there it switches
-# to main and fast-forwards.
+# to main and fast-forwards. check-lock stops the install after CHECK_LOCK_RUN_S seconds, as in
+# post-checkout: a slow install or lock held up every session start.
 exec 2>&1
 cd "$(git rev-parse --show-toplevel)" || exit 0
 wait=${SCAFFOLDING_FETCH_WAIT_S:-20}
@@ -59,4 +60,4 @@ elif [ "$fetched" -eq 124 ]; then
 else
   echo "git fetch origin main failed: fetch and merge per git.md before work"
 fi
-.githooks/install || true
+CHECK_LOCK_RUN_S=${CHECK_LOCK_RUN_S:-60} .githooks/install || true
