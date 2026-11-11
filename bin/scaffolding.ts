@@ -115,14 +115,15 @@ const env = {
 };
 type Result = { name: string; code: number; ms: number };
 
-// Above one waiting process per core, the tests, the build and the repository's own steps run one
-// after another, once the quick shared checks have run side by side: started all at once on a
-// loaded machine, they starved each other past every fixed limit inside them, and a correct tree
-// went red.
-const serial = load > cores;
-if (serial)
+// Above one waiting process per core, the tests and the build run one after another once the quick
+// shared checks have run side by side: started all at once on a loaded machine, they starved each
+// other past every fixed limit inside them, and a correct tree went red. The repository's steps then
+// run `width` at a time: the cores times the share of a core each waiting process gets, at least 2.
+const loaded = load > cores;
+const width = loaded ? Math.max(2, Math.floor((cores * cores) / load)) : Infinity;
+if (loaded)
   console.error(
-    `[scaffolding] load ${Math.round(load)} on ${cores} cores: test, catalog and the repository's steps run one after another`,
+    `[scaffolding] load ${Math.round(load)} on ${cores} cores: test and catalog run one after another, the repository's steps ${width} at a time`,
   );
 
 const started = performance.now();
@@ -169,26 +170,31 @@ for (const signal of SIGNALS)
   });
 
 // A step named in `after` starts once the step it names, listed before it, has finished, passed
-// or failed. Under load only the steps named in `quick` still run side by side.
+// or failed. Under load the steps named in `quick` still run side by side, and the others then run
+// `limit` at a time.
 async function group(
   steps: [string, string][],
   after: Record<string, string> = {},
   quick = new Set<string>(),
+  limit = width,
 ): Promise<boolean> {
   const runs = new Map<string, Promise<Result>>();
   const start = (n: string, c: string, buffered: boolean) => {
     const first = runs.get(after[n] ?? "");
     runs.set(n, first ? first.then(() => run(n, c, buffered)) : run(n, c, buffered));
   };
-  const alone = serial ? steps.filter(([n]) => !quick.has(n)) : [];
-  const beside = steps.filter((step) => !alone.includes(step));
+  const queue = loaded ? steps.filter(([n]) => !quick.has(n)) : [];
+  const beside = steps.filter((step) => !queue.includes(step));
   for (const [n, c] of beside) start(n, c, steps.length > 1);
-  if (alone.length) await Promise.all(runs.values());
+  if (queue.length) await Promise.all(runs.values());
   // One at a time, a step writes straight to the terminal.
-  for (const [n, c] of alone) {
-    start(n, c, false);
-    await runs.get(n);
-  }
+  const worker = async () => {
+    for (let step; (step = queue.shift());) {
+      start(step[0], step[1], limit > 1 && steps.length > 1);
+      await runs.get(step[0]);
+    }
+  };
+  await Promise.all(Array.from({ length: Math.min(limit, queue.length) }, worker));
   return (await Promise.all(runs.values())).every((r) => r.code === 0);
 }
 
@@ -216,6 +222,7 @@ if (ok)
     Object.entries(shared),
     sync ? { catalog: "typecheck" } : {},
     new Set(Object.keys(shared).filter((name) => name !== "test" && name !== "catalog")),
+    1,
   );
 for (const entry of config.check ?? []) {
   if (!ok) break;

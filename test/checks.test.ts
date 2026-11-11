@@ -2627,30 +2627,31 @@ describe("scaffolding check", () => {
     expect(r.out).toMatch(/\[scaffolding\] failed in [\d.]+ s: check:fast, check:also\n/);
   });
 
-  test("above one waiting process per core the repository's steps run one after another", () => {
-    // Each step fails where the other runs beside it.
-    const body = (me: string, other: string) =>
-      `test -e ${other} && exit 1; touch ${me}; sleep 0.5; test -e ${other} && exit 1; rm ${me}`;
+  test("above one waiting process per core the repository's steps run a limited number at a time", () => {
+    // Each step fails where three run at once.
+    const body = (me: string) =>
+      `touch ${me}.on; sleep 0.5; n=$(ls *.on | wc -l); rm ${me}.on; test $n -le 2`;
     const dir = gate(
-      { skip, check: [["check:a", "check:b", "check:limit"]] },
+      { skip, check: [["check:a", "check:b", "check:c", "check:limit"]] },
       {
-        "check:a": body("a.on", "b.on"),
-        "check:b": body("b.on", "a.on"),
+        "check:a": body("a"),
+        "check:b": body("b"),
+        "check:c": body("c"),
         "check:limit": "echo limit=$SCAFFOLDING_TEST_TIMEOUT_MS",
       },
     );
     const loaded = run(dir, "scaffolding", ["check"], {
       CHECK_LOCK: join(dir, ".lock"),
-      SCAFFOLDING_LOAD: "999",
+      SCAFFOLDING_LOAD: "99999",
     });
     expect(loaded.out).toMatch(
-      /load 999 on \d+ cores: test, catalog and the repository's steps run one after another/,
+      /load 99999 on \d+ cores: test and catalog run one after another, the repository's steps 2 at a time/,
     );
     expect(loaded.code).toBe(0);
     // The per-test limit a test command can pass on, stretched by load per core, ten times at most.
     expect(loaded.out).toContain("limit=50000");
     const idle = run(dir, "scaffolding", ["check"], { CHECK_LOCK: join(dir, ".lock") });
-    expect(idle.out).not.toContain("one after another");
+    expect(idle.out).not.toContain("at a time");
     expect(idle.out).toContain("limit=5000\n");
     expect(idle.code).toBe(1);
   }, 40_000);

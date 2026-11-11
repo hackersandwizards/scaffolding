@@ -29,8 +29,8 @@ the last line names the red steps in the gate's order. A signal to `bun run chec
 step, and each step still running prints what it said so far and `stopped <step> by <signal>`.
 
 Where the one-minute load average is above the core count, the gate says so in its first line: the
-quick shared checks still run side by side, then `test`, `catalog` and the repository's own steps
-one after another. `SCAFFOLDING_LOAD=<n>` replaces the measured load. Load per core also stretches
+quick shared checks still run side by side, then `test` and `catalog` one after another, and each
+group of the repository's own steps at most cores × cores ÷ load at a time, at least 2. `SCAFFOLDING_LOAD=<n>` replaces the measured load. Load per core also stretches
 `serve`'s default wait ([Configs](configs.md)), at most ten times, and sets `SCAFFOLDING_TEST_TIMEOUT_MS` for every
 step: 5000 ms on an idle machine. bun takes a per-test limit only as a flag, so the repository's
 test command passes it on, `"test": "bun test --timeout ${SCAFFOLDING_TEST_TIMEOUT_MS:-5000}"`;
