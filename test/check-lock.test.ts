@@ -1,4 +1,4 @@
-import { execFileSync, spawn } from "node:child_process";
+import { execFileSync, spawn, spawnSync } from "node:child_process";
 import {
   closeSync,
   constants,
@@ -361,6 +361,21 @@ describe("check-lock serialises the checks", () => {
     // About 4 s; a wait started again at the rewrite ends about 8 s after the ticket.
     expect(Date.now() - waiting).toBeLessThan(6_500);
   }, 30_000);
+
+  // An empty lock path was unusable, and the command ran unserialised.
+  it("reads an empty CHECK_LOCK as unset, taking the checkout's lock", () => {
+    const dir = realpathSync(mkdtempSync(join(tmpdir(), "check-lock-")));
+    roots.push(dir);
+    mkdirSync(join(dir, "node_modules"));
+    heldBy(join(dir, "node_modules/.check.lock"), process.pid);
+    const result = spawnSync("bun", [SCRIPT, "echo", "ran"], {
+      cwd: dir,
+      env: { ...process.env, CHECK_LOCK: "", CHECK_LOCK_WAIT_MS: "0" },
+      encoding: "utf8",
+    });
+    expect(result.stdout).not.toContain("ran");
+    expect(result.stderr).toContain(`pid ${process.pid} still holds`);
+  });
 
   it("refuses a wait that is not a number instead of waiting forever", () => {
     const lock = lockPath();

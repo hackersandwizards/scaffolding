@@ -204,39 +204,58 @@ if (argv[0] === "prepush") {
   // New to the remote pushed to: a commit another remote already holds may still be missing there.
   // Its tips from the input cover a push to a URL, which has no tracking refs.
   const notOnRemote = ["--ignore-missing", "--not", `--remotes=${argv[1]}`, ...sha(3)];
+  // Only the tips the remote reports count as held there: a stale tracking ref or a fetched pull
+  // request may still point into the purged history.
+  const commits = locals.flatMap((local) =>
+    git(["rev-list", local, "--ignore-missing", "--not", ...sha(3)], root)
+      .toString()
+      .split("\n")
+      .filter(Boolean),
+  );
+  const parse = (list: string) => {
+    const { salt, hashes } = JSON.parse(list) as { salt: string; hashes: string[] };
+    return { bad: new Set(hashes), h: hasher(salt) };
+  };
   const file = join(root, ".confidential-purged.json");
-  const lists = [existsSync(file) ? readFileSync(file, "utf8") : ""];
+  const purged = existsSync(file) ? [parse(readFileSync(file, "utf8"))] : [];
   // A clone older than the list carries the purged commits without it, so the list on the remote's
-  // default branch counts too. A remote without one, or out of reach, adds nothing.
-  const env = { ...process.env, GIT_TERMINAL_PROMPT: "0" };
-  const fetch = ["fetch", "-q", "--no-tags", argv[2] ?? argv[1], "HEAD"];
-  if (spawnSync("git", fetch, { cwd: root, env, stdio: "ignore" }).status === 0)
-    lists.push(
-      spawnSync("git", ["show", "FETCH_HEAD:.confidential-purged.json"], {
+  // default branch counts too: fetched into a ref of its own, since another session's fetch rewrites
+  // FETCH_HEAD, and within 20 s. A remote without a list, or out of reach, adds nothing, and one
+  // whose list does not parse is named and skipped, so the push that repairs it still goes.
+  const ref = "refs/scaffolding/remote-purged";
+  if (commits.length) {
+    const fetched = spawnSync(
+      "git",
+      ["fetch", "-q", "--no-tags", argv[2] ?? argv[1], `+HEAD:${ref}`],
+      {
         cwd: root,
-      }).stdout.toString(),
+        env: { ...process.env, GIT_TERMINAL_PROMPT: "0" },
+        stdio: "ignore",
+        timeout: 20_000,
+      },
     );
-  const purged = lists
-    .filter((list) => list.trim())
-    .map((list) => JSON.parse(list) as { salt: string; hashes: string[] })
-    .map(({ salt, hashes }) => ({ bad: new Set(hashes), h: hasher(salt) }));
-  if (purged.length) {
-    // Only the tips the remote reports count as held there: a stale tracking ref or a fetched pull
-    // request may still point into the purged history.
-    const commits = locals.flatMap((local) =>
-      git(["rev-list", local, "--ignore-missing", "--not", ...sha(3)], root)
-        .toString()
-        .split("\n")
-        .filter(Boolean),
-    );
-    for (const c of commits)
-      if (purged.some(({ bad, h }) => bad.has(h(c))))
-        report(
-          "push",
-          c,
-          "commit purged from this repository's history: clone again and carry your own work over by hand",
+    const list = spawnSync("git", ["show", `${ref}:.confidential-purged.json`], {
+      cwd: root,
+      encoding: "utf8",
+      maxBuffer: Infinity,
+    });
+    spawnSync("git", ["update-ref", "-d", ref], { cwd: root });
+    if (fetched.status === 0 && list.status === 0)
+      try {
+        purged.push(parse(list.stdout));
+      } catch {
+        console.warn(
+          "[check-confidential] the remote's .confidential-purged.json does not parse: skipped",
         );
+      }
   }
+  for (const c of commits)
+    if (purged.some(({ bad, h }) => bad.has(h(c))))
+      report(
+        "push",
+        c,
+        "commit purged from this repository's history: clone again and carry your own work over by hand",
+      );
   if (findings.length) finish("check-confidential", findings, started);
   // git-lfs stays off unless the push may carry LFS objects or touch a lockable file: it would
   // verify locks against the remote on every push.

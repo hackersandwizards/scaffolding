@@ -29,7 +29,7 @@ import { resolve } from "node:path";
 // while one it starts in another checkout still takes that checkout's lock.
 
 // `bun run` starts this from the repository root, for the gate and a wrapped build alike.
-const LOCK = process.env.CHECK_LOCK ?? resolve("node_modules", ".check.lock");
+const LOCK = process.env.CHECK_LOCK || resolve("node_modules", ".check.lock");
 
 // The longest one holder may keep a waiter waiting; the wait starts again whenever the lock passes
 // on, so a queue of slow gates never runs it out, a hung holder does. Overridable so the test can
@@ -164,8 +164,7 @@ function dropIfStale(): void {
 // renews it every poll, and only the first live one may take it, so a waiter polling at the right
 // moment no longer overtakes one that has waited longer. A ticket whose pid is gone, or that went
 // unrenewed for three polls (its pid reused by another process, its waiter stopped), is removed by
-// the next waiter; a stopped waiter's next poll writes it again. A lock free for three polls goes to
-// any waiter.
+// the next waiter; a stopped waiter's next poll writes it again.
 const QUEUE = `${LOCK}.queue`;
 const TICKET_MS = 3 * POLL_MS;
 let ticket: string | undefined;
@@ -175,12 +174,9 @@ function first(): boolean {
   writeFileSync(`${QUEUE}/${ticket}`, "");
   const live = readdirSync(QUEUE).filter((name) => {
     const path = `${QUEUE}/${name}`;
-    try {
-      if (running(Number(name.split("-")[1])) && Date.now() - statSync(path).mtimeMs < TICKET_MS)
-        return true;
-    } catch {
-      return false; // removed meanwhile
-    }
+    const stat = statSync(path, { throwIfNoEntry: false });
+    if (!stat) return false;
+    if (running(Number(name.split("-")[1])) && Date.now() - stat.mtimeMs < TICKET_MS) return true;
     rmSync(path, { force: true });
     return false;
   });
@@ -213,17 +209,14 @@ async function queueForLock(): Promise<boolean> {
     }
   };
   let holder = holderId();
-  let freeSince: number | undefined;
   for (;;) {
-    const free = holder === undefined && freeSince !== undefined;
-    if (first() || (free && Date.now() - freeSince! > 3 * POLL_MS)) {
+    if (first()) {
       if (acquire()) return true;
       dropIfStale();
       if (acquire()) return true;
     }
     const now = holderId();
     if (now !== holder) [holder, started, spokeAt] = [now, Date.now(), 0];
-    freeSince = now === undefined ? (freeSince ?? Date.now()) : undefined;
 
     const waited = Date.now() - started;
     // At least: a first poll in the millisecond the wait began measures 0, and a wait of 0 slept.

@@ -4,7 +4,7 @@ import { join } from "node:path";
 
 /** A company repository's remote; the tests point SCAFFOLDING_GIT_BASE at local stand-ins. */
 export const companyRemote = (repo: string) =>
-  `${process.env.SCAFFOLDING_GIT_BASE ?? "https://github.com/hackersandwizards/"}${repo}.git`;
+  `${process.env.SCAFFOLDING_GIT_BASE || "https://github.com/hackersandwizards/"}${repo}.git`;
 
 /** The commit the package at `home` came from, read offline: the SHA bun writes to .bun-tag for a
  * Git dependency (a GitHub tarball's "<owner>-<repo>-<short SHA>", a clone's bare SHA), else the

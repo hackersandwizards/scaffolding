@@ -1907,6 +1907,27 @@ describe("check-confidential", () => {
     });
     expect(push.stderr).toContain("purged from this repository's history");
     expect(push.status).toBe(1);
+    // A list on the remote that does not parse leaves the push that repairs it possible.
+    sh(dir, ["checkout", "-q", "main"]);
+    write(dir, { ".confidential-purged.json": "{" });
+    sh(dir, ["commit", "-qam", "broken"]);
+    sh(dir, ["push", "-q", remote, "HEAD:refs/heads/main"]);
+    write(dir, { "c.md": "c\n" });
+    sh(dir, ["add", "c.md"]);
+    sh(dir, ["commit", "-qm", "c"]);
+    sh(dir, ["checkout", "-q", "HEAD~2", "--", ".confidential-purged.json"]);
+    sh(dir, ["commit", "-qm", "repair"]);
+    const repair = spawnSync(
+      process.execPath,
+      [bin("check-confidential"), "prepush", "x", remote],
+      {
+        cwd: dir,
+        input: `refs/heads/main ${sh(dir, ["rev-parse", "HEAD"]).stdout.toString().trim()} refs/heads/main ${"0".repeat(40)}\n`,
+        encoding: "utf8",
+      },
+    );
+    expect(repair.stderr).toContain("does not parse: skipped");
+    expect(repair.status).toBe(0);
   });
 
   test("purged adds to the repository's list under its salt, a redirect's empty file included", () => {
@@ -2984,6 +3005,11 @@ exec "${process.execPath}" "$@"
     expect(held.stderr).toContain(`pid ${process.pid} still holds`);
     expect(held.stderr).toContain("[install] bun install --frozen-lockfile did not run or failed");
     expect(held.status).toBe(1);
+    // A git command a gate runs in its own checkout inherits SCAFFOLDING_LOCKED, which let the
+    // hook's install run at once, beside the gate's other steps.
+    const lock = join(realpathSync(dir), "node_modules/.check.lock");
+    expect(install({ SCAFFOLDING_LOCKED: lock }).status).toBe(1);
+    expect(read(bun.log)).toBe("");
     rmSync(join(dir, "node_modules/.check.lock"));
     const failed = install({ BUN_EXIT: "1" });
     expect(failed.stdout).toBe("");
@@ -3098,30 +3124,6 @@ exec "${process.execPath}" "$@"
     expect(existsSync(join(tree, "node_modules"))).toBe(true);
   });
 
-  // A git command a gate runs in its own checkout inherits SCAFFOLDING_LOCKED, which let the hook's
-  // install run at once, beside the gate's other steps.
-  test("an install inside a gate's process tree installs nothing while the gate holds the lock", () => {
-    const dir = consumer();
-    mkdirSync(join(dir, "node_modules"));
-    const bun = fakeBun();
-    const lock = join(realpathSync(dir), "node_modules/.check.lock");
-    writeFileSync(
-      lock,
-      JSON.stringify({
-        pid: process.pid,
-        startedAt: Date.now(),
-        command: ["bun", "x.ts", "check"],
-      }),
-    );
-    const r = spawnSync(join(dir, ".githooks/install"), [], {
-      cwd: dir,
-      env: env(bun, { SCAFFOLDING_LOCKED: lock }),
-      encoding: "utf8",
-    });
-    expect(read(bun.log)).toBe("");
-    expect(r.stderr).toContain(`pid ${process.pid} still holds`);
-  });
-
   test("the MCP server starts after the install, with nothing but the server on stdout", () => {
     const dir = consumer({
       ".mcp.json": readFileSync(join(import.meta.dir, "../template/.mcp.json"), "utf8"),
@@ -3214,6 +3216,9 @@ describe("skeleton SessionStart hook", () => {
     expect(r.stdout).toBe("");
     expect(sh(single, ["branch", "--show-current"]).stdout.toString()).toBe("main\n");
     expect(head(single)).toBe(head(origin));
+    expect(sh(single, ["rev-parse", "--abbrev-ref", "main@{upstream}"]).stdout.toString()).toBe(
+      "origin/main\n",
+    );
   });
 
   // setTimeout ran a delay past 2^31 - 1 ms at once, and the fetch was stopped as it began.
@@ -3235,7 +3240,9 @@ describe("skeleton SessionStart hook", () => {
       timeout: 3_000,
     });
     // The fetch's ssh ends, and with it the fetch and its timer.
-    if (existsSync(pid)) process.kill(Number(readFileSync(pid, "utf8")));
+    for (const end = Date.now() + 20_000; !existsSync(pid) && Date.now() < end;)
+      spawnSync("sleep", ["0.1"]);
+    process.kill(Number(readFileSync(pid, "utf8")));
     expect(r.stdout).not.toContain("not fetched");
     expect(r.signal).toBe("SIGTERM");
   });

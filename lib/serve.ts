@@ -9,7 +9,7 @@ import { availableParallelism, loadavg } from "node:os";
  * how many times a wait for wall time stretches under it: 1 up to one waiting process per core,
  * load per core above, at most 10. */
 export function machineLoad(): { load: number; cores: number; factor: number } {
-  const load = Number(process.env.SCAFFOLDING_LOAD ?? loadavg()[0]);
+  const load = Number(process.env.SCAFFOLDING_LOAD || loadavg()[0]);
   const cores = availableParallelism();
   return { load, cores, factor: Math.min(10, Math.max(1, load / cores || 1)) };
 }
