@@ -45,8 +45,7 @@ Every item: `kind` and `status` (`open`, `assumed` or `decided`; `work` and `goa
 answers, or for work who moves next: one name, with any later steps in the body; a decision for
 Stefan sets `owner: Stefan`). The body's first sentence after the title states what the owner
 does, in under 120 characters; context follows. Optional:
-`order`, `area` (one of backoffice, company, marketing, sales, delivery, finance, people, product,
-legal, software-engineering, brand), `due` (ISO date), `evidence`. A decision or review may carry
+`order`, `area` (free text), `due` (ISO date), `evidence`. A decision or review may carry
 `options` (each `key`, `label`, optional `detail`, and `score` and `noise` from a blind review),
 `recommended` (an option key; a list where `multiple: true` lets the person pick several) and `images` (option key to
 an image or a list of them, each a file name or `{src, caption}`, or a list for the item as a
