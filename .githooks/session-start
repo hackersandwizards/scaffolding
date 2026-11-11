@@ -9,7 +9,7 @@ exec 2>&1
 cd "$(git rev-parse --show-toplevel)" || exit 0
 wait=${SCAFFOLDING_FETCH_WAIT_S:-20}
 # A bound that is no whole number of seconds, or 0, which would end the fetch at once, is the default.
-case $wait in '' | *[!0-9]*) wait=20 ;; *[1-9]*) ;; *) wait=20 ;; esac
+case $wait in *[!0-9]*) wait=20 ;; *[1-9]*) ;; *) wait=20 ;; esac
 # Into origin/main by name: a clone of one other branch has no refspec that updates it.
 ref=+refs/heads/main:refs/remotes/origin/main
 # Bounded by the clock: an SSH remote waits for a person to approve the key, and nothing in ssh or
@@ -26,12 +26,13 @@ else
     stdio: "ignore",
     env: { ...process.env, GIT_TERMINAL_PROMPT: "0" },
   });
+  // setTimeout runs a delay past 2^31 - 1 ms at once.
   const timer = setTimeout(() => {
     try {
       process.kill(-git.pid, "SIGTERM");
     } catch {}
     process.exit(124);
-  }, Number(process.argv[1]) * 1000);
+  }, Math.min(Number(process.argv[1]) * 1000, 2 ** 31 - 1));
   git.on("exit", (code) => {
     clearTimeout(timer);
     process.exit(code ?? 1);
@@ -41,7 +42,10 @@ fi
 fetched=$?
 if [ "$fetched" -eq 0 ]; then
   if [ "$CLAUDE_CODE_REMOTE" = true ]; then
-    git switch -q main && git merge --ff-only -q origin/main ||
+    # A clone of one other branch has no fetch refspec that maps main, so `git switch main` finds
+    # no origin/main to start it from.
+    if git show-ref -q --verify refs/heads/main; then git switch -q main; else git switch -q -c main origin/main; fi &&
+      git merge --ff-only -q origin/main ||
       echo "main not switched to or origin/main not merged: fix it per git.md"
   else
     behind=$(git rev-list --count HEAD..origin/main 2>/dev/null)

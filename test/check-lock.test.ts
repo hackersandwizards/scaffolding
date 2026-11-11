@@ -268,7 +268,7 @@ describe("check-lock serialises the checks", () => {
     expect(same.stderr).toBe("");
   }, 30_000);
 
-  it("lets the first live waiter take the lock and passes over a dead one's ticket", () => {
+  it("lets the first live waiter take the lock and removes a dead one's ticket", () => {
     const lock = lockPath();
     mkdirSync(`${lock}.queue`);
     const earlier = `${lock}.queue/000000000000001-${process.pid}`;
@@ -279,10 +279,26 @@ describe("check-lock serialises the checks", () => {
     // A ticket whose process waits for nothing, a pid reused or a waiter stopped by Ctrl-Z, holds
     // a free lock up for three polls only.
     expect(run(lock, ["echo", "ran"], { CHECK_LOCK_WAIT_MS: "20000" }).stdout).toBe("ran\n");
-    rmSync(earlier);
+    // Unrenewed for three polls, the ticket is gone by now.
+    expect(existsSync(earlier)).toBe(false);
     writeFileSync(`${lock}.queue/000000000000001-999999`, "");
     expect(run(lock, ["echo", "ran"]).stdout).toBe("ran\n");
-    expect(readdirSync(`${lock}.queue`)).toEqual(["000000000000001-999999"]);
+    expect(readdirSync(`${lock}.queue`)).toEqual([]);
+  }, 30_000);
+
+  // A waiter SIGKILLed while it waited left its ticket, and once its pid was reused the ticket read
+  // as live: an install, waiting 0, gave up on a free lock after one poll.
+  it("removes a ticket left unrenewed for three polls, whose pid another process now holds", () => {
+    const lock = lockPath();
+    mkdirSync(`${lock}.queue`);
+    const ghost = `${lock}.queue/000000000000001-${process.pid}`;
+    writeFileSync(ghost, "");
+    const old = new Date(Date.now() - 60_000);
+    utimesSync(ghost, old, old);
+    const result = run(lock, ["echo", "ran"], { CHECK_LOCK_WAIT_MS: "0" });
+    expect(result.stderr).toBe("");
+    expect(result.stdout).toBe("ran\n");
+    expect(readdirSync(`${lock}.queue`)).toEqual([]);
   }, 30_000);
 
   it("starts the wait again whenever the lock passes on", async () => {
@@ -307,6 +323,44 @@ describe("check-lock serialises the checks", () => {
     expect(await first).toBe(0);
     expect(await second).toBe(0);
   }, 60_000);
+
+  it("reads an empty wait as the default, not as a wait of 0", async () => {
+    const lock = lockPath();
+    heldBy(lock, process.pid);
+    const child = spawn("bun", [SCRIPT, "echo", "ran"], {
+      env: { ...process.env, CHECK_LOCK: lock, CHECK_LOCK_WAIT_MS: "" },
+      stdio: "ignore",
+    });
+    let exited = false;
+    child.on("exit", () => (exited = true));
+    await new Promise((go) => setTimeout(go, 3_000));
+    expect(exited).toBe(false);
+    child.kill("SIGKILL");
+  }, 30_000);
+
+  // annotate() renames a new file over the lock when the command starts and when a signal reaches
+  // it; a waiter read each new inode as a new holder and started its wait again.
+  it("keeps counting the wait when the holder rewrites its own lock", async () => {
+    const lock = lockPath();
+    const holder = { pid: process.pid, startedAt: Date.now(), command: ["other"] };
+    writeFileSync(lock, JSON.stringify(holder));
+    const child = spawn("bun", [SCRIPT, "echo", "ran"], {
+      env: { ...process.env, CHECK_LOCK: lock, CHECK_LOCK_WAIT_MS: "4000" },
+      stdio: "ignore",
+    });
+    const exit = new Promise((done) => child.on("exit", done));
+    await until(
+      () => existsSync(`${lock}.queue`) && readdirSync(`${lock}.queue`).length > 0,
+      "the ticket",
+    );
+    const waiting = Date.now();
+    await new Promise((go) => setTimeout(go, 3_000));
+    writeFileSync(`${lock}.new`, JSON.stringify({ ...holder, signalled: true }));
+    renameSync(`${lock}.new`, lock);
+    expect(await exit).toBe(1);
+    // About 4 s; a wait started again at the rewrite ends about 8 s after the ticket.
+    expect(Date.now() - waiting).toBeLessThan(6_500);
+  }, 30_000);
 
   it("refuses a wait that is not a number instead of waiting forever", () => {
     const lock = lockPath();

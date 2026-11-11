@@ -1881,6 +1881,34 @@ describe("check-confidential", () => {
     expect(push(purged, "backup").status).toBe(1);
   });
 
+  test("a clone older than the list is refused by the list on the remote's default branch", () => {
+    const remote = temp();
+    sh(remote, ["init", "-q", "--bare"]);
+    sh(remote, ["symbolic-ref", "HEAD", "refs/heads/main"]);
+    const dir = repo({ "package.json": "{}", "a.md": "a\n" });
+    write(dir, { "b.md": "b\n" });
+    sh(dir, ["add", "b.md"]);
+    sh(dir, ["commit", "-qm", "purged"]);
+    const purged = sh(dir, ["rev-parse", "HEAD"]).stdout.toString().trim();
+    // The rewrite: main without the purged commit, the list on it.
+    sh(dir, ["reset", "-q", "--hard", "HEAD~1"]);
+    write(dir, {
+      ".confidential-purged.json": run(dir, "check-confidential", ["purged", purged]).out,
+    });
+    sh(dir, ["add", ".confidential-purged.json"]);
+    sh(dir, ["commit", "-qm", "list"]);
+    sh(dir, ["push", "-q", remote, "HEAD:refs/heads/main"]);
+    // The old clone: the purged commit checked out, no list in its tree.
+    sh(dir, ["checkout", "-q", purged]);
+    const push = spawnSync(process.execPath, [bin("check-confidential"), "prepush", "x", remote], {
+      cwd: dir,
+      input: `refs/heads/x ${purged} refs/heads/x ${"0".repeat(40)}\n`,
+      encoding: "utf8",
+    });
+    expect(push.stderr).toContain("purged from this repository's history");
+    expect(push.status).toBe(1);
+  });
+
   test("purged adds to the repository's list under its salt, a redirect's empty file included", () => {
     const dir = repo({ "package.json": "{}" });
     const purged = (shas: string[]) =>
@@ -3059,9 +3087,39 @@ exec "${process.execPath}" "$@"
     sh(dir, ["config", "core.hooksPath", ".githooks"]);
     const bun = fakeBun();
     const tree = join(temp(), "tree");
-    spawnSync("git", ["worktree", "add", "-q", "--detach", tree], { cwd: dir, env: env(bun) });
+    const added = spawnSync("git", ["worktree", "add", "-q", "--detach", tree], {
+      cwd: dir,
+      env: env(bun),
+      encoding: "utf8",
+    });
+    // Offline the install can hang, and the person sees what runs.
+    expect(added.stderr).toContain("[post-checkout] installing node_modules in the new worktree");
     expect(read(bun.log)).toBe("start locked\nend\n");
     expect(existsSync(join(tree, "node_modules"))).toBe(true);
+  });
+
+  // A git command a gate runs in its own checkout inherits SCAFFOLDING_LOCKED, which let the hook's
+  // install run at once, beside the gate's other steps.
+  test("an install inside a gate's process tree installs nothing while the gate holds the lock", () => {
+    const dir = consumer();
+    mkdirSync(join(dir, "node_modules"));
+    const bun = fakeBun();
+    const lock = join(realpathSync(dir), "node_modules/.check.lock");
+    writeFileSync(
+      lock,
+      JSON.stringify({
+        pid: process.pid,
+        startedAt: Date.now(),
+        command: ["bun", "x.ts", "check"],
+      }),
+    );
+    const r = spawnSync(join(dir, ".githooks/install"), [], {
+      cwd: dir,
+      env: env(bun, { SCAFFOLDING_LOCKED: lock }),
+      encoding: "utf8",
+    });
+    expect(read(bun.log)).toBe("");
+    expect(r.stderr).toContain(`pid ${process.pid} still holds`);
   });
 
   test("the MCP server starts after the install, with nothing but the server on stdout", () => {
@@ -3144,6 +3202,42 @@ describe("skeleton SessionStart hook", () => {
     expect(r.stdout).toBe("");
     expect(sh(dir, ["branch", "--show-current"]).stdout.toString()).toBe("main\n");
     expect(head(dir)).toBe(head(origin));
+  });
+
+  test("a cloud session in a clone of one other branch switches to main", () => {
+    const { dir, origin, path } = clone();
+    sh(origin, ["branch", "-q", "work", "HEAD~1"]);
+    const single = temp();
+    spawnSync("git", ["clone", "-q", "--single-branch", "--branch", "work", origin, single]);
+    cpSync(join(dir, ".githooks"), join(single, ".githooks"), { recursive: true });
+    const r = start(single, { PATH: path, CLAUDE_CODE_REMOTE: "true" });
+    expect(r.stdout).toBe("");
+    expect(sh(single, ["branch", "--show-current"]).stdout.toString()).toBe("main\n");
+    expect(head(single)).toBe(head(origin));
+  });
+
+  // setTimeout ran a delay past 2^31 - 1 ms at once, and the fetch was stopped as it began.
+  test("a bound past what setTimeout takes still waits for the fetch", () => {
+    const { dir, path } = clone();
+    const ssh = join(temp(), "ssh");
+    const pid = `${ssh}.pid`;
+    writeFileSync(ssh, `#!/bin/sh\necho $$ > ${pid}\nexec sleep 600\n`, { mode: 0o755 });
+    sh(dir, ["remote", "set-url", "origin", "git@example.invalid:o/r.git"]);
+    const r = spawnSync("/bin/sh", [hook], {
+      cwd: dir,
+      env: {
+        ...process.env,
+        PATH: path,
+        GIT_SSH_COMMAND: ssh,
+        SCAFFOLDING_FETCH_WAIT_S: "2147484",
+      },
+      encoding: "utf8",
+      timeout: 3_000,
+    });
+    // The fetch's ssh ends, and with it the fetch and its timer.
+    if (existsSync(pid)) process.kill(Number(readFileSync(pid, "utf8")));
+    expect(r.stdout).not.toContain("not fetched");
+    expect(r.signal).toBe("SIGTERM");
   });
 
   test("a fetch that fails says so", () => {

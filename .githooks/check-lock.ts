@@ -1,5 +1,7 @@
 #!/bin/sh
 // 2>/dev/null; exec bun --no-env-file "$0" "$@"
+// A skeleton file of @hackersandwizards/scaffolding at the version package.json pins: check-structure
+// --fix writes it, and the gate fails a copy that differs.
 
 import { type ChildProcess, spawn } from "node:child_process";
 import { createHash } from "node:crypto";
@@ -33,7 +35,8 @@ const LOCK = process.env.CHECK_LOCK ?? resolve("node_modules", ".check.lock");
 // on, so a queue of slow gates never runs it out, a hung holder does. Overridable so the test can
 // prove the timeout without waiting it out.
 const FULL_WAIT_MS = 15 * 60 * 1000;
-const WAIT_MS = Number(process.env.CHECK_LOCK_WAIT_MS ?? FULL_WAIT_MS);
+// Empty is unset: Number("") is 0, which gives up at once.
+const WAIT_MS = Number(process.env.CHECK_LOCK_WAIT_MS || FULL_WAIT_MS);
 // NaN would never compare greater, and the wait would never end.
 if (!Number.isFinite(WAIT_MS)) throw new Error("CHECK_LOCK_WAIT_MS must be a number of ms");
 const POLL_MS = 2_000;
@@ -157,26 +160,36 @@ function dropIfStale(): void {
   }
 }
 
-// Waiters take the lock in the order they came: each holds a ticket named for its arrival, and
-// only the first live one may take it, so a waiter polling at the right moment no longer overtakes
-// one that has waited longer. A dead waiter's ticket is passed over, never deleted by another. A
-// lock free for three polls goes to any waiter: the first live ticket's process may wait for
-// nothing, its pid reused or its waiter stopped.
+// Waiters take the lock in the order they came: each holds a ticket named for its arrival and
+// renews it every poll, and only the first live one may take it, so a waiter polling at the right
+// moment no longer overtakes one that has waited longer. A ticket whose pid is gone, or that went
+// unrenewed for three polls (its pid reused by another process, its waiter stopped), is removed by
+// the next waiter; a stopped waiter's next poll writes it again. A lock free for three polls goes to
+// any waiter.
 const QUEUE = `${LOCK}.queue`;
+const TICKET_MS = 3 * POLL_MS;
 let ticket: string | undefined;
 // process.exit skips a finally, so each exit while waiting hands the ticket back itself.
 const leave = () => ticket && rmSync(`${QUEUE}/${ticket}`, { force: true });
 function first(): boolean {
-  const live = readdirSync(QUEUE)
-    .filter((name) => running(Number(name.split("-")[1])))
-    .sort();
-  return live[0] === ticket;
+  writeFileSync(`${QUEUE}/${ticket}`, "");
+  const live = readdirSync(QUEUE).filter((name) => {
+    const path = `${QUEUE}/${name}`;
+    try {
+      if (running(Number(name.split("-")[1])) && Date.now() - statSync(path).mtimeMs < TICKET_MS)
+        return true;
+    } catch {
+      return false; // removed meanwhile
+    }
+    rmSync(path, { force: true });
+    return false;
+  });
+  return live.sort()[0] === ticket;
 }
 
 async function waitForLock(): Promise<boolean> {
   mkdirSync(QUEUE, { recursive: true });
   ticket = `${String(Date.now()).padStart(15, "0")}-${process.pid}`;
-  writeFileSync(`${QUEUE}/${ticket}`, "");
   try {
     return await queueForLock();
   } finally {
@@ -187,16 +200,19 @@ async function waitForLock(): Promise<boolean> {
 async function queueForLock(): Promise<boolean> {
   let started = Date.now();
   let spokeAt = 0;
-  // By inode: each lock is a new file, and a second read of a lock path a test made a FIFO would
-  // take the contents meant for the staleness check.
-  const inode = () => {
+  // By pid and start, which a holder rewriting its own lock keeps; by inode where the lock is no
+  // plain file or unreadable, since a read of a lock path a test made a FIFO would take the contents
+  // meant for the staleness check.
+  const holderId = () => {
     try {
-      return statSync(LOCK).ino;
+      const stat = statSync(LOCK);
+      const holder = stat.isFile() ? readHolder() : undefined;
+      return holder ? `${holder.pid} ${holder.startedAt}` : `inode ${stat.ino}`;
     } catch {
       return undefined;
     }
   };
-  let holder = inode();
+  let holder = holderId();
   let freeSince: number | undefined;
   for (;;) {
     const free = holder === undefined && freeSince !== undefined;
@@ -205,7 +221,7 @@ async function queueForLock(): Promise<boolean> {
       dropIfStale();
       if (acquire()) return true;
     }
-    const now = inode();
+    const now = holderId();
     if (now !== holder) [holder, started, spokeAt] = [now, Date.now(), 0];
     freeSince = now === undefined ? (freeSince ?? Date.now()) : undefined;
 
@@ -250,17 +266,20 @@ if (command.length === 0) {
 // while running it passes the signal to the command, and a second one kills it.
 const SIGNALS = ["SIGINT", "SIGTERM", "SIGHUP", "SIGQUIT"] as const;
 let child: ChildProcess | undefined = undefined;
+const killGroup = (signal: NodeJS.Signals) => {
+  try {
+    process.kill(-child!.pid!, signal);
+  } catch {
+    /* the group is already gone */
+  }
+};
 let received: NodeJS.Signals | undefined;
 function onSignal(signal: NodeJS.Signals): void {
   if (!child) {
     leave();
     process.exit(128 + constants.signals[signal]);
   }
-  try {
-    process.kill(-child.pid!, received ? "SIGKILL" : signal);
-  } catch {
-    /* the group is already gone */
-  }
+  killGroup(received ? "SIGKILL" : signal);
   if (!received) annotate({ signalled: true });
   received ??= signal;
 }
@@ -301,43 +320,33 @@ function release(): void {
 // and left the build running. So the command runs in its own process group (detached, which also
 // gives up the terminal: opening /dev/tty fails), the handler signals that group, and after a
 // signal the lock is released once the group is empty.
-const spawned = spawn(command[0], command.slice(1), {
+child = spawn(command[0], command.slice(1), {
   stdio: "inherit",
   env: { ...process.env, SCAFFOLDING_LOCKED: LOCK },
   detached: true,
 });
-child = spawned;
 // The command's own group escapes a SIGKILL to the caller's group, so the lock names the command
 // too, and a waiter reads it as live until the command has exited.
-if (spawned.pid) annotate({ group: spawned.pid });
+if (child.pid) annotate({ group: child.pid });
 const result = await new Promise<{
   status: number | null;
   signal: NodeJS.Signals | null;
   error?: Error;
 }>((done) => {
-  spawned.on("error", (error) => done({ status: null, signal: null, error }));
-  spawned.on("exit", (status, signal) => done({ status, signal }));
+  child.on("error", (error) => done({ status: null, signal: null, error }));
+  child.on("exit", (status, signal) => done({ status, signal }));
 });
 // A command killed by a signal sent to it alone, not to check-lock, left its steps running in its
 // group while the lock was released; so the rest of the group gets the same signal. Only after a
 // signal: a command that exits on its own may leave a process behind on purpose.
 if (result.signal && !received) {
   annotate({ signalled: true });
-  try {
-    process.kill(-spawned.pid!, result.signal);
-  } catch {
-    /* the group is already gone */
-  }
+  killGroup(result.signal);
 }
 const stoppedAt = Date.now();
-while ((received || result.signal) && running(-spawned.pid!)) {
+while ((received || result.signal) && running(-child.pid!)) {
   // After a signal the command took alone, nobody sends the second one that kills: 10 s do.
-  if (!received && Date.now() - stoppedAt > 10_000)
-    try {
-      process.kill(-spawned.pid!, "SIGKILL");
-    } catch {
-      /* the group is already gone */
-    }
+  if (!received && Date.now() - stoppedAt > 10_000) killGroup("SIGKILL");
   await sleep(100);
 }
 release();

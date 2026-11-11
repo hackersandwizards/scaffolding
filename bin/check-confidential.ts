@@ -205,10 +205,22 @@ if (argv[0] === "prepush") {
   // Its tips from the input cover a push to a URL, which has no tracking refs.
   const notOnRemote = ["--ignore-missing", "--not", `--remotes=${argv[1]}`, ...sha(3)];
   const file = join(root, ".confidential-purged.json");
-  if (existsSync(file)) {
-    const purged = JSON.parse(readFileSync(file, "utf8"));
-    const bad = new Set<string>(purged.hashes);
-    const h = hasher(purged.salt);
+  const lists = [existsSync(file) ? readFileSync(file, "utf8") : ""];
+  // A clone older than the list carries the purged commits without it, so the list on the remote's
+  // default branch counts too. A remote without one, or out of reach, adds nothing.
+  const env = { ...process.env, GIT_TERMINAL_PROMPT: "0" };
+  const fetch = ["fetch", "-q", "--no-tags", argv[2] ?? argv[1], "HEAD"];
+  if (spawnSync("git", fetch, { cwd: root, env, stdio: "ignore" }).status === 0)
+    lists.push(
+      spawnSync("git", ["show", "FETCH_HEAD:.confidential-purged.json"], {
+        cwd: root,
+      }).stdout.toString(),
+    );
+  const purged = lists
+    .filter((list) => list.trim())
+    .map((list) => JSON.parse(list) as { salt: string; hashes: string[] })
+    .map(({ salt, hashes }) => ({ bad: new Set(hashes), h: hasher(salt) }));
+  if (purged.length) {
     // Only the tips the remote reports count as held there: a stale tracking ref or a fetched pull
     // request may still point into the purged history.
     const commits = locals.flatMap((local) =>
@@ -218,7 +230,7 @@ if (argv[0] === "prepush") {
         .filter(Boolean),
     );
     for (const c of commits)
-      if (bad.has(h(c)))
+      if (purged.some(({ bad, h }) => bad.has(h(c))))
         report(
           "push",
           c,

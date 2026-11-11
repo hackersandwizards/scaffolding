@@ -12,8 +12,9 @@ trap 'rm -f "$log"' EXIT
 # takes the lock as every later one does. Without waiting behind a gate or a build, which a merge or
 # a session start would otherwise do for minutes: a gate installs as its first step; after a build,
 # the next gate or session start installs. Another install holding the lock is waited for, as
-# check-lock does for its own command.
-CHECK_LOCK_WAIT_MS=0 bun --no-env-file "$hooks/check-lock.ts" bun install --frozen-lockfile </dev/null >"$log" 2>&1
+# check-lock does for its own command. SCAFFOLDING_LOCKED is cleared: a git command a gate runs in
+# its own checkout would otherwise install at once, beside the gate's other steps.
+SCAFFOLDING_LOCKED= CHECK_LOCK_WAIT_MS=0 bun --no-env-file "$hooks/check-lock.ts" bun install --frozen-lockfile </dev/null >"$log" 2>&1
 status=$?
 if [ "$status" -ne 0 ]; then
   cat "$log" >&2
