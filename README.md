@@ -43,9 +43,9 @@ bun install
 bun run check
 ```
 
-It writes the configs that import the package. An existing repository takes the same files from
-[`template/`](template), then runs `bun run check-structure --fix`. The exports most repositories
-import, all of them in [Configs](docs/configs.md):
+It writes the configs that import the package. In an existing repository,
+`bun run check-structure --fix` writes the skeleton's hooks and owned files and names what else is
+missing. The exports most repositories import, all of them in [Configs](docs/configs.md):
 
 - `./prettier`, `./eslint`, `./eslint/astro`, `./stylelint`: the shared format and lint configs.
 - `./tsconfig/bun.json`, `./tsconfig/astro.json`: the base for `"extends"`.

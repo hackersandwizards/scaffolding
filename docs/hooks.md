@@ -17,7 +17,7 @@ install, before `node_modules` holds the package, takes the lock as every later 
 `SCAFFOLDING_LOCKED`, so a git command a gate runs in its own checkout installs nothing beside the
 gate. `bun run check` starts with the same install.
 
-The pre-push hook then hands the refs to `git lfs pre-push` where the push may carry LFS objects or
+The pre-push hook hands the refs to `git lfs pre-push` where the push may carry LFS objects or
 touch a lockable file. That is the case where the repository's LFS store holds a file (`lfs/objects`
 in its Git directory, or under `lfs.storage`). It is also the case where a commit new to the remote
 being pushed to changes a path whose `filter` attribute is `lfs` or that is `lockable`
