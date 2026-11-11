@@ -8,9 +8,8 @@ case $1 in
   [ $? -eq 1 ] || exit 0
   ;;
 *)
-  # Git LFS writes its hooks into .githooks/ when it checks out an LFS file ahead of that folder; git
-  # then writes the hooks it tracks over theirs, and an untracked post-commit stays, which makes `git
-  # worktree remove` refuse the worktree. Only a tracked one stays, an ignored one does not.
+  # The post-commit Git LFS writes ahead of the tracked hooks (docs/hooks.md); ls-files lists no
+  # ignored file, so an ignored one goes too.
   git ls-files --error-unmatch .githooks/post-commit >/dev/null 2>&1 || rm -f .githooks/post-commit
   echo "[post-checkout] installing node_modules in the new worktree (bun install --frozen-lockfile)" >&2
   ;;

@@ -1,9 +1,5 @@
 #!/bin/sh
 // 2>/dev/null; exec bun --no-env-file "$0" "$@"
-//   chrome-mcp [flag...]   the chrome-devtools MCP server this package pins, headless and isolated, on
-//                          Chrome for Testing: CHROME_BINARY, else the build the repository's
-//                          puppeteer-core pins, else the newest cached build, else the pinned build
-//                          or stable installed; further flags go to chrome-devtools-mcp
 import { spawn } from "node:child_process";
 import { readFileSync } from "node:fs";
 import { createRequire } from "node:module";

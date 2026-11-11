@@ -6,15 +6,11 @@ import { join } from "node:path";
 export function help(name: string, usage?: string) {
   if (process.argv[2] !== "--help") return;
   const doc = readFileSync(join(import.meta.dir, "..", "docs", "commands.md"), "utf8");
-  const [synopsis, runs, checks] = doc
-    .split("\n")
-    .map((line) =>
-      line
-        .split("|")
-        .slice(1, -1)
-        .map((cell) => cell.trim()),
-    )
-    .find(([first]) => first === `\`${name}\`` || first?.startsWith(`\`${name} `))!;
+  const row = doc.split("\n").find((line) => new RegExp(`^\\| \`${name}[ \`]`).test(line))!;
+  const [synopsis, runs, checks] = row
+    .split("|")
+    .slice(1, -1)
+    .map((cell) => cell.trim());
   console.log(`${usage ?? `usage: ${synopsis.slice(1, -1)}`}\n${checks}\nRuns in: ${runs}`);
   process.exit(0);
 }

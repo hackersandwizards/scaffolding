@@ -45,7 +45,9 @@ bun run check
 
 It writes the configs that import the package. In an existing repository,
 `bun run check-structure --fix` writes the skeleton's hooks and owned files and names what else is
-missing. The exports most repositories import, all of them in [Configs](docs/configs.md):
+missing, apart from `eslint.config.js`: copy
+[`template/eslint.config.js.tmpl`](template/eslint.config.js.tmpl) with `{{eslint}}` as `eslint`, or
+`eslint/astro` where the repository has Astro files. The exports most repositories import, all of them in [Configs](docs/configs.md):
 
 - `./prettier`, `./eslint`, `./eslint/astro`, `./stylelint`: the shared format and lint configs.
 - `./tsconfig/bun.json`, `./tsconfig/astro.json`: the base for `"extends"`.
