@@ -38,7 +38,8 @@ Prefer these over their classic equivalents.
 - `zoxide` for directory jumping (`z <pattern>`)
 
 **HTTP and data:**
-- `xh` over `curl` and `httpie`. `xh` reads a non-terminal stdin as the request body and waits for it to close, past `--timeout` (12 s with stdin held open, 0 s with the flag): pass `--ignore-stdin` in a script or tool call.
+- `xh` over `curl` and `httpie`. `xh` reads a non-terminal stdin as the request body and waits for it to close, past `--timeout` (12 s with stdin held open, 0 s with the flag): pass `--ignore-stdin` in a script or tool call. `-q` prints nothing, the body included: a loop
+  polling a page through `grep` reads it with `-b`.
 - `jaq` over `jq`, `pandoc` for document conversion
 - `scrapling` to scrape web pages to markdown (`scrapling extract get <url> out.md`)
 
