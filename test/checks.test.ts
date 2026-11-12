@@ -484,6 +484,30 @@ describe("check-coupling", () => {
     ]);
   });
 
+  test("a linked worktree outside the dev root judges home paths by its repository's dev root", () => {
+    const home = temp();
+    mkdirSync(join(home, "dev/org"), { recursive: true });
+    const dir = join(home, "dev/org/this");
+    renameSync(
+      repo({
+        "package.json": JSON.stringify({ name: "this" }),
+        "run.sh":
+          'cd ../other\nscratch="$HOME/Library/Caches/claude-code-tmp/$name/"\nlog=~/Library/Caches/claude-code-tmp/x.log\nown=~/dev/org/this/src\nother=~/dev/org/other/x\n',
+      }),
+      dir,
+    );
+    const wt = join(home, "Library/Caches/claude-code-tmp/run/wt");
+    sh(dir, ["worktree", "add", "-q", "--detach", wt]);
+    expect(
+      lines(run(wt, "check-coupling", [], { HOME: home }).out, "check-coupling")
+        .map((l) => l.replace(/: .*\(/, " ("))
+        .sort(),
+    ).toEqual([
+      "[check-coupling] run.sh (../other)",
+      "[check-coupling] run.sh (~/dev/org/other/x)",
+    ]);
+  });
+
   test("a comment touching the code is no path, and a glob in a string hides none", () => {
     const dir = repo({
       "package.json": JSON.stringify({ name: "fx" }),

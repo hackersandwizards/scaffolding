@@ -2,12 +2,13 @@
 // 2>/dev/null; exec bun --no-env-file "$0" "$@"
 import { existsSync, readFileSync, realpathSync } from "node:fs";
 import { homedir } from "node:os";
-import { dirname, join, posix, relative, resolve } from "node:path";
+import { basename, dirname, join, posix, relative, resolve } from "node:path";
 import {
   applyAllow,
   commentSyntax,
   exportTargets,
   finish,
+  git,
   listFiles,
   readPackage,
   reader,
@@ -93,10 +94,15 @@ function publishes(name: string, subpath: string, disk: boolean): boolean {
 
 // Git reports the root by its real path (/private/tmp on macOS).
 const home = existsSync(homedir()) ? realpathSync(homedir()) : homedir();
-// The home folder's child holding this checkout (~/dev): a path under it outside this checkout
-// reaches another checkout, cloned here or not, works on this machine only, and breaks when that
-// repository moves.
-const devRoot = root.startsWith(`${home}/`) ? join(home, relative(home, root).split("/")[0]) : "";
+// The repository's main checkout, also for a linked worktree, which may sit outside the dev root.
+const common = realpathSync(
+  git(["rev-parse", "--path-format=absolute", "--git-common-dir"], root).toString().trim(),
+);
+const main = basename(common) === ".git" ? dirname(common) : root;
+// The home folder's child holding the main checkout (~/dev): a path under it outside this
+// repository reaches another checkout, cloned here or not, works on this machine only, and breaks
+// when that repository moves.
+const devRoot = main.startsWith(`${home}/`) ? join(home, relative(home, main).split("/")[0]) : "";
 
 const own = readPackage(root).name;
 // The pins and the allow list as the commit holds them in a staged run.
@@ -112,7 +118,7 @@ const withoutAllow = (json: string) => {
   return JSON.stringify(pkg, null, 2);
 };
 const leaves = "path leaves the repository; take it from the package its owner publishes";
-const outside = (target: string) => target !== root && !target.startsWith(`${root}/`);
+const outside = (target: string, base = root) => target !== base && !target.startsWith(`${base}/`);
 for (const path of listFiles(root, staged)) {
   if (!SCANNED.test(path) || SKIPPED.test(path)) continue;
   // An allow entry names the path it excuses; no rule reads it.
@@ -137,7 +143,8 @@ for (const path of listFiles(root, staged)) {
   if (!test)
     for (const [token, rest] of text.matchAll(HOME)) {
       const target = resolve(home + rest);
-      if (devRoot && target.startsWith(`${devRoot}/`) && outside(target)) flag(path, token, leaves);
+      if (devRoot && target.startsWith(`${devRoot}/`) && outside(target) && outside(target, main))
+        flag(path, token, leaves);
     }
   // Code, markup and data reach an installed company package through its exports or its bin, never
   // by a disk path; a stylesheet may name one, but only to a file an export maps (a stylesheet's .css
