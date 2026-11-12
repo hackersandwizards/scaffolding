@@ -17,9 +17,12 @@ description: >-
 - Launch a detached `claude -p` from a foreground Bash call: inside `run_in_background` or a
   `Monitor` script it joins that waiter's process group and dies with it.
 - A nested `claude -p` names `--model` and `--effort` (the brief's, else your own at `high`), or the
-  repository's settings choose and results stop being comparable. Under `claude -p`, run
-  `/simplify`, `/code-review` and `/security-review` as nested `claude -p ... "<skill> <scope>;
-  report findings only" > <scratch>/<run>-<name>.txt`: through the Skill tool a review skill ends the run.
+  repository's settings choose and results stop being comparable. `--model` leaves the subagents
+  the run starts, `/code-review`'s among them, on the project `env`'s `CLAUDE_CODE_SUBAGENT_MODEL`:
+  for another model, also pass `--settings '{"env":{"CLAUDE_CODE_SUBAGENT_MODEL":"<model>"}}'`.
+  Under `claude -p`, run `/simplify`, `/code-review` and `/security-review` as nested
+  `claude -p ... "<skill> <scope>; report findings only" > <scratch>/<run>-<name>.txt`: through
+  the Skill tool a review skill ends the run.
 - A delegate's Skill tool runs in the session's start folder: a review of another repository runs
   `claude -p` inside that repository.
 - Prefix every scratch file with its run: delegates share the scratchpad, and a resume guard adopts
