@@ -1,7 +1,7 @@
 ---
 name: delegation
 description: >-
-  Launch, prod, stop and check a delegate (an Agent-tool subagent),
+  Launch, prod, stop and check a delegate (an Agent-tool subagent or a new session),
   which model tier and effort to run Codex at, how Codex hands authored copy to Claude, and what
   Claude starts Codex for: before starting any delegate, when running or configuring Codex, or when
   either side needs copy written.
@@ -14,9 +14,9 @@ description: >-
 - Launch only while the 1-minute load (`uptime`) is at or below the core count
   (`getconf _NPROCESSORS_ONLN`): hold up to ten minutes, then launch one alone. A whole gate, a
   browser suite or a load run runs one at a time.
-- Delegate through the Agent tool of the session you are in, Desktop or terminal, never through a
-  nested `claude -p` process.
-- A delegate loads the `CLAUDE.md`, rules and skills of the session's start folder only. A brief for
+- Delegate to an Agent-tool subagent of the session you are in, Desktop or terminal, or to a new
+  session the Desktop app starts, never to a nested `claude -p` process.
+- A subagent loads the `CLAUDE.md`, rules and skills of the session's start folder only. A brief for
   work in another repository tells it to read that repository's `CLAUDE.md` and every
   `.claude/rules/*.md` first, to read a skill it needs there as that skill's `SKILL.md` file, and to
   update the checkout as that repository's git rule says before changing anything.
