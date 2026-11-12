@@ -143,5 +143,8 @@
   "prettier": "./config/prettier.js",
   "overrides": {
     "minimatch": "11.0.5"
+  },
+  "admin": {
+    "label": "Scaffolding"
   }
 }
