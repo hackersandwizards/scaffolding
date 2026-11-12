@@ -32,8 +32,10 @@ behind, with the failing check or advisory ID.
 
 With the argument `pins`, raise only the `@hackersandwizards/*` pins, in each repository given:
 
-1. `git fetch` and `git merge origin/<default branch>`. Skip a repository whose branch then holds
-   commits `origin` lacks, and name it: its push would carry another session's work.
+1. `git fetch` and `git merge origin/<default branch>`. Skip a repository whose branch then holds a
+   commit `origin` lacks other than a merge or a `pins: raise` commit, and name it: its push would
+   carry another session's work. Where it holds only those, push. A conflict in `package.json` or
+   `bun.lock` ends with `git merge --abort` and is `blocked`.
 2. `bun install --frozen-lockfile`, so `node_modules` holds the scaffolding the merged lockfile
    pins: a checkout or merge hook can leave an older one installed, and `raise-pins` then answers
    "Script not found". Skip a repository with no `node_modules/.bin/raise-pins` after it, and name
@@ -41,12 +43,11 @@ With the argument `pins`, raise only the `@hackersandwizards/*` pins, in each re
 3. `bun run raise-pins --commit`. Read its `[raise-pins]` lines, never its exit status: a pin it
    keeps because it read no tag from the remote exits 1 after a green commit too. A pin whose name
    lacks the scope is left out without a line.
-4. After a `committed "<message>"` line, push. A rejected push repeats step 1 without its skip,
-   since the raise is itself a commit `origin` lacks, then the push, once. After `gate red`, fix
-   what broke as step 2 of the first list says, then commit and push. A run whose approval excludes
-   fixes changes nothing instead: the raise stays uncommitted in `package.json` and `bun.lock`, and
-   every later `raise-pins` there stops at its uncommitted-manifest check until a session fixes or
-   reverts it.
+4. After a `committed "<message>"` line, push. A rejected push repeats step 1 once. After `gate
+   red`, fix what broke as step 2 of the first list says, then commit and push. A run whose approval
+   excludes fixes changes nothing instead: the raise stays uncommitted in `package.json` and
+   `bun.lock`, and every later `raise-pins` there stops at its uncommitted-manifest check until a
+   session fixes or reverts it.
 
 Report per repository: its `[raise-pins]` lines, the commit and push, or the skip and its reason.
 An uncommitted-manifest stop and every end that leaves a raise uncommitted or unpushed are
