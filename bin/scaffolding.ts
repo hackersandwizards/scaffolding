@@ -39,8 +39,13 @@ const KEYS = new Set(
 
 const args = process.argv.slice(2).filter((a) => a !== "--locked");
 const changed = args[1] === "--changed";
-if (args[0] !== "check" || args.length > (changed ? 2 : 1)) {
-  console.error("usage: scaffolding check [--changed]");
+const ranges = args.slice(2);
+if (
+  args[0] !== "check" ||
+  (!changed && args.length > 1) ||
+  ranges.some((r) => !/^[^.\s]+\.\.[^.\s]+$/.test(r))
+) {
+  console.error("usage: scaffolding check [--changed [<from>..<to>...]]");
   process.exit(2);
 }
 const root = repoRoot();
@@ -120,9 +125,10 @@ for (const [glob, steps] of Object.entries(config.changed ?? {}))
     if (!named.has(step)) fail(`scaffolding.changed["${glob}"] names no step: ${step}`);
 
 // --changed runs the quick shared checks and the steps scaffolding.changed maps the changed paths
-// to: the commits not yet on the upstream, staged and unstaged changes and untracked files. The whole
-// gate runs where a path maps to no step, where it is a file every step reads, where the repository
-// declares no map, and where git cannot list the changes.
+// to: those of the ranges given (the pre-push hook passes each pushed branch), else the commits not
+// yet on the upstream, staged and unstaged changes and untracked files. The whole gate runs where a
+// path maps to no step, where it is a file every step reads, where a range starts a new branch or
+// at a commit this clone lacks, and where git cannot list the changes.
 const WHOLE = [
   "package.json",
   "bun.lock",
@@ -135,29 +141,47 @@ const WHOLE = [
   "**/stylelint.config.*",
   "**/astro.config.*",
 ];
+// The hub's rules and skill prose, which no step but the quick shared ones reads. Skill code and
+// data stay unmapped: a repository's own checks may read them, such as brand-colours a skill's JSON.
+const QUICK = [".claude/rules/**", ".claude/skills/**/*.md", ".claude/skills/**/*.{yaml,yml}"];
 const selected = changed ? changedSteps() : undefined;
 function changedSteps(): Set<string> | undefined {
   const whole = (why: string) =>
     void console.error(`[scaffolding] --changed: ${why}: the whole gate runs`);
-  if (!config.changed) return whole("package.json declares no scaffolding.changed");
   const git = (...a: string[]) => spawnSync("git", a, { cwd: root, encoding: "utf8" });
-  const upstream = git("rev-parse", "--verify", "-q", "@{upstream}").stdout.trim();
-  const base = upstream ? git("merge-base", upstream, "HEAD").stdout.trim() : "HEAD";
-  const diff = git("diff", "--name-only", "--no-renames", "-z", base);
-  const untracked = git("ls-files", "--others", "--exclude-standard", "-z");
-  if (!base || diff.status || untracked.status) return whole("git could not list the changes");
-  const paths = [...new Set(`${diff.stdout}${untracked.stdout}`.split("\0").filter(Boolean))];
+  const lists: string[] = [];
+  let since = "HEAD";
+  if (ranges.length) {
+    for (const range of ranges) {
+      const [from, to] = range.split("..") as [string, string];
+      if (/^0+$/.test(from)) return whole(`${range} starts a new branch`);
+      const base = git("merge-base", from, to);
+      if (base.status) return whole(`${range} starts at a commit this clone lacks`);
+      const diff = git("diff", "--name-only", "--no-renames", "-z", base.stdout.trim(), to);
+      if (diff.status) return whole("git could not list the changes");
+      lists.push(diff.stdout);
+    }
+    since = ranges.map((r) => r.split("..")[0]!.slice(0, 9)).join(", ");
+  } else {
+    const upstream = git("rev-parse", "--verify", "-q", "@{upstream}").stdout.trim();
+    const base = upstream ? git("merge-base", upstream, "HEAD").stdout.trim() : "HEAD";
+    const diff = git("diff", "--name-only", "--no-renames", "-z", base);
+    const untracked = git("ls-files", "--others", "--exclude-standard", "-z");
+    if (!base || diff.status || untracked.status) return whole("git could not list the changes");
+    lists.push(diff.stdout, untracked.stdout);
+    if (upstream) since = upstream.slice(0, 9);
+  }
+  const paths = [...new Set(lists.join("").split("\0").filter(Boolean))];
   const steps = new Set<string>();
+  const match = (path: string) => (g: string) => new Bun.Glob(g).match(path);
   for (const path of paths) {
-    if (WHOLE.some((g) => new Bun.Glob(g).match(path)))
-      return whole(`${path} is read by every step`);
-    const hits = Object.entries(config.changed).filter(([g]) => new Bun.Glob(g).match(path));
-    if (!hits.length) return whole(`${path} maps to no step in scaffolding.changed`);
+    if (WHOLE.some(match(path))) return whole(`${path} is read by every step`);
+    const hits = Object.entries(config.changed ?? {}).filter(([g]) => match(path)(g));
+    if (!hits.length && !QUICK.some(match(path)))
+      return whole(`${path} maps to no step in scaffolding.changed`);
     for (const [, s] of hits) for (const step of s) steps.add(step);
   }
-  console.error(
-    `[scaffolding] --changed: ${paths.length} paths since ${upstream ? upstream.slice(0, 9) : "HEAD"}`,
-  );
+  console.error(`[scaffolding] --changed: ${paths.length} paths since ${since}`);
   return steps;
 }
 // A step --changed leaves out says so, so the skip leaves a trace.

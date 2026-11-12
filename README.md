@@ -60,8 +60,9 @@ and settings the skeleton requires, which leave out `eslint.config.js`: copy
 Each runs through `bun run`, and [Commands](docs/commands.md) has the detail of each.
 
 - `scaffold <dir>`: creates a repository from the skeleton with this version pinned.
-- `scaffolding check [--changed]`: the whole gate, the script `check`; `--changed` only the steps the
-  changed paths map to.
+- `scaffolding check [--changed [<from>..<to>...]]`: the whole gate, the script `check`; `--changed`
+  only the steps the changed paths map to, of the ranges given (the pre-push hook passes the pushed
+  ones).
 - `check-structure [--fix]`: the repository against the skeleton; `--fix` writes it.
 - `check-staged`: the pre-commit checks on the staged files.
 - `check-confidential`: confidential terms, Company OS screenshots and purged commits.

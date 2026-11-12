@@ -1,13 +1,15 @@
 #!/bin/sh
 # check-confidential prepush refuses commits purged from history (.confidential-purged.json),
 # then hands the refs to Git LFS where the push may carry LFS objects or touch a lockable file.
-# A push carrying a branch's commits then runs the whole gate once: a commit ran only the steps its
-# changes map to (scaffolding check --changed), so nothing reaches the remote unchecked.
+# A push carrying branches then runs scaffolding check --changed over each pushed range
+# (<remote tip>..<local tip>): the quick shared steps and the steps those paths map to, the whole
+# gate for a new branch, a remote tip this clone lacks or a path that maps to nothing.
 [ -d node_modules ] || { echo "$(basename "$0"): no node_modules in this checkout: run bun install, then try again" >&2; exit 1; }
 refs=$(cat)
 { [ -z "$refs" ] || printf '%s\n' "$refs"; } | bun run --silent check-confidential prepush "$@" || exit
-printf '%s\n' "$refs" | awk '$3 ~ /^refs\/heads\// && $2 !~ /^0+$/ { found = 1 } END { exit !found }' || exit 0
+ranges=$(printf '%s\n' "$refs" | awk '$3 ~ /^refs\/heads\// && $2 !~ /^0+$/ { print $4 ".." $2 }')
+[ -n "$ranges" ] || exit 0
 # git hands a hook in a linked worktree GIT_DIR, which every git the gate's tests run in a repository
 # of their own would then write into: the gate finds the checkout from its directory instead.
 unset $(git rev-parse --local-env-vars)
-exec bun run --silent check
+exec bun run --silent check --changed $ranges

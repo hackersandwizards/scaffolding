@@ -23,8 +23,11 @@ writes its hooks there when it checks out an LFS file ahead of `.githooks/`, git
 tracks over theirs, and the post-commit left behind made `git worktree remove` refuse the worktree.
 
 After `check-confidential prepush` and Git LFS (below), a push that carries a branch (a remote ref
-under `refs/heads/` and a local commit, not a deletion) runs the whole gate, `bun run check`, once over the working tree, and a red gate stops the
-push; a tag alone runs none.
+under `refs/heads/` and a local commit, not a deletion) runs the gate once over the working tree,
+`bun run check --changed <remote tip>..<local tip>` with one range per pushed branch, and a red gate
+stops the push: the quick shared steps and the steps the pushed paths map to, the whole gate for a
+new branch, a remote tip the clone lacks or a path that maps to nothing ([The gate](gate.md)). A
+push of the hub's rules and skill prose alone takes seconds. A tag alone runs none.
 
 The pre-push hook hands the refs to `git lfs pre-push` where the push may carry LFS objects or
 touch a lockable file. That is the case where the repository's LFS store holds a file (`lfs/objects`

@@ -2664,7 +2664,32 @@ describe("scaffolding check", () => {
     );
   });
 
-  test("a push carrying a branch runs the whole gate, so a step --changed skipped still goes red", () => {
+  test("--changed maps the hub's rules and skill prose to the quick steps, unless the repository maps them", () => {
+    const lock = { CHECK_LOCK: join(temp(), "lock") };
+    const steps = { check: ["check:src"] };
+    const scripts = { "check:src": "echo src-ran" };
+    // No map at all: rules and skill prose run only the quick steps.
+    const bare = gate({ skip, ...steps }, scripts);
+    write(bare, {
+      ".claude/rules/r.md": "r\n",
+      ".claude/skills/s/SKILL.md": "s\n",
+      ".claude/skills/s/agents/a.yaml": "a\n",
+    });
+    const quick = run(bare, "scaffolding", ["check", "--changed"], lock);
+    expect(quick.out).toContain("[scaffolding] skipped check:src: no changed path maps to it");
+    expect(quick.code).toBe(0);
+    // Control: skill code maps to nothing, so the whole gate runs.
+    write(bare, { ".claude/skills/s/x.json": "{}\n" });
+    expect(run(bare, "scaffolding", ["check", "--changed"], lock).out).toContain(
+      ".claude/skills/s/x.json maps to no step in scaffolding.changed: the whole gate runs",
+    );
+    // The repository's own glob wins.
+    const own = gate({ skip, ...steps, changed: { ".claude/**": ["check:src"] } }, scripts);
+    write(own, { ".claude/rules/r.md": "r\n" });
+    expect(run(own, "scaffolding", ["check", "--changed"], lock).out).toContain("src-ran");
+  });
+
+  test("a push runs --changed over each pushed range, and the whole gate for a new branch", () => {
     const remote = temp();
     sh(remote, ["init", "-q", "--bare"]);
     const dir = gate(
@@ -2673,12 +2698,11 @@ describe("scaffolding check", () => {
         check: `bun --no-env-file ${JSON.stringify(bin("scaffolding"))} check`,
         // Keeps the refs it was handed, takes the hook's arguments, and passes.
         "check-confidential": "sh -c 'cat > \"$REFS_LOG\"' sh",
-        "check:docs": "true",
-        "check:src": "echo src-red; exit 1",
+        "check:docs": "echo docs-ran",
+        "check:src": "echo src-ran",
       },
     );
     mkdirSync(join(dir, "node_modules"));
-    write(dir, { "docs/a.md": "a\n" });
     const refs = join(temp(), "refs");
     const env = {
       ...process.env,
@@ -2686,28 +2710,61 @@ describe("scaffolding check", () => {
       CHECK_LOCK: join(temp(), "lock"),
       REFS_LOG: refs,
     };
-    expect(run(dir, "scaffolding", ["check", "--changed"], env).code).toBe(0);
-    sh(dir, ["add", "docs/a.md"]);
-    sh(dir, ["commit", "-qm", "docs"]);
     const hooks = join(import.meta.dir, "..", "template/.githooks");
-    const push = (ref: string) =>
-      spawnSync("git", ["-c", `core.hooksPath=${hooks}`, "push", "-q", remote, ref], {
-        cwd: dir,
+    const commit = (cwd: string, files: Record<string, string>) => {
+      write(cwd, files);
+      sh(cwd, ["add", ...Object.keys(files)]);
+      sh(cwd, ["commit", "-qm", "c"]);
+    };
+    const push = (cwd: string, ref: string) => {
+      const r = spawnSync("git", ["-c", `core.hooksPath=${hooks}`, "push", "-q", remote, ref], {
+        cwd,
         env,
         encoding: "utf8",
       });
-    const branch = push("HEAD:refs/heads/main");
-    expect(`${branch.stdout}${branch.stderr}`).toContain("FAIL check:src");
-    expect(branch.status).not.toBe(0);
+      return { code: r.status, out: `${r.stdout}${r.stderr}` };
+    };
+    commit(dir, { "docs/a.md": "a\n" });
+    const first = push(dir, "HEAD:refs/heads/main");
+    expect(first.out).toContain("starts a new branch: the whole gate runs");
+    expect(first.out).toContain("src-ran");
+    expect(first.code).toBe(0);
     // check-confidential got the refs git handed the hook, line for line.
     const head = sh(dir, ["rev-parse", "HEAD"]).stdout.toString().trim();
     expect(readFileSync(refs, "utf8")).toBe(`HEAD ${head} refs/heads/main ${"0".repeat(40)}\n`);
+    // Rules and skill prose run the quick steps alone, whatever else the working tree holds.
+    commit(dir, { ".claude/rules/r.md": "r\n", ".claude/skills/s/SKILL.md": "s\n" });
+    write(dir, { "other.txt": "another session's file\n" });
+    const hub = push(dir, "HEAD:refs/heads/main");
+    expect(hub.out).toContain("[scaffolding] skipped check:src: no changed path maps to it");
+    expect(hub.out).toContain("[scaffolding] skipped check:docs: no changed path maps to it");
+    expect(hub.code).toBe(0);
+    // A mapped path runs its step.
+    commit(dir, { "docs/b.md": "b\n" });
+    const docs = push(dir, "HEAD:refs/heads/main");
+    expect(docs.out).toContain("docs-ran");
+    expect(docs.out).not.toContain("src-ran");
+    // From a detached linked worktree, which has no upstream, the range is still the pushed one.
+    const tree = join(temp(), "tree");
+    sh(dir, ["worktree", "add", "-q", "--detach", tree]);
+    mkdirSync(join(tree, "node_modules"));
+    commit(tree, { "src/a.ts": "export {};\n" });
+    const code = push(tree, "HEAD:refs/heads/main");
+    expect(code.out).toContain(
+      "src/a.ts maps to no step in scaffolding.changed: the whole gate runs",
+    );
+    expect(code.out).toContain("src-ran");
+    commit(tree, { ".claude/rules/s.md": "s\n" });
+    expect(push(tree, "HEAD:refs/heads/main").out).toContain("skipped check:src");
+    // A remote tip this clone lacks runs the whole gate.
+    const lacks = run(dir, "scaffolding", ["check", "--changed", `${"1".repeat(40)}..HEAD`], env);
+    expect(lacks.out).toContain("starts at a commit this clone lacks: the whole gate runs");
     // Control: a tag carries no branch, and the gate does not run.
     sh(dir, ["tag", "v1"]);
-    const tag = push("refs/tags/v1");
-    expect(tag.stderr).not.toContain("check:src");
-    expect(tag.status).toBe(0);
-  }, 30_000);
+    const tag = push(dir, "refs/tags/v1");
+    expect(tag.out).not.toContain("check:src");
+    expect(tag.code).toBe(0);
+  }, 60_000);
 
   // git hands a hook in a linked worktree GIT_DIR, and every git a test of the gate ran in its own
   // repository then wrote into the pushing one: config, refs and HEAD.

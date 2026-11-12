@@ -24,14 +24,20 @@ non-blank string in `skip`:
 **Changed paths.** `scaffolding check --changed` (`bun run check --changed`) runs install and the
 quick shared steps, and of `test`, `catalog` and the repository's own steps only those that
 `scaffolding.changed` maps a changed path to: a path glob to the steps a change there needs. The
-changed paths are the commits not yet on the upstream, the staged and unstaged changes and the
-untracked files. Each step it leaves out prints `skipped <step>: no changed path maps to it`. The
+changed paths are those of the ranges given (`--changed <from>..<to>...`, the commits reachable from
+`<to>` and not from `<from>`), else the commits not yet on the upstream, the staged and unstaged
+changes and the untracked files. Each step it leaves out prints `skipped <step>: no changed path
+maps to it`. `.claude/rules/**` and a skill's Markdown and YAML (`.claude/skills/**/*.md`,
+`*.yaml`, `*.yml`) map to no step beyond the quick ones unless the repository's own glob matches
+them; a skill's code and data map to nothing, since a repository's own checks may read them. The
 whole gate runs, saying why, where a path matches no glob, where it is `package.json`, `bun.lock`,
 `bunfig.toml` or a config every step reads (`tsconfig*.json`, `eslint.config.*`,
 `prettier.config.*`, `.prettierrc*`, `.prettierignore`, `stylelint.config.*`, `astro.config.*`),
-where the repository declares no map, and where git cannot list the changes. A step the map names
-that the gate lacks is red on every run. The pre-push hook runs the whole gate once
-([Hooks and CI](hooks.md)), so a step `--changed` skipped still goes red before the push.
+where a range starts a new branch (`<from>` all zeros) or at a commit the clone lacks, and where git
+cannot list the changes. A step the map names that the gate lacks is red on every run. The pre-push
+hook runs `--changed` over each pushed branch's range ([Hooks and CI](hooks.md)), so a push counts
+only its own commits, never another session's file in the working tree, while every step still
+reads the working tree.
 
 ```json
 { "changed": { "docs/**": ["check:refs"], "src/**": ["test", "catalog", "check:markers"] } }
