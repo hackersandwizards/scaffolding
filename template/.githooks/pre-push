@@ -7,4 +7,7 @@
 refs=$(cat)
 { [ -z "$refs" ] || printf '%s\n' "$refs"; } | bun run --silent check-confidential prepush "$@" || exit
 printf '%s\n' "$refs" | awk '$3 ~ /^refs\/heads\// && $2 !~ /^0+$/ { found = 1 } END { exit !found }' || exit 0
+# git hands a hook in a linked worktree GIT_DIR, which every git the gate's tests run in a repository
+# of their own would then write into: the gate finds the checkout from its directory instead.
+unset $(git rev-parse --local-env-vars)
 exec bun run --silent check

@@ -2709,6 +2709,45 @@ describe("scaffolding check", () => {
     expect(tag.status).toBe(0);
   }, 30_000);
 
+  // git hands a hook in a linked worktree GIT_DIR, and every git a test of the gate ran in its own
+  // repository then wrote into the pushing one: config, refs and HEAD.
+  test("a push from a linked worktree runs the gate without git's GIT_DIR", () => {
+    const remote = temp();
+    sh(remote, ["init", "-q", "--bare"]);
+    const dir = gate(
+      { skip, check: ["check:env"] },
+      {
+        check: `bun --no-env-file ${JSON.stringify(bin("scaffolding"))} check`,
+        "check-confidential": "sh -c 'cat > /dev/null' sh",
+        "check:env": 'printf "%s" "${GIT_DIR-unset}" > "$ENV_LOG"',
+      },
+    );
+    mkdirSync(join(dir, "node_modules"));
+    sh(dir, ["add", "-A"]);
+    sh(dir, ["commit", "-qm", "gate"]);
+    const tree = join(temp(), "tree");
+    sh(dir, ["worktree", "add", "-q", "--detach", tree]);
+    mkdirSync(join(tree, "node_modules"));
+    const log = join(temp(), "env");
+    const hooks = join(import.meta.dir, "..", "template/.githooks");
+    const push = spawnSync(
+      "git",
+      ["-c", `core.hooksPath=${hooks}`, "push", "-q", remote, "HEAD:refs/heads/main"],
+      {
+        cwd: tree,
+        env: {
+          ...process.env,
+          SCAFFOLDING_LOAD: "0",
+          CHECK_LOCK: join(temp(), "lock"),
+          ENV_LOG: log,
+        },
+        encoding: "utf8",
+      },
+    );
+    expect(push.status).toBe(0);
+    expect(readFileSync(log, "utf8")).toBe("unset");
+  }, 30_000);
+
   test("a failing step fails the gate and stops the later ones", () => {
     const dir = gate({ skip, check: ["false", "echo never-ran"] });
     const r = run(dir, "scaffolding", ["check"], { CHECK_LOCK: join(dir, ".lock") });
