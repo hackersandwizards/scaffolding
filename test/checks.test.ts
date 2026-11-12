@@ -6411,6 +6411,16 @@ await serve([process.execPath, "-e", "console.error('boot failed: stack'); proce
     expect(said("{}")).not.toContain("boot failed");
   });
 
+  test("a server that exits first names its exit code and the end of its stderr", async () => {
+    const { serve } = await import("../lib/serve.ts");
+    const crash =
+      "console.error('x'.repeat(5000)); console.error('boot failed: stack'); process.exit(7)";
+    const message = await rejection(serve([process.execPath, "-e", crash]));
+    expect(message).toContain("it exited with code 7");
+    expect(message).toContain("boot failed: stack");
+    expect(message.length).toBeLessThan(3000);
+  });
+
   test("the load factor is load per core, from 1 up to 10", () => {
     const factor = (load: string) =>
       Number(

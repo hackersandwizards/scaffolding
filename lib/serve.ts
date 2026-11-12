@@ -27,8 +27,8 @@ export function freePort(): Promise<number> {
 
 /** Starts `command` with HOST and PORT set, waits until it answers, and hands back its URL and a
  * stop. Fails after `timeoutMs` without an answer (20 s times the machine's load factor), or when
- * the server exits first. `stderr: true` passes the server's stderr through, so a crash or a render
- * error shows its stack. */
+ * the server exits first, naming its exit code and the end of its stderr. `stderr: true` also passes
+ * the server's stderr through, so a render error after the start shows its stack. */
 export async function serve(
   command: string[],
   {
@@ -42,7 +42,7 @@ export async function serve(
   // In a group of its own, so stop() reaches a server a wrapper such as `bun run` starts too.
   const server = spawn(command[0]!, command.slice(1), {
     env: { ...process.env, ...env, HOST: "127.0.0.1", PORT: String(port) },
-    stdio: ["ignore", "ignore", stderr ? "inherit" : "ignore"],
+    stdio: ["ignore", "ignore", "pipe"],
     detached: true,
   });
   // Where this process dies without stop(), killed by a signal included, the watcher's stdin
@@ -54,9 +54,14 @@ export async function serve(
         detached: true,
       }).on("error", () => {})
     : undefined;
-  let exited = false;
-  server.on("exit", () => (exited = true));
-  server.on("error", () => (exited = true));
+  let said = "";
+  server.stderr?.on("data", (chunk: Buffer) => {
+    if (stderr) process.stderr.write(chunk);
+    said = (said + chunk).slice(-2000);
+  });
+  let exited = "";
+  server.on("exit", (code, signal) => (exited = `, it exited with ${signal ?? `code ${code}`}`));
+  server.on("error", (error) => (exited = `, it exited: ${error.message}`));
   const stop = () => {
     try {
       if (server.pid) process.kill(-server.pid);
@@ -75,5 +80,9 @@ export async function serve(
     await new Promise((r) => setTimeout(r, 200));
   }
   stop();
-  throw new Error(`${command.join(" ")}: no answer on ${url}${exited ? ", it exited" : ""}`);
+  // The stream can trail the exit event by a tick; its last lines say why.
+  await new Promise((r) => setTimeout(r, 50));
+  throw new Error(
+    `${command.join(" ")}: no answer on ${url}${exited}${said && `\n${said.trimEnd()}`}`,
+  );
 }
