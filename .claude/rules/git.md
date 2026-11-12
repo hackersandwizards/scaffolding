@@ -57,8 +57,7 @@ Other sessions share this working tree and its index.
   additions, the later change winning where they contradict. A rejected push repeats the update.
   Where the merge fails, read each record you act on from `origin/<default branch>` with `git show`.
   Where the fetch fails, act on nothing outside the repository, such as mail, Qonto or the calendar,
-  and say why. Unattended, an SSH remote fails: the 1Password agent cannot authenticate with nobody
-  present and an LFS smudge hangs. Run git there with
+  and say why. Unattended, an LFS smudge over an SSH remote hangs. Run git there with
   `-c url."https://github.com/".insteadOf="git@github.com:"`.
 - `.git/index.lock` is another session committing. A commit holds it for seconds: wait and
   retry, and if it outlives a couple of minutes, name the owning process and report it.
