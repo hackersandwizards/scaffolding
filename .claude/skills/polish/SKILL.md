@@ -3,8 +3,8 @@ name: polish
 description: >-
   Full-repo quality pass (comment sweep, quality, performance and security review, /simplify, a second
   review, commit and push), when the user asks to polish, clean up or quality-pass the repo, and
-  at the end of a session that changed several repositories, once in each with `claude -p` inside
-  it and `since <the session's first commit there>`.
+  at the end of a session that changed several repositories, once in each with
+  `since <the session's first commit there>`.
 ---
 
 # Polish
@@ -46,10 +46,7 @@ Tell each batch that zero changes is an acceptable result. Before deleting a com
 ## 3. Quality, performance, security review
 
 Run `/code-review high` and `/security-review` over the scope first; their findings join this
-phase's. Under `claude -p`, run each, and phase 4's `/simplify`, as a nested `claude -p --model
-<model> --effort <level> "<skill> <scope>; report findings only" > <run scratch>/<run>-<name>.txt`,
-model and effort the brief's, else your own at `high`, launched detached (`nohup ... &`) and waited
-on by its PID, then read that file: through the Skill tool a review skill ends the run. In a repository with a UI, measure performance on a server the run starts itself on a
+phase's. In a repository with a UI, measure performance on a server the run starts itself on a
 free port (Lighthouse per public page type, response and render time per app route) and report
 before and after numbers for each fix in the repository's one `YYYY-MM-DD-performance.md`, in the
 folder its `CLAUDE.md` names for documents, written with today's date, deleting the previous one in the same commit. Serve the before state

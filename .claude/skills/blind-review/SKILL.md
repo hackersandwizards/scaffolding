@@ -96,15 +96,13 @@ none, because receipt".
 
 ## Reviewer commands
 
-Run each reviewer headless and read-only, the prompt naming each artifact by absolute path. Codex
-takes images with `-i <file>`, placed after the prompt: `-i` is variadic, and a prompt after it is
+Run each reviewer read-only, the prompt naming each artifact by absolute path. A Claude reviewer is
+a fresh Agent-tool subagent with `model: opus`, told to change no file, never a fork, which carries
+the conversation. Codex takes images with `-i <file>`, placed after the prompt: `-i` is variadic, and a prompt after it is
 read as an image and Codex answers "No prompt provided via stdin". Check: every Codex output file
-is non-empty. A `claude -p` started inside a repository runs its session-start hook there, which
-can merge `origin/main` and reinstall: start reviewers from a directory outside the checkout under
-review, or read `git reflog -3` afterwards and rebuild a before baseline whose `HEAD` moved.
+is non-empty.
 
 ```bash
-claude -p --model opus --effort medium --strict-mcp-config --no-session-persistence --allowedTools=Read "<prompt>"
 codex exec -m gpt-6.1-sol -c model_reasoning_effort="high" --skip-git-repo-check --ephemeral -s read-only "<prompt>" < /dev/null
 ```
 

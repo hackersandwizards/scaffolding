@@ -135,12 +135,6 @@ delegate. When a delegate finishes, stop the servers and browsers it started and
 scratch then, not at session end. Check: no process or scratch folder of a finished delegate
 remains.
 
-An unattended `claude -p` run starts detached through `${CLAUDE_SKILL_DIR}/run.sh`;
-`net-watch.sh` beside it relaunches one a dropped connection ended, `watch.sh` prints each that
-finished. A start of `net-watch.sh` replaces the one already watching that run folder; it reads
-`runs` every minute and exits once every run it lists has ended, so a changed list needs no
-restart and a later wave a new start. Each script's first lines give its usage.
-
 ## Shared checkout or worktree
 
 The shared checkout is the default. Give a delegate a worktree only where the shared index costs

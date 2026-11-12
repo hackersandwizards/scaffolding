@@ -1,7 +1,7 @@
 ---
 name: delegation
 description: >-
-  Launch, prod, stop and check a delegate (an Agent-tool subagent or a `claude -p` run),
+  Launch, prod, stop and check a delegate (an Agent-tool subagent),
   which model tier and effort to run Codex at, how Codex hands authored copy to Claude, and what
   Claude starts Codex for: before starting any delegate, when running or configuring Codex, or when
   either side needs copy written.
@@ -14,17 +14,12 @@ description: >-
 - Launch only while the 1-minute load (`uptime`) is at or below the core count
   (`getconf _NPROCESSORS_ONLN`): hold up to ten minutes, then launch one alone. A whole gate, a
   browser suite or a load run runs one at a time.
-- Launch a detached `claude -p` from a foreground Bash call: inside `run_in_background` or a
-  `Monitor` script it joins that waiter's process group and dies with it.
-- A nested `claude -p` names `--model` and `--effort` (the brief's, else your own at `high`), or the
-  repository's settings choose and results stop being comparable. `--model` leaves the subagents
-  the run starts, `/code-review`'s among them, on the project `env`'s `CLAUDE_CODE_SUBAGENT_MODEL`:
-  for another model, also pass `--settings '{"env":{"CLAUDE_CODE_SUBAGENT_MODEL":"<model>"}}'`.
-  Under `claude -p`, run `/simplify`, `/code-review` and `/security-review` as nested
-  `claude -p ... "<skill> <scope>; report findings only" > <scratch>/<run>-<name>.txt`: through
-  the Skill tool a review skill ends the run.
-- A delegate's Skill tool runs in the session's start folder: a review of another repository runs
-  `claude -p` inside that repository.
+- Delegate through the Agent tool of the session you are in, Desktop or terminal, never through a
+  nested `claude -p` process.
+- A delegate loads the `CLAUDE.md`, rules and skills of the session's start folder only. A brief for
+  work in another repository tells it to read that repository's `CLAUDE.md` and every
+  `.claude/rules/*.md` first, to read a skill it needs there as that skill's `SKILL.md` file, and to
+  update the checkout as that repository's git rule says before changing anything.
 - Prefix every scratch file with its run: delegates share the scratchpad, and a resume guard adopts
   another run's files. Never delete scratch by a glob while a delegate runs.
 - A brief's stop condition names which hits count: the consumer's tracked source
