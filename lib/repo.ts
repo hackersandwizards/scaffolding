@@ -154,7 +154,7 @@ export const exportTargets = (value: unknown): string[] =>
       ? Object.values(value).flatMap(exportTargets)
       : [];
 
-/** The files check-coupling and check-unique-names count as tests, as config/eslint.js globs them. */
+/** The files check-coupling counts as tests, as config/eslint.js globs them. */
 export const TEST = /(?:^|\/)(?:__tests__|tests?|e2e)\/|\.(?:test|spec)\.[cm]?[jt]sx?$/;
 
 /** Exits 2 unless this bun started with `--no-env-file`, and hands the flag to every bun a step
@@ -249,7 +249,6 @@ export type Package = {
     private?: boolean;
     typecheck?: string;
     test?: string;
-    uniqueNames?: string[];
     skip?: Record<string, unknown>;
     check?: (string | string[])[];
     styles?: string[];

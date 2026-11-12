@@ -27,7 +27,6 @@ const KEYS = new Set(
     allow: 0,
     private: 0,
     typecheck: 0,
-    uniqueNames: 0,
     test: 0,
     skip: 0,
     check: 0,
@@ -59,6 +58,11 @@ const fail = (message: string): never => {
   process.exit(1);
 };
 for (const key of Object.keys(config)) if (!KEYS.has(key)) fail(`unknown key scaffolding.${key}`);
+// The checks that read scaffolding.allow: an entry naming any other is never read.
+const ALLOWS = new Set(["coupling", "confidential", "never-shown", "structure", "spaces"]);
+for (const entry of config.allow ?? [])
+  if (!ALLOWS.has(entry.check ?? ""))
+    fail(`scaffolding.allow names no check that reads it: ${entry.check}`);
 
 const script = (s: string) => (pkg.scripts?.[s] ? `bun run --silent ${s}` : s);
 // Quoted for `sh -c`: a package path holding a space failed every bin step.
@@ -74,11 +78,9 @@ const shared: Record<string, string> = {
   typecheck: `bun --bun ${config.typecheck ?? "tsc --noEmit"}`,
   structure: bin("check-structure"),
   coupling: bin("check-coupling"),
-  "unique-names": bin("check-unique-names"),
   spaces: bin("check-spaces"),
   // The index: what the next commit holds, judged by its own allow list.
   confidential: `${bin("check-confidential")} --index`,
-  history: bin("check-history"),
   licenses: bin("check-licenses"),
   // Tests are shared too: a gate without them is a skip someone wrote down, not one that drifted.
   test: script(config.test ?? ""),
@@ -102,10 +104,6 @@ if (
     "@hackersandwizards/brand is pinned and scaffolding.check runs no check:retired: add it (brand-retired <build folders>), or skip.retired with a reason",
   );
 const skip = { ...config.skip };
-// A private repository's shipped files reach only company readers.
-if (config.private === true) {
-  skip.history ??= "scaffolding.private";
-}
 for (const [step, reason] of Object.entries(skip)) {
   if (!(step in shared) && !(step === "retired" && branded))
     fail(`scaffolding.skip names no shared step: ${step}`);

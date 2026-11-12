@@ -5,7 +5,7 @@ import globals from "globals";
 import tseslint from "typescript-eslint";
 import { submodulePaths } from "./submodules.js";
 
-// The files check-coupling and check-unique-names count as tests.
+// The files check-coupling counts as tests.
 const code = "{js,jsx,ts,tsx,mjs,cjs,mts,cts}";
 const testFiles = [`**/{__tests__,test,tests,e2e}/**/*.${code}`, `**/*.{test,spec}.${code}`];
 const testCall = "/^(it|test|describe)$/";

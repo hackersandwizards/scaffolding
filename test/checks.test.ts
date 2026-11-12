@@ -29,6 +29,10 @@ import { rewriteRoute } from "../catalog/route.ts";
 import { rejection } from "../lib/rejection.ts";
 import { applyAllow, commentSyntax, installedCommit, newestTag, tagCommit } from "../lib/repo.ts";
 
+// A test's own limit stretches with load as the runner's default does: the gate sets
+// SCAFFOLDING_TEST_TIMEOUT_MS from the machine's load, 5000 on an idle machine.
+const limit = (ms: number) => (ms * Number(process.env.SCAFFOLDING_TEST_TIMEOUT_MS || 5000)) / 5000;
+
 const bin = (name: string) => join(import.meta.dir, "..", "bin", `${name}.ts`);
 const PREVIEW = 'ASTRO_PREVIEW_BACKGROUND=1 bun --bun astro preview --root "$PWD/catalog"';
 const made: string[] = [];
@@ -1996,104 +2000,108 @@ describe("check-confidential", () => {
     expect(purged(["b".repeat(40)])).toEqual(both);
   });
 
-  test("prepush hands the refs to Git LFS only where the push may carry LFS content", () => {
-    const stub = temp();
-    const log = join(stub, "log");
-    const lfs = '#!/bin/sh\n[ "$1" = version ] && exit 0\necho "$*" >> "$LFS_LOG"\nexit 3\n';
-    writeFileSync(join(stub, "git-lfs"), lfs, { mode: 0o755 });
-    // A PATH holding git alone, so the machine's own git-lfs stays out of reach.
-    const bare = temp();
-    symlinkSync(Bun.which("git")!, join(bare, "git"));
-    const push = (dir: string, PATH: string, remote = "origin", old = "0".repeat(40)) => {
-      const head = sh(dir, ["rev-parse", "HEAD"]).stdout.toString().trim();
-      return spawnSync(process.execPath, [bin("check-confidential"), "prepush", remote, "x"], {
-        cwd: dir,
-        env: {
-          ...process.env,
-          PATH,
-          LFS_LOG: log,
-          GIT_EXEC_PATH: bare,
-        },
-        input: `refs/heads/main ${head} refs/heads/main ${old}\n`,
-      }).status;
-    };
-    const logged = () => (existsSync(log) ? readFileSync(log, "utf8") : "");
-    const both = (dir: string, remote?: string, old?: string) => [
-      push(dir, `${stub}:${bare}`, remote, old),
-      push(dir, bare, remote, old),
-    ];
-    // Nothing of LFS: git-lfs is never started, installed or not; a .lfsconfig and an empty store
-    // hold no objects.
-    expect(both(repo({ "package.json": "{}" }))).toEqual([0, 0]);
-    expect(both(repo({ "package.json": "{}", ".lfsconfig": "" }))).toEqual([0, 0]);
-    const stored = repo({ "package.json": "{}" });
-    mkdirSync(join(stored, ".git/lfs/objects/ab/cd"), { recursive: true });
-    expect(both(stored)).toEqual([0, 0]);
-    const moved = repo({ "package.json": "{}" });
-    const elsewhere = temp();
-    sh(moved, ["config", "lfs.storage", elsewhere]);
-    expect(both(moved)).toEqual([0, 0]);
-    expect(logged()).toBe("");
-    // A store holding an object: git-lfs decides and its status is the hook's; without git-lfs the
-    // push is refused.
-    write(stored, { ".git/lfs/objects/ab/cd/abcd": "x" });
-    expect(both(stored)).toEqual([3, 1]);
-    write(elsewhere, { "objects/ab/cd/abcd": "x" });
-    expect(both(moved)).toEqual([3, 1]);
-    // No store, but a pushed commit changes a path under filter=lfs, committed raw where git-lfs
-    // was never installed.
-    const raw = repo(
-      { "package.json": "{}", ".gitattributes": "*.bin filter=lfs\n", "a.bin": "x" },
-      false,
-    );
-    const noLfs = { ...process.env, GIT_CONFIG_GLOBAL: "/dev/null", GIT_CONFIG_NOSYSTEM: "1" };
-    const rawGit = (args: string[]) =>
-      spawnSync("git", ["-c", "user.email=t@t", "-c", "user.name=t", ...args], {
-        cwd: raw,
-        env: noLfs,
+  test(
+    "prepush hands the refs to Git LFS only where the push may carry LFS content",
+    () => {
+      const stub = temp();
+      const log = join(stub, "log");
+      const lfs = '#!/bin/sh\n[ "$1" = version ] && exit 0\necho "$*" >> "$LFS_LOG"\nexit 3\n';
+      writeFileSync(join(stub, "git-lfs"), lfs, { mode: 0o755 });
+      // A PATH holding git alone, so the machine's own git-lfs stays out of reach.
+      const bare = temp();
+      symlinkSync(Bun.which("git")!, join(bare, "git"));
+      const push = (dir: string, PATH: string, remote = "origin", old = "0".repeat(40)) => {
+        const head = sh(dir, ["rev-parse", "HEAD"]).stdout.toString().trim();
+        return spawnSync(process.execPath, [bin("check-confidential"), "prepush", remote, "x"], {
+          cwd: dir,
+          env: {
+            ...process.env,
+            PATH,
+            LFS_LOG: log,
+            GIT_EXEC_PATH: bare,
+          },
+          input: `refs/heads/main ${head} refs/heads/main ${old}\n`,
+        }).status;
+      };
+      const logged = () => (existsSync(log) ? readFileSync(log, "utf8") : "");
+      const both = (dir: string, remote?: string, old?: string) => [
+        push(dir, `${stub}:${bare}`, remote, old),
+        push(dir, bare, remote, old),
+      ];
+      // Nothing of LFS: git-lfs is never started, installed or not; a .lfsconfig and an empty store
+      // hold no objects.
+      expect(both(repo({ "package.json": "{}" }))).toEqual([0, 0]);
+      expect(both(repo({ "package.json": "{}", ".lfsconfig": "" }))).toEqual([0, 0]);
+      const stored = repo({ "package.json": "{}" });
+      mkdirSync(join(stored, ".git/lfs/objects/ab/cd"), { recursive: true });
+      expect(both(stored)).toEqual([0, 0]);
+      const moved = repo({ "package.json": "{}" });
+      const elsewhere = temp();
+      sh(moved, ["config", "lfs.storage", elsewhere]);
+      expect(both(moved)).toEqual([0, 0]);
+      expect(logged()).toBe("");
+      // A store holding an object: git-lfs decides and its status is the hook's; without git-lfs the
+      // push is refused.
+      write(stored, { ".git/lfs/objects/ab/cd/abcd": "x" });
+      expect(both(stored)).toEqual([3, 1]);
+      write(elsewhere, { "objects/ab/cd/abcd": "x" });
+      expect(both(moved)).toEqual([3, 1]);
+      // No store, but a pushed commit changes a path under filter=lfs, committed raw where git-lfs
+      // was never installed.
+      const raw = repo(
+        { "package.json": "{}", ".gitattributes": "*.bin filter=lfs\n", "a.bin": "x" },
+        false,
+      );
+      const noLfs = { ...process.env, GIT_CONFIG_GLOBAL: "/dev/null", GIT_CONFIG_NOSYSTEM: "1" };
+      const rawGit = (args: string[]) =>
+        spawnSync("git", ["-c", "user.email=t@t", "-c", "user.name=t", ...args], {
+          cwd: raw,
+          env: noLfs,
+        });
+      rawGit(["add", "-A"]);
+      rawGit(["commit", "-qm", "raw"]);
+      expect(existsSync(join(raw, ".git/lfs"))).toBe(false);
+      expect(both(raw)).toEqual([3, 1]);
+      // The same path committed before the push, already on a remote: nothing to carry.
+      write(raw, { "b.md": "b\n" });
+      rawGit(["add", "b.md"]);
+      rawGit(["commit", "-qm", "b"]);
+      sh(raw, ["update-ref", "refs/remotes/origin/main", "HEAD~1"]);
+      expect(both(raw)).toEqual([0, 0]);
+      // A second remote lacks what origin holds, so the path is new there.
+      expect(both(raw, "backup")).toEqual([3, 1]);
+      // A push to a URL has no tracking refs: the remote's tip from the input counts instead.
+      const before = sh(raw, ["rev-parse", "HEAD~1"]).stdout.toString().trim();
+      expect(both(raw, "/elsewhere.git", before)).toEqual([0, 0]);
+      // .git/info/attributes counts as well.
+      const info = repo({ "package.json": "{}", "a.bin": "x" });
+      write(info, { ".git/info/attributes": "*.bin filter=lfs\n" });
+      expect(both(info)).toEqual([3, 1]);
+      // A lockable path: git-lfs refuses a change to a file someone else locked, LFS or not.
+      expect(
+        both(repo({ "package.json": "{}", ".gitattributes": "*.psd lockable\n", "a.psd": "x" })),
+      ).toEqual([3, 1]);
+      // A merge whose resolution alone changes a lockable path.
+      const merged = repo({
+        "package.json": "{}",
+        ".gitattributes": "*.psd lockable\n",
+        "a.psd": "x",
       });
-    rawGit(["add", "-A"]);
-    rawGit(["commit", "-qm", "raw"]);
-    expect(existsSync(join(raw, ".git/lfs"))).toBe(false);
-    expect(both(raw)).toEqual([3, 1]);
-    // The same path committed before the push, already on a remote: nothing to carry.
-    write(raw, { "b.md": "b\n" });
-    rawGit(["add", "b.md"]);
-    rawGit(["commit", "-qm", "b"]);
-    sh(raw, ["update-ref", "refs/remotes/origin/main", "HEAD~1"]);
-    expect(both(raw)).toEqual([0, 0]);
-    // A second remote lacks what origin holds, so the path is new there.
-    expect(both(raw, "backup")).toEqual([3, 1]);
-    // A push to a URL has no tracking refs: the remote's tip from the input counts instead.
-    const before = sh(raw, ["rev-parse", "HEAD~1"]).stdout.toString().trim();
-    expect(both(raw, "/elsewhere.git", before)).toEqual([0, 0]);
-    // .git/info/attributes counts as well.
-    const info = repo({ "package.json": "{}", "a.bin": "x" });
-    write(info, { ".git/info/attributes": "*.bin filter=lfs\n" });
-    expect(both(info)).toEqual([3, 1]);
-    // A lockable path: git-lfs refuses a change to a file someone else locked, LFS or not.
-    expect(
-      both(repo({ "package.json": "{}", ".gitattributes": "*.psd lockable\n", "a.psd": "x" })),
-    ).toEqual([3, 1]);
-    // A merge whose resolution alone changes a lockable path.
-    const merged = repo({
-      "package.json": "{}",
-      ".gitattributes": "*.psd lockable\n",
-      "a.psd": "x",
-    });
-    sh(merged, ["update-ref", "refs/remotes/origin/main", "HEAD"]);
-    sh(merged, ["checkout", "-qb", "side"]);
-    sh(merged, ["commit", "-q", "--allow-empty", "-m", "c"]);
-    sh(merged, ["checkout", "-q", "main"]);
-    sh(merged, ["commit", "-q", "--allow-empty", "-m", "d"]);
-    sh(merged, ["merge", "-q", "--no-commit", "side"]);
-    write(merged, { "a.psd": "y" });
-    sh(merged, ["commit", "-qam", "m"]);
-    expect(both(merged)).toEqual([3, 1]);
-    expect(logged()).toBe(
-      "pre-push origin x\n".repeat(3) + "pre-push backup x\n" + "pre-push origin x\n".repeat(3),
-    );
-  }, 20_000);
+      sh(merged, ["update-ref", "refs/remotes/origin/main", "HEAD"]);
+      sh(merged, ["checkout", "-qb", "side"]);
+      sh(merged, ["commit", "-q", "--allow-empty", "-m", "c"]);
+      sh(merged, ["checkout", "-q", "main"]);
+      sh(merged, ["commit", "-q", "--allow-empty", "-m", "d"]);
+      sh(merged, ["merge", "-q", "--no-commit", "side"]);
+      write(merged, { "a.psd": "y" });
+      sh(merged, ["commit", "-qam", "m"]);
+      expect(both(merged)).toEqual([3, 1]);
+      expect(logged()).toBe(
+        "pre-push origin x\n".repeat(3) + "pre-push backup x\n" + "pre-push origin x\n".repeat(3),
+      );
+    },
+    limit(20_000),
+  );
 });
 
 // Invented stand-ins for the names h&w never shows: QZX three letters in capitals, ZWOX four, Brennwald a
@@ -2534,14 +2542,24 @@ describe("scaffolding check", () => {
   };
   const skip = {
     ...all,
-    "unique-names": "t",
     confidential: "t",
     licenses: "t",
-    history: "t",
     test: "t",
     catalog: "t",
     admin: "t",
   };
+
+  test("an allow entry naming a check that reads no allow list fails", () => {
+    const entry = (check: string) => ({ allow: [{ check, path: "a.ts", reason: "r" }] });
+    const lock = { CHECK_LOCK: join(temp(), "lock") };
+    const left = run(gate({ skip, ...entry("unique-names") }), "scaffolding", ["check"], lock);
+    expect(left.out).toContain("scaffolding.allow names no check that reads it: unique-names");
+    expect(left.code).toBe(1);
+    // Control: a check that reads it.
+    expect(
+      run(gate({ skip, ...entry("spaces") }), "scaffolding", ["check"], lock).out,
+    ).not.toContain("names no check");
+  });
 
   test("runs the repository's steps in order and passes", () => {
     const dir = gate({ skip, check: ["mine", ["true", "true"]] }, { mine: "echo ran-mine" });
@@ -2570,31 +2588,6 @@ describe("scaffolding check", () => {
     const r = run(dir, "scaffolding", ["check"], { CHECK_LOCK: join(dir, ".lock") });
     expect(r.out).not.toContain("vendor/inner");
     expect(r.code).toBe(0);
-  });
-
-  test("uniqueNames exempt the names they list, $ included", () => {
-    const { "unique-names": _, ...rest } = skip;
-    const dir = gate({ skip: rest, uniqueNames: ["$state"] });
-    write(dir, {
-      "a.ts": "export function $state() {}\n",
-      "b.ts": "export function $state() {}\n",
-    });
-    sh(dir, ["add", "a.ts", "b.ts"]);
-    const r = run(dir, "scaffolding", ["check"], { CHECK_LOCK: join(dir, ".lock") });
-    expect(r.out).toContain("ok   unique-names");
-    expect(r.code).toBe(0);
-  });
-
-  test("a name in .githooks/, the skeleton's copies, counts against none of the repository's own", () => {
-    const dir = repo({
-      "package.json": "{}\n",
-      "a.ts": "export function release() {}\n",
-      ".githooks/check-lock.ts": "export function release() {}\n",
-    });
-    expect(run(dir, "check-unique-names").code).toBe(0);
-    // Control: the same file outside .githooks/ goes red.
-    sh(dir, ["mv", ".githooks", "githooks"]);
-    expect(run(dir, "check-unique-names").code).toBe(1);
   });
 
   test("no step sees a variable only .env set, a nested bun included", () => {
@@ -2689,121 +2682,129 @@ describe("scaffolding check", () => {
     expect(run(own, "scaffolding", ["check", "--changed"], lock).out).toContain("src-ran");
   });
 
-  test("a push runs --changed over each pushed range, and the whole gate for a new branch", () => {
-    const remote = temp();
-    sh(remote, ["init", "-q", "--bare"]);
-    const dir = gate(
-      { skip, changed: { "docs/**": ["check:docs"] }, check: [["check:docs", "check:src"]] },
-      {
-        check: `bun --no-env-file ${JSON.stringify(bin("scaffolding"))} check`,
-        // Keeps the refs it was handed, takes the hook's arguments, and passes.
-        "check-confidential": "sh -c 'cat > \"$REFS_LOG\"' sh",
-        "check:docs": "echo docs-ran",
-        "check:src": "echo src-ran",
-      },
-    );
-    mkdirSync(join(dir, "node_modules"));
-    const refs = join(temp(), "refs");
-    const env = {
-      ...process.env,
-      SCAFFOLDING_LOAD: "0",
-      CHECK_LOCK: join(temp(), "lock"),
-      REFS_LOG: refs,
-    };
-    const hooks = join(import.meta.dir, "..", "template/.githooks");
-    const commit = (cwd: string, files: Record<string, string>) => {
-      write(cwd, files);
-      sh(cwd, ["add", ...Object.keys(files)]);
-      sh(cwd, ["commit", "-qm", "c"]);
-    };
-    const push = (cwd: string, ref: string) => {
-      const r = spawnSync("git", ["-c", `core.hooksPath=${hooks}`, "push", "-q", remote, ref], {
-        cwd,
-        env,
-        encoding: "utf8",
-      });
-      return { code: r.status, out: `${r.stdout}${r.stderr}` };
-    };
-    commit(dir, { "docs/a.md": "a\n" });
-    const first = push(dir, "HEAD:refs/heads/main");
-    expect(first.out).toContain("starts a new branch: the whole gate runs");
-    expect(first.out).toContain("src-ran");
-    expect(first.code).toBe(0);
-    // check-confidential got the refs git handed the hook, line for line.
-    const head = sh(dir, ["rev-parse", "HEAD"]).stdout.toString().trim();
-    expect(readFileSync(refs, "utf8")).toBe(`HEAD ${head} refs/heads/main ${"0".repeat(40)}\n`);
-    // Rules and skill prose run the quick steps alone, whatever else the working tree holds.
-    commit(dir, { ".claude/rules/r.md": "r\n", ".claude/skills/s/SKILL.md": "s\n" });
-    write(dir, { "other.txt": "another session's file\n" });
-    const hub = push(dir, "HEAD:refs/heads/main");
-    expect(hub.out).toContain("[scaffolding] skipped check:src: no changed path maps to it");
-    expect(hub.out).toContain("[scaffolding] skipped check:docs: no changed path maps to it");
-    expect(hub.code).toBe(0);
-    // A mapped path runs its step.
-    commit(dir, { "docs/b.md": "b\n" });
-    const docs = push(dir, "HEAD:refs/heads/main");
-    expect(docs.out).toContain("docs-ran");
-    expect(docs.out).not.toContain("src-ran");
-    // From a detached linked worktree, which has no upstream, the range is still the pushed one.
-    const tree = join(temp(), "tree");
-    sh(dir, ["worktree", "add", "-q", "--detach", tree]);
-    mkdirSync(join(tree, "node_modules"));
-    commit(tree, { "src/a.ts": "export {};\n" });
-    const code = push(tree, "HEAD:refs/heads/main");
-    expect(code.out).toContain(
-      "src/a.ts maps to no step in scaffolding.changed: the whole gate runs",
-    );
-    expect(code.out).toContain("src-ran");
-    commit(tree, { ".claude/rules/s.md": "s\n" });
-    expect(push(tree, "HEAD:refs/heads/main").out).toContain("skipped check:src");
-    // A remote tip this clone lacks runs the whole gate.
-    const lacks = run(dir, "scaffolding", ["check", "--changed", `${"1".repeat(40)}..HEAD`], env);
-    expect(lacks.out).toContain("starts at a commit this clone lacks: the whole gate runs");
-    // Control: a tag carries no branch, and the gate does not run.
-    sh(dir, ["tag", "v1"]);
-    const tag = push(dir, "refs/tags/v1");
-    expect(tag.out).not.toContain("check:src");
-    expect(tag.code).toBe(0);
-  }, 60_000);
+  test(
+    "a push runs --changed over each pushed range, and the whole gate for a new branch",
+    () => {
+      const remote = temp();
+      sh(remote, ["init", "-q", "--bare"]);
+      const dir = gate(
+        { skip, changed: { "docs/**": ["check:docs"] }, check: [["check:docs", "check:src"]] },
+        {
+          check: `bun --no-env-file ${JSON.stringify(bin("scaffolding"))} check`,
+          // Keeps the refs it was handed, takes the hook's arguments, and passes.
+          "check-confidential": "sh -c 'cat > \"$REFS_LOG\"' sh",
+          "check:docs": "echo docs-ran",
+          "check:src": "echo src-ran",
+        },
+      );
+      mkdirSync(join(dir, "node_modules"));
+      const refs = join(temp(), "refs");
+      const env = {
+        ...process.env,
+        SCAFFOLDING_LOAD: "0",
+        CHECK_LOCK: join(temp(), "lock"),
+        REFS_LOG: refs,
+      };
+      const hooks = join(import.meta.dir, "..", "template/.githooks");
+      const commit = (cwd: string, files: Record<string, string>) => {
+        write(cwd, files);
+        sh(cwd, ["add", ...Object.keys(files)]);
+        sh(cwd, ["commit", "-qm", "c"]);
+      };
+      const push = (cwd: string, ref: string) => {
+        const r = spawnSync("git", ["-c", `core.hooksPath=${hooks}`, "push", "-q", remote, ref], {
+          cwd,
+          env,
+          encoding: "utf8",
+        });
+        return { code: r.status, out: `${r.stdout}${r.stderr}` };
+      };
+      commit(dir, { "docs/a.md": "a\n" });
+      const first = push(dir, "HEAD:refs/heads/main");
+      expect(first.out).toContain("starts a new branch: the whole gate runs");
+      expect(first.out).toContain("src-ran");
+      expect(first.code).toBe(0);
+      // check-confidential got the refs git handed the hook, line for line.
+      const head = sh(dir, ["rev-parse", "HEAD"]).stdout.toString().trim();
+      expect(readFileSync(refs, "utf8")).toBe(`HEAD ${head} refs/heads/main ${"0".repeat(40)}\n`);
+      // Rules and skill prose run the quick steps alone, whatever else the working tree holds.
+      commit(dir, { ".claude/rules/r.md": "r\n", ".claude/skills/s/SKILL.md": "s\n" });
+      write(dir, { "other.txt": "another session's file\n" });
+      const hub = push(dir, "HEAD:refs/heads/main");
+      expect(hub.out).toContain("[scaffolding] skipped check:src: no changed path maps to it");
+      expect(hub.out).toContain("[scaffolding] skipped check:docs: no changed path maps to it");
+      expect(hub.code).toBe(0);
+      // A mapped path runs its step.
+      commit(dir, { "docs/b.md": "b\n" });
+      const docs = push(dir, "HEAD:refs/heads/main");
+      expect(docs.out).toContain("docs-ran");
+      expect(docs.out).not.toContain("src-ran");
+      // From a detached linked worktree, which has no upstream, the range is still the pushed one.
+      const tree = join(temp(), "tree");
+      sh(dir, ["worktree", "add", "-q", "--detach", tree]);
+      mkdirSync(join(tree, "node_modules"));
+      commit(tree, { "src/a.ts": "export {};\n" });
+      const code = push(tree, "HEAD:refs/heads/main");
+      expect(code.out).toContain(
+        "src/a.ts maps to no step in scaffolding.changed: the whole gate runs",
+      );
+      expect(code.out).toContain("src-ran");
+      commit(tree, { ".claude/rules/s.md": "s\n" });
+      expect(push(tree, "HEAD:refs/heads/main").out).toContain("skipped check:src");
+      // A remote tip this clone lacks runs the whole gate.
+      const lacks = run(dir, "scaffolding", ["check", "--changed", `${"1".repeat(40)}..HEAD`], env);
+      expect(lacks.out).toContain("starts at a commit this clone lacks: the whole gate runs");
+      // Control: a tag carries no branch, and the gate does not run.
+      sh(dir, ["tag", "v1"]);
+      const tag = push(dir, "refs/tags/v1");
+      expect(tag.out).not.toContain("check:src");
+      expect(tag.code).toBe(0);
+    },
+    limit(60_000),
+  );
 
   // git hands a hook in a linked worktree GIT_DIR, and every git a test of the gate ran in its own
   // repository then wrote into the pushing one: config, refs and HEAD.
-  test("a push from a linked worktree runs the gate without git's GIT_DIR", () => {
-    const remote = temp();
-    sh(remote, ["init", "-q", "--bare"]);
-    const dir = gate(
-      { skip, check: ["check:env"] },
-      {
-        check: `bun --no-env-file ${JSON.stringify(bin("scaffolding"))} check`,
-        "check-confidential": "sh -c 'cat > /dev/null' sh",
-        "check:env": 'printf "%s" "${GIT_DIR-unset}" > "$ENV_LOG"',
-      },
-    );
-    mkdirSync(join(dir, "node_modules"));
-    sh(dir, ["add", "-A"]);
-    sh(dir, ["commit", "-qm", "gate"]);
-    const tree = join(temp(), "tree");
-    sh(dir, ["worktree", "add", "-q", "--detach", tree]);
-    mkdirSync(join(tree, "node_modules"));
-    const log = join(temp(), "env");
-    const hooks = join(import.meta.dir, "..", "template/.githooks");
-    const push = spawnSync(
-      "git",
-      ["-c", `core.hooksPath=${hooks}`, "push", "-q", remote, "HEAD:refs/heads/main"],
-      {
-        cwd: tree,
-        env: {
-          ...process.env,
-          SCAFFOLDING_LOAD: "0",
-          CHECK_LOCK: join(temp(), "lock"),
-          ENV_LOG: log,
+  test(
+    "a push from a linked worktree runs the gate without git's GIT_DIR",
+    () => {
+      const remote = temp();
+      sh(remote, ["init", "-q", "--bare"]);
+      const dir = gate(
+        { skip, check: ["check:env"] },
+        {
+          check: `bun --no-env-file ${JSON.stringify(bin("scaffolding"))} check`,
+          "check-confidential": "sh -c 'cat > /dev/null' sh",
+          "check:env": 'printf "%s" "${GIT_DIR-unset}" > "$ENV_LOG"',
         },
-        encoding: "utf8",
-      },
-    );
-    expect(push.status).toBe(0);
-    expect(readFileSync(log, "utf8")).toBe("unset");
-  }, 30_000);
+      );
+      mkdirSync(join(dir, "node_modules"));
+      sh(dir, ["add", "-A"]);
+      sh(dir, ["commit", "-qm", "gate"]);
+      const tree = join(temp(), "tree");
+      sh(dir, ["worktree", "add", "-q", "--detach", tree]);
+      mkdirSync(join(tree, "node_modules"));
+      const log = join(temp(), "env");
+      const hooks = join(import.meta.dir, "..", "template/.githooks");
+      const push = spawnSync(
+        "git",
+        ["-c", `core.hooksPath=${hooks}`, "push", "-q", remote, "HEAD:refs/heads/main"],
+        {
+          cwd: tree,
+          env: {
+            ...process.env,
+            SCAFFOLDING_LOAD: "0",
+            CHECK_LOCK: join(temp(), "lock"),
+            ENV_LOG: log,
+          },
+          encoding: "utf8",
+        },
+      );
+      expect(push.status).toBe(0);
+      expect(readFileSync(log, "utf8")).toBe("unset");
+    },
+    limit(30_000),
+  );
 
   test("a failing step fails the gate and stops the later ones", () => {
     const dir = gate({ skip, check: ["false", "echo never-ran"] });
@@ -2824,85 +2825,97 @@ describe("scaffolding check", () => {
     expect(r.out).toMatch(/\[scaffolding\] failed in [\d.]+ s: check:fast, check:also\n/);
   });
 
-  test("above one waiting process per core the repository's steps run a limited number at a time", () => {
-    // Each step fails where three run at once.
-    const body = (me: string) =>
-      `touch ${me}.on; sleep 0.5; n=$(ls *.on | wc -l); rm ${me}.on; test $n -le 2`;
-    const dir = gate(
-      { skip, check: [["check:a", "check:b", "check:c", "check:limit"]] },
-      {
-        "check:a": body("a"),
-        "check:b": body("b"),
-        "check:c": body("c"),
-        "check:limit": "echo limit=$SCAFFOLDING_TEST_TIMEOUT_MS",
-      },
-    );
-    const loaded = run(dir, "scaffolding", ["check"], {
-      CHECK_LOCK: join(dir, ".lock"),
-      SCAFFOLDING_LOAD: "99999",
-    });
-    expect(loaded.out).toMatch(
-      /load 99999 on \d+ cores: test and catalog run one after another, the repository's steps 2 at a time/,
-    );
-    expect(loaded.code).toBe(0);
-    // The per-test limit a test command can pass on, stretched by load per core, ten times at most.
-    expect(loaded.out).toContain("limit=50000");
-    const idle = run(dir, "scaffolding", ["check"], { CHECK_LOCK: join(dir, ".lock") });
-    expect(idle.out).not.toContain("at a time");
-    expect(idle.out).toContain("limit=5000\n");
-    expect(idle.code).toBe(1);
-  }, 40_000);
+  test(
+    "above one waiting process per core the repository's steps run a limited number at a time",
+    () => {
+      // Each step fails where three run at once.
+      const body = (me: string) =>
+        `touch ${me}.on; sleep 0.5; n=$(ls *.on | wc -l); rm ${me}.on; test $n -le 2`;
+      const dir = gate(
+        { skip, check: [["check:a", "check:b", "check:c", "check:limit"]] },
+        {
+          "check:a": body("a"),
+          "check:b": body("b"),
+          "check:c": body("c"),
+          "check:limit": "echo limit=$SCAFFOLDING_TEST_TIMEOUT_MS",
+        },
+      );
+      const loaded = run(dir, "scaffolding", ["check"], {
+        CHECK_LOCK: join(dir, ".lock"),
+        SCAFFOLDING_LOAD: "99999",
+      });
+      expect(loaded.out).toMatch(
+        /load 99999 on \d+ cores: test and catalog run one after another, the repository's steps 2 at a time/,
+      );
+      expect(loaded.code).toBe(0);
+      // The per-test limit a test command can pass on, stretched by load per core, ten times at most.
+      expect(loaded.out).toContain("limit=50000");
+      const idle = run(dir, "scaffolding", ["check"], { CHECK_LOCK: join(dir, ".lock") });
+      expect(idle.out).not.toContain("at a time");
+      expect(idle.out).toContain("limit=5000\n");
+      expect(idle.code).toBe(1);
+    },
+    limit(40_000),
+  );
 
-  test("a signal to the outer runner ends the steps, names them, and frees the lock", async () => {
-    const dir = gate(
-      { skip, check: [["check:fast", "check:slow"]] },
-      { "check:fast": "echo fast-said; exit 1", "check:slow": "sleep 5; touch slow-done" },
-    );
-    const lock = join(dir, ".lock");
-    const gateRun = Bun.spawn([process.execPath, "--no-env-file", bin("scaffolding"), "check"], {
-      cwd: dir,
-      env: { ...process.env, CHECK_LOCK: lock, SCAFFOLDING_LOAD: "0" },
-      stderr: "pipe",
-      stdout: "pipe",
-    });
-    for (const end = Date.now() + 20_000; !existsSync(lock) && Date.now() < end;)
-      await Bun.sleep(50);
-    await Bun.sleep(1_000);
-    gateRun.kill("SIGTERM");
-    const code = await gateRun.exited;
-    const out = `${await new Response(gateRun.stdout).text()}${await new Response(gateRun.stderr).text()}`;
-    expect(code).not.toBe(0);
-    expect(out).toContain("fast-said");
-    expect(out).toContain("FAIL check:fast");
-    expect(out).toContain("stopped check:slow by SIGTERM");
-    expect(existsSync(lock)).toBe(false);
-    await Bun.sleep(5_000);
-    expect(existsSync(join(dir, "slow-done"))).toBe(false);
-  }, 40_000);
+  test(
+    "a signal to the outer runner ends the steps, names them, and frees the lock",
+    async () => {
+      const dir = gate(
+        { skip, check: [["check:fast", "check:slow"]] },
+        { "check:fast": "echo fast-said; exit 1", "check:slow": "sleep 5; touch slow-done" },
+      );
+      const lock = join(dir, ".lock");
+      const gateRun = Bun.spawn([process.execPath, "--no-env-file", bin("scaffolding"), "check"], {
+        cwd: dir,
+        env: { ...process.env, CHECK_LOCK: lock, SCAFFOLDING_LOAD: "0" },
+        stderr: "pipe",
+        stdout: "pipe",
+      });
+      for (const end = Date.now() + 20_000; !existsSync(lock) && Date.now() < end;)
+        await Bun.sleep(50);
+      await Bun.sleep(1_000);
+      gateRun.kill("SIGTERM");
+      const code = await gateRun.exited;
+      const out = `${await new Response(gateRun.stdout).text()}${await new Response(gateRun.stderr).text()}`;
+      expect(code).not.toBe(0);
+      expect(out).toContain("fast-said");
+      expect(out).toContain("FAIL check:fast");
+      expect(out).toContain("stopped check:slow by SIGTERM");
+      expect(existsSync(lock)).toBe(false);
+      await Bun.sleep(5_000);
+      expect(existsSync(join(dir, "slow-done"))).toBe(false);
+    },
+    limit(40_000),
+  );
 
-  test("Ctrl-C, a SIGINT to the terminal's whole group, stops the steps once and names them", async () => {
-    const dir = gate(
-      { skip, check: [["check:fast", "check:slow"]] },
-      { "check:fast": "echo fast-said; exit 1", "check:slow": "sleep 5; touch slow-done" },
-    );
-    const lock = join(dir, ".lock");
-    // Its own group stands in for the terminal's foreground group.
-    const gateRun = spawn(process.execPath, ["--no-env-file", bin("scaffolding"), "check"], {
-      cwd: dir,
-      env: { ...process.env, CHECK_LOCK: lock, SCAFFOLDING_LOAD: "0" },
-      detached: true,
-    });
-    let out = "";
-    gateRun.stdout.on("data", (d) => (out += d));
-    gateRun.stderr.on("data", (d) => (out += d));
-    for (const end = Date.now() + 20_000; !existsSync(lock) && Date.now() < end;)
-      await Bun.sleep(50);
-    await Bun.sleep(1_000);
-    process.kill(-gateRun.pid!, "SIGINT");
-    await new Promise((done) => gateRun.on("close", done));
-    expect(out).toContain("stopped check:slow by SIGINT");
-    expect(existsSync(lock)).toBe(false);
-  }, 40_000);
+  test(
+    "Ctrl-C, a SIGINT to the terminal's whole group, stops the steps once and names them",
+    async () => {
+      const dir = gate(
+        { skip, check: [["check:fast", "check:slow"]] },
+        { "check:fast": "echo fast-said; exit 1", "check:slow": "sleep 5; touch slow-done" },
+      );
+      const lock = join(dir, ".lock");
+      // Its own group stands in for the terminal's foreground group.
+      const gateRun = spawn(process.execPath, ["--no-env-file", bin("scaffolding"), "check"], {
+        cwd: dir,
+        env: { ...process.env, CHECK_LOCK: lock, SCAFFOLDING_LOAD: "0" },
+        detached: true,
+      });
+      let out = "";
+      gateRun.stdout.on("data", (d) => (out += d));
+      gateRun.stderr.on("data", (d) => (out += d));
+      for (const end = Date.now() + 20_000; !existsSync(lock) && Date.now() < end;)
+        await Bun.sleep(50);
+      await Bun.sleep(1_000);
+      process.kill(-gateRun.pid!, "SIGINT");
+      await new Promise((done) => gateRun.on("close", done));
+      expect(out).toContain("stopped check:slow by SIGINT");
+      expect(existsSync(lock)).toBe(false);
+    },
+    limit(40_000),
+  );
 
   test("a repository pinning puppeteer-core gets Chrome installed once, before the steps", () => {
     const dir = gate(
@@ -3257,24 +3270,28 @@ exec "${process.execPath}" "$@"
   });
 
   // Offline, a new worktree's install waited on the network with no end, and `worktree add` with it.
-  test("a new worktree's install past CHECK_LOCK_RUN_S is stopped, its lock released, and the checkout goes on", () => {
-    const dir = consumer();
-    const bun = fakeBun();
-    const checkout = spawnSync(
-      join(dir, ".githooks/post-checkout"),
-      ["0".repeat(40), head(dir), "1"],
-      {
-        cwd: dir,
-        env: env(bun, { BUN_SLEEP: "30", CHECK_LOCK_RUN_S: "1" }),
-        encoding: "utf8",
-        timeout: 15_000,
-      },
-    );
-    expect(checkout.status).toBe(0);
-    expect(checkout.stderr).toContain(`run it in ${realpathSync(dir)} before your gate`);
-    expect(existsSync(join(dir, "node_modules/.check.lock"))).toBe(false);
-    expect(read(bun.log)).toBe("start locked\n");
-  }, 20_000);
+  test(
+    "a new worktree's install past CHECK_LOCK_RUN_S is stopped, its lock released, and the checkout goes on",
+    () => {
+      const dir = consumer();
+      const bun = fakeBun();
+      const checkout = spawnSync(
+        join(dir, ".githooks/post-checkout"),
+        ["0".repeat(40), head(dir), "1"],
+        {
+          cwd: dir,
+          env: env(bun, { BUN_SLEEP: "30", CHECK_LOCK_RUN_S: "1" }),
+          encoding: "utf8",
+          timeout: 15_000,
+        },
+      );
+      expect(checkout.status).toBe(0);
+      expect(checkout.stderr).toContain(`run it in ${realpathSync(dir)} before your gate`);
+      expect(existsSync(join(dir, "node_modules/.check.lock"))).toBe(false);
+      expect(read(bun.log)).toBe("start locked\n");
+    },
+    limit(20_000),
+  );
 
   // Behind a network that never answers, an install waited with no end, and the checkout, the
   // merge, the session's start or the MCP server's start with it.
@@ -3370,24 +3387,28 @@ exec "${process.execPath}" "$@"
     20_000,
   );
 
-  test("a lock whose pid is dead and whose group runs is waited for; an empty one is stale", async () => {
-    const dir = consumer();
-    const group = spawn("sleep", ["30"]);
-    orphan(dir, group.pid);
-    const bun = fakeBun();
-    const install = spawn(join(dir, ".githooks/install"), [], { cwd: dir, env: env(bun) });
-    const done = new Promise((resolve) => install.on("close", resolve));
-    await Bun.sleep(1_500);
-    expect(read(bun.log)).toBe("");
-    group.kill();
-    await done;
-    expect(read(bun.log)).toBe("start locked\nend\n");
-    rmSync(bun.log);
-    writeFileSync(join(dir, "node_modules/.check.lock"), "");
-    spawnSync(join(dir, ".githooks/install"), [], { cwd: dir, env: env(bun), timeout: 10_000 });
-    expect(read(bun.log)).toBe("start locked\nend\n");
-    expect(leftovers(dir)).toEqual([]);
-  }, 20_000);
+  test(
+    "a lock whose pid is dead and whose group runs is waited for; an empty one is stale",
+    async () => {
+      const dir = consumer();
+      const group = spawn("sleep", ["30"]);
+      orphan(dir, group.pid);
+      const bun = fakeBun();
+      const install = spawn(join(dir, ".githooks/install"), [], { cwd: dir, env: env(bun) });
+      const done = new Promise((resolve) => install.on("close", resolve));
+      await Bun.sleep(1_500);
+      expect(read(bun.log)).toBe("");
+      group.kill();
+      await done;
+      expect(read(bun.log)).toBe("start locked\nend\n");
+      rmSync(bun.log);
+      writeFileSync(join(dir, "node_modules/.check.lock"), "");
+      spawnSync(join(dir, ".githooks/install"), [], { cwd: dir, env: env(bun), timeout: 10_000 });
+      expect(read(bun.log)).toBe("start locked\nend\n");
+      expect(leftovers(dir)).toEqual([]);
+    },
+    limit(20_000),
+  );
 
   test("a new worktree installs, so its first commit finds node_modules", () => {
     const dir = consumer();
@@ -3816,1086 +3837,1110 @@ describe("catalog", () => {
     expect(() => rewriteRoute("other/a.astro", route, false)).toThrow(/CSS import/);
   });
 
-  test("the preset builds the shell's home into the repository's dist/", async () => {
-    const dist = join(fixture, "dist");
-    const build = (args: string[] = [], env: Record<string, string> = {}, root = "catalog") =>
-      spawnSync(astro, ["build", "--root", root, ...args], {
-        cwd: fixture,
-        encoding: "utf8",
-        env: { ...process.env, CI: "", ...env },
+  test(
+    "the preset builds the shell's home into the repository's dist/",
+    async () => {
+      const dist = join(fixture, "dist");
+      const build = (args: string[] = [], env: Record<string, string> = {}, root = "catalog") =>
+        spawnSync(astro, ["build", "--root", root, ...args], {
+          cwd: fixture,
+          encoding: "utf8",
+          env: { ...process.env, CI: "", ...env },
+        });
+      const r = build();
+      expect(r.status).toBe(0);
+      // No page of its own at pages/index: the catalog is the site's home.
+      const home = readFileSync(join(dist, "index.html"), "utf8");
+      // `nav`: an href from "/" counts from the base, the current item links to /catalog/, which
+      // forwards to the home.
+      expect(home).toContain(
+        '<header class="fx-header"><a href="/">Fx</a><div class="hw-header-nav hw-catalog-nav"><nav class="hw-header-nav" aria-label="Main" data-hw-catalogs><a class="hw-header-link" href="/">Site</a><a class="hw-header-link" href="/catalog/" aria-current="page">Fx</a><a class="hw-header-link" href="https://example.com/other/">Other</a><a class="hw-header-link" href="//example.com/far/">Far</a></nav></div></header>',
+      );
+      expect(home).toContain(
+        '<p class="hw-catalog-provenance"><span>fx catalog/stories ·</span> <span>@acme/ui v1.2.3 ·</span> <span>3 components ·</span> <span>24 states</span></p>',
+      );
+      // An app with no stories folder builds a home without the line that would count nothing.
+      const empty = join(fixture, "empty");
+      write(empty, {
+        "astro.config.mjs":
+          'import { catalog } from "../../../catalog/index.ts";\nexport default { integrations: [catalog({ product: "Fx", css: [], lead: "", header: { component: "../catalog/Header.astro" } })] };\n',
       });
-    const r = build();
-    expect(r.status).toBe(0);
-    // No page of its own at pages/index: the catalog is the site's home.
-    const home = readFileSync(join(dist, "index.html"), "utf8");
-    // `nav`: an href from "/" counts from the base, the current item links to /catalog/, which
-    // forwards to the home.
-    expect(home).toContain(
-      '<header class="fx-header"><a href="/">Fx</a><div class="hw-header-nav hw-catalog-nav"><nav class="hw-header-nav" aria-label="Main" data-hw-catalogs><a class="hw-header-link" href="/">Site</a><a class="hw-header-link" href="/catalog/" aria-current="page">Fx</a><a class="hw-header-link" href="https://example.com/other/">Other</a><a class="hw-header-link" href="//example.com/far/">Far</a></nav></div></header>',
-    );
-    expect(home).toContain(
-      '<p class="hw-catalog-provenance"><span>fx catalog/stories ·</span> <span>@acme/ui v1.2.3 ·</span> <span>3 components ·</span> <span>24 states</span></p>',
-    );
-    // An app with no stories folder builds a home without the line that would count nothing.
-    const empty = join(fixture, "empty");
-    write(empty, {
-      "astro.config.mjs":
-        'import { catalog } from "../../../catalog/index.ts";\nexport default { integrations: [catalog({ product: "Fx", css: [], lead: "", header: { component: "../catalog/Header.astro" } })] };\n',
-    });
-    expect(build([], {}, "empty").status).toBe(0);
-    const emptyHome = readFileSync(join(empty, "dist", "index.html"), "utf8");
-    expect(emptyHome).toContain('class="hw-catalog-lead"');
-    expect(emptyHome).not.toContain("hw-catalog-provenance");
-    // The admin hub serves only on this machine: a built page carries no link to it.
-    expect(home).not.toContain("admin.localhost");
-    expect(home.indexOf(">Types <")).toBeLessThan(home.indexOf(">Parts <"));
-    // The rail names every element under its group, linked to the state its tile draws.
-    expect(home).toMatch(
-      /<ul class="hw-catalog-names"><li><a href="\/dashboard\/Parts\/box-parts\/two\/">Box parts<\/a>/,
-    );
-    // `previewStates` in order: the first a component has wins.
-    expect(home).toContain('<a href="/dashboard/Parts/many-parts/block-image/">Many parts</a>');
-    // A frame names its page in data-src: the shell's script loads it once the tile nears the view.
-    expect(home).toContain('data-src="/stories/Types/box-types/two/"');
-    expect(home).not.toMatch(/<iframe[^>]* src=/);
-    expect(readdirSync(join(dist, "stories/Parts/box-parts"))).toEqual(["one", "two"]);
-    // `previewSize` per group: a Types tile draws its frame whole at 1440 x 900, a Parts tile at
-    // three quarters.
-    expect(home).toContain(
-      'data-frame-width="1440" style="aspect-ratio:1440/900"><iframe data-src="/stories/Types/box-types/two/"',
-    );
-    expect(home).toMatch(/<span class="hw-catalog-preview"><iframe data-src="\/stories\/Parts\//);
-    // The shell's own card, pill and rail (brand's search field and navigation list) carry
-    // data-hw-shell, for brand-elements to skip.
-    expect(home).toContain(
-      '<aside class="hw-catalog-rail" data-hw-shell><div class="hw-search"><input class="hw-field hw-catalog-search" type="search"',
-    );
-    expect(home).toContain('<nav class="hw-nav" aria-label="Groups">');
-    expect(home).toContain('<a class="hw-card hw-catalog-tile" data-hw-shell href=');
-    expect(home).toContain('<span class="hw-pill" data-tone="neutral" data-hw-shell>');
-    expect(readFileSync(join(dist, "fx.txt"), "utf8")).toBe("fx\n");
-    const page = (p: string) => readFileSync(join(dist, p, "index.html"), "utf8");
-    // No page carries a robots tag; the shell draws dense, a story at `storyScale`, and every page but a
-    // state alone turns with the theme toggle.
-    const root = (html: string) =>
-      html.match(/Object\.assign\(document\.documentElement\.dataset,(\{.*?\})\);/)?.[1];
-    expect(root(home)).toBe('{"hwScale":"dense","hwNight":""}');
-    expect(root(page("dashboard/Parts/box-parts/two"))).toBe('{"hwScale":"screen","hwNight":""}');
-    expect(root(page("stories/Parts/box-parts/two"))).toBe('{"hwScale":"screen"}');
-    const robots = /<meta\b[^>]*\bname\s*=\s*["']?robots\b/i;
-    for (const p of [
-      "",
-      "dashboard/Parts/box-parts/two",
-      "stories/Parts/box-parts/two",
-      "catalog",
-      "catalog/dashboard/Parts/box-parts/two",
-    ])
-      expect(page(p)).not.toMatch(robots);
-    for (const p of ["", "dashboard/Parts/box-parts/two", "stories/Parts/box-parts/two"])
-      expect(page(p)).toContain('<meta name="description" content="Lead.">');
-    // Each state's page and state alone has a title of its own, the home the catalog's.
-    expect(page("")).toContain("<title>Fx catalog</title>");
-    for (const p of ["dashboard/Parts/box-parts/one", "stories/Parts/box-parts/one"])
-      expect(page(p)).toContain("<title>Box parts: One – Fx catalog</title>");
-    expect(page("dashboard/Parts/many-parts/two-pd-fs")).toContain(
-      "<title>Many parts: Two PDFs – Fx catalog</title>",
-    );
-    // A state whose args carry a lead describes itself by it.
-    for (const p of ["dashboard/Parts/box-parts/one", "stories/Parts/box-parts/one"])
-      expect(page(p)).toContain('<meta name="description" content="The first box.">');
-    // Without a `site` the canonical URL is root-relative; a state alone names the state's page.
-    const links = (html: string, rel: string) =>
-      [...html.matchAll(new RegExp(`<link rel="${rel}" href="([^"]*)"`, "g"))].map((m) => m[1]);
-    expect(links(home, "canonical")).toEqual(["/"]);
-    for (const p of ["dashboard/Parts/box-parts/two", "stories/Parts/box-parts/two"])
-      expect(links(page(p), "canonical")).toEqual(["/dashboard/Parts/box-parts/two/"]);
-    // `htmlClass` on every page, before the body draws.
-    for (const p of ["", "dashboard/Parts/box-parts/two", "stories/Parts/box-parts/two"])
-      expect(page(p)).toContain('document.documentElement.classList.add(...["fx-root","fx-two"]);');
-    // The shell's stylesheet inlines: a linked one is one more render-blocking request.
-    for (const p of ["", "dashboard/Parts/box-parts/two"])
-      expect(page(p)).toContain("#astrobook-sidebar");
-    expect(page("stories/Parts/box-parts/two")).not.toContain("#astrobook-sidebar");
-    // The skeleton's preview script, as a repository's root runs it.
-    const { serve } = await import("../lib/serve.ts");
-    const preview = await serve(
-      ["sh", "-c", `cd ${fixture} && ${PREVIEW} --host "$HOST" --port "$PORT"`],
-      {
-        env: {
-          PATH: `${join(import.meta.dir, "..", "node_modules", ".bin")}:${process.env.PATH}`,
-        },
-      },
-    );
-    try {
-      expect((await fetch(`${preview.url}/stories/Parts/box-parts/two/`)).status).toBe(200);
-    } finally {
-      preview.stop();
-    }
-    // The shell paints the ground from brand's role or token; the fixture's home loads no token,
-    // so the page sets them. A story's own stylesheet still wins on a state's page.
-    const served = Bun.serve({
-      port: 0,
-      hostname: "127.0.0.1",
-      fetch: (req) => {
-        const { pathname } = new URL(req.url);
-        return new Response(
-          Bun.file(join(dist, pathname, pathname.endsWith("/") ? "index.html" : "")),
+      expect(build([], {}, "empty").status).toBe(0);
+      const emptyHome = readFileSync(join(empty, "dist", "index.html"), "utf8");
+      expect(emptyHome).toContain('class="hw-catalog-lead"');
+      expect(emptyHome).not.toContain("hw-catalog-provenance");
+      // The admin hub serves only on this machine: a built page carries no link to it.
+      expect(home).not.toContain("admin.localhost");
+      expect(home.indexOf(">Types <")).toBeLessThan(home.indexOf(">Parts <"));
+      // The rail names every element under its group, linked to the state its tile draws.
+      expect(home).toMatch(
+        /<ul class="hw-catalog-names"><li><a href="\/dashboard\/Parts\/box-parts\/two\/">Box parts<\/a>/,
+      );
+      // `previewStates` in order: the first a component has wins.
+      expect(home).toContain('<a href="/dashboard/Parts/many-parts/block-image/">Many parts</a>');
+      // A frame names its page in data-src: the shell's script loads it once the tile nears the view.
+      expect(home).toContain('data-src="/stories/Types/box-types/two/"');
+      expect(home).not.toMatch(/<iframe[^>]* src=/);
+      expect(readdirSync(join(dist, "stories/Parts/box-parts"))).toEqual(["one", "two"]);
+      // `previewSize` per group: a Types tile draws its frame whole at 1440 x 900, a Parts tile at
+      // three quarters.
+      expect(home).toContain(
+        'data-frame-width="1440" style="aspect-ratio:1440/900"><iframe data-src="/stories/Types/box-types/two/"',
+      );
+      expect(home).toMatch(/<span class="hw-catalog-preview"><iframe data-src="\/stories\/Parts\//);
+      // The shell's own card, pill and rail (brand's search field and navigation list) carry
+      // data-hw-shell, for brand-elements to skip.
+      expect(home).toContain(
+        '<aside class="hw-catalog-rail" data-hw-shell><div class="hw-search"><input class="hw-field hw-catalog-search" type="search"',
+      );
+      expect(home).toContain('<nav class="hw-nav" aria-label="Groups">');
+      expect(home).toContain('<a class="hw-card hw-catalog-tile" data-hw-shell href=');
+      expect(home).toContain('<span class="hw-pill" data-tone="neutral" data-hw-shell>');
+      expect(readFileSync(join(dist, "fx.txt"), "utf8")).toBe("fx\n");
+      const page = (p: string) => readFileSync(join(dist, p, "index.html"), "utf8");
+      // No page carries a robots tag; the shell draws dense, a story at `storyScale`, and every page but a
+      // state alone turns with the theme toggle.
+      const root = (html: string) =>
+        html.match(/Object\.assign\(document\.documentElement\.dataset,(\{.*?\})\);/)?.[1];
+      expect(root(home)).toBe('{"hwScale":"dense","hwNight":""}');
+      expect(root(page("dashboard/Parts/box-parts/two"))).toBe('{"hwScale":"screen","hwNight":""}');
+      expect(root(page("stories/Parts/box-parts/two"))).toBe('{"hwScale":"screen"}');
+      const robots = /<meta\b[^>]*\bname\s*=\s*["']?robots\b/i;
+      for (const p of [
+        "",
+        "dashboard/Parts/box-parts/two",
+        "stories/Parts/box-parts/two",
+        "catalog",
+        "catalog/dashboard/Parts/box-parts/two",
+      ])
+        expect(page(p)).not.toMatch(robots);
+      for (const p of ["", "dashboard/Parts/box-parts/two", "stories/Parts/box-parts/two"])
+        expect(page(p)).toContain('<meta name="description" content="Lead.">');
+      // Each state's page and state alone has a title of its own, the home the catalog's.
+      expect(page("")).toContain("<title>Fx catalog</title>");
+      for (const p of ["dashboard/Parts/box-parts/one", "stories/Parts/box-parts/one"])
+        expect(page(p)).toContain("<title>Box parts: One – Fx catalog</title>");
+      expect(page("dashboard/Parts/many-parts/two-pd-fs")).toContain(
+        "<title>Many parts: Two PDFs – Fx catalog</title>",
+      );
+      // A state whose args carry a lead describes itself by it.
+      for (const p of ["dashboard/Parts/box-parts/one", "stories/Parts/box-parts/one"])
+        expect(page(p)).toContain('<meta name="description" content="The first box.">');
+      // Without a `site` the canonical URL is root-relative; a state alone names the state's page.
+      const links = (html: string, rel: string) =>
+        [...html.matchAll(new RegExp(`<link rel="${rel}" href="([^"]*)"`, "g"))].map((m) => m[1]);
+      expect(links(home, "canonical")).toEqual(["/"]);
+      for (const p of ["dashboard/Parts/box-parts/two", "stories/Parts/box-parts/two"])
+        expect(links(page(p), "canonical")).toEqual(["/dashboard/Parts/box-parts/two/"]);
+      // `htmlClass` on every page, before the body draws.
+      for (const p of ["", "dashboard/Parts/box-parts/two", "stories/Parts/box-parts/two"])
+        expect(page(p)).toContain(
+          'document.documentElement.classList.add(...["fx-root","fx-two"]);',
         );
-      },
-    });
-    const painted = await browse(`${served.url}`);
-    try {
-      await painted.until(
-        `document.readyState === "complete" && !!document.querySelector(".hw-catalog")`,
+      // The shell's stylesheet inlines: a linked one is one more render-blocking request.
+      for (const p of ["", "dashboard/Parts/box-parts/two"])
+        expect(page(p)).toContain("#astrobook-sidebar");
+      expect(page("stories/Parts/box-parts/two")).not.toContain("#astrobook-sidebar");
+      // The skeleton's preview script, as a repository's root runs it.
+      const { serve } = await import("../lib/serve.ts");
+      const preview = await serve(
+        ["sh", "-c", `cd ${fixture} && ${PREVIEW} --host "$HOST" --port "$PORT"`],
+        {
+          env: {
+            PATH: `${join(import.meta.dir, "..", "node_modules", ".bin")}:${process.env.PATH}`,
+          },
+        },
       );
-      // A sized tile fitted while the search hid it is fitted again once the search shows it.
-      const sized = `document.querySelector(".hw-catalog-preview[data-frame-width] iframe").style.transform`;
-      await painted.until(`${sized}.startsWith("scale(") && ${sized} !== "scale(0)"`);
-      const fitted = await painted.evaluate(sized);
-      const search = (q: string) =>
-        `(() => { const s = document.querySelector(".hw-catalog-search"); s.value = ${JSON.stringify(q)}; s.dispatchEvent(new Event("input", { bubbles: true })); })()`;
-      await painted.evaluate(search("many"));
-      await painted.evaluate(`dispatchEvent(new Event("resize"))`);
-      // The resize has fitted the hidden tile: at scale 0, or marked to fit once shown.
-      await painted.until(
-        `document.querySelector(".hw-catalog-preview[data-frame-width]").hasAttribute("data-hw-unfit") || ${sized} === "scale(0)"`,
-      );
-      await painted.evaluate(search(""));
-      expect(await painted.evaluate(sized)).toBe(fitted);
-      const ground = () =>
-        painted.evaluate(`getComputedStyle(document.documentElement).backgroundColor`);
-      expect(await ground()).toBe("rgba(0, 0, 0, 0)");
-      for (const [step, colour] of [
-        [
-          `document.documentElement.style.setProperty("--color-bg", "rgb(1, 2, 3)")`,
-          "rgb(1, 2, 3)",
-        ],
-        [
-          `document.documentElement.style.setProperty("--background", "rgb(4, 5, 6)")`,
-          "rgb(4, 5, 6)",
-        ],
-        [
-          `document.head.insertAdjacentHTML("beforeend", "<style>@layer base { html { background: rgb(7, 8, 9); } }</style>")`,
-          "rgb(7, 8, 9)",
-        ],
-      ] as const) {
-        await painted.evaluate(step);
-        expect(await ground()).toBe(colour);
+      try {
+        expect((await fetch(`${preview.url}/stories/Parts/box-parts/two/`)).status).toBe(200);
+      } finally {
+        preview.stop();
       }
-      const ink = `document.documentElement.style.setProperty("--color-ink", "rgb(1, 2, 3)")`;
-      // The shell's text reads brand's role or token, and a state's page whose CSS holds no reset
-      // still draws the bar in the ink and its controls 28 px high.
-      await painted.evaluate(ink);
-      expect(await painted.evaluate(`getComputedStyle(document.body).color`)).toBe("rgb(1, 2, 3)");
-      await painted.evaluate(`location.href = "/dashboard/Parts/box-parts/two/"`);
-      await painted.until(
-        `location.pathname.startsWith("/dashboard/") && document.readyState === "complete" && !!document.querySelector(".hw-catalog-bar")`,
-      );
-      await painted.evaluate(ink);
-      expect(
-        await painted.evaluate(
-          `[".hw-catalog-bar > a", ".hw-catalog-bar button", ".hw-catalog-tool", ".hw-catalog-step", ".hw-catalog-states li a"].map((s) => { const e = document.querySelector(s); return [getComputedStyle(e).color, e.getBoundingClientRect().height]; })`,
-        ),
-      ).toEqual(Array(5).fill(["rgb(1, 2, 3)", 28]));
-      // The story keeps the focus ring's room, brand's --hw-focus-room, clear of <main>'s scroll
-      // box and of the bar, which stays flush with <main>. The shell retypes none of brand's values:
-      // without the room, the width and offset alone give none.
-      const room = (set: string) =>
-        painted.evaluate(
-          `(() => { document.documentElement.setAttribute("style", ${JSON.stringify(set)}); const [m, b, s] = ["main", ".hw-catalog-bar", ".box"].map((q) => document.querySelector(q).getBoundingClientRect()); return [b.left - m.left, b.width - m.width, b.top - m.top, s.left - m.left, s.top - b.bottom, m.right - s.right]; })()`,
-        );
-      expect(await room("--hw-focus-width: 4px; --hw-focus-offset: 3px")).toEqual([
-        0, 0, 0, 0, 0, 0,
-      ]);
-      expect(await room("--hw-focus-room: 9px")).toEqual([0, 0, 0, 9, 9, 9]);
-      // A story's own padding on <main> wins over the room.
-      await painted.evaluate(
-        `document.head.insertAdjacentHTML("beforeend", "<style>main { padding: 2rem; }</style>")`,
-      );
-      expect(((await room("")) as number[])[3]).toBe(32);
-      // The bar takes brand's stored theme and writes its toggle there, so a choice made on the
-      // repository's own pages carries into the catalog and back.
-      await painted.evaluate(`localStorage.setItem("theme", "dark"); location.reload()`);
-      await painted.until(
-        `document.readyState === "complete" && !!document.querySelector("[data-hw-theme]")`,
-      );
-      expect(
-        await painted.evaluate(
-          `[document.documentElement.dataset.theme, document.querySelector("[data-hw-theme]").getAttribute("aria-pressed")]`,
-        ),
-      ).toEqual(["dark", "true"]);
-      await painted.evaluate(`document.querySelector("[data-hw-theme]").click()`);
-      expect(
-        await painted.evaluate(
-          `[document.documentElement.dataset.theme, localStorage.getItem("theme")]`,
-        ),
-      ).toEqual(["light", "light"]);
-      // A state alone in the window keeps the room inside Astrobook's scrolling <main> too. It draws
-      // in the day theme whatever the reader chose, as a tile's frame does, and keeps the choice.
-      await painted.evaluate(
-        `localStorage.setItem("theme", "dark"); localStorage.setItem("theme-toggle", "dark"); location.href = "/stories/Parts/box-parts/two/"`,
-      );
-      await painted.until(
-        `location.pathname.startsWith("/stories/") && document.readyState === "complete" && !!document.querySelector(".box")`,
-      );
-      expect(
-        await painted.evaluate(
-          `(() => { document.documentElement.style.setProperty("--hw-focus-room", "6px"); const [m, s] = ["main", ".box"].map((q) => document.querySelector(q).getBoundingClientRect()); return [s.left - m.left, s.top - m.top, document.documentElement.dataset.hwAlone]; })()`,
-        ),
-      ).toEqual([6, 6, ""]);
-      expect(
-        await painted.evaluate(
-          `[document.documentElement.dataset.theme, document.documentElement.classList.contains("dark"), localStorage.getItem("theme"), localStorage.getItem("theme-toggle")]`,
-        ),
-      ).toEqual(["light", false, "dark", "dark"]);
-    } finally {
-      painted.close();
-      void served.stop(true);
-    }
-    // Every page of the catalog's former place forwards to its page at the root.
-    expect(page("catalog/dashboard/Parts/box-parts/two")).toContain(
-      'http-equiv="refresh" content="0; url=/dashboard/Parts/box-parts/two/"',
-    );
-    expect(page("catalog")).toContain('content="0; url=/"');
-    const state = page("dashboard/Parts/box-parts/two");
-    // Each page's own styles: its <style> blocks and the stylesheets it links.
-    const styles = (html: string) =>
-      [
-        ...html.matchAll(/<style[^>]*>([\s\S]*?)<\/style>/g).map((m) => m[1]),
-        ...html
-          .matchAll(/<link rel="stylesheet" href="\/_astro\/([^"]+)"/g)
-          .map((m) => readFileSync(join(dist, "_astro", m[1]!), "utf8")),
-      ].join("");
-    expect(state).toContain('<meta name="fx-head" content="repository">');
-    expect(styles(state)).toMatch(
-      /#astrobook-sidebar,\s*astrobook-sidebar-resize-handle\s*\{\s*display:\s*none\s*!important/,
-    );
-    // A state's page takes the header's, the bar's and the repository's CSS, `css` without a
-    // `dashboardCss`; a state alone only the repository's; the home the header's and the shell's,
-    // and of the repository's only `homeCss`.
-    const [stateCss, aloneCss, homeCss] = [state, page("stories/Parts/box-parts/two"), home].map(
-      styles,
-    );
-    for (const rule of [".fx-header{display:flex}", ".hw-catalog-bar{", ".box{color:teal}"])
-      expect(stateCss).toContain(rule);
-    expect(aloneCss).toContain(".box{color:teal}");
-    for (const rule of [".fx-header{", "hw-catalog-bar", "hw-catalog-nav", "astrobook-sidebar,"])
-      expect(aloneCss).not.toContain(rule);
-    expect(homeCss).toContain(".fx-header{display:flex}");
-    expect(homeCss).toContain(".hw-catalog-grid{");
-    expect(homeCss).not.toContain(".box{");
-    expect(homeCss).toContain(".acme-ui{");
-    const barOf = (html: string) =>
-      html.match(/<template id="hw-catalog-bar">([\s\S]*?)<\/template>/)?.[1] ?? "";
-    const bar = barOf(state);
-    // A state's page carries the header above the bar, the current item marked as the place, not
-    // the page.
-    expect(bar).toStartWith(
-      '<div data-hw-catalog-top><header class="fx-header"><a href="/">Fx</a><div class="hw-header-nav hw-catalog-nav"><nav class="hw-header-nav" aria-label="Main" data-hw-catalogs><a class="hw-header-link" href="/">Site</a><a class="hw-header-link" href="/catalog/" aria-current="true">Fx</a><a class="hw-header-link" href="https://example.com/other/">Other</a><a class="hw-header-link" href="//example.com/far/">Far</a></nav></div></header></div><nav class="hw-catalog-bar"',
-    );
-    expect(bar).toContain('<nav class="hw-catalog-bar" aria-label="Catalog">');
-    expect(bar).toContain('<a href="/catalog/"><span aria-hidden="true">');
-    expect(bar).toMatch(/Parts \/ <strong>Box parts<\/strong>/);
-    expect(bar).toContain('<button type="button" data-hw-theme aria-pressed="false">');
-    expect(bar).toMatch(
-      /<a class="hw-catalog-tool" href="\/stories\/Parts\/box-parts\/two\/">\s*Open this state alone\s*<\/a>/,
-    );
-    expect(bar).toContain('<ul aria-label="States">');
-    expect(bar).toMatch(/href="\/dashboard\/Parts\/box-parts\/one\/">One/);
-    expect(bar).toMatch(/href="\/dashboard\/Parts\/box-parts\/two\/" aria-current="page">Two/);
-    expect(bar).toContain(
-      '<a class="hw-catalog-step" rel="prev" href="/dashboard/Parts/box-parts/one/"',
-    );
-    // A step with nowhere to go is no anchor: Lighthouse's crawlable-anchors fails one without href.
-    expect(bar).toContain(
-      '<button class="hw-catalog-step" type="button" disabled aria-label="Next state">',
-    );
-    const first = barOf(page("dashboard/Parts/box-parts/one"));
-    expect(first).toContain(
-      '<button class="hw-catalog-step" type="button" disabled aria-label="Previous state">',
-    );
-    expect(first).toContain(
-      '<a class="hw-catalog-step" rel="next" href="/dashboard/Parts/box-parts/two/"',
-    );
-    expect(`${bar}${first}`).not.toMatch(/<a(?![^>]*href)[^>]*>/);
-    expect(bar).toContain("2 of 2");
-    // Above 12 states a menu replaces the chips, grouped by a word three names share.
-    const many = barOf(page("dashboard/Parts/many-parts/block-image"));
-    expect(many).not.toContain("<ul");
-    expect(many).toContain(
-      '<optgroup label="Block"><option value="/dashboard/Parts/many-parts/block-code/">Block code</option><option value="/dashboard/Parts/many-parts/block-image/" selected>Block image</option>',
-    );
-    expect(many).toContain(
-      '<optgroup label="Theme"><option value="/dashboard/Parts/many-parts/accent-theme/">Accent theme</option>',
-    );
-    expect(many).toContain(
-      '</optgroup><option value="/dashboard/Parts/many-parts/angebot-ohne-preise/">Angebot ohne Preise</option>',
-    );
-    // A camelCase state reads in sentence case, an acronym kept; a name with underscores keeps its
-    // author's case. Either way the first word is capitalised.
-    expect(many).toMatch(/many-parts\/density-on-pdf\/">Density on PDF</);
-    expect(many).toMatch(/">Folie 35 Eine Woche zum</);
-    expect(many).toMatch(/">In German</);
-    // So a German noun after the first word needs an underscore name.
-    expect(many).toMatch(/">Mit impressum</);
-    expect(many).toMatch(/">Primary on night</);
-    // A plural acronym and a listed name with inner capitals stay whole.
-    expect(many).toMatch(/many-parts\/two-pd-fs\/">Two PDFs</);
-    expect(many).toMatch(/many-parts\/loading-git-hub\/">Loading GitHub</);
-    expect(state).toContain("if (top) main.before(top);");
-    expect(page("stories/Parts/box-parts/two")).not.toContain('id="hw-catalog-bar"');
-    expect(home).not.toContain('id="hw-catalog-bar"');
-    // `serverOnly`: no state's route keeps Astrobook's client:load branch.
-    const codegen = join(
-      fixture,
-      "catalog/.astro/integrations/_hackersandwizards_scaffolding_catalog",
-    );
-    const routes = readdirSync(codegen, { recursive: true, encoding: "utf8" }).filter((f) =>
-      f.endsWith(".astro"),
-    );
-    expect(routes.length).toBe(48);
-    for (const f of routes)
-      expect(readFileSync(join(codegen, f), "utf8")).not.toContain("client:load");
-    // `copy`: each match at its own path, the rest of the folder left out.
-    expect(readdirSync(join(dist, "assets")).sort()).toEqual(["logo.svg", "nested"]);
-    expect(readFileSync(join(dist, "assets/nested/page.css"), "utf8")).toBe(
-      "a {\n  color: red;\n}\n",
-    );
-    // A package path lands at that path, resolved through the package's exports.
-    expect(readFileSync(join(dist, "@acme/fx/logos/logo.svg"), "utf8")).toBe(
-      readFileSync(join(fixture, "assets/logo.svg"), "utf8"),
-    );
-    // A project Pages site sets Astro's base: the links and the header's default follow it.
-    expect(build(["--base", "/fx"]).status).toBe(0);
-    const based = readFileSync(join(dist, "index.html"), "utf8");
-    expect(based).toContain(
-      '<header class="fx-header"><a href="/fx/">Fx</a><div class="hw-header-nav hw-catalog-nav"><nav class="hw-header-nav" aria-label="Main" data-hw-catalogs><a class="hw-header-link" href="/fx/">Site</a><a class="hw-header-link" href="/fx/catalog/" aria-current="page">Fx</a><a class="hw-header-link" href="https://example.com/other/">Other</a><a class="hw-header-link" href="//example.com/far/">Far</a></nav></div></header>',
-    );
-    expect(based).toContain('data-src="/fx/stories/Types/box-types/two/"');
-    expect(page("catalog/stories/Types/box-types/two")).toContain(
-      'url=/fx/stories/Types/box-types/two/"',
-    );
-    // A base ending in /catalog mounts the catalog under a host with its own home: no forwarding
-    // pages and no public/, which the host serves.
-    expect(build(["--base", "/catalog"]).status).toBe(0);
-    const mountedHome = readFileSync(join(dist, "index.html"), "utf8");
-    expect(mountedHome).toContain('data-src="/catalog/stories/Types/box-types/two/"');
-    // Its home reads /catalog/ already: the current item links there, not to /catalog/catalog/.
-    expect(mountedHome).toContain(
-      '<a class="hw-header-link" href="/catalog/" aria-current="page">Fx</a>',
-    );
-    expect(page("dashboard/Parts/box-parts/two")).toContain(
-      '<a href="/catalog/"><span aria-hidden',
-    );
-    expect(existsSync(join(dist, "catalog"))).toBe(false);
-    expect(existsSync(join(dist, "fx.txt"))).toBe(false);
-    // An outDir the config sets stays; only Astro's default moves to the repository's dist/.
-    const custom = join(fixture, "catalog", "custom");
-    expect(build(["--outDir", "./custom"]).status).toBe(0);
-    expect(existsSync(join(custom, "index.html"))).toBe(true);
-    // A story link ends where Astro writes its page: no slash where a page is a file of its own,
-    // unless the site asks for one.
-    const files = join(fixture, "catalog", "files.config.mjs");
-    for (const [slash, end] of [
-      ["ignore", ""],
-      ["always", "/"],
-    ]) {
-      writeFileSync(
-        files,
-        `import config from "./astro.config.mjs";\nexport default { ...config, trailingSlash: "${slash}", build: { format: "file" } };\n`,
-      );
-      expect(build(["--config", "files.config.mjs"]).status).toBe(0);
-      expect(readFileSync(join(dist, "index.html"), "utf8")).toContain(
-        `<li><a href="/dashboard/Parts/box-parts/two${end}">Box parts</a>`,
-      );
-    }
-    rmSync(files);
-    // A build with a file-URL assetsPrefix is opened from disk: every link to a page or file of the
-    // build names its file by file URL, the home's frames, a copied file and a state menu's options
-    // included; a link outside the build stays, and no page forwards from /catalog/.
-    const disk = join(fixture, "catalog", "disk.config.mjs");
-    writeFileSync(
-      disk,
-      `import config from "./astro.config.mjs";\nexport default { ...config, build: { assetsPrefix: ${JSON.stringify(pathToFileURL(`${dist}/`).href)} } };\n`,
-    );
-    expect(build(["--config", "disk.config.mjs"]).status).toBe(0);
-    const onDisk = readFileSync(join(dist, "index.html"), "utf8");
-    const at = (p: string) => pathToFileURL(join(dist, p)).href;
-    expect(onDisk).toContain(`<iframe data-src="${at("stories/Types/box-types/two/index.html")}"`);
-    expect(onDisk).toContain(
-      `<li><a href="${at("dashboard/Parts/box-parts/two/index.html")}">Box parts</a>`,
-    );
-    expect(onDisk).toContain(`<a href="${at("index.html")}">Fx</a>`);
-    expect(onDisk).toContain(
-      `<a class="hw-header-link" href="${at("index.html")}" aria-current="page">Fx</a>`,
-    );
-    expect(onDisk).toContain('href="https://example.com/other/"');
-    expect(onDisk).not.toMatch(/\s(href|src|data-src)="\/(?!\/)/);
-    expect(page("dashboard/Parts/box-parts/two")).toContain(
-      `href="${at("stories/Parts/box-parts/two/index.html")}">Open this state alone`,
-    );
-    expect(onDisk).toContain(`<link rel="icon" href="${at("assets/logo.svg")}">`);
-    // A build opened from disk is never published, and a file URL names the build machine.
-    expect(onDisk).not.toContain('rel="canonical"');
-    expect(page("dashboard/Parts/many-parts/block-image")).toContain(
-      `<option value="${at("dashboard/Parts/many-parts/block-code/index.html")}">Block code</option>`,
-    );
-    expect(existsSync(join(dist, "catalog"))).toBe(false);
-    rmSync(disk);
-    // A redirect from "/" would take the catalog's place: the build fails and says why.
-    const redirecting = join(fixture, "catalog", "redirecting.config.mjs");
-    writeFileSync(
-      redirecting,
-      'import config from "./astro.config.mjs";\nexport default { ...config, redirects: { "/": "/x/" } };\n',
-    );
-    const refused = build(["--config", "redirecting.config.mjs"]);
-    expect(refused.status).not.toBe(0);
-    expect(`${refused.stdout}${refused.stderr}`).toContain("`redirects` leaves out");
-    rmSync(redirecting);
-    // A package path outside the package's exports fails the build by name.
-    const unexported = join(fixture, "catalog", "unexported.config.mjs");
-    writeFileSync(
-      unexported,
-      'import config from "./astro.config.mjs";\nimport { catalog } from "../../../catalog/index.ts";\nexport default { ...config, integrations: [catalog({ product: "Fx", css: [], lead: "", copy: ["@acme/fx/assets/skip.txt"] })] };\n',
-    );
-    const missing = build(["--config", "unexported.config.mjs"]);
-    expect(`${missing.stdout}${missing.stderr}`).toContain(
-      "catalog copy: @acme/fx/assets/skip.txt is no file in the exports of @acme/fx",
-    );
-    rmSync(unexported);
-    // A `nav.current` naming no item fails the build by name.
-    const misnamed = join(fixture, "catalog", "misnamed.config.mjs");
-    writeFileSync(
-      misnamed,
-      'import config from "./astro.config.mjs";\nimport { catalog } from "../../../catalog/index.ts";\nexport default { ...config, integrations: [catalog({ product: "Fx", css: [], lead: "", nav: { items: [{ name: "Fx", href: "/" }], current: "Fxx" } })] };\n',
-    );
-    const misnamedBuild = build(["--config", "misnamed.config.mjs"]);
-    expect(misnamedBuild.status).not.toBe(0);
-    expect(`${misnamedBuild.stdout}${misnamedBuild.stderr}`).toContain(
-      'catalog nav: current "Fxx" names no item',
-    );
-    rmSync(misnamed);
-    const variant = (name: string, options: string) => {
-      const file = join(fixture, "catalog", `${name}.config.mjs`);
-      writeFileSync(
-        file,
-        `import config from "./astro.config.mjs";\nimport { catalog } from "../../../catalog/index.ts";\nexport default { ...config, integrations: [catalog({ product: "Fx", css: [], lead: "", header: { component: "./Header.astro" }, ${options} })] };\n`,
-      );
-      const result = build(["--config", `${name}.config.mjs`]);
-      rmSync(file);
-      return result;
-    };
-    // `dashboardCss` replaces `css` on a state's page; a state alone keeps `css`.
-    const dash = join(fixture, "catalog", "dash.css");
-    writeFileSync(dash, ".dash{color:red}\n");
-    expect(variant("dashed", 'css: ["./fx.css"], dashboardCss: ["./dash.css"]').status).toBe(0);
-    const dashCss = styles(page("dashboard/Parts/box-parts/two"));
-    expect(dashCss).toContain(".dash{color:red}");
-    expect(dashCss).not.toContain(".box{");
-    expect(styles(page("stories/Parts/box-parts/two"))).toContain(".box{color:teal}");
-    rmSync(dash);
-    // Without brand, hw-focus-ring in `htmlClass` loads no focus ring and fails no build.
-    expect(variant("ringless", 'htmlClass: ["hw-focus-ring"]').status).toBe(0);
-    // A `previewSize` key naming no group fails the build by name: a renamed group would fall back
-    // to the small fitted view unseen.
-    const stale = variant("stale", "previewSize: { Parts: [1, 1], Pieces: [1440, 900] }");
-    expect(stale.status).not.toBe(0);
-    expect(`${stale.stdout}${stale.stderr}`).toContain(
-      'catalog previewSize: "Pieces" names no story group (Parts, Types)',
-    );
-    // A `previewStates` entry naming no story's state fails the build by name: a renamed state
-    // would leave every tile on another state unseen.
-    const unknown = variant("unknown", 'previewStates: ["two", "gone"]');
-    expect(unknown.status).not.toBe(0);
-    expect(`${unknown.stdout}${unknown.stderr}`).toContain(
-      'catalog previewStates: "gone" names no story\'s state',
-    );
-    // `themeToggle: false`: the bar offers no dark theme.
-    expect(variant("light", "themeToggle: false").status).toBe(0);
-    expect(page("dashboard/Parts/box-parts/two")).not.toContain(
-      '<button type="button" data-hw-theme',
-    );
-    expect(root(page("dashboard/Parts/box-parts/two"))).toBe("{}");
-    // With a `site` the canonical URL is absolute, under the base.
-    expect(build(["--site", "https://fx.example", "--base", "/fx"]).status).toBe(0);
-    expect(page("stories/Parts/box-parts/two")).toContain(
-      '<link rel="canonical" href="https://fx.example/fx/dashboard/Parts/box-parts/two/"',
-    );
-    expect(page("")).toContain('<link rel="canonical" href="https://fx.example/fx/"');
-    // Where the repository resolves brand, every page carries brand's favicon ahead of the
-    // repository's head, whose own link then wins; without brand the shell writes none.
-    expect(build().status).toBe(0);
-    expect(links(page(""), "icon")).toEqual(["/assets/logo.svg"]);
-    // Without brand the bar reads the repository's own --text-ui.
-    const brandless = globSync("**/*.{css,html}", { cwd: dist })
-      .map((f) => readFileSync(join(dist, f), "utf8"))
-      .join("");
-    expect(brandless.match(/\.hw-catalog-bar\{[^}]*\}/)?.[0]).toContain(
-      "font:500 1rem var(--font-sans);font-size:var(--text-ui);line-height:var(--text-ui--line-height);",
-    );
-    expect(brandless).not.toContain("brand-value");
-    // The shell's home holds no foundations: no group of its own. A home with some draws them as
-    // Foundations; beside a stories folder of that name the build fails, and a home of whitespace
-    // and a comment leaves the folder the one group (compressHTML off, as in the repositories).
-    expect(home).not.toContain('id="foundations"');
-    const catalogDir = join(fixture, "catalog");
-    const homed = join(catalogDir, "homed.config.mjs");
-    const ownHome = join(catalogDir, "OwnHome.astro");
-    const folder = join(catalogDir, "stories", "Foundations");
-    const ownHomeWith = (body: string) =>
-      write(catalogDir, {
-        "homed.config.mjs":
-          'import config from "./astro.config.mjs";\nimport { catalog } from "../../../catalog/index.ts";\nexport default { ...config, compressHTML: false, integrations: [catalog({ product: "Fx", css: [], lead: "", header: { component: "./Header.astro" }, home: "./OwnHome.astro" })] };\n',
-        "OwnHome.astro": `---\nimport Home from "../../../catalog/Home.astro";\n---\n\n<Home>${body}</Home>\n`,
+      // The shell paints the ground from brand's role or token; the fixture's home loads no token,
+      // so the page sets them. A story's own stylesheet still wins on a state's page.
+      const served = Bun.serve({
+        port: 0,
+        hostname: "127.0.0.1",
+        fetch: (req) => {
+          const { pathname } = new URL(req.url);
+          return new Response(
+            Bun.file(join(dist, pathname, pathname.endsWith("/") ? "index.html" : "")),
+          );
+        },
       });
-    ownHomeWith("<p>Tokens</p>");
-    expect(build(["--config", "homed.config.mjs"]).status).toBe(0);
-    expect(readFileSync(join(dist, "index.html"), "utf8")).toContain('id="foundations"');
-    write(folder, {
-      "Tokens.stories.js":
-        'import Box from "../../Box.astro";\n\nexport default { component: Box };\nexport const One = { args: { label: "one" } };\n',
-    });
-    const twice = build(["--config", "homed.config.mjs"]);
-    expect(twice.status).not.toBe(0);
-    expect(`${twice.stdout}${twice.stderr}`).toContain(
-      'catalog: the groups "Foundations" and "Foundations" both draw as #foundations',
-    );
-    ownHomeWith("\n  <!-- none yet -->\n");
-    expect(build(["--config", "homed.config.mjs"]).status).toBe(0);
-    const folderOnly = readFileSync(join(dist, "index.html"), "utf8");
-    expect(folderOnly.match(/id="foundations"/g)).toHaveLength(1);
-    expect(folderOnly).not.toContain('class="hw-catalog-text"');
-    rmSync(folder, { recursive: true });
-    rmSync(homed);
-    rmSync(ownHome);
-    // Without `nav`, the header lists brand's catalogs.json, the one named as `product` current.
-    const brand = join(fixture, "node_modules", "@hackersandwizards", "brand");
-    const navless = join(fixture, "catalog", "navless.config.mjs");
-    write(brand, {
-      "package.json": JSON.stringify({
-        exports: {
-          "./catalogs.json": "./expert/catalogs.json",
-          "./tokens.json": "./generated/tokens.json",
-          "./logos/*": "./logos/*",
-          "./header.css": "./header.css",
-          "./layers.css": "./tokens/layers.css",
-          "./night.css": "./night.css",
-          "./elements/*": "./elements/*",
-          "./expert/components/*": "./expert/components/*",
-        },
-      }),
-      "logos/favicon.svg": '<svg xmlns="http://www.w3.org/2000/svg"/>',
-      // Over Vite's 4 KB inlining limit, so `?url` gives a file as with brand's own logo.
-      "logos/lockup-screen.svg": `<svg xmlns="http://www.w3.org/2000/svg"><!--${"x".repeat(5000)}--></svg>`,
-      "logos/night-logo.svg": `<svg xmlns="http://www.w3.org/2000/svg"><!--${"y".repeat(5000)}--></svg>`,
-      "header.css": "",
-      "tokens/layers.css": "@layer properties, theme, base, components, utilities;\n",
-      "night.css": "",
-      "elements/focus.css": ".hw-focus-ring :focus-visible{outline:3px solid purple}\n",
-      "expert/components/AppHeader.astro":
-        '---\nimport lockup from "../../logos/lockup-screen.svg?url";\nimport night from "../../logos/night-logo.svg?url";\n---\n\n<header class="hw-header"><img class="hw-header-logo" src={lockup} alt="" /><img src={night} alt="" loading="lazy" /><slot /></header>\n',
-      "expert/catalogs.json": JSON.stringify([
-        { name: "Other", href: "https://example.com/other/" },
-        { name: "Fx", href: "https://example.com/fx/" },
-      ]),
-      // Values none of the shell's own: each var() naming one takes it as its fallback.
-      "generated/tokens.json": JSON.stringify({
-        tokens: {
-          "--container-measure": "31em",
-          "--text-page": "1.7rem",
-          "--spacing-app-header": "calc(var(--spacing-strip) + 2rem)",
-          "--spacing-strip": "5px",
-          "--radius-pill": "77px",
-          "--text-ui": "0.9rem",
-          "--text-ui--line-height": "1.55",
-        },
-      }),
-    });
-    writeFileSync(
-      navless,
-      'import config from "./astro.config.mjs";\nimport { catalog } from "../../../catalog/index.ts";\nexport default { ...config, integrations: [catalog({ product: "Fx", css: [], lead: "" })] };\n',
-    );
-    expect(build(["--config", "navless.config.mjs"]).status).toBe(0);
-    const branded = readFileSync(join(dist, "index.html"), "utf8");
-    const sheets = [
-      branded,
-      ...globSync("**/*.css", { cwd: dist }).map((f) => readFileSync(join(dist, f), "utf8")),
-    ]
-      .join("")
-      .replace(/,\s+/g, ",");
-    for (const fallback of [
-      "var(--container-measure,31em)",
-      "var(--text-page,1.7rem)",
-      "var(--spacing-app-header,calc(var(--spacing-strip,5px) + 2rem))",
-      "var(--radius-pill,77px)",
-    ])
-      expect(sheets).toContain(fallback);
-    // The bar's size is brand's unscaled UI step.
-    expect(sheets).toMatch(
-      /\.hw-catalog-bar\{[^}]*font:500 1rem var\(--font-sans\);[^}]*font-size:\.9rem;line-height:1\.55;/,
-    );
-    expect(sheets).not.toContain("brand-value");
-    // brand's layer order follows the ground's.
-    expect(branded).toContain(
-      "<style>@layer hw-catalog-ground;@layer properties, theme, base, components, utilities;@layer hw-catalog-ground{",
-    );
-    expect(branded).toContain(
-      '<nav class="hw-header-nav" aria-label="Main" data-hw-catalogs><a class="hw-header-link" href="https://example.com/other/">Other</a><a class="hw-header-link" href="/catalog/" aria-current="page">Fx</a></nav>',
-    );
-    // A state's page holds its header in a <template> the preload scanner skips, and only puts it
-    // into <main> once the parser has waited out the stylesheets: the page fetches its logo before
-    // they arrive, and leaves a logo marked lazy to the browser. The CSS answers once the logo is
-    // asked for, 8 s at most, so a loaded machine cannot reorder the two.
-    const order: string[] = [];
-    let logoAsked = () => {};
-    const asked = new Promise<void>((done) => (logoAsked = done));
-    const slow = Bun.serve({
-      port: 0,
-      hostname: "127.0.0.1",
-      async fetch(req) {
-        const { pathname } = new URL(req.url);
-        order.push(pathname);
-        if (pathname.includes("lockup-screen")) logoAsked();
-        if (pathname.endsWith(".css")) {
-          await Promise.race([asked, Bun.sleep(8000)]);
-          order.push("css arrived");
+      const painted = await browse(`${served.url}`);
+      try {
+        await painted.until(
+          `document.readyState === "complete" && !!document.querySelector(".hw-catalog")`,
+        );
+        // A sized tile fitted while the search hid it is fitted again once the search shows it.
+        const sized = `document.querySelector(".hw-catalog-preview[data-frame-width] iframe").style.transform`;
+        await painted.until(`${sized}.startsWith("scale(") && ${sized} !== "scale(0)"`);
+        const fitted = await painted.evaluate(sized);
+        const search = (q: string) =>
+          `(() => { const s = document.querySelector(".hw-catalog-search"); s.value = ${JSON.stringify(q)}; s.dispatchEvent(new Event("input", { bubbles: true })); })()`;
+        await painted.evaluate(search("many"));
+        await painted.evaluate(`dispatchEvent(new Event("resize"))`);
+        // The resize has fitted the hidden tile: at scale 0, or marked to fit once shown.
+        await painted.until(
+          `document.querySelector(".hw-catalog-preview[data-frame-width]").hasAttribute("data-hw-unfit") || ${sized} === "scale(0)"`,
+        );
+        await painted.evaluate(search(""));
+        expect(await painted.evaluate(sized)).toBe(fitted);
+        const ground = () =>
+          painted.evaluate(`getComputedStyle(document.documentElement).backgroundColor`);
+        expect(await ground()).toBe("rgba(0, 0, 0, 0)");
+        for (const [step, colour] of [
+          [
+            `document.documentElement.style.setProperty("--color-bg", "rgb(1, 2, 3)")`,
+            "rgb(1, 2, 3)",
+          ],
+          [
+            `document.documentElement.style.setProperty("--background", "rgb(4, 5, 6)")`,
+            "rgb(4, 5, 6)",
+          ],
+          [
+            `document.head.insertAdjacentHTML("beforeend", "<style>@layer base { html { background: rgb(7, 8, 9); } }</style>")`,
+            "rgb(7, 8, 9)",
+          ],
+        ] as const) {
+          await painted.evaluate(step);
+          expect(await ground()).toBe(colour);
         }
-        const path = join(dist, decodeURIComponent(pathname));
-        return new Response(Bun.file(pathname.endsWith("/") ? join(path, "index.html") : path));
-      },
-    });
-    const browsing = await browse(`${slow.url}dashboard/Parts/box-parts/two/`);
-    try {
-      await browsing.until(`document.querySelector("img.hw-header-logo")?.complete`);
-      expect(order).toContain("css arrived");
-      const early = order.slice(0, order.indexOf("css arrived")).join();
-      expect(early).toContain("lockup-screen");
-      expect(early).not.toContain("night-logo");
-    } finally {
-      browsing.close();
-      void slow.stop(true);
-    }
-    rmSync(navless);
-    // `htmlClass` holding brand's hw-focus-ring loads brand's focus ring on every page; without
-    // the class no page loads it.
-    const ring = ".hw-focus-ring :focus-visible{outline:3px solid purple}";
-    const ringPages = ["", "dashboard/Parts/box-parts/two", "stories/Parts/box-parts/two"];
-    for (const p of ringPages) expect(styles(page(p))).not.toContain(ring);
-    expect(variant("ringed", 'htmlClass: ["hw-focus-ring"]').status).toBe(0);
-    for (const p of ringPages) expect(styles(page(p))).toContain(ring);
-    // A list naming focus.css itself loads it once, ahead of the list's other sheets.
-    expect(
-      variant(
-        "ringtwice",
-        'css: ["./fx.css", "@hackersandwizards/brand/elements/focus.css"], htmlClass: ["hw-focus-ring"]',
-      ).status,
-    ).toBe(0);
-    const alone = styles(page("stories/Parts/box-parts/two"));
-    expect(alone.split(ring)).toHaveLength(2);
-    expect(alone.indexOf(ring)).toBeLessThan(alone.indexOf(".box{color:teal}"));
-    expect(build().status).toBe(0);
-    for (const p of ["", "stories/Parts/box-parts/two"]) {
-      expect(links(page(p), "icon")).toEqual([
-        expect.stringMatching(/^\/_astro\/favicon\..*\.svg$/),
-        "/assets/logo.svg",
-      ]);
-    }
-    // The shell's type sizes are brand's tokens.json steps (brand v2.5.0), the focus ring's room is
-    // brand's --hw-focus-room (v2.10.0).
-    const brandPkg = join(brand, "package.json");
-    writeFileSync(
-      brandPkg,
-      JSON.stringify({ ...JSON.parse(readFileSync(brandPkg, "utf8")), version: "2.9.0" }),
-    );
-    const older = build();
-    expect(older.status).not.toBe(0);
-    expect(older.stdout + older.stderr).toContain(
-      "needs @hackersandwizards/brand v2.10.0 or later, installed is v2.9.0",
-    );
-    rmSync(join(fixture, "node_modules"), { recursive: true });
-    // The build adds no robots tag to a page of the repository's own; one with a tag of its own and
-    // an endpoint's file stay as written.
-    const src = join(fixture, "catalog", "src");
-    const pages = join(src, "pages");
-    mkdirSync(join(pages, "catalog"), { recursive: true });
-    const head = (body: string) =>
-      `<html lang="en"><head><title>t</title>${body}</head><body></body></html>\n`;
-    writeFileSync(join(pages, "own.astro"), head(""));
-    writeFileSync(join(pages, "kept.astro"), head('<meta name="robots" content="index">'));
-    writeFileSync(
-      join(pages, "raw.html.ts"),
-      'export const GET = () => new Response("<html><head></head></html>");\n',
-    );
-    // An endpoint whose page should not be indexed writes its own tag.
-    writeFileSync(
-      join(pages, "tagged.html.ts"),
-      `export const GET = () => new Response('<html><head><meta name="robots" content="noindex"></head></html>');\n`,
-    );
-    expect(build().status).toBe(0);
-    expect(readFileSync(join(dist, "tagged.html"), "utf8")).toBe(
-      '<html><head><meta name="robots" content="noindex"></head></html>',
-    );
-    expect(page("own")).toContain("<head><title>");
-    expect(page("own")).not.toMatch(robots);
-    expect(page("kept")).toMatch(robots);
-    expect(page("kept")).toContain('<meta name="robots" content="index">');
-    expect(page("kept")).not.toContain("noindex");
-    expect(readFileSync(join(dist, "raw.html"), "utf8")).toBe("<html><head></head></html>");
-    writeFileSync(join(pages, "headless.astro"), "<p>no head</p>\n");
-    // A page without <head> builds.
-    expect(build().status).toBe(0);
-    expect(page("headless")).toContain("no head");
-    expect(page("headless")).not.toMatch(robots);
-    rmSync(join(pages, "headless.astro"));
-    // A page of the site's own at /catalog/ beside a root catalog keeps its place: the catalog
-    // links its home.
-    writeFileSync(join(pages, "catalog", "index.astro"), head("<p>site catalog page</p>"));
-    expect(build().status).toBe(0);
-    expect(page("catalog")).toContain("site catalog page");
-    expect(page("")).toContain('<a class="hw-header-link" href="/" aria-current="page">Fx</a>');
-    rmSync(join(pages, "catalog", "index.astro"));
-    // A site with a home page of its own keeps the catalog at /catalog/; no page gets a robots tag.
-    writeFileSync(join(pages, "index.astro"), head("<p>site home</p>"));
-    writeFileSync(join(pages, "catalog", "extra.astro"), head(""));
-    expect(build().status).toBe(0);
-    expect(page("").includes("site home")).toBe(true);
-    expect(page("")).not.toMatch(robots);
-    expect(page("own")).not.toMatch(robots);
-    expect(page("catalog/extra")).not.toMatch(robots);
-    expect(page("catalog")).toContain("fx catalog/stories");
-    expect(page("catalog/dashboard/Parts/box-parts/two")).toContain('href="/catalog/"');
-    rmSync(src, { recursive: true });
-    // In CI a copied file still a Git LFS pointer fails the build; locally it passes.
-    const ci = build([], { CI: "true" });
-    expect(ci.status).not.toBe(0);
-    expect(`${ci.stdout}${ci.stderr}`).toContain(
-      "catalog copy: still Git LFS pointers: assets/nested/lfs.woff2",
-    );
-  }, 60_000);
+        const ink = `document.documentElement.style.setProperty("--color-ink", "rgb(1, 2, 3)")`;
+        // The shell's text reads brand's role or token, and a state's page whose CSS holds no reset
+        // still draws the bar in the ink and its controls 28 px high.
+        await painted.evaluate(ink);
+        expect(await painted.evaluate(`getComputedStyle(document.body).color`)).toBe(
+          "rgb(1, 2, 3)",
+        );
+        await painted.evaluate(`location.href = "/dashboard/Parts/box-parts/two/"`);
+        await painted.until(
+          `location.pathname.startsWith("/dashboard/") && document.readyState === "complete" && !!document.querySelector(".hw-catalog-bar")`,
+        );
+        await painted.evaluate(ink);
+        expect(
+          await painted.evaluate(
+            `[".hw-catalog-bar > a", ".hw-catalog-bar button", ".hw-catalog-tool", ".hw-catalog-step", ".hw-catalog-states li a"].map((s) => { const e = document.querySelector(s); return [getComputedStyle(e).color, e.getBoundingClientRect().height]; })`,
+          ),
+        ).toEqual(Array(5).fill(["rgb(1, 2, 3)", 28]));
+        // The story keeps the focus ring's room, brand's --hw-focus-room, clear of <main>'s scroll
+        // box and of the bar, which stays flush with <main>. The shell retypes none of brand's values:
+        // without the room, the width and offset alone give none.
+        const room = (set: string) =>
+          painted.evaluate(
+            `(() => { document.documentElement.setAttribute("style", ${JSON.stringify(set)}); const [m, b, s] = ["main", ".hw-catalog-bar", ".box"].map((q) => document.querySelector(q).getBoundingClientRect()); return [b.left - m.left, b.width - m.width, b.top - m.top, s.left - m.left, s.top - b.bottom, m.right - s.right]; })()`,
+          );
+        expect(await room("--hw-focus-width: 4px; --hw-focus-offset: 3px")).toEqual([
+          0, 0, 0, 0, 0, 0,
+        ]);
+        expect(await room("--hw-focus-room: 9px")).toEqual([0, 0, 0, 9, 9, 9]);
+        // A story's own padding on <main> wins over the room.
+        await painted.evaluate(
+          `document.head.insertAdjacentHTML("beforeend", "<style>main { padding: 2rem; }</style>")`,
+        );
+        expect(((await room("")) as number[])[3]).toBe(32);
+        // The bar takes brand's stored theme and writes its toggle there, so a choice made on the
+        // repository's own pages carries into the catalog and back.
+        await painted.evaluate(`localStorage.setItem("theme", "dark"); location.reload()`);
+        await painted.until(
+          `document.readyState === "complete" && !!document.querySelector("[data-hw-theme]")`,
+        );
+        expect(
+          await painted.evaluate(
+            `[document.documentElement.dataset.theme, document.querySelector("[data-hw-theme]").getAttribute("aria-pressed")]`,
+          ),
+        ).toEqual(["dark", "true"]);
+        await painted.evaluate(`document.querySelector("[data-hw-theme]").click()`);
+        expect(
+          await painted.evaluate(
+            `[document.documentElement.dataset.theme, localStorage.getItem("theme")]`,
+          ),
+        ).toEqual(["light", "light"]);
+        // A state alone in the window keeps the room inside Astrobook's scrolling <main> too. It draws
+        // in the day theme whatever the reader chose, as a tile's frame does, and keeps the choice.
+        await painted.evaluate(
+          `localStorage.setItem("theme", "dark"); localStorage.setItem("theme-toggle", "dark"); location.href = "/stories/Parts/box-parts/two/"`,
+        );
+        await painted.until(
+          `location.pathname.startsWith("/stories/") && document.readyState === "complete" && !!document.querySelector(".box")`,
+        );
+        expect(
+          await painted.evaluate(
+            `(() => { document.documentElement.style.setProperty("--hw-focus-room", "6px"); const [m, s] = ["main", ".box"].map((q) => document.querySelector(q).getBoundingClientRect()); return [s.left - m.left, s.top - m.top, document.documentElement.dataset.hwAlone]; })()`,
+          ),
+        ).toEqual([6, 6, ""]);
+        expect(
+          await painted.evaluate(
+            `[document.documentElement.dataset.theme, document.documentElement.classList.contains("dark"), localStorage.getItem("theme"), localStorage.getItem("theme-toggle")]`,
+          ),
+        ).toEqual(["light", false, "dark", "dark"]);
+      } finally {
+        painted.close();
+        void served.stop(true);
+      }
+      // Every page of the catalog's former place forwards to its page at the root.
+      expect(page("catalog/dashboard/Parts/box-parts/two")).toContain(
+        'http-equiv="refresh" content="0; url=/dashboard/Parts/box-parts/two/"',
+      );
+      expect(page("catalog")).toContain('content="0; url=/"');
+      const state = page("dashboard/Parts/box-parts/two");
+      // Each page's own styles: its <style> blocks and the stylesheets it links.
+      const styles = (html: string) =>
+        [
+          ...html.matchAll(/<style[^>]*>([\s\S]*?)<\/style>/g).map((m) => m[1]),
+          ...html
+            .matchAll(/<link rel="stylesheet" href="\/_astro\/([^"]+)"/g)
+            .map((m) => readFileSync(join(dist, "_astro", m[1]!), "utf8")),
+        ].join("");
+      expect(state).toContain('<meta name="fx-head" content="repository">');
+      expect(styles(state)).toMatch(
+        /#astrobook-sidebar,\s*astrobook-sidebar-resize-handle\s*\{\s*display:\s*none\s*!important/,
+      );
+      // A state's page takes the header's, the bar's and the repository's CSS, `css` without a
+      // `dashboardCss`; a state alone only the repository's; the home the header's and the shell's,
+      // and of the repository's only `homeCss`.
+      const [stateCss, aloneCss, homeCss] = [state, page("stories/Parts/box-parts/two"), home].map(
+        styles,
+      );
+      for (const rule of [".fx-header{display:flex}", ".hw-catalog-bar{", ".box{color:teal}"])
+        expect(stateCss).toContain(rule);
+      expect(aloneCss).toContain(".box{color:teal}");
+      for (const rule of [".fx-header{", "hw-catalog-bar", "hw-catalog-nav", "astrobook-sidebar,"])
+        expect(aloneCss).not.toContain(rule);
+      expect(homeCss).toContain(".fx-header{display:flex}");
+      expect(homeCss).toContain(".hw-catalog-grid{");
+      expect(homeCss).not.toContain(".box{");
+      expect(homeCss).toContain(".acme-ui{");
+      const barOf = (html: string) =>
+        html.match(/<template id="hw-catalog-bar">([\s\S]*?)<\/template>/)?.[1] ?? "";
+      const bar = barOf(state);
+      // A state's page carries the header above the bar, the current item marked as the place, not
+      // the page.
+      expect(bar).toStartWith(
+        '<div data-hw-catalog-top><header class="fx-header"><a href="/">Fx</a><div class="hw-header-nav hw-catalog-nav"><nav class="hw-header-nav" aria-label="Main" data-hw-catalogs><a class="hw-header-link" href="/">Site</a><a class="hw-header-link" href="/catalog/" aria-current="true">Fx</a><a class="hw-header-link" href="https://example.com/other/">Other</a><a class="hw-header-link" href="//example.com/far/">Far</a></nav></div></header></div><nav class="hw-catalog-bar"',
+      );
+      expect(bar).toContain('<nav class="hw-catalog-bar" aria-label="Catalog">');
+      expect(bar).toContain('<a href="/catalog/"><span aria-hidden="true">');
+      expect(bar).toMatch(/Parts \/ <strong>Box parts<\/strong>/);
+      expect(bar).toContain('<button type="button" data-hw-theme aria-pressed="false">');
+      expect(bar).toMatch(
+        /<a class="hw-catalog-tool" href="\/stories\/Parts\/box-parts\/two\/">\s*Open this state alone\s*<\/a>/,
+      );
+      expect(bar).toContain('<ul aria-label="States">');
+      expect(bar).toMatch(/href="\/dashboard\/Parts\/box-parts\/one\/">One/);
+      expect(bar).toMatch(/href="\/dashboard\/Parts\/box-parts\/two\/" aria-current="page">Two/);
+      expect(bar).toContain(
+        '<a class="hw-catalog-step" rel="prev" href="/dashboard/Parts/box-parts/one/"',
+      );
+      // A step with nowhere to go is no anchor: Lighthouse's crawlable-anchors fails one without href.
+      expect(bar).toContain(
+        '<button class="hw-catalog-step" type="button" disabled aria-label="Next state">',
+      );
+      const first = barOf(page("dashboard/Parts/box-parts/one"));
+      expect(first).toContain(
+        '<button class="hw-catalog-step" type="button" disabled aria-label="Previous state">',
+      );
+      expect(first).toContain(
+        '<a class="hw-catalog-step" rel="next" href="/dashboard/Parts/box-parts/two/"',
+      );
+      expect(`${bar}${first}`).not.toMatch(/<a(?![^>]*href)[^>]*>/);
+      expect(bar).toContain("2 of 2");
+      // Above 12 states a menu replaces the chips, grouped by a word three names share.
+      const many = barOf(page("dashboard/Parts/many-parts/block-image"));
+      expect(many).not.toContain("<ul");
+      expect(many).toContain(
+        '<optgroup label="Block"><option value="/dashboard/Parts/many-parts/block-code/">Block code</option><option value="/dashboard/Parts/many-parts/block-image/" selected>Block image</option>',
+      );
+      expect(many).toContain(
+        '<optgroup label="Theme"><option value="/dashboard/Parts/many-parts/accent-theme/">Accent theme</option>',
+      );
+      expect(many).toContain(
+        '</optgroup><option value="/dashboard/Parts/many-parts/angebot-ohne-preise/">Angebot ohne Preise</option>',
+      );
+      // A camelCase state reads in sentence case, an acronym kept; a name with underscores keeps its
+      // author's case. Either way the first word is capitalised.
+      expect(many).toMatch(/many-parts\/density-on-pdf\/">Density on PDF</);
+      expect(many).toMatch(/">Folie 35 Eine Woche zum</);
+      expect(many).toMatch(/">In German</);
+      // So a German noun after the first word needs an underscore name.
+      expect(many).toMatch(/">Mit impressum</);
+      expect(many).toMatch(/">Primary on night</);
+      // A plural acronym and a listed name with inner capitals stay whole.
+      expect(many).toMatch(/many-parts\/two-pd-fs\/">Two PDFs</);
+      expect(many).toMatch(/many-parts\/loading-git-hub\/">Loading GitHub</);
+      expect(state).toContain("if (top) main.before(top);");
+      expect(page("stories/Parts/box-parts/two")).not.toContain('id="hw-catalog-bar"');
+      expect(home).not.toContain('id="hw-catalog-bar"');
+      // `serverOnly`: no state's route keeps Astrobook's client:load branch.
+      const codegen = join(
+        fixture,
+        "catalog/.astro/integrations/_hackersandwizards_scaffolding_catalog",
+      );
+      const routes = readdirSync(codegen, { recursive: true, encoding: "utf8" }).filter((f) =>
+        f.endsWith(".astro"),
+      );
+      expect(routes.length).toBe(48);
+      for (const f of routes)
+        expect(readFileSync(join(codegen, f), "utf8")).not.toContain("client:load");
+      // `copy`: each match at its own path, the rest of the folder left out.
+      expect(readdirSync(join(dist, "assets")).sort()).toEqual(["logo.svg", "nested"]);
+      expect(readFileSync(join(dist, "assets/nested/page.css"), "utf8")).toBe(
+        "a {\n  color: red;\n}\n",
+      );
+      // A package path lands at that path, resolved through the package's exports.
+      expect(readFileSync(join(dist, "@acme/fx/logos/logo.svg"), "utf8")).toBe(
+        readFileSync(join(fixture, "assets/logo.svg"), "utf8"),
+      );
+      // A project Pages site sets Astro's base: the links and the header's default follow it.
+      expect(build(["--base", "/fx"]).status).toBe(0);
+      const based = readFileSync(join(dist, "index.html"), "utf8");
+      expect(based).toContain(
+        '<header class="fx-header"><a href="/fx/">Fx</a><div class="hw-header-nav hw-catalog-nav"><nav class="hw-header-nav" aria-label="Main" data-hw-catalogs><a class="hw-header-link" href="/fx/">Site</a><a class="hw-header-link" href="/fx/catalog/" aria-current="page">Fx</a><a class="hw-header-link" href="https://example.com/other/">Other</a><a class="hw-header-link" href="//example.com/far/">Far</a></nav></div></header>',
+      );
+      expect(based).toContain('data-src="/fx/stories/Types/box-types/two/"');
+      expect(page("catalog/stories/Types/box-types/two")).toContain(
+        'url=/fx/stories/Types/box-types/two/"',
+      );
+      // A base ending in /catalog mounts the catalog under a host with its own home: no forwarding
+      // pages and no public/, which the host serves.
+      expect(build(["--base", "/catalog"]).status).toBe(0);
+      const mountedHome = readFileSync(join(dist, "index.html"), "utf8");
+      expect(mountedHome).toContain('data-src="/catalog/stories/Types/box-types/two/"');
+      // Its home reads /catalog/ already: the current item links there, not to /catalog/catalog/.
+      expect(mountedHome).toContain(
+        '<a class="hw-header-link" href="/catalog/" aria-current="page">Fx</a>',
+      );
+      expect(page("dashboard/Parts/box-parts/two")).toContain(
+        '<a href="/catalog/"><span aria-hidden',
+      );
+      expect(existsSync(join(dist, "catalog"))).toBe(false);
+      expect(existsSync(join(dist, "fx.txt"))).toBe(false);
+      // An outDir the config sets stays; only Astro's default moves to the repository's dist/.
+      const custom = join(fixture, "catalog", "custom");
+      expect(build(["--outDir", "./custom"]).status).toBe(0);
+      expect(existsSync(join(custom, "index.html"))).toBe(true);
+      // A story link ends where Astro writes its page: no slash where a page is a file of its own,
+      // unless the site asks for one.
+      const files = join(fixture, "catalog", "files.config.mjs");
+      for (const [slash, end] of [
+        ["ignore", ""],
+        ["always", "/"],
+      ]) {
+        writeFileSync(
+          files,
+          `import config from "./astro.config.mjs";\nexport default { ...config, trailingSlash: "${slash}", build: { format: "file" } };\n`,
+        );
+        expect(build(["--config", "files.config.mjs"]).status).toBe(0);
+        expect(readFileSync(join(dist, "index.html"), "utf8")).toContain(
+          `<li><a href="/dashboard/Parts/box-parts/two${end}">Box parts</a>`,
+        );
+      }
+      rmSync(files);
+      // A build with a file-URL assetsPrefix is opened from disk: every link to a page or file of the
+      // build names its file by file URL, the home's frames, a copied file and a state menu's options
+      // included; a link outside the build stays, and no page forwards from /catalog/.
+      const disk = join(fixture, "catalog", "disk.config.mjs");
+      writeFileSync(
+        disk,
+        `import config from "./astro.config.mjs";\nexport default { ...config, build: { assetsPrefix: ${JSON.stringify(pathToFileURL(`${dist}/`).href)} } };\n`,
+      );
+      expect(build(["--config", "disk.config.mjs"]).status).toBe(0);
+      const onDisk = readFileSync(join(dist, "index.html"), "utf8");
+      const at = (p: string) => pathToFileURL(join(dist, p)).href;
+      expect(onDisk).toContain(
+        `<iframe data-src="${at("stories/Types/box-types/two/index.html")}"`,
+      );
+      expect(onDisk).toContain(
+        `<li><a href="${at("dashboard/Parts/box-parts/two/index.html")}">Box parts</a>`,
+      );
+      expect(onDisk).toContain(`<a href="${at("index.html")}">Fx</a>`);
+      expect(onDisk).toContain(
+        `<a class="hw-header-link" href="${at("index.html")}" aria-current="page">Fx</a>`,
+      );
+      expect(onDisk).toContain('href="https://example.com/other/"');
+      expect(onDisk).not.toMatch(/\s(href|src|data-src)="\/(?!\/)/);
+      expect(page("dashboard/Parts/box-parts/two")).toContain(
+        `href="${at("stories/Parts/box-parts/two/index.html")}">Open this state alone`,
+      );
+      expect(onDisk).toContain(`<link rel="icon" href="${at("assets/logo.svg")}">`);
+      // A build opened from disk is never published, and a file URL names the build machine.
+      expect(onDisk).not.toContain('rel="canonical"');
+      expect(page("dashboard/Parts/many-parts/block-image")).toContain(
+        `<option value="${at("dashboard/Parts/many-parts/block-code/index.html")}">Block code</option>`,
+      );
+      expect(existsSync(join(dist, "catalog"))).toBe(false);
+      rmSync(disk);
+      // A redirect from "/" would take the catalog's place: the build fails and says why.
+      const redirecting = join(fixture, "catalog", "redirecting.config.mjs");
+      writeFileSync(
+        redirecting,
+        'import config from "./astro.config.mjs";\nexport default { ...config, redirects: { "/": "/x/" } };\n',
+      );
+      const refused = build(["--config", "redirecting.config.mjs"]);
+      expect(refused.status).not.toBe(0);
+      expect(`${refused.stdout}${refused.stderr}`).toContain("`redirects` leaves out");
+      rmSync(redirecting);
+      // A package path outside the package's exports fails the build by name.
+      const unexported = join(fixture, "catalog", "unexported.config.mjs");
+      writeFileSync(
+        unexported,
+        'import config from "./astro.config.mjs";\nimport { catalog } from "../../../catalog/index.ts";\nexport default { ...config, integrations: [catalog({ product: "Fx", css: [], lead: "", copy: ["@acme/fx/assets/skip.txt"] })] };\n',
+      );
+      const missing = build(["--config", "unexported.config.mjs"]);
+      expect(`${missing.stdout}${missing.stderr}`).toContain(
+        "catalog copy: @acme/fx/assets/skip.txt is no file in the exports of @acme/fx",
+      );
+      rmSync(unexported);
+      // A `nav.current` naming no item fails the build by name.
+      const misnamed = join(fixture, "catalog", "misnamed.config.mjs");
+      writeFileSync(
+        misnamed,
+        'import config from "./astro.config.mjs";\nimport { catalog } from "../../../catalog/index.ts";\nexport default { ...config, integrations: [catalog({ product: "Fx", css: [], lead: "", nav: { items: [{ name: "Fx", href: "/" }], current: "Fxx" } })] };\n',
+      );
+      const misnamedBuild = build(["--config", "misnamed.config.mjs"]);
+      expect(misnamedBuild.status).not.toBe(0);
+      expect(`${misnamedBuild.stdout}${misnamedBuild.stderr}`).toContain(
+        'catalog nav: current "Fxx" names no item',
+      );
+      rmSync(misnamed);
+      const variant = (name: string, options: string) => {
+        const file = join(fixture, "catalog", `${name}.config.mjs`);
+        writeFileSync(
+          file,
+          `import config from "./astro.config.mjs";\nimport { catalog } from "../../../catalog/index.ts";\nexport default { ...config, integrations: [catalog({ product: "Fx", css: [], lead: "", header: { component: "./Header.astro" }, ${options} })] };\n`,
+        );
+        const result = build(["--config", `${name}.config.mjs`]);
+        rmSync(file);
+        return result;
+      };
+      // `dashboardCss` replaces `css` on a state's page; a state alone keeps `css`.
+      const dash = join(fixture, "catalog", "dash.css");
+      writeFileSync(dash, ".dash{color:red}\n");
+      expect(variant("dashed", 'css: ["./fx.css"], dashboardCss: ["./dash.css"]').status).toBe(0);
+      const dashCss = styles(page("dashboard/Parts/box-parts/two"));
+      expect(dashCss).toContain(".dash{color:red}");
+      expect(dashCss).not.toContain(".box{");
+      expect(styles(page("stories/Parts/box-parts/two"))).toContain(".box{color:teal}");
+      rmSync(dash);
+      // Without brand, hw-focus-ring in `htmlClass` loads no focus ring and fails no build.
+      expect(variant("ringless", 'htmlClass: ["hw-focus-ring"]').status).toBe(0);
+      // A `previewSize` key naming no group fails the build by name: a renamed group would fall back
+      // to the small fitted view unseen.
+      const stale = variant("stale", "previewSize: { Parts: [1, 1], Pieces: [1440, 900] }");
+      expect(stale.status).not.toBe(0);
+      expect(`${stale.stdout}${stale.stderr}`).toContain(
+        'catalog previewSize: "Pieces" names no story group (Parts, Types)',
+      );
+      // A `previewStates` entry naming no story's state fails the build by name: a renamed state
+      // would leave every tile on another state unseen.
+      const unknown = variant("unknown", 'previewStates: ["two", "gone"]');
+      expect(unknown.status).not.toBe(0);
+      expect(`${unknown.stdout}${unknown.stderr}`).toContain(
+        'catalog previewStates: "gone" names no story\'s state',
+      );
+      // `themeToggle: false`: the bar offers no dark theme.
+      expect(variant("light", "themeToggle: false").status).toBe(0);
+      expect(page("dashboard/Parts/box-parts/two")).not.toContain(
+        '<button type="button" data-hw-theme',
+      );
+      expect(root(page("dashboard/Parts/box-parts/two"))).toBe("{}");
+      // With a `site` the canonical URL is absolute, under the base.
+      expect(build(["--site", "https://fx.example", "--base", "/fx"]).status).toBe(0);
+      expect(page("stories/Parts/box-parts/two")).toContain(
+        '<link rel="canonical" href="https://fx.example/fx/dashboard/Parts/box-parts/two/"',
+      );
+      expect(page("")).toContain('<link rel="canonical" href="https://fx.example/fx/"');
+      // Where the repository resolves brand, every page carries brand's favicon ahead of the
+      // repository's head, whose own link then wins; without brand the shell writes none.
+      expect(build().status).toBe(0);
+      expect(links(page(""), "icon")).toEqual(["/assets/logo.svg"]);
+      // Without brand the bar reads the repository's own --text-ui.
+      const brandless = globSync("**/*.{css,html}", { cwd: dist })
+        .map((f) => readFileSync(join(dist, f), "utf8"))
+        .join("");
+      expect(brandless.match(/\.hw-catalog-bar\{[^}]*\}/)?.[0]).toContain(
+        "font:500 1rem var(--font-sans);font-size:var(--text-ui);line-height:var(--text-ui--line-height);",
+      );
+      expect(brandless).not.toContain("brand-value");
+      // The shell's home holds no foundations: no group of its own. A home with some draws them as
+      // Foundations; beside a stories folder of that name the build fails, and a home of whitespace
+      // and a comment leaves the folder the one group (compressHTML off, as in the repositories).
+      expect(home).not.toContain('id="foundations"');
+      const catalogDir = join(fixture, "catalog");
+      const homed = join(catalogDir, "homed.config.mjs");
+      const ownHome = join(catalogDir, "OwnHome.astro");
+      const folder = join(catalogDir, "stories", "Foundations");
+      const ownHomeWith = (body: string) =>
+        write(catalogDir, {
+          "homed.config.mjs":
+            'import config from "./astro.config.mjs";\nimport { catalog } from "../../../catalog/index.ts";\nexport default { ...config, compressHTML: false, integrations: [catalog({ product: "Fx", css: [], lead: "", header: { component: "./Header.astro" }, home: "./OwnHome.astro" })] };\n',
+          "OwnHome.astro": `---\nimport Home from "../../../catalog/Home.astro";\n---\n\n<Home>${body}</Home>\n`,
+        });
+      ownHomeWith("<p>Tokens</p>");
+      expect(build(["--config", "homed.config.mjs"]).status).toBe(0);
+      expect(readFileSync(join(dist, "index.html"), "utf8")).toContain('id="foundations"');
+      write(folder, {
+        "Tokens.stories.js":
+          'import Box from "../../Box.astro";\n\nexport default { component: Box };\nexport const One = { args: { label: "one" } };\n',
+      });
+      const twice = build(["--config", "homed.config.mjs"]);
+      expect(twice.status).not.toBe(0);
+      expect(`${twice.stdout}${twice.stderr}`).toContain(
+        'catalog: the groups "Foundations" and "Foundations" both draw as #foundations',
+      );
+      ownHomeWith("\n  <!-- none yet -->\n");
+      expect(build(["--config", "homed.config.mjs"]).status).toBe(0);
+      const folderOnly = readFileSync(join(dist, "index.html"), "utf8");
+      expect(folderOnly.match(/id="foundations"/g)).toHaveLength(1);
+      expect(folderOnly).not.toContain('class="hw-catalog-text"');
+      rmSync(folder, { recursive: true });
+      rmSync(homed);
+      rmSync(ownHome);
+      // Without `nav`, the header lists brand's catalogs.json, the one named as `product` current.
+      const brand = join(fixture, "node_modules", "@hackersandwizards", "brand");
+      const navless = join(fixture, "catalog", "navless.config.mjs");
+      write(brand, {
+        "package.json": JSON.stringify({
+          exports: {
+            "./catalogs.json": "./expert/catalogs.json",
+            "./tokens.json": "./generated/tokens.json",
+            "./logos/*": "./logos/*",
+            "./header.css": "./header.css",
+            "./layers.css": "./tokens/layers.css",
+            "./night.css": "./night.css",
+            "./elements/*": "./elements/*",
+            "./expert/components/*": "./expert/components/*",
+          },
+        }),
+        "logos/favicon.svg": '<svg xmlns="http://www.w3.org/2000/svg"/>',
+        // Over Vite's 4 KB inlining limit, so `?url` gives a file as with brand's own logo.
+        "logos/lockup-screen.svg": `<svg xmlns="http://www.w3.org/2000/svg"><!--${"x".repeat(5000)}--></svg>`,
+        "logos/night-logo.svg": `<svg xmlns="http://www.w3.org/2000/svg"><!--${"y".repeat(5000)}--></svg>`,
+        "header.css": "",
+        "tokens/layers.css": "@layer properties, theme, base, components, utilities;\n",
+        "night.css": "",
+        "elements/focus.css": ".hw-focus-ring :focus-visible{outline:3px solid purple}\n",
+        "expert/components/AppHeader.astro":
+          '---\nimport lockup from "../../logos/lockup-screen.svg?url";\nimport night from "../../logos/night-logo.svg?url";\n---\n\n<header class="hw-header"><img class="hw-header-logo" src={lockup} alt="" /><img src={night} alt="" loading="lazy" /><slot /></header>\n',
+        "expert/catalogs.json": JSON.stringify([
+          { name: "Other", href: "https://example.com/other/" },
+          { name: "Fx", href: "https://example.com/fx/" },
+        ]),
+        // Values none of the shell's own: each var() naming one takes it as its fallback.
+        "generated/tokens.json": JSON.stringify({
+          tokens: {
+            "--container-measure": "31em",
+            "--text-page": "1.7rem",
+            "--spacing-app-header": "calc(var(--spacing-strip) + 2rem)",
+            "--spacing-strip": "5px",
+            "--radius-pill": "77px",
+            "--text-ui": "0.9rem",
+            "--text-ui--line-height": "1.55",
+          },
+        }),
+      });
+      writeFileSync(
+        navless,
+        'import config from "./astro.config.mjs";\nimport { catalog } from "../../../catalog/index.ts";\nexport default { ...config, integrations: [catalog({ product: "Fx", css: [], lead: "" })] };\n',
+      );
+      expect(build(["--config", "navless.config.mjs"]).status).toBe(0);
+      const branded = readFileSync(join(dist, "index.html"), "utf8");
+      const sheets = [
+        branded,
+        ...globSync("**/*.css", { cwd: dist }).map((f) => readFileSync(join(dist, f), "utf8")),
+      ]
+        .join("")
+        .replace(/,\s+/g, ",");
+      for (const fallback of [
+        "var(--container-measure,31em)",
+        "var(--text-page,1.7rem)",
+        "var(--spacing-app-header,calc(var(--spacing-strip,5px) + 2rem))",
+        "var(--radius-pill,77px)",
+      ])
+        expect(sheets).toContain(fallback);
+      // The bar's size is brand's unscaled UI step.
+      expect(sheets).toMatch(
+        /\.hw-catalog-bar\{[^}]*font:500 1rem var\(--font-sans\);[^}]*font-size:\.9rem;line-height:1\.55;/,
+      );
+      expect(sheets).not.toContain("brand-value");
+      // brand's layer order follows the ground's.
+      expect(branded).toContain(
+        "<style>@layer hw-catalog-ground;@layer properties, theme, base, components, utilities;@layer hw-catalog-ground{",
+      );
+      expect(branded).toContain(
+        '<nav class="hw-header-nav" aria-label="Main" data-hw-catalogs><a class="hw-header-link" href="https://example.com/other/">Other</a><a class="hw-header-link" href="/catalog/" aria-current="page">Fx</a></nav>',
+      );
+      // A state's page holds its header in a <template> the preload scanner skips, and only puts it
+      // into <main> once the parser has waited out the stylesheets: the page fetches its logo before
+      // they arrive, and leaves a logo marked lazy to the browser. The CSS answers once the logo is
+      // asked for, 8 s at most, so a loaded machine cannot reorder the two.
+      const order: string[] = [];
+      let logoAsked = () => {};
+      const asked = new Promise<void>((done) => (logoAsked = done));
+      const slow = Bun.serve({
+        port: 0,
+        hostname: "127.0.0.1",
+        async fetch(req) {
+          const { pathname } = new URL(req.url);
+          order.push(pathname);
+          if (pathname.includes("lockup-screen")) logoAsked();
+          if (pathname.endsWith(".css")) {
+            await Promise.race([asked, Bun.sleep(8000)]);
+            order.push("css arrived");
+          }
+          const path = join(dist, decodeURIComponent(pathname));
+          return new Response(Bun.file(pathname.endsWith("/") ? join(path, "index.html") : path));
+        },
+      });
+      const browsing = await browse(`${slow.url}dashboard/Parts/box-parts/two/`);
+      try {
+        await browsing.until(`document.querySelector("img.hw-header-logo")?.complete`);
+        expect(order).toContain("css arrived");
+        const early = order.slice(0, order.indexOf("css arrived")).join();
+        expect(early).toContain("lockup-screen");
+        expect(early).not.toContain("night-logo");
+      } finally {
+        browsing.close();
+        void slow.stop(true);
+      }
+      rmSync(navless);
+      // `htmlClass` holding brand's hw-focus-ring loads brand's focus ring on every page; without
+      // the class no page loads it.
+      const ring = ".hw-focus-ring :focus-visible{outline:3px solid purple}";
+      const ringPages = ["", "dashboard/Parts/box-parts/two", "stories/Parts/box-parts/two"];
+      for (const p of ringPages) expect(styles(page(p))).not.toContain(ring);
+      expect(variant("ringed", 'htmlClass: ["hw-focus-ring"]').status).toBe(0);
+      for (const p of ringPages) expect(styles(page(p))).toContain(ring);
+      // A list naming focus.css itself loads it once, ahead of the list's other sheets.
+      expect(
+        variant(
+          "ringtwice",
+          'css: ["./fx.css", "@hackersandwizards/brand/elements/focus.css"], htmlClass: ["hw-focus-ring"]',
+        ).status,
+      ).toBe(0);
+      const alone = styles(page("stories/Parts/box-parts/two"));
+      expect(alone.split(ring)).toHaveLength(2);
+      expect(alone.indexOf(ring)).toBeLessThan(alone.indexOf(".box{color:teal}"));
+      expect(build().status).toBe(0);
+      for (const p of ["", "stories/Parts/box-parts/two"]) {
+        expect(links(page(p), "icon")).toEqual([
+          expect.stringMatching(/^\/_astro\/favicon\..*\.svg$/),
+          "/assets/logo.svg",
+        ]);
+      }
+      // The shell's type sizes are brand's tokens.json steps (brand v2.5.0), the focus ring's room is
+      // brand's --hw-focus-room (v2.10.0).
+      const brandPkg = join(brand, "package.json");
+      writeFileSync(
+        brandPkg,
+        JSON.stringify({ ...JSON.parse(readFileSync(brandPkg, "utf8")), version: "2.9.0" }),
+      );
+      const older = build();
+      expect(older.status).not.toBe(0);
+      expect(older.stdout + older.stderr).toContain(
+        "needs @hackersandwizards/brand v2.10.0 or later, installed is v2.9.0",
+      );
+      rmSync(join(fixture, "node_modules"), { recursive: true });
+      // The build adds no robots tag to a page of the repository's own; one with a tag of its own and
+      // an endpoint's file stay as written.
+      const src = join(fixture, "catalog", "src");
+      const pages = join(src, "pages");
+      mkdirSync(join(pages, "catalog"), { recursive: true });
+      const head = (body: string) =>
+        `<html lang="en"><head><title>t</title>${body}</head><body></body></html>\n`;
+      writeFileSync(join(pages, "own.astro"), head(""));
+      writeFileSync(join(pages, "kept.astro"), head('<meta name="robots" content="index">'));
+      writeFileSync(
+        join(pages, "raw.html.ts"),
+        'export const GET = () => new Response("<html><head></head></html>");\n',
+      );
+      // An endpoint whose page should not be indexed writes its own tag.
+      writeFileSync(
+        join(pages, "tagged.html.ts"),
+        `export const GET = () => new Response('<html><head><meta name="robots" content="noindex"></head></html>');\n`,
+      );
+      expect(build().status).toBe(0);
+      expect(readFileSync(join(dist, "tagged.html"), "utf8")).toBe(
+        '<html><head><meta name="robots" content="noindex"></head></html>',
+      );
+      expect(page("own")).toContain("<head><title>");
+      expect(page("own")).not.toMatch(robots);
+      expect(page("kept")).toMatch(robots);
+      expect(page("kept")).toContain('<meta name="robots" content="index">');
+      expect(page("kept")).not.toContain("noindex");
+      expect(readFileSync(join(dist, "raw.html"), "utf8")).toBe("<html><head></head></html>");
+      writeFileSync(join(pages, "headless.astro"), "<p>no head</p>\n");
+      // A page without <head> builds.
+      expect(build().status).toBe(0);
+      expect(page("headless")).toContain("no head");
+      expect(page("headless")).not.toMatch(robots);
+      rmSync(join(pages, "headless.astro"));
+      // A page of the site's own at /catalog/ beside a root catalog keeps its place: the catalog
+      // links its home.
+      writeFileSync(join(pages, "catalog", "index.astro"), head("<p>site catalog page</p>"));
+      expect(build().status).toBe(0);
+      expect(page("catalog")).toContain("site catalog page");
+      expect(page("")).toContain('<a class="hw-header-link" href="/" aria-current="page">Fx</a>');
+      rmSync(join(pages, "catalog", "index.astro"));
+      // A site with a home page of its own keeps the catalog at /catalog/; no page gets a robots tag.
+      writeFileSync(join(pages, "index.astro"), head("<p>site home</p>"));
+      writeFileSync(join(pages, "catalog", "extra.astro"), head(""));
+      expect(build().status).toBe(0);
+      expect(page("").includes("site home")).toBe(true);
+      expect(page("")).not.toMatch(robots);
+      expect(page("own")).not.toMatch(robots);
+      expect(page("catalog/extra")).not.toMatch(robots);
+      expect(page("catalog")).toContain("fx catalog/stories");
+      expect(page("catalog/dashboard/Parts/box-parts/two")).toContain('href="/catalog/"');
+      rmSync(src, { recursive: true });
+      // In CI a copied file still a Git LFS pointer fails the build; locally it passes.
+      const ci = build([], { CI: "true" });
+      expect(ci.status).not.toBe(0);
+      expect(`${ci.stdout}${ci.stderr}`).toContain(
+        "catalog copy: still Git LFS pointers: assets/nested/lfs.woff2",
+      );
+    },
+    limit(60_000),
+  );
 
   // A repository's head sets attributes on <html> and runs page scripts: Astrobook's client router
   // swaps pages in place, which drops both until a reload.
-  test("dev serves `copy`, and a click in the bar loads the next state in full", async () => {
-    const { serve } = await import("../lib/serve.ts");
-    // Modules at paths a forward would take, as a site whose Astro root holds catalog/ serves its
-    // catalog/Head.astro and catalog/stories/ under the base /catalog.
-    for (const dir of ["fx", "catalog/stories"]) {
-      mkdirSync(join(fixture, "catalog", dir), { recursive: true });
-      writeFileSync(join(fixture, "catalog", dir, "mod.css"), "a {\n  color: red;\n}\n");
-    }
-    // A page of the site's own at /catalog/, written before dev starts: dev reads no page added
-    // under node_modules, where the copy lies.
-    const src = join(fixture, "catalog", "src");
-    mkdirSync(join(src, "pages", "catalog"), { recursive: true });
-    writeFileSync(join(src, "pages", "catalog", "index.astro"), "<p>site catalog page</p>\n");
-    // ASTRO_DEV_BACKGROUND=1, as the dev script in docs/catalog.md: under an agent astro dev otherwise moves
-    // into the background and resolves --root from inside the folder.
-    const server = await serve(
-      [
-        "sh",
-        "-c",
-        `cd '${fixture}' && exec '${astro}' dev --root catalog --base /fx --host $HOST --port $PORT`,
-      ],
-      { env: { ASTRO_DEV_BACKGROUND: "1" }, timeoutMs: 30_000 },
-    );
-    let page: Awaited<ReturnType<typeof browse>> | undefined;
-    try {
-      const logo = await fetch(`${server.url}/assets/logo.svg`);
-      expect(logo.status).toBe(200);
-      const served = await fetch(`${server.url}/@acme/fx/logos/logo.svg`);
-      expect(served.status).toBe(200);
-      expect(served.headers.get("content-type")).toBe("image/svg+xml");
-      expect(logo.headers.get("content-type")).toBe("image/svg+xml");
-      const css = await fetch(`${server.url}/assets/nested/page.css`);
-      expect(css.headers.get("content-type")).toBe("text/css");
-      expect(await css.text()).toBe("a {\n  color: red;\n}\n");
-      expect((await fetch(`${server.url}/assets/skip.txt`)).status).toBe(404);
-      // Each pattern is globbed once; a file added since is found by a second glob.
-      writeFileSync(join(fixture, "assets", "late.svg"), "<svg/>");
-      expect((await fetch(`${server.url}/assets/late.svg`)).status).toBe(200);
-      // A state's page has its own title in dev too.
-      expect(
-        await (await fetch(`${server.url}/fx/dashboard/Parts/box-parts/one/`)).text(),
-      ).toContain("<title>Box parts: One – Fx catalog</title>");
-      // `admin`: in dev the header links the repository's page in the local hub; the fixture's
-      // repository is this checkout.
-      expect(await (await fetch(`${server.url}/`)).text()).toMatch(
-        /<a class="hw-header-link" href="http:\/\/admin\.localhost:4329\/scaffolding\/dashboard"[^>]*><span aria-hidden="true"[^>]*>←&nbsp;<\/span>Admin hub<\/a>/,
-      );
-
-      // Dev serves at the root: the old /catalog/ path and the Pages base forward there.
-      for (const [old, to] of [
-        ["/catalog/dashboard/Parts/box-parts/two?x", "/dashboard/Parts/box-parts/two?x"],
-        // The base drops, and the site's own page at /catalog/ keeps its place.
-        ["/fx/catalog/", "/catalog/"],
-        ["/catalog/stories/%E2%82%AC", "/stories/%E2%82%AC"],
-        ["/fx//evil.example/x", "/evil.example/x"],
-      ]) {
-        const r = await fetch(`${server.url}${old}`, { redirect: "manual" });
-        expect([r.status, r.headers.get("location")]).toEqual([307, to]);
+  test(
+    "dev serves `copy`, and a click in the bar loads the next state in full",
+    async () => {
+      const { serve } = await import("../lib/serve.ts");
+      // Modules at paths a forward would take, as a site whose Astro root holds catalog/ serves its
+      // catalog/Head.astro and catalog/stories/ under the base /catalog.
+      for (const dir of ["fx", "catalog/stories"]) {
+        mkdirSync(join(fixture, "catalog", dir), { recursive: true });
+        writeFileSync(join(fixture, "catalog", dir, "mod.css"), "a {\n  color: red;\n}\n");
       }
-      // A file under the root is a module, not a page: it stays where it is.
-      for (const path of ["/fx/mod.css", "/catalog/stories/mod.css"])
-        expect((await fetch(`${server.url}${path}`, { redirect: "manual" })).status).toBe(200);
-      // A page of the site's own under /catalog/ is not one of the catalog's former pages.
-      expect((await fetch(`${server.url}/catalog/print/`, { redirect: "manual" })).status).not.toBe(
-        307,
+      // A page of the site's own at /catalog/, written before dev starts: dev reads no page added
+      // under node_modules, where the copy lies.
+      const src = join(fixture, "catalog", "src");
+      mkdirSync(join(src, "pages", "catalog"), { recursive: true });
+      writeFileSync(join(src, "pages", "catalog", "index.astro"), "<p>site catalog page</p>\n");
+      // ASTRO_DEV_BACKGROUND=1, as the dev script in docs/catalog.md: under an agent astro dev otherwise moves
+      // into the background and resolves --root from inside the folder.
+      const server = await serve(
+        [
+          "sh",
+          "-c",
+          `cd '${fixture}' && exec '${astro}' dev --root catalog --base /fx --host $HOST --port $PORT`,
+        ],
+        { env: { ASTRO_DEV_BACKGROUND: "1" }, timeoutMs: 30_000 },
       );
-      // Nor is a page of the site's own at /catalog/ itself, as in the build.
-      const own = await fetch(`${server.url}/catalog/`, { redirect: "manual" });
-      expect([own.status, (await own.text()).includes("site catalog page")]).toEqual([200, true]);
-      page = await browse(`${server.url}/dashboard/Parts/box-parts/two`);
-      const { evaluate, until } = page;
-      await until(`document.readyState === "complete" && !!document.body.dataset.fxRan`);
-      await evaluate(
-        `document.querySelector('.hw-catalog-bar a[href$="/box-parts/one/"]').click()`,
-      );
-      await until(`location.pathname.endsWith("/one/") && document.readyState === "complete"`);
-      await new Promise((r) => setTimeout(r, 500));
-      const after = await evaluate(
-        `JSON.stringify([document.documentElement.dataset.fxHead, document.documentElement.dataset.hwScale, document.body.dataset.fxRan, !!document.querySelector("main .hw-catalog-bar"), document.body.dataset.fxBar])`,
-      );
-      expect(JSON.parse(String(after))).toEqual([
-        "repository",
-        "screen",
-        "/dashboard/Parts/box-parts/one/",
-        true,
-        // The story's own inline script found the bar: it stood above the story from the start.
-        "above",
-      ]);
-      // A key a story's own window listener takes stays with the story.
-      await evaluate(
-        `window.addEventListener("keydown", (e) => e.preventDefault(), { once: true }); document.dispatchEvent(new KeyboardEvent("keydown", { key: "ArrowRight", bubbles: true, cancelable: true }))`,
-      );
-      await new Promise((r) => setTimeout(r, 500));
-      expect(String(await evaluate("location.pathname"))).toEndWith("/one/");
-      // The right arrow key steps to the next state.
-      await evaluate(
-        `document.dispatchEvent(new KeyboardEvent("keydown", { key: "ArrowRight", bubbles: true }))`,
-      );
-      await until(`location.pathname.endsWith("/two/") && document.readyState === "complete"`);
-    } finally {
-      page?.close();
-      server.stop();
-      rmSync(src, { recursive: true });
-    }
-  }, 90_000);
+      let page: Awaited<ReturnType<typeof browse>> | undefined;
+      try {
+        const logo = await fetch(`${server.url}/assets/logo.svg`);
+        expect(logo.status).toBe(200);
+        const served = await fetch(`${server.url}/@acme/fx/logos/logo.svg`);
+        expect(served.status).toBe(200);
+        expect(served.headers.get("content-type")).toBe("image/svg+xml");
+        expect(logo.headers.get("content-type")).toBe("image/svg+xml");
+        const css = await fetch(`${server.url}/assets/nested/page.css`);
+        expect(css.headers.get("content-type")).toBe("text/css");
+        expect(await css.text()).toBe("a {\n  color: red;\n}\n");
+        expect((await fetch(`${server.url}/assets/skip.txt`)).status).toBe(404);
+        // Each pattern is globbed once; a file added since is found by a second glob.
+        writeFileSync(join(fixture, "assets", "late.svg"), "<svg/>");
+        expect((await fetch(`${server.url}/assets/late.svg`)).status).toBe(200);
+        // A state's page has its own title in dev too.
+        expect(
+          await (await fetch(`${server.url}/fx/dashboard/Parts/box-parts/one/`)).text(),
+        ).toContain("<title>Box parts: One – Fx catalog</title>");
+        // `admin`: in dev the header links the repository's page in the local hub; the fixture's
+        // repository is this checkout.
+        expect(await (await fetch(`${server.url}/`)).text()).toMatch(
+          /<a class="hw-header-link" href="http:\/\/admin\.localhost:4329\/scaffolding\/dashboard"[^>]*><span aria-hidden="true"[^>]*>←&nbsp;<\/span>Admin hub<\/a>/,
+        );
+
+        // Dev serves at the root: the old /catalog/ path and the Pages base forward there.
+        for (const [old, to] of [
+          ["/catalog/dashboard/Parts/box-parts/two?x", "/dashboard/Parts/box-parts/two?x"],
+          // The base drops, and the site's own page at /catalog/ keeps its place.
+          ["/fx/catalog/", "/catalog/"],
+          ["/catalog/stories/%E2%82%AC", "/stories/%E2%82%AC"],
+          ["/fx//evil.example/x", "/evil.example/x"],
+        ]) {
+          const r = await fetch(`${server.url}${old}`, { redirect: "manual" });
+          expect([r.status, r.headers.get("location")]).toEqual([307, to]);
+        }
+        // A file under the root is a module, not a page: it stays where it is.
+        for (const path of ["/fx/mod.css", "/catalog/stories/mod.css"])
+          expect((await fetch(`${server.url}${path}`, { redirect: "manual" })).status).toBe(200);
+        // A page of the site's own under /catalog/ is not one of the catalog's former pages.
+        expect(
+          (await fetch(`${server.url}/catalog/print/`, { redirect: "manual" })).status,
+        ).not.toBe(307);
+        // Nor is a page of the site's own at /catalog/ itself, as in the build.
+        const own = await fetch(`${server.url}/catalog/`, { redirect: "manual" });
+        expect([own.status, (await own.text()).includes("site catalog page")]).toEqual([200, true]);
+        page = await browse(`${server.url}/dashboard/Parts/box-parts/two`);
+        const { evaluate, until } = page;
+        await until(`document.readyState === "complete" && !!document.body.dataset.fxRan`);
+        await evaluate(
+          `document.querySelector('.hw-catalog-bar a[href$="/box-parts/one/"]').click()`,
+        );
+        await until(`location.pathname.endsWith("/one/") && document.readyState === "complete"`);
+        await new Promise((r) => setTimeout(r, 500));
+        const after = await evaluate(
+          `JSON.stringify([document.documentElement.dataset.fxHead, document.documentElement.dataset.hwScale, document.body.dataset.fxRan, !!document.querySelector("main .hw-catalog-bar"), document.body.dataset.fxBar])`,
+        );
+        expect(JSON.parse(String(after))).toEqual([
+          "repository",
+          "screen",
+          "/dashboard/Parts/box-parts/one/",
+          true,
+          // The story's own inline script found the bar: it stood above the story from the start.
+          "above",
+        ]);
+        // A key a story's own window listener takes stays with the story.
+        await evaluate(
+          `window.addEventListener("keydown", (e) => e.preventDefault(), { once: true }); document.dispatchEvent(new KeyboardEvent("keydown", { key: "ArrowRight", bubbles: true, cancelable: true }))`,
+        );
+        await new Promise((r) => setTimeout(r, 500));
+        expect(String(await evaluate("location.pathname"))).toEndWith("/one/");
+        // The right arrow key steps to the next state.
+        await evaluate(
+          `document.dispatchEvent(new KeyboardEvent("keydown", { key: "ArrowRight", bubbles: true }))`,
+        );
+        await until(`location.pathname.endsWith("/two/") && document.readyState === "complete"`);
+      } finally {
+        page?.close();
+        server.stop();
+        rmSync(src, { recursive: true });
+      }
+    },
+    limit(90_000),
+  );
 
   // 40 tiles, each framing a page whose spec text sits above the element it marks as its preview.
-  test("tile frames load after the first paint and near the view, and draw only the marked preview", async () => {
-    const { renderCatalog } = await import("../catalog/render.ts");
-    const shellCss = brandFallbacks(
-      readFileSync(join(import.meta.dir, "..", "catalog", "catalog.css"), "utf8"),
-      BRAND_TOKENS,
-    );
-    // An even tile marks a full-width wrapper of its own ground around a smaller box, an odd one a
-    // box with a ground of its own.
-    const box =
-      '<span class="box" style="display:inline-block;width:200px;height:100px;background:rgb(1, 2, 3)">x</span>';
-    const story = (i: number) =>
-      `<!doctype html><html style="background:#fff"><body><main><p class="spec">Spec text</p>${
-        i % 2
-          ? box.replace('class="box"', 'class="box" data-hw-preview')
-          : `<div data-hw-preview><div>${box}</div></div>`
-      }</main></body></html>`;
-    const home = (path: string, srcdoc: boolean) =>
-      `<!doctype html><html><head><style>${shellCss}</style></head><body>${renderCatalog({
-        title: "t",
-        lead: "l",
-        provenance: "p",
-        groups: [
-          {
-            name: "Parts",
-            items: Array.from({ length: 40 }, (_, i) => ({
-              name: `x${i}`,
-              href: `/x${i}`,
-              frame: `/${path}/${i}`,
-              frameSrcdoc: srcdoc,
-            })),
-          },
-        ],
-      })}</body></html>`;
-    const asked: string[] = [];
-    const server = Bun.serve({
-      port: 0,
-      hostname: "127.0.0.1",
-      fetch(req) {
-        const { pathname } = new URL(req.url);
-        asked.push(pathname);
-        const html = { headers: { "Content-Type": "text/html" } };
-        if (pathname === "/home") return new Response(home("story", false), html);
-        if (pathname === "/inline") return new Response(home("deny", true), html);
-        // A site that refuses to be framed, as one sending X-Frame-Options DENY.
-        const deny = pathname.startsWith("/deny/");
-        return new Response(story(Number(pathname.split("/").pop())), {
-          headers: { ...html.headers, ...(deny && { "X-Frame-Options": "DENY" }) },
-        });
-      },
-    });
-    const page = await browse("about:blank", ["--window-size=1280,800"]);
-    try {
-      const { ws, send, evaluate, until } = page;
-      const failed: string[] = [];
-      ws.addEventListener("message", (event) => {
-        const m = JSON.parse(String(event.data));
-        if (m.method === "Network.loadingFailed") failed.push(m.params.errorText);
+  test(
+    "tile frames load after the first paint and near the view, and draw only the marked preview",
+    async () => {
+      const { renderCatalog } = await import("../catalog/render.ts");
+      const shellCss = brandFallbacks(
+        readFileSync(join(import.meta.dir, "..", "catalog", "catalog.css"), "utf8"),
+        BRAND_TOKENS,
+      );
+      // An even tile marks a full-width wrapper of its own ground around a smaller box, an odd one a
+      // box with a ground of its own.
+      const box =
+        '<span class="box" style="display:inline-block;width:200px;height:100px;background:rgb(1, 2, 3)">x</span>';
+      const story = (i: number) =>
+        `<!doctype html><html style="background:#fff"><body><main><p class="spec">Spec text</p>${
+          i % 2
+            ? box.replace('class="box"', 'class="box" data-hw-preview')
+            : `<div data-hw-preview><div>${box}</div></div>`
+        }</main></body></html>`;
+      const home = (path: string, srcdoc: boolean) =>
+        `<!doctype html><html><head><style>${shellCss}</style></head><body>${renderCatalog({
+          title: "t",
+          lead: "l",
+          provenance: "p",
+          groups: [
+            {
+              name: "Parts",
+              items: Array.from({ length: 40 }, (_, i) => ({
+                name: `x${i}`,
+                href: `/x${i}`,
+                frame: `/${path}/${i}`,
+                frameSrcdoc: srcdoc,
+              })),
+            },
+          ],
+        })}</body></html>`;
+      const asked: string[] = [];
+      const server = Bun.serve({
+        port: 0,
+        hostname: "127.0.0.1",
+        fetch(req) {
+          const { pathname } = new URL(req.url);
+          asked.push(pathname);
+          const html = { headers: { "Content-Type": "text/html" } };
+          if (pathname === "/home") return new Response(home("story", false), html);
+          if (pathname === "/inline") return new Response(home("deny", true), html);
+          // A site that refuses to be framed, as one sending X-Frame-Options DENY.
+          const deny = pathname.startsWith("/deny/");
+          return new Response(story(Number(pathname.split("/").pop())), {
+            headers: { ...html.headers, ...(deny && { "X-Frame-Options": "DENY" }) },
+          });
+        },
       });
-      await send("Network.enable");
-      const frames = (prefix: string) => asked.filter((p) => p.startsWith(prefix)).length;
-      await send("Page.navigate", { url: `${server.url}home` });
-      const fitted = `(() => { const f = document.querySelector(".hw-catalog-preview iframe"); return !!f.contentDocument?.querySelector("[data-hw-preview]") && f.style.transform.includes("scale"); })()`;
-      await until(`document.readyState === "complete" && ${fitted}`);
-      await new Promise((r) => setTimeout(r, 1000));
-      // Only the tiles in or near the view load: four rows of three at 1280 x 800, not all 40.
-      const near = frames("/story/");
-      expect(near).toBeGreaterThan(0);
-      expect(near).toBeLessThan(20);
-      // No frame starts before the first paint.
-      const [paint, firstFrame] = (await evaluate(
-        `[performance.getEntriesByName("first-paint")[0]?.startTime, Math.min(...performance.getEntriesByType("resource").filter((e) => e.initiatorType === "iframe").map((e) => e.startTime))]`,
-      )) as [number, number];
-      expect(paint).toBeGreaterThan(0);
-      expect(firstFrame).toBeGreaterThanOrEqual(paint);
-      // The marked element alone shows, centred in its tile on what it paints, on the page's ground
-      // around it, white, even where it has a ground of its own; the frame's canvas is cleared.
-      const fit = (tile: number) =>
-        evaluate(`(() => {
+      const page = await browse("about:blank", ["--window-size=1280,800"]);
+      try {
+        const { ws, send, evaluate, until } = page;
+        const failed: string[] = [];
+        ws.addEventListener("message", (event) => {
+          const m = JSON.parse(String(event.data));
+          if (m.method === "Network.loadingFailed") failed.push(m.params.errorText);
+        });
+        await send("Network.enable");
+        const frames = (prefix: string) => asked.filter((p) => p.startsWith(prefix)).length;
+        await send("Page.navigate", { url: `${server.url}home` });
+        const fitted = `(() => { const f = document.querySelector(".hw-catalog-preview iframe"); return !!f.contentDocument?.querySelector("[data-hw-preview]") && f.style.transform.includes("scale"); })()`;
+        await until(`document.readyState === "complete" && ${fitted}`);
+        await new Promise((r) => setTimeout(r, 1000));
+        // Only the tiles in or near the view load: four rows of three at 1280 x 800, not all 40.
+        const near = frames("/story/");
+        expect(near).toBeGreaterThan(0);
+        expect(near).toBeLessThan(20);
+        // No frame starts before the first paint.
+        const [paint, firstFrame] = (await evaluate(
+          `[performance.getEntriesByName("first-paint")[0]?.startTime, Math.min(...performance.getEntriesByType("resource").filter((e) => e.initiatorType === "iframe").map((e) => e.startTime))]`,
+        )) as [number, number];
+        expect(paint).toBeGreaterThan(0);
+        expect(firstFrame).toBeGreaterThanOrEqual(paint);
+        // The marked element alone shows, centred in its tile on what it paints, on the page's ground
+        // around it, white, even where it has a ground of its own; the frame's canvas is cleared.
+        const fit = (tile: number) =>
+          evaluate(`(() => {
         const p = document.querySelectorAll(".hw-catalog-preview")[${tile}], f = p.firstElementChild, d = f.contentDocument;
         const r = d.querySelector(".box").getBoundingClientRect();
         const [tx, ty, s] = f.style.transform.match(/-?[\\d.]+/g).map(Number);
         return { dx: tx + (r.left + r.width / 2) * s - p.clientWidth / 2, dy: ty + (r.top + r.height / 2) * s - p.clientHeight / 2,
           spec: getComputedStyle(d.querySelector(".spec")).visibility, preview: getComputedStyle(d.querySelector("[data-hw-preview]")).visibility, ground: p.style.background, canvas: getComputedStyle(d.documentElement).backgroundColor };
       })()`) as Promise<Record<string, number | string>>;
-      for (const tile of [0, 1]) {
-        const at = await fit(tile);
-        expect(Math.abs(at.dx as number)).toBeLessThan(1);
-        expect(Math.abs(at.dy as number)).toBeLessThan(1);
-        expect([at.spec, at.preview, at.ground, at.canvas]).toEqual([
-          "hidden",
-          "visible",
-          "rgb(255, 255, 255)",
-          "rgba(0, 0, 0, 0)",
-        ]);
+        for (const tile of [0, 1]) {
+          const at = await fit(tile);
+          expect(Math.abs(at.dx as number)).toBeLessThan(1);
+          expect(Math.abs(at.dy as number)).toBeLessThan(1);
+          expect([at.spec, at.preview, at.ground, at.canvas]).toEqual([
+            "hidden",
+            "visible",
+            "rgb(255, 255, 255)",
+            "rgba(0, 0, 0, 0)",
+          ]);
+        }
+        // Scrolled to the end, the last tile loads.
+        await evaluate(`document.querySelector(".hw-catalog-grid li:last-child").scrollIntoView()`);
+        await until(
+          `!!document.querySelector(".hw-catalog-grid li:last-child iframe").contentDocument?.querySelector("[data-hw-preview]")`,
+        );
+        expect(asked).toContain("/story/39");
+        expect(failed).toEqual([]);
+        // `frameSrcdoc`: a page that refuses framing draws from its HTML; no frame load starts, so
+        // none is cancelled.
+        await send("Page.navigate", { url: `${server.url}inline` });
+        await until(`document.readyState === "complete" && ${fitted}`);
+        await new Promise((r) => setTimeout(r, 1000));
+        expect(frames("/deny/")).toBeGreaterThan(0);
+        expect(frames("/deny/")).toBeLessThan(20);
+        expect(
+          await evaluate(
+            `[...document.querySelectorAll(".hw-catalog-preview iframe")].some((f) => f.hasAttribute("src"))`,
+          ),
+        ).toBe(false);
+        expect(failed).toEqual([]);
+        // Behind another tab the page is hidden and never paints: every tile loads at once.
+        await send("Target.createTarget", { url: "about:blank" });
+        expect(await evaluate("document.hidden")).toBe(true);
+        const before = frames("/story/");
+        await send("Page.navigate", { url: `${server.url}home` });
+        await until(`document.readyState === "complete"`);
+        for (const end = Date.now() + 10_000; frames("/story/") - before < 40 && Date.now() < end;)
+          await new Promise((r) => setTimeout(r, 100));
+        expect(frames("/story/") - before).toBe(40);
+      } finally {
+        page.close();
+        void server.stop(true);
       }
-      // Scrolled to the end, the last tile loads.
-      await evaluate(`document.querySelector(".hw-catalog-grid li:last-child").scrollIntoView()`);
-      await until(
-        `!!document.querySelector(".hw-catalog-grid li:last-child iframe").contentDocument?.querySelector("[data-hw-preview]")`,
-      );
-      expect(asked).toContain("/story/39");
-      expect(failed).toEqual([]);
-      // `frameSrcdoc`: a page that refuses framing draws from its HTML; no frame load starts, so
-      // none is cancelled.
-      await send("Page.navigate", { url: `${server.url}inline` });
-      await until(`document.readyState === "complete" && ${fitted}`);
-      await new Promise((r) => setTimeout(r, 1000));
-      expect(frames("/deny/")).toBeGreaterThan(0);
-      expect(frames("/deny/")).toBeLessThan(20);
-      expect(
-        await evaluate(
-          `[...document.querySelectorAll(".hw-catalog-preview iframe")].some((f) => f.hasAttribute("src"))`,
-        ),
-      ).toBe(false);
-      expect(failed).toEqual([]);
-      // Behind another tab the page is hidden and never paints: every tile loads at once.
-      await send("Target.createTarget", { url: "about:blank" });
-      expect(await evaluate("document.hidden")).toBe(true);
-      const before = frames("/story/");
-      await send("Page.navigate", { url: `${server.url}home` });
-      await until(`document.readyState === "complete"`);
-      for (const end = Date.now() + 10_000; frames("/story/") - before < 40 && Date.now() < end;)
-        await new Promise((r) => setTimeout(r, 100));
-      expect(frames("/story/") - before).toBe(40);
-    } finally {
-      page.close();
-      void server.stop(true);
-    }
-  }, 60_000);
+    },
+    limit(60_000),
+  );
 
   // os at 1440 x 913 after v5.7.1: the lead at brand's measure pushed the first group's top below a
   // third of the window, so the rail marked nothing on load.
-  test("the rail marks the first group at the top of the page, however tall the lead", async () => {
-    const { renderCatalog } = await import("../catalog/render.ts");
-    const shellCss = brandFallbacks(
-      readFileSync(join(import.meta.dir, "..", "catalog", "catalog.css"), "utf8"),
-      BRAND_TOKENS,
-    );
-    const html = `<!doctype html><html><head><style>${shellCss}</style></head><body>${renderCatalog(
-      {
-        title: "t",
-        lead: "word ".repeat(200),
-        provenance: "p",
-        groups: ["A", "B", "C", "D", "E"].map((name) => ({
-          name,
-          items: Array.from({ length: 12 }, (_, i) => ({
-            name: `${name}${i}`,
-            href: `/${name}${i}`,
+  test(
+    "the rail marks the first group at the top of the page, however tall the lead",
+    async () => {
+      const { renderCatalog } = await import("../catalog/render.ts");
+      const shellCss = brandFallbacks(
+        readFileSync(join(import.meta.dir, "..", "catalog", "catalog.css"), "utf8"),
+        BRAND_TOKENS,
+      );
+      const html = `<!doctype html><html><head><style>${shellCss}</style></head><body>${renderCatalog(
+        {
+          title: "t",
+          lead: "word ".repeat(200),
+          provenance: "p",
+          groups: ["A", "B", "C", "D", "E"].map((name) => ({
+            name,
+            items: Array.from({ length: 12 }, (_, i) => ({
+              name: `${name}${i}`,
+              href: `/${name}${i}`,
+            })),
           })),
-        })),
-      },
-    )}</body></html>`;
-    const server = Bun.serve({
-      port: 0,
-      hostname: "127.0.0.1",
-      fetch: () => new Response(html, { headers: { "Content-Type": "text/html" } }),
-    });
-    const page = await browse("about:blank");
-    try {
-      const { send, evaluate, until } = page;
-      await send("Emulation.setDeviceMetricsOverride", {
-        width: 1440,
-        height: 913,
-        deviceScaleFactor: 1,
-        mobile: false,
+        },
+      )}</body></html>`;
+      const server = Bun.serve({
+        port: 0,
+        hostname: "127.0.0.1",
+        fetch: () => new Response(html, { headers: { "Content-Type": "text/html" } }),
       });
-      await send("Page.navigate", { url: server.url.href });
-      await until(`document.readyState === "complete"`);
-      const scroller = `(() => { const m = document.querySelector("main"); return m && m.scrollHeight > m.clientHeight ? m : document.scrollingElement; })()`;
-      const top = (g: string) => `document.getElementById("${g}").getBoundingClientRect().top`;
-      const marked = `[...document.querySelectorAll(".hw-catalog-rail a[aria-current]")].map((a) => a.getAttribute("href")).join()`;
-      expect(await evaluate(`${top("a")} > innerHeight / 3`)).toBe(true);
-      await until(`${marked} === "#a"`);
-      // Scrolled within the lead, no group has passed the third: the first stays marked.
-      await evaluate(`${scroller}.scrollTop = 5`);
-      await new Promise((r) => setTimeout(r, 300));
-      expect(await evaluate(`${top("a")} > innerHeight / 3 && ${marked} === "#a"`)).toBe(true);
-      // Scrolled, a group counts once its top passes a third of the window.
-      await evaluate(`${scroller}.scrollTop += ${top("b")} - innerHeight / 3 + 2`);
-      await until(`${marked} === "#b"`);
-      await evaluate(`${scroller}.scrollTop = 0`);
-      await until(`${marked} === "#a"`);
-    } finally {
-      page.close();
-      void server.stop(true);
-    }
-  }, 60_000);
+      const page = await browse("about:blank");
+      try {
+        const { send, evaluate, until } = page;
+        await send("Emulation.setDeviceMetricsOverride", {
+          width: 1440,
+          height: 913,
+          deviceScaleFactor: 1,
+          mobile: false,
+        });
+        await send("Page.navigate", { url: server.url.href });
+        await until(`document.readyState === "complete"`);
+        const scroller = `(() => { const m = document.querySelector("main"); return m && m.scrollHeight > m.clientHeight ? m : document.scrollingElement; })()`;
+        const top = (g: string) => `document.getElementById("${g}").getBoundingClientRect().top`;
+        const marked = `[...document.querySelectorAll(".hw-catalog-rail a[aria-current]")].map((a) => a.getAttribute("href")).join()`;
+        expect(await evaluate(`${top("a")} > innerHeight / 3`)).toBe(true);
+        await until(`${marked} === "#a"`);
+        // Scrolled within the lead, no group has passed the third: the first stays marked.
+        await evaluate(`${scroller}.scrollTop = 5`);
+        await new Promise((r) => setTimeout(r, 300));
+        expect(await evaluate(`${top("a")} > innerHeight / 3 && ${marked} === "#a"`)).toBe(true);
+        // Scrolled, a group counts once its top passes a third of the window.
+        await evaluate(`${scroller}.scrollTop += ${top("b")} - innerHeight / 3 + 2`);
+        await until(`${marked} === "#b"`);
+        await evaluate(`${scroller}.scrollTop = 0`);
+        await until(`${marked} === "#a"`);
+      } finally {
+        page.close();
+        void server.stop(true);
+      }
+    },
+    limit(60_000),
+  );
 
   // After v5.7.1's measure, consumers saw "… v2.3.1 · 4 / components · 17 states" and a second
   // line opening on a bare "·".
-  test("the provenance line wraps between parts, each separator with the part before it", async () => {
-    const { renderCatalog } = await import("../catalog/render.ts");
-    const shellCss = brandFallbacks(
-      readFileSync(join(import.meta.dir, "..", "catalog", "catalog.css"), "utf8"),
-      BRAND_TOKENS,
-    );
-    const parts = [
-      "certificate-verifier src/stories",
-      "@hackersandwizards/brand v2.3.1",
-      "4 components",
-      "17 states",
-    ];
-    const html = `<!doctype html><html><head><meta charset="utf-8"><style>${shellCss}</style></head><body>${renderCatalog(
-      { title: "t", lead: "l", provenance: parts.join(" · "), groups: [] },
-    )}</body></html>`;
-    const server = Bun.serve({
-      port: 0,
-      hostname: "127.0.0.1",
-      fetch: () => new Response(html, { headers: { "Content-Type": "text/html" } }),
-    });
-    const page = await browse("about:blank");
-    const provenance = `document.querySelector(".hw-catalog-provenance")`;
-    // The line's text grouped by the top of each character's box, a pixel apart counting as one.
-    const rows = `(() => {
+  test(
+    "the provenance line wraps between parts, each separator with the part before it",
+    async () => {
+      const { renderCatalog } = await import("../catalog/render.ts");
+      const shellCss = brandFallbacks(
+        readFileSync(join(import.meta.dir, "..", "catalog", "catalog.css"), "utf8"),
+        BRAND_TOKENS,
+      );
+      const parts = [
+        "certificate-verifier src/stories",
+        "@hackersandwizards/brand v2.3.1",
+        "4 components",
+        "17 states",
+      ];
+      const html = `<!doctype html><html><head><meta charset="utf-8"><style>${shellCss}</style></head><body>${renderCatalog(
+        { title: "t", lead: "l", provenance: parts.join(" · "), groups: [] },
+      )}</body></html>`;
+      const server = Bun.serve({
+        port: 0,
+        hostname: "127.0.0.1",
+        fetch: () => new Response(html, { headers: { "Content-Type": "text/html" } }),
+      });
+      const page = await browse("about:blank");
+      const provenance = `document.querySelector(".hw-catalog-provenance")`;
+      // The line's text grouped by the top of each character's box, a pixel apart counting as one.
+      const rows = `(() => {
       const p = ${provenance};
       const walk = document.createTreeWalker(p, NodeFilter.SHOW_TEXT);
       const rows = new Map();
@@ -4911,134 +4956,144 @@ describe("catalog", () => {
         }
       return [...rows].sort(([a], [b]) => a - b).map(([, text]) => text.trim());
     })()`;
-    try {
-      const { send, evaluate, until } = page;
-      await send("Page.navigate", { url: server.url.href });
-      await until(`document.readyState === "complete"`);
-      const bad: string[] = [];
-      let wrapped = 0;
-      for (let width = 280; width <= 900; width += 10) {
-        await send("Emulation.setDeviceMetricsOverride", {
-          width,
-          height: 800,
-          deviceScaleFactor: 1,
-          mobile: false,
-        });
-        const shown = (await evaluate(rows)) as string[];
-        if (shown.length > 1) wrapped++;
-        if (
-          shown.some((l) => l.startsWith("·")) ||
-          parts.some((part) => !shown.some((l) => l.includes(part))) ||
-          !(await evaluate(`(${provenance}).scrollWidth <= (${provenance}).clientWidth`))
-        )
-          bad.push(`${width}: ${shown.join(" / ")}`);
+      try {
+        const { send, evaluate, until } = page;
+        await send("Page.navigate", { url: server.url.href });
+        await until(`document.readyState === "complete"`);
+        const bad: string[] = [];
+        let wrapped = 0;
+        for (let width = 280; width <= 900; width += 10) {
+          await send("Emulation.setDeviceMetricsOverride", {
+            width,
+            height: 800,
+            deviceScaleFactor: 1,
+            mobile: false,
+          });
+          const shown = (await evaluate(rows)) as string[];
+          if (shown.length > 1) wrapped++;
+          if (
+            shown.some((l) => l.startsWith("·")) ||
+            parts.some((part) => !shown.some((l) => l.includes(part))) ||
+            !(await evaluate(`(${provenance}).scrollWidth <= (${provenance}).clientWidth`))
+          )
+            bad.push(`${width}: ${shown.join(" / ")}`);
+        }
+        // A control: the sweep reaches widths where the line wraps.
+        expect(wrapped).toBeGreaterThan(5);
+        expect(bad).toEqual([]);
+      } finally {
+        page.close();
+        void server.stop(true);
       }
-      // A control: the sweep reaches widths where the line wraps.
-      expect(wrapped).toBeGreaterThan(5);
-      expect(bad).toEqual([]);
-    } finally {
-      page.close();
-      void server.stop(true);
-    }
-  }, 60_000);
+    },
+    limit(60_000),
+  );
 
-  test("a sized tile honours the marked preview, a mark may name a part, a clipped box fits as clipped", async () => {
-    const { renderCatalog } = await import("../catalog/render.ts");
-    const shellCss = brandFallbacks(
-      readFileSync(join(import.meta.dir, "..", "catalog", "catalog.css"), "utf8"),
-      BRAND_TOKENS,
-    );
-    const part =
-      '<span class="part" style="display:inline-block;width:200px;height:100px;background:rgb(1, 2, 3)">x</span><span class="other">y</span>';
-    const wide = 'style="width:5000px;height:100px;background:rgb(1, 2, 3)"';
-    const clipping = 'style="overflow:hidden;width:300px"';
-    const stories: { html: string; size?: [number, number] }[] = [
-      { html: `<div data-hw-preview>${part}</div>`, size: [1440, 900] },
-      { html: `<div data-hw-preview=".part">${part}</div>`, size: [1440, 900] },
-      { html: `<div data-hw-preview=".part">${part}</div>` },
-      { html: `<div data-hw-preview ${clipping}><div><div ${wide}></div></div></div>` },
-      { html: `<div data-hw-preview=".part" ${clipping}><div class="part" ${wide}></div></div>` },
-      { html: `<div data-hw-preview="1">${part}</div>` },
-      { html: `<div data-hw-preview=".none">${part}</div>` },
-    ];
-    const home = `<!doctype html><html><head><style>${shellCss}</style></head><body>${renderCatalog(
-      {
-        title: "t",
-        lead: "l",
-        provenance: "p",
-        groups: [
-          {
-            name: "Parts",
-            items: stories.map(({ size }, i) => ({
-              name: `x${i}`,
-              href: `/x${i}`,
-              frame: `/story/${i}`,
-              frameSize: size,
-            })),
-          },
-        ],
-      },
-    )}</body></html>`;
-    const server = Bun.serve({
-      port: 0,
-      hostname: "127.0.0.1",
-      fetch(req) {
-        const { pathname } = new URL(req.url);
-        const body =
-          pathname === "/home"
-            ? home
-            : `<!doctype html><html style="background:rgb(9, 9, 9)"><body><main><p class="spec">Spec text</p>${stories[Number(pathname.split("/").pop())]?.html}</main></body></html>`;
-        return new Response(body, { headers: { "Content-Type": "text/html" } });
-      },
-    });
-    const page = await browse(`${server.url}home`, ["--window-size=1280,1400"]);
-    try {
-      const { evaluate, until } = page;
-      await until(
-        `document.readyState === "complete" && document.querySelectorAll(".hw-catalog-preview iframe").length === ${stories.length} && [...document.querySelectorAll(".hw-catalog-preview iframe")].every((f) => f.contentDocument?.getElementById("hw-preview-only"))`,
+  test(
+    "a sized tile honours the marked preview, a mark may name a part, a clipped box fits as clipped",
+    async () => {
+      const { renderCatalog } = await import("../catalog/render.ts");
+      const shellCss = brandFallbacks(
+        readFileSync(join(import.meta.dir, "..", "catalog", "catalog.css"), "utf8"),
+        BRAND_TOKENS,
       );
-      const tile = (i: number) =>
-        evaluate(`(() => {
+      const part =
+        '<span class="part" style="display:inline-block;width:200px;height:100px;background:rgb(1, 2, 3)">x</span><span class="other">y</span>';
+      const wide = 'style="width:5000px;height:100px;background:rgb(1, 2, 3)"';
+      const clipping = 'style="overflow:hidden;width:300px"';
+      const stories: { html: string; size?: [number, number] }[] = [
+        { html: `<div data-hw-preview>${part}</div>`, size: [1440, 900] },
+        { html: `<div data-hw-preview=".part">${part}</div>`, size: [1440, 900] },
+        { html: `<div data-hw-preview=".part">${part}</div>` },
+        { html: `<div data-hw-preview ${clipping}><div><div ${wide}></div></div></div>` },
+        { html: `<div data-hw-preview=".part" ${clipping}><div class="part" ${wide}></div></div>` },
+        { html: `<div data-hw-preview="1">${part}</div>` },
+        { html: `<div data-hw-preview=".none">${part}</div>` },
+      ];
+      const home = `<!doctype html><html><head><style>${shellCss}</style></head><body>${renderCatalog(
+        {
+          title: "t",
+          lead: "l",
+          provenance: "p",
+          groups: [
+            {
+              name: "Parts",
+              items: stories.map(({ size }, i) => ({
+                name: `x${i}`,
+                href: `/x${i}`,
+                frame: `/story/${i}`,
+                frameSize: size,
+              })),
+            },
+          ],
+        },
+      )}</body></html>`;
+      const server = Bun.serve({
+        port: 0,
+        hostname: "127.0.0.1",
+        fetch(req) {
+          const { pathname } = new URL(req.url);
+          const body =
+            pathname === "/home"
+              ? home
+              : `<!doctype html><html style="background:rgb(9, 9, 9)"><body><main><p class="spec">Spec text</p>${stories[Number(pathname.split("/").pop())]?.html}</main></body></html>`;
+          return new Response(body, { headers: { "Content-Type": "text/html" } });
+        },
+      });
+      const page = await browse(`${server.url}home`, ["--window-size=1280,1400"]);
+      try {
+        const { evaluate, until } = page;
+        await until(
+          `document.readyState === "complete" && document.querySelectorAll(".hw-catalog-preview iframe").length === ${stories.length} && [...document.querySelectorAll(".hw-catalog-preview iframe")].every((f) => f.contentDocument?.getElementById("hw-preview-only"))`,
+        );
+        const tile = (i: number) =>
+          evaluate(`(() => {
         const p = document.querySelectorAll(".hw-catalog-preview")[${i}], f = p.firstElementChild, d = f.contentDocument;
         const shown = (s) => { const e = d.querySelector(s); return e && getComputedStyle(e).visibility; };
         return { w: f.style.width, h: f.style.height, t: f.style.transform, ground: p.style.background, canvas: getComputedStyle(d.documentElement).backgroundColor,
           spec: shown(".spec"), part: shown(".part"), other: shown(".other"), pw: p.clientWidth, ph: p.clientHeight };
       })()`) as Promise<Record<string, string | number>>;
-      // A sized tile keeps its window and draws the mark alone, on the ground around it.
-      const whole = await tile(0);
-      expect([whole.w, whole.h]).toEqual(["1440px", "900px"]);
-      expect(whole.t).toMatch(/^scale\([\d.]+\)$/);
-      expect([whole.spec, whole.part, whole.other, whole.ground, whole.canvas]).toEqual([
-        "hidden",
-        "visible",
-        "visible",
-        "rgb(9, 9, 9)",
-        "rgba(0, 0, 0, 0)",
-      ]);
-      // A mark holding a selector draws that part of it alone, sized or fitted.
-      for (const i of [1, 2]) {
-        const at = await tile(i);
-        expect([at.spec, at.part, at.other]).toEqual(["hidden", "visible", "hidden"]);
+        // A sized tile keeps its window and draws the mark alone, on the ground around it.
+        const whole = await tile(0);
+        expect([whole.w, whole.h]).toEqual(["1440px", "900px"]);
+        expect(whole.t).toMatch(/^scale\([\d.]+\)$/);
+        expect([whole.spec, whole.part, whole.other, whole.ground, whole.canvas]).toEqual([
+          "hidden",
+          "visible",
+          "visible",
+          "rgb(9, 9, 9)",
+          "rgba(0, 0, 0, 0)",
+        ]);
+        // A mark holding a selector draws that part of it alone, sized or fitted.
+        for (const i of [1, 2]) {
+          const at = await tile(i);
+          expect([at.spec, at.part, at.other]).toEqual(["hidden", "visible", "hidden"]);
+        }
+        // A value that is no selector, or selects nothing, draws the whole mark.
+        for (const i of [5, 6]) {
+          const at = await tile(i);
+          expect([at.spec, at.part, at.other]).toEqual(["hidden", "visible", "visible"]);
+        }
+        // A clipping box bounds what the mark paints, inside it or around the part: 300 px, not 5000.
+        for (const i of [3, 4]) {
+          const clipped = await tile(i);
+          const scale = Number(String(clipped.t).match(/scale\(([\d.]+)\)/)?.[1]);
+          expect(scale).toBeCloseTo(
+            Math.min(
+              0.75,
+              ((clipped.ph as number) - 16) / 100,
+              ((clipped.pw as number) - 16) / 300,
+            ),
+            2,
+          );
+        }
+      } finally {
+        page.close();
+        void server.stop(true);
       }
-      // A value that is no selector, or selects nothing, draws the whole mark.
-      for (const i of [5, 6]) {
-        const at = await tile(i);
-        expect([at.spec, at.part, at.other]).toEqual(["hidden", "visible", "visible"]);
-      }
-      // A clipping box bounds what the mark paints, inside it or around the part: 300 px, not 5000.
-      for (const i of [3, 4]) {
-        const clipped = await tile(i);
-        const scale = Number(String(clipped.t).match(/scale\(([\d.]+)\)/)?.[1]);
-        expect(scale).toBeCloseTo(
-          Math.min(0.75, ((clipped.ph as number) - 16) / 100, ((clipped.pw as number) - 16) / 300),
-          2,
-        );
-      }
-    } finally {
-      page.close();
-      void server.stop(true);
-    }
-  }, 60_000);
+    },
+    limit(60_000),
+  );
 
   test("a group of markup draws it in place of tiles, without a count", async () => {
     const { renderCatalog } = await import("../catalog/render.ts");
@@ -5298,88 +5353,96 @@ describe("check-staged", () => {
     expect(r.code).toBe(1);
   });
 
-  test("a missing prettier or eslint is refused, declared or not, unless the gate skips it", () => {
-    const staged = (manifest: object, prettier = false) => {
-      const dir = repo({ "package.json": JSON.stringify(manifest) });
-      if (prettier) {
-        write(dir, { "node_modules/.bin/prettier": "#!/bin/sh\nexit 0\n" });
-        chmodSync(join(dir, "node_modules/.bin/prettier"), 0o755);
-      }
-      write(dir, { "a.ts": "export {};\n" });
-      sh(dir, ["add", "a.ts"]);
-      return run(dir, "check-staged");
-    };
-    const declared = staged({ devDependencies: { prettier: "3", eslint: "10" } });
-    expect(declared.code).toBe(1);
-    expect(declared.out).toContain("prettier not installed");
-    const undeclared = staged({});
-    expect(undeclared.code).toBe(1);
-    expect(undeclared.out).toContain("prettier not installed");
-    const lintMissing = staged({ scaffolding: { skip: { format: "none" } } });
-    expect(lintMissing.code).toBe(1);
-    expect(lintMissing.out).toContain("eslint not installed");
-    expect(staged({ scaffolding: { skip: { format: "", lint: "none" } } }).out).toContain(
-      "prettier not installed",
-    );
-    for (const format of [false, {}])
-      expect(staged({ scaffolding: { skip: { format, lint: "none" } } }).out).toContain(
+  test(
+    "a missing prettier or eslint is refused, declared or not, unless the gate skips it",
+    () => {
+      const staged = (manifest: object, prettier = false) => {
+        const dir = repo({ "package.json": JSON.stringify(manifest) });
+        if (prettier) {
+          write(dir, { "node_modules/.bin/prettier": "#!/bin/sh\nexit 0\n" });
+          chmodSync(join(dir, "node_modules/.bin/prettier"), 0o755);
+        }
+        write(dir, { "a.ts": "export {};\n" });
+        sh(dir, ["add", "a.ts"]);
+        return run(dir, "check-staged");
+      };
+      const declared = staged({ devDependencies: { prettier: "3", eslint: "10" } });
+      expect(declared.code).toBe(1);
+      expect(declared.out).toContain("prettier not installed");
+      const undeclared = staged({});
+      expect(undeclared.code).toBe(1);
+      expect(undeclared.out).toContain("prettier not installed");
+      const lintMissing = staged({ scaffolding: { skip: { format: "none" } } });
+      expect(lintMissing.code).toBe(1);
+      expect(lintMissing.out).toContain("eslint not installed");
+      expect(staged({ scaffolding: { skip: { format: "", lint: "none" } } }).out).toContain(
         "prettier not installed",
       );
-    expect(staged({ scaffolding: { skip: { format: "none", lint: "none" } } }).code).toBe(0);
-    const prettierOnly = staged({ scaffolding: { skip: { lint: "none" } } }, true);
-    expect(prettierOnly.out).not.toContain("not installed");
-    expect(prettierOnly.code).toBe(0);
-  }, 20_000);
+      for (const format of [false, {}])
+        expect(staged({ scaffolding: { skip: { format, lint: "none" } } }).out).toContain(
+          "prettier not installed",
+        );
+      expect(staged({ scaffolding: { skip: { format: "none", lint: "none" } } }).code).toBe(0);
+      const prettierOnly = staged({ scaffolding: { skip: { lint: "none" } } }, true);
+      expect(prettierOnly.out).not.toContain("not installed");
+      expect(prettierOnly.code).toBe(0);
+    },
+    limit(20_000),
+  );
 
-  test("staged CSS and Astro files run stylelint with the repository's config, unless skip.styles", () => {
-    const stylelint = join(import.meta.dir, "..", "node_modules/stylelint/bin/stylelint.mjs");
-    const html = join(import.meta.dir, "..", "node_modules/postcss-html/lib/index.js");
-    const skip = { format: "none", lint: "none" };
-    const staged = (files: Record<string, string>, styles?: unknown, installed = true) => {
-      const dir = repo({
-        "package.json": JSON.stringify({
-          type: "module",
-          scaffolding: { skip: { ...skip, styles } },
-        }),
-        "stylelint.config.js": `export default { overrides: [{ files: ["**/*.astro"], customSyntax: "${html}" }], rules: { "color-no-invalid-hex": true } };\n`,
-        "nested/.stylelintrc.json": "{}",
+  test(
+    "staged CSS and Astro files run stylelint with the repository's config, unless skip.styles",
+    () => {
+      const stylelint = join(import.meta.dir, "..", "node_modules/stylelint/bin/stylelint.mjs");
+      const html = join(import.meta.dir, "..", "node_modules/postcss-html/lib/index.js");
+      const skip = { format: "none", lint: "none" };
+      const staged = (files: Record<string, string>, styles?: unknown, installed = true) => {
+        const dir = repo({
+          "package.json": JSON.stringify({
+            type: "module",
+            scaffolding: { skip: { ...skip, styles } },
+          }),
+          "stylelint.config.js": `export default { overrides: [{ files: ["**/*.astro"], customSyntax: "${html}" }], rules: { "color-no-invalid-hex": true } };\n`,
+          "nested/.stylelintrc.json": "{}",
+        });
+        if (installed) {
+          mkdirSync(join(dir, "node_modules/.bin"), { recursive: true });
+          symlinkSync(stylelint, join(dir, "node_modules/.bin/stylelint"));
+        }
+        write(dir, files);
+        sh(dir, ["add", ...Object.keys(files)]);
+        return { dir, ...run(dir, "check-staged") };
+      };
+      const bad = "a { color: #ggg; }\n";
+      expect(staged({ "a.css": bad }, undefined, false).out).toContain("stylelint not installed");
+      expect(staged({ "a.ts": "export {};\n", ".x/a.css": bad }, undefined, false).code).toBe(0);
+      expect(staged({ "a.css": bad }, "none", false).code).toBe(0);
+      expect(staged({ "a.css": bad }, " ", false).out).toContain("stylelint not installed");
+      // nested/c.css: a nested config would let it pass, but the repository's own governs, as in the gate.
+      const red = staged({
+        "a.css": bad,
+        "a.ts": "#ggg\n",
+        "B.astro": `<p>a</p>\n<style>\n  ${bad}</style>\n`,
+        "nested/c.css": bad,
+        ".storybook/d.css": bad,
       });
-      if (installed) {
-        mkdirSync(join(dir, "node_modules/.bin"), { recursive: true });
-        symlinkSync(stylelint, join(dir, "node_modules/.bin/stylelint"));
-      }
-      write(dir, files);
-      sh(dir, ["add", ...Object.keys(files)]);
-      return { dir, ...run(dir, "check-staged") };
-    };
-    const bad = "a { color: #ggg; }\n";
-    expect(staged({ "a.css": bad }, undefined, false).out).toContain("stylelint not installed");
-    expect(staged({ "a.ts": "export {};\n", ".x/a.css": bad }, undefined, false).code).toBe(0);
-    expect(staged({ "a.css": bad }, "none", false).code).toBe(0);
-    expect(staged({ "a.css": bad }, " ", false).out).toContain("stylelint not installed");
-    // nested/c.css: a nested config would let it pass, but the repository's own governs, as in the gate.
-    const red = staged({
-      "a.css": bad,
-      "a.ts": "#ggg\n",
-      "B.astro": `<p>a</p>\n<style>\n  ${bad}</style>\n`,
-      "nested/c.css": bad,
-      ".storybook/d.css": bad,
-    });
-    expect(red.out).toContain("a.css: line 1, col 12, error - Invalid hex color");
-    expect(red.out).toContain("B.astro: line 3, col 14, error - Invalid hex color");
-    expect(red.out).toContain("nested/c.css: line 1, col 12");
-    expect(red.out).not.toContain("a.ts:");
-    expect(red.out).not.toContain("d.css");
-    expect(red.code).toBe(1);
-    const ok = staged({ "a.css": "a { color: #fff; }\n" });
-    expect(ok.code).toBe(0);
-    write(ok.dir, { "a.css": bad });
-    sh(ok.dir, ["add", "a.css"]);
-    write(ok.dir, { "a.css": "a { color: #000; }\n" });
-    const partial = run(ok.dir, "check-staged");
-    expect(partial.out).toContain("[check:staged] stylelint: a.css as staged");
-    expect(partial.code).toBe(1);
-  }, 20_000);
+      expect(red.out).toContain("a.css: line 1, col 12, error - Invalid hex color");
+      expect(red.out).toContain("B.astro: line 3, col 14, error - Invalid hex color");
+      expect(red.out).toContain("nested/c.css: line 1, col 12");
+      expect(red.out).not.toContain("a.ts:");
+      expect(red.out).not.toContain("d.css");
+      expect(red.code).toBe(1);
+      const ok = staged({ "a.css": "a { color: #fff; }\n" });
+      expect(ok.code).toBe(0);
+      write(ok.dir, { "a.css": bad });
+      sh(ok.dir, ["add", "a.css"]);
+      write(ok.dir, { "a.css": "a { color: #000; }\n" });
+      const partial = run(ok.dir, "check-staged");
+      expect(partial.out).toContain("[check:staged] stylelint: a.css as staged");
+      expect(partial.code).toBe(1);
+    },
+    limit(20_000),
+  );
 
   test("the index decides: its package.json, no submodule as a file, the item copy in the checkout", () => {
     const tools = {
@@ -5430,88 +5493,6 @@ describe("check-staged", () => {
     write(dir, { "docs/tracking/items/a.md": "fine\n" });
     sh(dir, ["add", "docs/tracking/items/a.md"]);
     expect(run(dir, "check-staged").out).toContain("admin-check not installed");
-  });
-});
-
-describe("check-unique-names", () => {
-  const code = {
-    "src/a.ts": "export function twice() {}\n",
-    "copy/b.ts": "export function twice() {}\n",
-  };
-  const withAllow = (path: string) =>
-    repo({
-      ...code,
-      "package.json": JSON.stringify({
-        scaffolding: { allow: [{ check: "unique-names", path, reason: "synced copy" }] },
-      }),
-    });
-
-  test("a name defined twice is red unless an allow entry covers one site; a stale entry is red", () => {
-    const red = run(repo({ ...code, "package.json": "{}" }), "check-unique-names");
-    expect(red.code).toBe(1);
-    expect(red.out).toContain("twice is defined 2 times");
-    expect(run(withAllow("copy/*"), "check-unique-names").code).toBe(0);
-    const stale = run(withAllow("elsewhere/*"), "check-unique-names");
-    expect(stale.code).toBe(1);
-    expect(stale.out).toContain("allow entry matches nothing");
-  });
-
-  test("Astro's getStaticPaths may repeat without a uniqueNames entry", () => {
-    const page = "---\nexport function getStaticPaths() { return []; }\n---\n<p>a</p>\n";
-    const dir = repo({
-      "src/pages/[a].astro": page,
-      "src/pages/b/[b].astro": page,
-      "package.json": "{}",
-    });
-    expect(run(dir, "check-unique-names").code).toBe(0);
-  });
-
-  test("a file with a non-ASCII name is read", () => {
-    const dir = repo({
-      "src/a.ts": code["src/a.ts"],
-      "src/ü.ts": code["src/a.ts"],
-      "package.json": "{}",
-    });
-    const r = run(dir, "check-unique-names");
-    expect(r.out).toContain("src/ü.ts:1");
-    expect(r.code).toBe(1);
-  });
-
-  test("an .astro file's frontmatter counts with CRLF line ends too", () => {
-    const dir = repo({
-      "src/a.ts": code["src/a.ts"],
-      "src/B.astro": "---\r\nfunction twice() {}\r\n---\r\n<p>b</p>\r\n",
-      "package.json": "{}",
-    });
-    const r = run(dir, "check-unique-names");
-    expect(r.out).toContain("src/B.astro:2");
-    expect(r.code).toBe(1);
-  });
-
-  // Installed as a consumer installs it, beside the consumer's own `typescript`, so a run that
-  // imported the consumer's TypeScript would crash on 7, which ships no compiler API.
-  test.each([
-    ["6", "@typescript/old"],
-    ["7", "@typescript/native"],
-  ])("runs beside a consumer's TypeScript %s", (_, consumerTs) => {
-    const dir = repo({ ...code, "package.json": "{}" });
-    const own = join(import.meta.dir, "..");
-    const pkg = join(dir, "node_modules/@hackersandwizards/scaffolding");
-    for (const path of [
-      "package.json",
-      "bin/check-unique-names.ts",
-      "lib/repo.ts",
-      "config/submodules.js",
-    ])
-      write(pkg, { [path]: readFileSync(join(own, path), "utf8") });
-    symlinkSync(join(own, "node_modules", consumerTs), join(dir, "node_modules/typescript"));
-    symlinkSync(join(own, "node_modules/@typescript"), join(dir, "node_modules/@typescript"));
-    const r = spawnSync(process.execPath, [join(pkg, "bin/check-unique-names.ts")], {
-      cwd: dir,
-      encoding: "utf8",
-    });
-    expect(`${r.stdout}${r.stderr}`).toContain("twice is defined 2 times");
-    expect(r.status).toBe(1);
   });
 });
 
@@ -5883,225 +5864,6 @@ describe("check-spaces", () => {
   });
 });
 
-describe("check-history", () => {
-  const shipped = (files: Record<string, string>, scaffolding: object = {}) =>
-    repo({
-      "package.json": JSON.stringify({
-        name: "fx",
-        version: "1.0.0",
-        files: ["src", ".githooks"],
-        scaffolding,
-      }),
-      ...files,
-    });
-
-  test("flags history in the comments of shipped files only", () => {
-    const r = run(
-      shipped({
-        "src/a.css":
-          "a { b: c } /* blind panel 2026-11-01 */\n#id { x: 'https://x.y/2026-11-01' }\n",
-        "src/b.ts": "const a = 'Benedikt'; // see new-claim for the rest\n",
-        "src/c.html": "<!-- OS-1 -->\n",
-        ".githooks/pre-commit": "# decision label-system, 06.11.\nrun\n",
-        "src/clean.ts":
-          "// how to use it, why it is so: UTF-8, SHA-256, CSS-3, WOFF-2, ES-2022, WCAG-2, TLS-1, MD-5\nconst at = '2026-11-01';\n",
-        "docs/agent-work/items/new-claim.md": "x\n",
-        "other/d.css": "/* blind panel 2026-11-01 */\n",
-      }),
-      "check-history",
-    );
-    expect(r.code).toBe(1);
-    expect(lines(r.out, "history").map((l) => l.replace(/ \(.*/, ""))).toEqual([
-      "[history] .githooks/pre-commit: decision id",
-      "[history] .githooks/pre-commit: date",
-      "[history] src/a.css: review score",
-      "[history] src/a.css: date",
-      "[history] src/b.ts: item id",
-      "[history] src/c.html: item id",
-    ]);
-  });
-
-  test("reads every hit, an item slug only whole, and nothing where nothing ships", () => {
-    const r = run(
-      shipped({
-        "src/a.ts": "/** As written, 31.10.2026; see new-claim-flow (blind panel 01.11.). */\n",
-        "docs/agent-work/items/new-claim.md": "x\n",
-      }),
-      "check-history",
-    );
-    expect(lines(r.out, "history").map((l) => l.replace(/ \(.*/, ""))).toEqual([
-      "[history] src/a.ts: review score",
-      "[history] src/a.ts: date",
-      "[history] src/a.ts: date",
-    ]);
-    const surface = (pkg: object) =>
-      run(
-        repo({ "package.json": JSON.stringify(pkg), "a.ts": "// 2026-11-01\n" }),
-        "check-history",
-      );
-    expect(surface({ name: "fx", private: true }).code).toBe(0);
-    const noVersion = surface({ name: "fx", files: ["a.ts"] });
-    expect(noVersion.code).toBe(1);
-    expect(noVersion.out).toContain("bun pm pack listed no files");
-  });
-
-  test("an apostrophe in a template's prose pairs with no other across a comment", () => {
-    const r = run(
-      shipped({ "src/a.astro": "<p>Don't</p> <!-- planted 2026-11-06 --> <p>Can't</p>\n" }),
-      "check-history",
-    );
-    expect(lines(r.out, "history").map((l) => l.replace(/ \(.*/, ""))).toEqual([
-      "[history] src/a.astro: date",
-    ]);
-  });
-
-  test("reads a block comment touching what precedes it, and a capitalised item", () => {
-    const r = run(
-      shipped({
-        "src/a.css": "a{b:c;}/* (Benedikt, 01.11.) */\n",
-        "src/b.css": 'a{content:"x"}/* OS-1 */\n',
-        "src/c.css": "a{b:red/* ok *//* blind panel */}\n",
-        "src/d.ts": "// Item new-claim-flow\n",
-        "src/e.css": 'a{content:"\\""}/* /* don\'t *//* OS-2 */\n',
-        "src/f.html": "<style>/* OS-3 */</style>\n",
-      }),
-      "check-history",
-    );
-    expect(lines(r.out, "history").map((l) => l.replace(/ \(.*/, ""))).toEqual([
-      "[history] src/a.css: date",
-      "[history] src/a.css: person",
-      "[history] src/b.css: item id",
-      "[history] src/c.css: review score",
-      "[history] src/d.ts: item id",
-      "[history] src/e.css: item id",
-      "[history] src/f.html: item id",
-    ]);
-  });
-
-  test("reads a comment's lines joined, whatever marks them", () => {
-    const r = run(
-      shipped({
-        "src/a.ts": "// the flow (decision\n// merge-comparison, as drawn)\nconst a = 1;\n",
-        "src/b.ts": "/**\n * the flow (decision\n * merge-comparison)\n */\n",
-        "src/c.ts": "const a = 1; // the flow (blind\n             // panel)\n",
-        ".githooks/pre-commit": "# the flow (decision\n# merge-comparison)\nrun\n",
-        "src/d.ts": "// the flow (decision\r\n// merge-comparison)\r\n",
-        "src/e.html": "<!-- the flow (blind\n     panel) -->\n",
-        "src/f.ts": 'const s = "x//the flow (decision merge-comparison)";\n',
-      }),
-      "check-history",
-    );
-    expect(lines(r.out, "history").map((l) => l.replace(/ \(.*/, ""))).toEqual([
-      "[history] .githooks/pre-commit: decision id",
-      "[history] src/a.ts: decision id",
-      "[history] src/b.ts: decision id",
-      "[history] src/c.ts: review score",
-      "[history] src/d.ts: decision id",
-      "[history] src/e.html: review score",
-    ]);
-  });
-
-  test("keeps comments apart that code or an empty line separates", () => {
-    const r = run(
-      shipped({
-        "src/a.ts": "// the decision\nconst a = 1;\n// merge-comparison is a name\n",
-        "src/b.ts": "// the decision\n\n// merge-comparison is a name\n",
-        "src/c.ts": "const a = 1; // the decision\nconst b = 2; // merge-comparison\n",
-        ".githooks/pre-commit": "# the decision\n\n# merge-comparison is a name\nrun\n",
-        "src/d.ts": "// the decision\n//\n// merge-comparison is a name\n",
-        "src/e.ts": "/**\n * the decision\n *\n * merge-comparison is a name\n */\n",
-      }),
-      "check-history",
-    );
-    expect(lines(r.out, "history")).toEqual([]);
-    expect(r.code).toBe(0);
-  });
-
-  test("flags a score comparison and leaves version numbers alone", () => {
-    const r = run(
-      shipped({
-        "src/a.ts": "// the flow, 7.94 against\n// 7.29 for the rest.\n",
-        "src/b.ts": "// the flow, 8.4 vs 7.9\n",
-        "src/c.ts": "// the flow, 8.00 against 7.00.\n",
-        "src/d.ts": "// the gap (7.00 in the same panel)\n",
-        "src/e.ts": "// both gaps, 7.75 of 10 against 5.75\n",
-        "src/clean.ts": [
-          "// 2.11.1 against 2.11.0 changed the flag",
-          "// v1.2 vs v1.3 changed the flag",
-          "// Node 18.2 vs 20.1 changed the flag",
-          "// Python 3.11 vs 3.12 changed the flag",
-          "// HTTP/1.1 vs 2.0 changed the flag",
-          "// macOS 10.14 vs 10.15 changed the flag",
-          "// a value 10.5 vs 9.2",
-          "// 1.10.1 vs 1.9 changed the flag",
-          "// a side panel, 7.5 in the panel's width",
-          "",
-        ].join("\n"),
-      }),
-      "check-history",
-    );
-    expect(lines(r.out, "history").map((l) => l.replace(/ \(.*/, ""))).toEqual([
-      "[history] src/a.ts: review score",
-      "[history] src/b.ts: review score",
-      "[history] src/c.ts: review score",
-      "[history] src/d.ts: review score",
-      "[history] src/e.ts: review score",
-    ]);
-  });
-
-  test("takes a one-digit month only before a year, a bracket or a comma", () => {
-    const r = run(
-      shipped({
-        "src/a.ts": "// the last line (the panel 1.1.)\n",
-        "src/b.ts": "// as written, 5.3.2026\n",
-        "src/c.ts": "// the panel 1.1., the rest\n",
-        "src/clean.ts": [
-          "// a gain of only 4.7.",
-          "// a gain of only 4.7. The rest stays.",
-          "// (since 2.11.3.)",
-          "// 1.2.3, 2.11.3 and 1.5.3.2",
-          "// 1.1.20261",
-          "",
-        ].join("\n"),
-      }),
-      "check-history",
-    );
-    expect(lines(r.out, "history").map((l) => l.replace(/ \(.*/, ""))).toEqual([
-      "[history] src/a.ts: date",
-      "[history] src/b.ts: date",
-      "[history] src/c.ts: date",
-    ]);
-  });
-
-  test("a block comment opens neither inside a string nor inside url()", () => {
-    const end = "const b = 'x'; // */\n";
-    const r = run(
-      shipped({
-        "src/a.ts": `const a = ["src/*.ts", 'lib/*', \`x/*\`];\nconst d = 'OS-1 2026-11-01';\n${end}`,
-        "src/b.css": "a{b:url(/*.png)}\nc{d:url(x/*.png)}\ne{content:'OS-1'}\nf{g:h} /* */\n",
-        "src/c.ts": "const a = /\\/*x/;\nconst d = 'OS-1';\n" + end,
-        "src/d.ts": `const a = /[/*]/;\nconst d = 'OS-1';\n${end}`,
-        "src/e.ts": `const a = \`\n  src/*.ts\n\`;\nconst d = 'OS-1';\n${end}`,
-        "src/f.css": "a{b:URL(/*.png)}\ne{content:'OS-1'}\nf{g:h} /* */\n",
-        "src/g.md": "Reads docs/*.md, OS-1 and\n**/*.ts\n",
-      }),
-      "check-history",
-    );
-    expect(lines(r.out, "history")).toEqual([]);
-    expect(r.code).toBe(0);
-  });
-
-  test("an allow entry keeps a case; a stale one is red", () => {
-    const allowed = (text: string) =>
-      shipped(
-        { "src/a.ts": "/** A date as a reader writes it, 31.10.2026. */\n" },
-        { allow: [{ check: "history", path: "src/a.ts", text, reason: "format example" }] },
-      );
-    expect(run(allowed("31.10.2026"), "check-history").code).toBe(0);
-    expect(run(allowed("nothing"), "check-history").out).toContain("allow entry matches nothing");
-  });
-});
-
 describe("check-licenses", () => {
   function installed(licences: Record<string, unknown>, scaffolding: object = {}) {
     const files: Record<string, string> = {};
@@ -6170,31 +5932,35 @@ describe("check-licenses", () => {
     expect(run(installed({ planted: license("MIT") }), "check-licenses").code).toBe(0);
   });
 
-  test("an exception pins the licence string and needs a reason; a stale one is red", () => {
-    const keep = (licenses: object) =>
-      run(
-        installed({ gsap: license("Standard 'no charge' license") }, { licenses }),
-        "check-licenses",
-      );
-    const pinned = { license: "Standard 'no charge' license", reason: "dev only" };
-    expect(keep({ gsap: pinned }).code).toBe(0);
-    expect(keep({ "gs*": pinned }).code).toBe(0);
-    const changed = keep({ gsap: { ...pinned, license: "MIT" } });
-    expect(changed.code).toBe(1);
-    expect(changed.out).toContain('pins "MIT", installed is "Standard');
-    for (const gsap of [
-      { license: pinned.license },
-      { ...pinned, reason: {} },
-      { ...pinned, license: true },
-    ]) {
-      const reasonless = keep({ gsap });
-      expect(reasonless.code).toBe(1);
-      expect(reasonless.out).toContain("needs a license string and a reason");
-    }
-    const stale = keep({ gsap: pinned, "left-pad": { license: "MIT", reason: "gone" } });
-    expect(stale.code).toBe(1);
-    expect(stale.out).toContain('scaffolding.licenses["left-pad"] matches no installed package');
-  }, 20_000);
+  test(
+    "an exception pins the licence string and needs a reason; a stale one is red",
+    () => {
+      const keep = (licenses: object) =>
+        run(
+          installed({ gsap: license("Standard 'no charge' license") }, { licenses }),
+          "check-licenses",
+        );
+      const pinned = { license: "Standard 'no charge' license", reason: "dev only" };
+      expect(keep({ gsap: pinned }).code).toBe(0);
+      expect(keep({ "gs*": pinned }).code).toBe(0);
+      const changed = keep({ gsap: { ...pinned, license: "MIT" } });
+      expect(changed.code).toBe(1);
+      expect(changed.out).toContain('pins "MIT", installed is "Standard');
+      for (const gsap of [
+        { license: pinned.license },
+        { ...pinned, reason: {} },
+        { ...pinned, license: true },
+      ]) {
+        const reasonless = keep({ gsap });
+        expect(reasonless.code).toBe(1);
+        expect(reasonless.out).toContain("needs a license string and a reason");
+      }
+      const stale = keep({ gsap: pinned, "left-pad": { license: "MIT", reason: "gone" } });
+      expect(stale.code).toBe(1);
+      expect(stale.out).toContain('scaffolding.licenses["left-pad"] matches no installed package');
+    },
+    limit(20_000),
+  );
 
   test("fails closed: no node_modules, an empty one, a missing lockfile", () => {
     const dir = installed({ fine: license("MIT") });
@@ -6362,203 +6128,219 @@ describe("chrome", () => {
   });
 
   // An install over the unpack took the half-unpacked folder and deleted the archive marking it.
-  test("waits for another job's unpack of the build instead of installing over it", async () => {
-    const { chromeBinary, chromeBinaryAsync } = await import("../lib/chrome.ts");
-    const dir = temp();
-    const cache = join(dir, "cache");
-    const platform =
-      process.platform === "darwin" ? (process.arch === "arm64" ? "mac_arm" : "mac") : "linux";
-    const exe =
-      process.platform === "darwin"
-        ? "Google Chrome for Testing.app/Contents/MacOS/Google Chrome for Testing"
-        : "chrome";
-    let chrome = join(cache, "chrome", `${platform}-11.0.1`, "chrome-x", exe);
-    let archive = join(cache, "chrome", "11.0.1-chrome-x.zip");
-    const log = join(dir, "installs.log");
-    write("/", { [chrome]: "", [archive]: "" });
-    write(dir, {
-      "bin/bunx": `#!/bin/sh\necho run >> "${log}"\necho "${chrome}"\n`,
-      "node_modules/puppeteer-core/package.json": JSON.stringify({
-        name: "puppeteer-core",
-        type: "module",
-        exports: { "./internal/*": "./lib/puppeteer/*" },
-      }),
-      "node_modules/puppeteer-core/lib/puppeteer/revisions.js":
-        "export const PUPPETEER_REVISIONS = { chrome: '11.0.1' };\n",
-    });
-    chmodSync(join(dir, "bin/bunx"), 0o755);
-    const saved = { ...process.env };
-    const cwd = process.cwd();
-    process.env.PATH = `${join(dir, "bin")}:${process.env.PATH}`;
-    process.env.PUPPETEER_CACHE_DIR = cache;
-    delete process.env.CHROME_BINARY;
-    process.chdir(dir);
-    try {
-      setTimeout(() => rmSync(archive), 1_500);
-      expect(await chromeBinaryAsync()).toBe(chrome);
-      expect(existsSync(archive)).toBe(false);
-      expect(existsSync(log)).toBe(false);
-      // The blocking form, in a cache of its own, from a second process that ends the unpack.
-      process.env.PUPPETEER_CACHE_DIR = join(dir, "cache2");
-      chrome = join(dir, "cache2", "chrome", `${platform}-11.0.1`, "chrome-x", exe);
-      archive = join(dir, "cache2", "chrome", "11.0.1-chrome-x.zip");
+  test(
+    "waits for another job's unpack of the build instead of installing over it",
+    async () => {
+      const { chromeBinary, chromeBinaryAsync } = await import("../lib/chrome.ts");
+      const dir = temp();
+      const cache = join(dir, "cache");
+      const platform =
+        process.platform === "darwin" ? (process.arch === "arm64" ? "mac_arm" : "mac") : "linux";
+      const exe =
+        process.platform === "darwin"
+          ? "Google Chrome for Testing.app/Contents/MacOS/Google Chrome for Testing"
+          : "chrome";
+      let chrome = join(cache, "chrome", `${platform}-11.0.1`, "chrome-x", exe);
+      let archive = join(cache, "chrome", "11.0.1-chrome-x.zip");
+      const log = join(dir, "installs.log");
       write("/", { [chrome]: "", [archive]: "" });
-      Bun.spawn(["sh", "-c", `sleep 1.5; rm "${archive}"`]);
-      expect(chromeBinary()).toBe(chrome);
-      expect(existsSync(archive)).toBe(false);
-      expect(existsSync(log)).toBe(false);
-    } finally {
-      process.chdir(cwd);
-      process.env = saved;
-    }
-  }, 30_000);
+      write(dir, {
+        "bin/bunx": `#!/bin/sh\necho run >> "${log}"\necho "${chrome}"\n`,
+        "node_modules/puppeteer-core/package.json": JSON.stringify({
+          name: "puppeteer-core",
+          type: "module",
+          exports: { "./internal/*": "./lib/puppeteer/*" },
+        }),
+        "node_modules/puppeteer-core/lib/puppeteer/revisions.js":
+          "export const PUPPETEER_REVISIONS = { chrome: '11.0.1' };\n",
+      });
+      chmodSync(join(dir, "bin/bunx"), 0o755);
+      const saved = { ...process.env };
+      const cwd = process.cwd();
+      process.env.PATH = `${join(dir, "bin")}:${process.env.PATH}`;
+      process.env.PUPPETEER_CACHE_DIR = cache;
+      delete process.env.CHROME_BINARY;
+      process.chdir(dir);
+      try {
+        setTimeout(() => rmSync(archive), 1_500);
+        expect(await chromeBinaryAsync()).toBe(chrome);
+        expect(existsSync(archive)).toBe(false);
+        expect(existsSync(log)).toBe(false);
+        // The blocking form, in a cache of its own, from a second process that ends the unpack.
+        process.env.PUPPETEER_CACHE_DIR = join(dir, "cache2");
+        chrome = join(dir, "cache2", "chrome", `${platform}-11.0.1`, "chrome-x", exe);
+        archive = join(dir, "cache2", "chrome", "11.0.1-chrome-x.zip");
+        write("/", { [chrome]: "", [archive]: "" });
+        Bun.spawn(["sh", "-c", `sleep 1.5; rm "${archive}"`]);
+        expect(chromeBinary()).toBe(chrome);
+        expect(existsSync(archive)).toBe(false);
+        expect(existsSync(log)).toBe(false);
+      } finally {
+        process.chdir(cwd);
+        process.env = saved;
+      }
+    },
+    limit(30_000),
+  );
 
   // An install that died left its archive beside a half-unpacked build, which a gate took for 15
   // minutes, and an install in the cache's own folder returned that build as it stood.
-  test("installs into a folder of its own and replaces a build whose install died", async () => {
-    const { cachedChrome, chromeBinary } = await import("../lib/chrome.ts");
-    const dir = temp();
-    const cache = join(dir, "cache");
-    const platform =
-      process.platform === "darwin" ? (process.arch === "arm64" ? "mac_arm" : "mac") : "linux";
-    const exe =
-      process.platform === "darwin"
-        ? "Google Chrome for Testing.app/Contents/MacOS/Google Chrome for Testing"
-        : "chrome";
-    const rel = join("chrome", `${platform}-11.0.1`, "chrome-x", exe);
-    const archive = join(cache, "chrome", "11.0.1-chrome-x.zip");
-    write(cache, { [rel]: "half", "chrome/11.0.1-chrome-x.zip": "" });
-    const old = new Date(Date.now() - 600_000);
-    utimesSync(archive, old, old);
-    // Stands in for @puppeteer/browsers: unpacks into the folder after --path.
-    write(dir, {
-      "bin/bunx": `#!/bin/sh\nwhile [ "$1" != --path ]; do shift; done\nmkdir -p "$(dirname "$2/${rel}")"\nprintf whole > "$2/${rel}"\necho "$2/${rel}"\n`,
-    });
-    chmodSync(join(dir, "bin/bunx"), 0o755);
-    const saved = { ...process.env };
-    process.env.PATH = `${join(dir, "bin")}:${process.env.PATH}`;
-    process.env.PUPPETEER_CACHE_DIR = cache;
-    delete process.env.CHROME_BINARY;
-    try {
-      expect(cachedChrome({ anyBuild: true })).toBeUndefined();
-      const started = Date.now();
-      expect(chromeBinary()).toBe(join(cache, rel));
-      expect(Date.now() - started).toBeLessThan(5_000);
-      expect(readFileSync(join(cache, rel), "utf-8")).toBe("whole");
-      expect(existsSync(archive)).toBe(false);
-      expect(readdirSync(cache).filter((name) => name.startsWith(".install-"))).toEqual([]);
-      expect(cachedChrome({ anyBuild: true })).toBe(join(cache, rel));
-      // A download killed before its unpack leaves the archive alone, which read as a build that died.
-      process.env.PUPPETEER_CACHE_DIR = join(dir, "cache2");
-      write(join(dir, "cache2"), { "chrome/11.0.1-chrome-x.zip": "" });
-      utimesSync(join(dir, "cache2/chrome/11.0.1-chrome-x.zip"), old, old);
-      expect(chromeBinary()).toBe(join(dir, "cache2", rel));
-      expect(existsSync(join(dir, "cache2/chrome/11.0.1-chrome-x.zip"))).toBe(false);
-      // An unpack that threw leaves the build's folder without its executable, and no archive.
-      process.env.PUPPETEER_CACHE_DIR = join(dir, "cache3");
-      write(join(dir, "cache3"), {
-        [join("chrome", `${platform}-11.0.1`, "chrome-x", "partial")]: "",
+  test(
+    "installs into a folder of its own and replaces a build whose install died",
+    async () => {
+      const { cachedChrome, chromeBinary } = await import("../lib/chrome.ts");
+      const dir = temp();
+      const cache = join(dir, "cache");
+      const platform =
+        process.platform === "darwin" ? (process.arch === "arm64" ? "mac_arm" : "mac") : "linux";
+      const exe =
+        process.platform === "darwin"
+          ? "Google Chrome for Testing.app/Contents/MacOS/Google Chrome for Testing"
+          : "chrome";
+      const rel = join("chrome", `${platform}-11.0.1`, "chrome-x", exe);
+      const archive = join(cache, "chrome", "11.0.1-chrome-x.zip");
+      write(cache, { [rel]: "half", "chrome/11.0.1-chrome-x.zip": "" });
+      const old = new Date(Date.now() - 600_000);
+      utimesSync(archive, old, old);
+      // Stands in for @puppeteer/browsers: unpacks into the folder after --path.
+      write(dir, {
+        "bin/bunx": `#!/bin/sh\nwhile [ "$1" != --path ]; do shift; done\nmkdir -p "$(dirname "$2/${rel}")"\nprintf whole > "$2/${rel}"\necho "$2/${rel}"\n`,
       });
-      expect(chromeBinary()).toBe(join(dir, "cache3", rel));
-    } finally {
-      process.env = saved;
-    }
-  }, 30_000);
+      chmodSync(join(dir, "bin/bunx"), 0o755);
+      const saved = { ...process.env };
+      process.env.PATH = `${join(dir, "bin")}:${process.env.PATH}`;
+      process.env.PUPPETEER_CACHE_DIR = cache;
+      delete process.env.CHROME_BINARY;
+      try {
+        expect(cachedChrome({ anyBuild: true })).toBeUndefined();
+        const started = Date.now();
+        expect(chromeBinary()).toBe(join(cache, rel));
+        expect(Date.now() - started).toBeLessThan(5_000);
+        expect(readFileSync(join(cache, rel), "utf-8")).toBe("whole");
+        expect(existsSync(archive)).toBe(false);
+        expect(readdirSync(cache).filter((name) => name.startsWith(".install-"))).toEqual([]);
+        expect(cachedChrome({ anyBuild: true })).toBe(join(cache, rel));
+        // A download killed before its unpack leaves the archive alone, which read as a build that died.
+        process.env.PUPPETEER_CACHE_DIR = join(dir, "cache2");
+        write(join(dir, "cache2"), { "chrome/11.0.1-chrome-x.zip": "" });
+        utimesSync(join(dir, "cache2/chrome/11.0.1-chrome-x.zip"), old, old);
+        expect(chromeBinary()).toBe(join(dir, "cache2", rel));
+        expect(existsSync(join(dir, "cache2/chrome/11.0.1-chrome-x.zip"))).toBe(false);
+        // An unpack that threw leaves the build's folder without its executable, and no archive.
+        process.env.PUPPETEER_CACHE_DIR = join(dir, "cache3");
+        write(join(dir, "cache3"), {
+          [join("chrome", `${platform}-11.0.1`, "chrome-x", "partial")]: "",
+        });
+        expect(chromeBinary()).toBe(join(dir, "cache3", rel));
+      } finally {
+        process.env = saved;
+      }
+    },
+    limit(30_000),
+  );
 });
 
 describe("chrome-mcp", () => {
-  test("starts the pinned chrome-devtools MCP server, which opens a page in Chrome for Testing", async () => {
-    const server = Bun.spawn([process.execPath, "--no-env-file", bin("chrome-mcp")], {
-      cwd: join(import.meta.dir, ".."),
-      stdin: "pipe",
-      stdout: "pipe",
-      stderr: "ignore",
-    });
-    let out = "";
-    void (async () => {
-      for await (const chunk of server.stdout) out += new TextDecoder().decode(chunk);
-    })();
-    const call = async (id: number, method: string, params: object) => {
-      server.stdin.write(`${JSON.stringify({ jsonrpc: "2.0", id, method, params })}\n`);
-      for (const end = Date.now() + 60_000; Date.now() < end; await Bun.sleep(100)) {
-        const line = out.split("\n").find((l) => l.includes(`"id":${id}`));
-        if (line) return JSON.parse(line).result;
-      }
-      throw new Error(`no answer to ${method}`);
-    };
-    try {
-      const init = await call(1, "initialize", {
-        protocolVersion: "2025-06-18",
-        capabilities: {},
-        clientInfo: { name: "test", version: "0" },
+  test(
+    "starts the pinned chrome-devtools MCP server, which opens a page in Chrome for Testing",
+    async () => {
+      const server = Bun.spawn([process.execPath, "--no-env-file", bin("chrome-mcp")], {
+        cwd: join(import.meta.dir, ".."),
+        stdin: "pipe",
+        stdout: "pipe",
+        stderr: "ignore",
       });
-      expect(init.serverInfo.version).toBe(ownPackage.dependencies["chrome-devtools-mcp"]);
-      server.stdin.write('{"jsonrpc":"2.0","method":"notifications/initialized"}\n');
-      const pages = await call(2, "tools/call", { name: "list_pages", arguments: {} });
-      expect(pages.content[0].text).toContain("about:blank");
-    } finally {
-      server.kill("SIGTERM");
-      await server.exited;
-    }
-  }, 120_000);
-
-  test("starts on any cached build where the pinned one is missing, without a download", async () => {
-    const cache = temp();
-    const platform =
-      process.platform === "darwin" ? (process.arch === "arm64" ? "mac_arm" : "mac") : "linux";
-    const exe =
-      process.platform === "darwin"
-        ? "Google Chrome for Testing.app/Contents/MacOS/Google Chrome for Testing"
-        : "chrome";
-    write("/", { [join(cache, "chrome", `${platform}-10.0.1`, "chrome-x", exe)]: "" });
-    const consumer = temp();
-    write(consumer, {
-      "node_modules/puppeteer-core/package.json": JSON.stringify({
-        name: "puppeteer-core",
-        type: "module",
-        exports: { "./internal/*": "./lib/puppeteer/*" },
-      }),
-      "node_modules/puppeteer-core/lib/puppeteer/revisions.js":
-        "export const PUPPETEER_REVISIONS = { chrome: '9.0.1' };\n",
-    });
-    // Stands in for @puppeteer/browsers: logs a download and fails it.
-    const fake = temp();
-    const log = join(fake, "bunx.log");
-    writeFileSync(join(fake, "bunx"), `#!/bin/sh\necho "$*" >> "${log}"\nexit 1\n`, {
-      mode: 0o755,
-    });
-    const env: Record<string, string | undefined> = {
-      ...process.env,
-      PUPPETEER_CACHE_DIR: cache,
-      PATH: `${fake}:${process.env.PATH}`,
-      // Empty counts as unset, as chromeBinary reads it.
-      CHROME_BINARY: "",
-    };
-    const server = Bun.spawn([process.execPath, "--no-env-file", bin("chrome-mcp")], {
-      cwd: consumer,
-      env,
-      stdin: "pipe",
-      stdout: "pipe",
-      stderr: "ignore",
-    });
-    server.stdin.write(
-      `${JSON.stringify({ jsonrpc: "2.0", id: 1, method: "initialize", params: { protocolVersion: "2025-06-18", capabilities: {}, clientInfo: { name: "test", version: "0" } } })}\n`,
-    );
-    let out = "";
-    const reader = server.stdout.getReader();
-    try {
-      for (const end = Date.now() + 30_000; !out.includes('"id":1') && Date.now() < end;) {
-        const { value, done } = await reader.read();
-        if (done) break;
-        out += new TextDecoder().decode(value);
+      let out = "";
+      void (async () => {
+        for await (const chunk of server.stdout) out += new TextDecoder().decode(chunk);
+      })();
+      const call = async (id: number, method: string, params: object) => {
+        server.stdin.write(`${JSON.stringify({ jsonrpc: "2.0", id, method, params })}\n`);
+        for (const end = Date.now() + 60_000; Date.now() < end; await Bun.sleep(100)) {
+          const line = out.split("\n").find((l) => l.includes(`"id":${id}`));
+          if (line) return JSON.parse(line).result;
+        }
+        throw new Error(`no answer to ${method}`);
+      };
+      try {
+        const init = await call(1, "initialize", {
+          protocolVersion: "2025-06-18",
+          capabilities: {},
+          clientInfo: { name: "test", version: "0" },
+        });
+        expect(init.serverInfo.version).toBe(ownPackage.dependencies["chrome-devtools-mcp"]);
+        server.stdin.write('{"jsonrpc":"2.0","method":"notifications/initialized"}\n');
+        const pages = await call(2, "tools/call", { name: "list_pages", arguments: {} });
+        expect(pages.content[0].text).toContain("about:blank");
+      } finally {
+        server.kill("SIGTERM");
+        await server.exited;
       }
-    } finally {
-      server.kill("SIGTERM");
-      await server.exited;
-    }
-    expect(existsSync(log) ? readFileSync(log, "utf8") : "").toBe("");
-    expect(out).toContain("chrome_devtools");
-  }, 60_000);
+    },
+    limit(120_000),
+  );
+
+  test(
+    "starts on any cached build where the pinned one is missing, without a download",
+    async () => {
+      const cache = temp();
+      const platform =
+        process.platform === "darwin" ? (process.arch === "arm64" ? "mac_arm" : "mac") : "linux";
+      const exe =
+        process.platform === "darwin"
+          ? "Google Chrome for Testing.app/Contents/MacOS/Google Chrome for Testing"
+          : "chrome";
+      write("/", { [join(cache, "chrome", `${platform}-10.0.1`, "chrome-x", exe)]: "" });
+      const consumer = temp();
+      write(consumer, {
+        "node_modules/puppeteer-core/package.json": JSON.stringify({
+          name: "puppeteer-core",
+          type: "module",
+          exports: { "./internal/*": "./lib/puppeteer/*" },
+        }),
+        "node_modules/puppeteer-core/lib/puppeteer/revisions.js":
+          "export const PUPPETEER_REVISIONS = { chrome: '9.0.1' };\n",
+      });
+      // Stands in for @puppeteer/browsers: logs a download and fails it.
+      const fake = temp();
+      const log = join(fake, "bunx.log");
+      writeFileSync(join(fake, "bunx"), `#!/bin/sh\necho "$*" >> "${log}"\nexit 1\n`, {
+        mode: 0o755,
+      });
+      const env: Record<string, string | undefined> = {
+        ...process.env,
+        PUPPETEER_CACHE_DIR: cache,
+        PATH: `${fake}:${process.env.PATH}`,
+        // Empty counts as unset, as chromeBinary reads it.
+        CHROME_BINARY: "",
+      };
+      const server = Bun.spawn([process.execPath, "--no-env-file", bin("chrome-mcp")], {
+        cwd: consumer,
+        env,
+        stdin: "pipe",
+        stdout: "pipe",
+        stderr: "ignore",
+      });
+      server.stdin.write(
+        `${JSON.stringify({ jsonrpc: "2.0", id: 1, method: "initialize", params: { protocolVersion: "2025-06-18", capabilities: {}, clientInfo: { name: "test", version: "0" } } })}\n`,
+      );
+      let out = "";
+      const reader = server.stdout.getReader();
+      try {
+        for (const end = Date.now() + 30_000; !out.includes('"id":1') && Date.now() < end;) {
+          const { value, done } = await reader.read();
+          if (done) break;
+          out += new TextDecoder().decode(value);
+        }
+      } finally {
+        server.kill("SIGTERM");
+        await server.exited;
+      }
+      expect(existsSync(log) ? readFileSync(log, "utf8") : "").toBe("");
+      expect(out).toContain("chrome_devtools");
+    },
+    limit(60_000),
+  );
 });
 
 describe("serve", () => {
@@ -6623,66 +6405,78 @@ await serve([process.execPath, "-e", "console.error('boot failed: stack'); proce
     expect(factor(String(cores * 50))).toBe(10);
   });
 
-  test("an answer that arrives after the server exited is not its own", async () => {
-    const { serve } = await import("../lib/serve.ts");
-    const foreign = join(temp(), "foreign.ts");
-    writeFileSync(
-      foreign,
-      "Bun.serve({ hostname: process.env.HOST, port: Number(process.env.PORT), fetch: async () => { await Bun.sleep(3000); return new Response('foreign'); } });\n",
-    );
-    // The command exits while a request to another listener on its port is still open.
-    const command = ["sh", "-c", `${process.execPath} ${foreign} & sleep 1; exit 1`];
-    expect(await rejection(serve(command, { timeoutMs: 10_000 }))).toContain("it exited");
-  }, 20_000);
+  test(
+    "an answer that arrives after the server exited is not its own",
+    async () => {
+      const { serve } = await import("../lib/serve.ts");
+      const foreign = join(temp(), "foreign.ts");
+      writeFileSync(
+        foreign,
+        "Bun.serve({ hostname: process.env.HOST, port: Number(process.env.PORT), fetch: async () => { await Bun.sleep(3000); return new Response('foreign'); } });\n",
+      );
+      // The command exits while a request to another listener on its port is still open.
+      const command = ["sh", "-c", `${process.execPath} ${foreign} & sleep 1; exit 1`];
+      expect(await rejection(serve(command, { timeoutMs: 10_000 }))).toContain("it exited");
+    },
+    limit(20_000),
+  );
 
-  test("a server that accepts but never answers fails at the timeout", async () => {
-    const { serve } = await import("../lib/serve.ts");
-    const silent = `require("node:net").createServer(() => {}).listen(Number(process.env.PORT), process.env.HOST)`;
-    const started = Date.now();
-    expect(await rejection(serve([process.execPath, "-e", silent], { timeoutMs: 500 }))).toContain(
-      "no answer",
-    );
-    expect(Date.now() - started).toBeLessThan(5_000);
-  }, 10_000);
+  test(
+    "a server that accepts but never answers fails at the timeout",
+    async () => {
+      const { serve } = await import("../lib/serve.ts");
+      const silent = `require("node:net").createServer(() => {}).listen(Number(process.env.PORT), process.env.HOST)`;
+      const started = Date.now();
+      expect(
+        await rejection(serve([process.execPath, "-e", silent], { timeoutMs: 500 })),
+      ).toContain("no answer");
+      expect(Date.now() - started).toBeLessThan(5_000);
+    },
+    limit(10_000),
+  );
 
   for (const stopped of [true, false])
-    test(`${stopped ? "stop()" : "SIGKILL to the process that served"} ends a server behind a wrapper`, async () => {
-      const app = join(temp(), "app.ts");
-      writeFileSync(
-        app,
-        "Bun.serve({ hostname: process.env.HOST, port: Number(process.env.PORT), fetch: () => new Response(String(process.pid)) });\n",
-      );
-      // `; :` keeps sh as the parent, so the server is a grandchild.
-      const wrapped = JSON.stringify(["sh", "-c", `${process.execPath} ${app}; :`]);
-      const parent = Bun.spawn(
-        [
-          process.execPath,
-          "-e",
-          `const s = await (await import(${JSON.stringify(join(import.meta.dir, "..", "lib", "serve.ts"))})).serve(${wrapped}); console.log(await (await fetch(s.url)).text()); ${stopped ? "s.stop();" : "await new Promise(() => {});"}`,
-        ],
-        { stdout: "pipe" },
-      );
-      try {
-        let line = "";
-        const decoder = new TextDecoder();
-        for await (const chunk of parent.stdout) {
-          line += decoder.decode(chunk);
-          if (line.includes("\n")) break;
-        }
-        const pid = Number(line);
-        expect(pid).toBeGreaterThan(0);
-        if (!stopped) parent.kill("SIGKILL");
-        const alive = () => {
-          try {
-            return process.kill(pid, 0);
-          } catch {
-            return false;
+    test(
+      `${stopped ? "stop()" : "SIGKILL to the process that served"} ends a server behind a wrapper`,
+      async () => {
+        const app = join(temp(), "app.ts");
+        writeFileSync(
+          app,
+          "Bun.serve({ hostname: process.env.HOST, port: Number(process.env.PORT), fetch: () => new Response(String(process.pid)) });\n",
+        );
+        // `; :` keeps sh as the parent, so the server is a grandchild.
+        const wrapped = JSON.stringify(["sh", "-c", `${process.execPath} ${app}; :`]);
+        const parent = Bun.spawn(
+          [
+            process.execPath,
+            "-e",
+            `const s = await (await import(${JSON.stringify(join(import.meta.dir, "..", "lib", "serve.ts"))})).serve(${wrapped}); console.log(await (await fetch(s.url)).text()); ${stopped ? "s.stop();" : "await new Promise(() => {});"}`,
+          ],
+          { stdout: "pipe" },
+        );
+        try {
+          let line = "";
+          const decoder = new TextDecoder();
+          for await (const chunk of parent.stdout) {
+            line += decoder.decode(chunk);
+            if (line.includes("\n")) break;
           }
-        };
-        for (const end = Date.now() + 5_000; alive() && Date.now() < end;) await Bun.sleep(100);
-        expect(alive()).toBe(false);
-      } finally {
-        parent.kill("SIGKILL");
-      }
-    }, 15_000);
+          const pid = Number(line);
+          expect(pid).toBeGreaterThan(0);
+          if (!stopped) parent.kill("SIGKILL");
+          const alive = () => {
+            try {
+              return process.kill(pid, 0);
+            } catch {
+              return false;
+            }
+          };
+          for (const end = Date.now() + 5_000; alive() && Date.now() < end;) await Bun.sleep(100);
+          expect(alive()).toBe(false);
+        } finally {
+          parent.kill("SIGKILL");
+        }
+      },
+      limit(15_000),
+    );
 });
