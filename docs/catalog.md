@@ -208,7 +208,8 @@ repository's `head` comes later and wins, while a `/favicon.ico` without a link 
 A state's `args.lead` is the same prop its component takes, so it describes that page too. The shell writes no robots tag, so search engines may index the catalog. A repository
 that wants the whole catalog out of the index sets the tag in its `head`; a single page of its own
 sets it in that page. Unless `themeToggle` is `false`, every page but a state alone carries `data-hw-night`, so brand's `night.css`
-turns it under the theme toggle while a tile's preview keeps its own theme. The shell's own card and pill on the home carry `data-hw-shell`, for a
+turns it under the theme toggle while a tile's preview keeps its own theme. A page without it draws
+in the day theme, whatever theme the reader chose or the system sets, and the choice stays stored for the other pages. The shell's own card and pill on the home carry `data-hw-shell`, for a
 check of the repository's elements to skip.
 
 `astro dev` starts quietly: Vite's start-up scan reads the stories and the components they import,

@@ -6,14 +6,19 @@ import { join } from "node:path";
 export const companyRemote = (repo: string) =>
   `${process.env.SCAFFOLDING_GIT_BASE || "https://github.com/hackersandwizards/"}${repo}.git`;
 
-/** The highest v<major>.<minor>.<patch> tag `remote` holds, or undefined where none is read within
- * SCAFFOLDING_FETCH_WAIT_S seconds (20 by default): an SSH remote waits for a person to approve
- * the key, and nothing in ssh or git ends that wait. git runs in a process group of its own, so the
- * timeout ends ssh with it. git's own error goes to stderr. */
-export async function newestTag(remote: string): Promise<string | undefined> {
-  // A bound that is no whole number of seconds above 0 is the default, as in session-start.
+/** SCAFFOLDING_FETCH_WAIT_S, the seconds a read from a remote may take: 20 unless it is a whole
+ * number above 0, as in session-start. */
+export const fetchWaitS = (): number => {
   const set = process.env.SCAFFOLDING_FETCH_WAIT_S ?? "";
-  const wait = /^\d*[1-9]\d*$/.test(set) ? Number(set) : 20;
+  return /^\d*[1-9]\d*$/.test(set) ? Number(set) : 20;
+};
+
+/** The highest v<major>.<minor>.<patch> tag `remote` holds, or undefined where none is read within
+ * fetchWaitS() seconds: an SSH remote waits for a person to approve the key, and nothing in ssh or
+ * git ends that wait. git runs in a process group of its own, so the timeout ends ssh with it.
+ * git's own error goes to stderr. */
+export async function newestTag(remote: string): Promise<string | undefined> {
+  const wait = fetchWaitS();
   const git = spawn("git", ["ls-remote", "--tags", "--refs", remote], {
     detached: true,
     stdio: ["ignore", "pipe", "inherit"],

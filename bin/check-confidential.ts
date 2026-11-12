@@ -41,6 +41,7 @@ import { inflateRawSync } from "node:zlib";
 import { help } from "../lib/help.ts";
 import {
   applyAllow,
+  fetchWaitS,
   finish,
   git,
   reader,
@@ -231,17 +232,26 @@ if (argv[0] === "prepush") {
   const file = join(root, ".confidential-purged.json");
   if (existsSync(file)) add(readFileSync(file, "utf8"), "the list in this checkout");
   // A clone older than the list carries the purged commits without it, so the list on the remote's
-  // default branch counts too: fetched into a ref of this run's own within 20 s. A remote without a
-  // list, or out of reach, adds nothing.
+  // default branch counts too: fetched into a ref of this run's own within fetchWaitS(). A remote
+  // without a list, or out of reach, adds nothing. A fetch past the bound refuses: the old clone
+  // shares no commit with the rewritten history and fetches all of it, which a slow line takes
+  // longer than 20 s for; a fetch of the remote first leaves this one little to fetch.
   if (commits.length) {
     const ref = `refs/scaffolding/remote-purged-${process.pid}`;
     const fetch = ["fetch", "-q", "--no-tags", "--no-write-fetch-head"];
+    const wait = fetchWaitS();
     const fetched = spawnSync("git", [...fetch, argv[2] ?? argv[1], `+HEAD:${ref}`], {
       cwd: root,
       env: { ...process.env, GIT_TERMINAL_PROMPT: "0" },
       stdio: "ignore",
-      timeout: 20_000,
+      timeout: wait * 1000,
     });
+    if ((fetched.error as { code?: string } | undefined)?.code === "ETIMEDOUT")
+      report(
+        "push",
+        ".confidential-purged.json",
+        `the list on the remote's default branch did not arrive within ${wait} s: run \`git fetch ${argv[1]}\`, then push again`,
+      );
     const list = spawnSync("git", ["show", `${ref}:.confidential-purged.json`], {
       cwd: root,
       encoding: "utf8",

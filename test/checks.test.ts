@@ -1958,6 +1958,29 @@ describe("check-confidential", () => {
     expect(broken.status).toBe(1);
   });
 
+  test("a remote list that does not arrive within SCAFFOLDING_FETCH_WAIT_S refuses the push", () => {
+    const remote = temp();
+    sh(remote, ["init", "-q", "--bare"]);
+    const dir = repo({ "package.json": "{}", "a.md": "a\n" });
+    sh(dir, ["push", "-q", remote, "HEAD:refs/heads/main"]);
+    sh(dir, ["remote", "add", "origin", remote]);
+    const push = (uploadpack: string) => {
+      sh(dir, ["config", "remote.origin.uploadpack", uploadpack]);
+      return spawnSync(process.execPath, [bin("check-confidential"), "prepush", "origin"], {
+        cwd: dir,
+        input: `refs/heads/x ${sh(dir, ["rev-parse", "HEAD"]).stdout.toString().trim()} refs/heads/x ${"0".repeat(40)}\n`,
+        encoding: "utf8",
+        env: { ...process.env, SCAFFOLDING_FETCH_WAIT_S: "1" },
+      });
+    };
+    const slow = push("sleep 3; git-upload-pack");
+    expect(slow.stderr).toContain(
+      "the list on the remote's default branch did not arrive within 1 s: run `git fetch origin`, then push again",
+    );
+    expect(slow.status).toBe(1);
+    expect(push("git-upload-pack").status).toBe(0);
+  });
+
   test("purged adds to the repository's list under its salt, a redirect's empty file included", () => {
     const dir = repo({ "package.json": "{}" });
     const purged = (shas: string[]) =>
@@ -3911,8 +3934,11 @@ describe("catalog", () => {
           `[document.documentElement.dataset.theme, localStorage.getItem("theme")]`,
         ),
       ).toEqual(["light", "light"]);
-      // A state alone in the window keeps the room inside Astrobook's scrolling <main> too.
-      await painted.evaluate(`location.href = "/stories/Parts/box-parts/two/"`);
+      // A state alone in the window keeps the room inside Astrobook's scrolling <main> too. It draws
+      // in the day theme whatever the reader chose, as a tile's frame does, and keeps the choice.
+      await painted.evaluate(
+        `localStorage.setItem("theme", "dark"); localStorage.setItem("theme-toggle", "dark"); location.href = "/stories/Parts/box-parts/two/"`,
+      );
       await painted.until(
         `location.pathname.startsWith("/stories/") && document.readyState === "complete" && !!document.querySelector(".box")`,
       );
@@ -3921,6 +3947,11 @@ describe("catalog", () => {
           `(() => { document.documentElement.style.setProperty("--hw-focus-room", "6px"); const [m, s] = ["main", ".box"].map((q) => document.querySelector(q).getBoundingClientRect()); return [s.left - m.left, s.top - m.top, document.documentElement.dataset.hwAlone]; })()`,
         ),
       ).toEqual([6, 6, ""]);
+      expect(
+        await painted.evaluate(
+          `[document.documentElement.dataset.theme, document.documentElement.classList.contains("dark"), localStorage.getItem("theme"), localStorage.getItem("theme-toggle")]`,
+        ),
+      ).toEqual(["light", false, "dark", "dark"]);
     } finally {
       painted.close();
       void served.stop(true);
@@ -4456,6 +4487,11 @@ describe("catalog", () => {
       mkdirSync(join(fixture, "catalog", dir), { recursive: true });
       writeFileSync(join(fixture, "catalog", dir, "mod.css"), "a {\n  color: red;\n}\n");
     }
+    // A page of the site's own at /catalog/, written before dev starts: dev reads no page added
+    // under node_modules, where the copy lies.
+    const src = join(fixture, "catalog", "src");
+    mkdirSync(join(src, "pages", "catalog"), { recursive: true });
+    writeFileSync(join(src, "pages", "catalog", "index.astro"), "<p>site catalog page</p>\n");
     // ASTRO_DEV_BACKGROUND=1, as the dev script in docs/catalog.md: under an agent astro dev otherwise moves
     // into the background and resolves --root from inside the folder.
     const server = await serve(
@@ -4494,7 +4530,8 @@ describe("catalog", () => {
       // Dev serves at the root: the old /catalog/ path and the Pages base forward there.
       for (const [old, to] of [
         ["/catalog/dashboard/Parts/box-parts/two?x", "/dashboard/Parts/box-parts/two?x"],
-        ["/fx/catalog/", "/"],
+        // The base drops, and the site's own page at /catalog/ keeps its place.
+        ["/fx/catalog/", "/catalog/"],
         ["/catalog/stories/%E2%82%AC", "/stories/%E2%82%AC"],
         ["/fx//evil.example/x", "/evil.example/x"],
       ]) {
@@ -4508,6 +4545,9 @@ describe("catalog", () => {
       expect((await fetch(`${server.url}/catalog/print/`, { redirect: "manual" })).status).not.toBe(
         307,
       );
+      // Nor is a page of the site's own at /catalog/ itself, as in the build.
+      const own = await fetch(`${server.url}/catalog/`, { redirect: "manual" });
+      expect([own.status, (await own.text()).includes("site catalog page")]).toEqual([200, true]);
       page = await browse(`${server.url}/dashboard/Parts/box-parts/two`);
       const { evaluate, until } = page;
       await until(`document.readyState === "complete" && !!document.body.dataset.fxRan`);
@@ -4541,6 +4581,7 @@ describe("catalog", () => {
     } finally {
       page?.close();
       server.stop();
+      rmSync(src, { recursive: true });
     }
   }, 90_000);
 

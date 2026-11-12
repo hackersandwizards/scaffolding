@@ -57,7 +57,9 @@ const { hwCatalogLead: lead } = Astro.locals as { hwCatalogLead?: unknown };
 // brand's scale and night on <html>, set before the body draws: the home at the dense scale, a
 // page drawing a story at `storyScale`; night.css turns only a subtree marked data-hw-night under the
 // theme toggle's data-theme, which is every page but a state alone, so a tile's preview keeps the
-// state's own theme, and no page where `themeToggle` is false.
+// state's own theme, and no page where `themeToggle` is false. A page without it draws in the day
+// theme: Astrobook's theme script turned it dark from the stored choice or the system's, and brand's
+// elements followed while its ground stayed light. The choice stays stored for the other pages.
 const root = {
   hwScale: mod || alone ? shell.storyScale : "dense",
   hwNight: alone || !shell.themeToggle ? undefined : "",
@@ -73,7 +75,7 @@ const root = {
 <RepositoryHead />
 <script
   is:inline
-  set:html={`Object.assign(document.documentElement.dataset,${JSON.stringify(root)});document.documentElement.classList.add(...${JSON.stringify(shell.htmlClass)});${alone ? 'if(window===top)document.documentElement.dataset.hwAlone="";' : ""}`}
+  set:html={`Object.assign(document.documentElement.dataset,${JSON.stringify(root)});${root.hwNight === undefined ? 'document.documentElement.dataset.theme="light";document.documentElement.classList.remove("dark");document.documentElement.style.colorScheme="light";' : ""}document.documentElement.classList.add(...${JSON.stringify(shell.htmlClass)});${alone ? 'if(window===top)document.documentElement.dataset.hwAlone="";' : ""}`}
 />
 {mod && (
   <template id="hw-catalog-bar">
@@ -160,11 +162,13 @@ const root = {
     // own key: the bar takes brand's and writes both, so one choice holds on the repository's pages
     // and in its catalog. Storage may be blocked (a file:// page); the choice then holds here only.
     const BRAND_KEY = "theme";
-    try {
-      const chosen = localStorage.getItem(BRAND_KEY);
-      if ((chosen === "dark" || chosen === "light") && theme()?.getTheme?.() !== chosen)
-        theme()?.setTheme?.(chosen);
-    } catch {}
+    // A page without data-hw-night keeps the day theme its head set.
+    if (document.documentElement.dataset.hwNight !== undefined)
+      try {
+        const chosen = localStorage.getItem(BRAND_KEY);
+        if ((chosen === "dark" || chosen === "light") && theme()?.getTheme?.() !== chosen)
+          theme()?.setTheme?.(chosen);
+      } catch {}
     const pressed = () =>
       document
         .querySelector("[data-hw-theme]")

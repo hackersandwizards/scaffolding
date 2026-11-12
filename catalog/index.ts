@@ -295,8 +295,9 @@ export function catalog(options: CatalogOptions): AstroIntegration {
         moved = (path) => {
           const unbased = strip(path, dev ? pagesBase : "");
           // Only the catalog's own former pages move, as in the build: a site's page under
-          // /catalog/ stays.
-          const now = atRoot && FORMER.test(unbased) ? strip(unbased, "/catalog") : unbased;
+          // /catalog/, at /catalog/ itself too, stays.
+          const own = pageRoutes.has(decoded(unbased).replace(/(.)\/$/, "$1"));
+          const now = atRoot && !own && FORMER.test(unbased) ? strip(unbased, "/catalog") : unbased;
           // A file Vite serves, a module under the root such as catalog/Head.astro or a public
           // file, is not a page.
           const file = decoded(path);
