@@ -2,8 +2,7 @@
 
 `scaffolding check` runs `bun install --frozen-lockfile`, then the shared steps side by side, the
 catalog build once a typecheck that runs Astro has finished:
-format, lint, styles (stylelint), typecheck, structure, coupling, unique names, spaces, confidential,
-history, licenses, the tests, the catalog build (`bun run build`) and admin (the item files, with the pinned
+format, lint, styles (stylelint), typecheck, structure, coupling, spaces, confidential, licenses, the tests, the catalog build (`bun run build`) and admin (the item files, with the pinned
 `@hackersandwizards/admin`'s `admin-check`; a repository without admin pinned needs `skip.admin`). Once those pass, the repository's own steps from
 `scaffolding.check`, in order, an inner array side by side; a red one stops those after it. Format, lint and styles walk past every
 submodule `.gitmodules` names, which its own repository checks. A shared step drops only with a reason, a
@@ -14,7 +13,6 @@ non-blank string in `skip`:
   "scaffolding": {
     "test": "test:coverage",
     "typecheck": "astro check",
-    "uniqueNames": ["GET", "POST"],
     "skip": { "catalog": "no surface" },
     "check": ["check:refs", ["check:markers", "check:elements"]]
   }
@@ -57,7 +55,9 @@ group of the repository's own steps at most cores × cores ÷ load at a time, at
 step: 5000 ms on an idle machine. bun takes a per-test limit only as a flag, so the repository's
 test command passes it on, `"test": "bun test --timeout ${SCAFFOLDING_TEST_TIMEOUT_MS:-5000}"`;
 vitest takes `--testTimeout=${SCAFFOLDING_TEST_TIMEOUT_MS:-5000}` or reads the variable in its
-config. Without it every test keeps its 5 s limit however loaded the machine is, so
+config. A test that sets its own limit scales it the same way,
+`ms * Number(process.env.SCAFFOLDING_TEST_TIMEOUT_MS || 5000) / 5000`: a fixed 30 s limit timed out
+under load where the default had stretched. Without it every test keeps its 5 s limit however loaded the machine is, so
 `check-structure` goes red where neither `scaffolding.test`, the script it names nor a root
 `vitest.config.*` or `vite.config.*` names `SCAFFOLDING_TEST_TIMEOUT_MS`.
 
@@ -79,34 +79,19 @@ the `{" "}` prettier itself writes, or joining the lines. A line of expressions 
 neither: most lay out sibling elements. A break no space belongs in, such as an
 icon in a flex row, gets an allow entry with `text`. Where every `astro.config.*` in the repository
 sets `compressHTML` to `true` or `false`, the step reads only the `.astro` files a consumer can compile under its own setting: those
-`bun pm pack` lists, as History below, and where package.json has `exports`, of those only the ones an
+`bun pm pack` lists (a repository whose `package.json` declares no `files`, `exports` or `bin` ships none), and where package.json has `exports`, of those only the ones an
 exported path names and the files they import by a relative path. There it also
 flags an inline closing tag or text whose next line holds one expression whose first element is
 inline (`{n > 0 && <span>{n}</span>}`): the package's pages show that space, a consumer's do not. It
 reads every file again once one config returns to `"jsx"`.
-
-**History.** What a package ships is public wherever a consumer serves or bundles it, so a comment
-in a shipped file says how to use the code and why, and the history behind it goes to the commit
-message. The step reads the comments of every text file `bun pm pack` lists, without their marks
-and with consecutive comment lines joined, so an id or a score wrapped across a line break counts.
-It flags review scores and panels (the words reviewer, persona and scored too), a comparison of two scores (`7.94 against 7.29`, `8.4 vs 7.9`;
-a three-part version or a number after a capitalised name such as `Python 3.11` is none), dates (a one-digit month counts only before a year, a closing bracket or a comma, so `only 4.7.` closing a sentence is none), decision ids, item ids (the generic `AB-1` form and the repository's own
-`docs/agent-work/items/` names), paths to review notes and the founders' names. It first checks each
-pattern against a line that shipped once, so a pattern that stops matching turns the step red. A
-repository whose `package.json` declares no `files`, `exports` or `bin` ships nothing, and passes;
-one that does needs a `version` for `bun pm pack`. A
-date that is an example of a format, or a comparison of plain decimals such as `1.5 against 1.25`,
-gets an allow entry with `text`, which reads the comment without its marks.
 
 A repository that pins `@hackersandwizards/brand` lists `check:retired` in `scaffolding.check`, brand's
 `brand-retired` over the folders its build writes (`"check:retired": "brand-retired dist"`), or
 gives `skip.retired` a reason; the gate goes red otherwise. `scaffold` writes that step for a
 repository with its catalog.
 
-`uniqueNames` lists names the framework dictates, which the unique-names step lets repeat;
-Astro's `getStaticPaths` needs no entry. Every step in `scaffolding.check` is a script named
-`check:<what>`. `scaffolding.private` in the index skips the confidential scan; in the working
-tree, the history step.
+Every step in `scaffolding.check` is a script named `check:<what>`. `scaffolding.private` in the
+index skips the confidential scan.
 
 **CSS origin.** In a repository's sources, a stylesheet from a company package comes only from
 brand's `exports`; the shell's styles load only under `catalog/`; an engine's stylesheet loads where
@@ -153,9 +138,8 @@ scanned without its own allow entries, so a term an entry names needs no entry f
 containing it, or for a confidential term the whole term in any case, its accents composed or
 not and its punctuation read as a space: `"Jane Doe"` keeps `JANE DOE`, never `Jane Doe Consulting`.
 `text` may be a list, each item its own exception. An entry without a reason fails, and so does an entry, or
-an item of its list, that no longer matches anything.
-For `check: "unique-names"`, `path` exempts the definition sites it covers, such as a copy another
-repository syncs in.
+an item of its list, that no longer matches anything. `check` names one of the checks that read the
+list: `coupling`, `confidential`, `never-shown`, `structure` or `spaces`; any other fails the gate.
 
 ## Licences
 
