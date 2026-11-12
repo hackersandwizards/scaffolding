@@ -69,7 +69,7 @@ handling that prevents data loss, security measures, or accessibility basics.
 - Every repository with a UI links its design-system catalogue in the UI, guarded by a coverage
   test and named in its `CLAUDE.md`. A catalogue shows what its repository adds to or changes
   from the packages it builds on (brand's elements, slides' slide types) and one tile per brand
-  element its `brand-elements.json` lists as used, which brand's `brand-elements` requires; never
+  element it draws, which no brand check enforces; never
   other parts of those packages, nor its own content such as decks. An element two repositories
   build moves into the package they share.
 - Decks run only on our own slide engine, never Slidev or reveal.js. Two exceptions stay and are
