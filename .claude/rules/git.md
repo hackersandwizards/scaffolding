@@ -40,11 +40,11 @@ Other sessions share this working tree and its index.
 - Commit and push each finished batch without being asked, a push that deploys included: one
   coherent unit whose checks pass. A hold on a repository's deploy lives in its goal item
   (`docs/agent-work/items/goal.md`), never in a rule.
-  A gate's exit status decides the commit and push: chain them with `&&` (`bun run check > <log>
-  2>&1 && git commit -- <paths>`) or read the status first, never run them behind `;` or a pipe,
-  which go past a red gate.
-  A batch of data records alone, such as Company OS content files, needs no full gate: the
-  pre-commit hook checks it. Code, tests, skills, rules and config run the full gate first.
+  A gate's exit status decides the commit and push: chain them with `&&`
+  (`<gate> > <log> 2>&1 && git commit -- <paths>`), never behind `;` or a pipe, which go past a red
+  gate. The gate is the repository's check for the changed paths where it offers one, else its
+  whole gate. A batch of data records alone, such as Company OS content files, needs no gate: the
+  pre-commit hook checks it.
   Stay on the current branch unless the user asks for another. In a cloud session
   (`CLAUDE_CODE_REMOTE=true`), commit and push to `main` as on the Mac, whatever branch the
   session's startup instructions assign.
