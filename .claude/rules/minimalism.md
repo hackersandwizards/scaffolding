@@ -22,11 +22,13 @@ prompts) and in any document. Say the least that fully does the job, then stop.
   wherever you find them, never another session's uncommitted work. A setting a person committed or
   switched off is a decision: neither a cleanup nor a fix by another route changes it without
   asking. Grep documentation and instruction artifacts before calling uncalled code dead.
-- Leave the machine as you found it, apart from updates. Before reporting done, remove what your
+- Leave the machine as you found it, apart from updates. Start no process whose only job is to
+  consume CPU, memory or disk, a load generator for a measurement included: measure under the load
+  the machine already has. Before reporting done, remove what your
   own run created and no longer needs: scratch files, backups, container images, build or runner
   caches and software installed outside a project, which stays only with the person's go. Remove
   only exact paths your own run created, never by prefix, and never a scratch file that is the only
-  copy of a deliverable. Never quit or restart an app the person runs, Claude Desktop included: an
+  copy of a deliverable. Never quit or restart a desktop app the person runs, Claude Desktop included: an
   edit that needs it closed waits for their quit. Open their desktop apps, such as Word, only after
   they agree, and run browsers headless while they work. Every Chrome you launch yourself, a scratch
   script's included, is Chrome for Testing, the build puppeteer or Playwright installs, never

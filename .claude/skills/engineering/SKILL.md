@@ -27,7 +27,7 @@ handling that prevents data loss, security measures, or accessibility basics.
   lists. You choose which; nothing requires the full gate every time, and your run is the only
   full one before the deploy.
 - A git hook holds only what is irreversible or takes under about a second, run over the staged
-  changes: the secret scan, format and lint, and checks of that size such as scaffolding's
+  changes: the secret scan, format and lint, and checks of that size such as the
   `check-staged` set or a repository's own `check:skills` when `.claude/` is staged. CI builds, runs the integration tests a deploy needs, deploys and applies Terraform after
   a plan. A schedule runs only to notice an absence no commit reveals, such as a new advisory
   against an unchanged lockfile.
@@ -68,13 +68,12 @@ handling that prevents data loss, security measures, or accessibility basics.
   audits as gates from the first wave.
 - Every repository with a UI links its design-system catalogue in the UI, guarded by a coverage
   test and named in its `CLAUDE.md`. A catalogue shows what its repository adds to or changes
-  from the packages it builds on (brand's elements, slides' slide types) and one tile per brand
-  element it draws, which no brand check enforces; never
-  other parts of those packages, nor its own content such as decks. An element two repositories
-  build moves into the package they share.
-- Decks run only on our own slide engine, never Slidev or reveal.js. Two exceptions stay and are
-  never proposed for porting: the one client reveal.js deck in Company OS and a partner's own
-  course repositories.
+  from the packages it builds on and one tile per brand element it draws, which no brand check
+  enforces; never other parts of those packages, nor its own content such as decks. An element two
+  repositories build moves into the package they share.
+- Decks run only on our own slide engine, never Slidev or reveal.js. A partner's own course
+  repositories and an exception a repository's own rules name stay and are never proposed for
+  porting.
 - Module-scope function names are unique per repository, except a framework-dictated name or a
   test-local helper.
 - Removing a collection, a skill or an agent also deletes the tests that named it. Port every

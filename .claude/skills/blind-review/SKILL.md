@@ -24,7 +24,8 @@ Examples, not triggers:
 - **Large:** 4 to 6 personas, both models, two runs, noise measured, an independent counter-draft
   scored alongside.
 
-Cadence: a review per batch.
+Cadence: a review per batch. Time pressure shortens a review (fewer rounds, parallel reviewers) and
+never drops it; a version handed over before its review says so in the same message.
 
 A visible asset changed to conform to a rule gets a review like any new version: the rendered
 result scored against the version it replaces. Check: the report gives both scores and the noise.

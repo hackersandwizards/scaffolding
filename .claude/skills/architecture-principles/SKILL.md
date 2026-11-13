@@ -1,7 +1,7 @@
 ---
 name: architecture-principles
 description: >-
-  h&w's standard for client systems, to review architecture or code ("red flags"), choose a
+  The standard for client systems, to review architecture or code ("red flags"), choose a
   design ("microservices or monolith", "build or buy"), argue a technical position in a proposal
   or training, or diagnose "why is this team slow", never for routine work in an existing codebase.
 ---

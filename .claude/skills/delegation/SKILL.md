@@ -29,6 +29,12 @@ description: >-
   phase yourself.
 - Stop a finished delegate's task before the process it left, or it wakes to re-report everything.
   Stop a process by its PID after reading its command line, never by pattern.
+- Before telling the person a background run is still working, read its log's last lines and its
+  process in that turn: a monitor that ended without an event is no evidence, and a log ending in an
+  API or connection error is a stopped run to relaunch.
+- A brief for a message names the channel's skill beside the voice skill and hands over facts and
+  constraints, never the channel's draft script: a brief naming only the voice skill reads as
+  complete, and naming the script overrides the skill's choices.
 - After a stall, timeout or resume, reconcile the delegate's commits and working tree against its
   report and hand back any contradiction. Before relaying a defect as fixed, sweep the repository
   for its class.

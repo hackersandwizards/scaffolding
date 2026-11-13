@@ -14,6 +14,11 @@ Prefer these over their classic equivalents.
 **Browser and frontend:**
 - For rendered-page, frontend, or signed-in UI checks, try in order until one works: in-app Browser, Chrome DevTools MCP, repository automation (e.g. Playwright). Before skipping Chrome DevTools, search deferred tools (`ToolSearch` or equivalent) and check the repository for automation.
 - Headless Chrome from the command line lays a page out at least 500 px wide: `--window-size=375,…` with `--screenshot` cuts a 500 px layout to 375, which looks like text overflowing the right edge. Set a phone width through CDP instead (`page.setViewport`, or the chrome-devtools MCP's `resize_page`).
+- `playwright install` deletes every build in the shared Playwright cache that no installation
+  registered in its `.links/` folder needs. List the cache before and after; restore a build that
+  vanished with `node node_modules/playwright-core/cli.js install <browser>` in the repository that
+  needs it, which also registers it. Install every browser the `playwright.config` projects name,
+  and `launch()` each from the repository's own `node_modules` before a gate.
 
 **GNU vs BSD:** unprefixed CLI tools are BSD on macOS, GNU on Linux. Write scripts to run on both (POSIX, no flavor-specific flags). GNU builds are `g*` (`gsed`, `gdate`, `gtimeout`).
 
@@ -65,6 +70,8 @@ Prefer these over their classic equivalents.
   file, never `until ! pgrep -f <pattern>`: the loop's own shell command line contains the pattern, so
   pgrep always matches it and the wait never ends.
 - `just` as command runner, `parallel` for fan-out
+- Where Docker runs on OrbStack and a run needs it, start it with `orb start` and say so, without
+  asking; stop it only where your run started it and nothing else uses it.
 - `cdxe` to start Codex exec. It is aliased to `codex exec --yolo`: no approvals, no sandbox.
 
 **JavaScript/TypeScript:**
@@ -99,7 +106,8 @@ loses its `r`). Quote separators and write `${var}:`. An unmatched glob fails it
 `no matches found`: quote every glob a command receives as an argument (`--include='*.ts'`), and
 list files with `command ls <dir> | command grep` rather than a bare pattern that may match
 nothing. A function named like an alias of the shell snapshot (`g`, `c`, `t`) fails to parse
-with `defining function based on alias`: give a function a name no alias holds.
+with `defining function based on alias`, and one named `G`, a global alias for `| grep`, fails with
+`parse error near '|'`: give a function a name no alias holds.
 `path`, `fpath`, `cdpath` and `manpath` are tied to their uppercase variables, so a loop variable
 named `path` empties the search path and every later command fails with `command not found`. An
 unquoted `$list` stays one word: `for x in $list` runs once and `git commit -- $files` passes one

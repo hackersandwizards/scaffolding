@@ -10,7 +10,8 @@ description: >-
 
 # Dependency updates
 
-Work through each repository you are given, one at a time.
+Work through each repository you are given, one at a time. Any session may start it without asking
+anyone; a run's own approval still bounds what it fixes, as step 4 of "Pins only" says.
 
 1. Raise every external dependency to its newest release, majors included, with the means the
    repository normally uses for that kind: packages and their lockfiles, toolchain pins, container

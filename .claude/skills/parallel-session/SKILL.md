@@ -7,8 +7,8 @@ description: Track parallel work and the person's decisions in repo files (one i
 
 Goal, work and decision data live in the repo the work belongs to, never here. The tooling is the
 admin engine, `@hackersandwizards/admin`, which each repo pins as a dev dependency: `admin-check`
-checks the item files, and `admin-serve`, started by hand with `bun run dev` in the admin checkout,
-serves the page across all repos at `http://admin.localhost:4329` from each repo's last commit.
+checks the item files, and `admin-serve` serves the page across all repos at
+`http://admin.localhost:4329` from each repo's last commit.
 
 ## One home per fact
 
@@ -18,7 +18,10 @@ serves the page across all repos at `http://admin.localhost:4329` from each repo
     criteria, each checkable by someone who did none of the work and naming its proof.
     Usually `goal.md`, one per repo.
   - `work`: one open piece of work, with `owner` (whoever moves next: the person, an agent or
-    anyone else) and `evidence` (a commit hash, a file, or "not established").
+    anyone else) and `evidence` (a commit hash, a file, or "not established"). A question whether
+    something is on the list for later asks for a `work` item the person owns: read-only
+    preparation for it (an inventory, candidates, a decision item) is welcome, and the work itself
+    waits.
   - `decision`: a question with at least two `options`, or an agent assumption the person may
     veto. Only for direction, money, a relationship or anything leaving the company. Every other
     such point an agent settles is `status: assumed`; a minor or reversible default is named in
@@ -42,9 +45,9 @@ of repeating the question. The open points for the person's return are the items
 
 Every item: `kind` and `status` (`open`, `assumed` or `decided`; `work` and `goal` are only ever
 `open`). Every item but a goal: `priority` (1 to 3, 1 costs most if missed) and `owner` (who
-answers, or for work who moves next: one name, with any later steps in the body; a decision for
-Stefan sets `owner: Stefan`). The body's first sentence after the title states what the owner
-does, in under 120 characters; context follows. Optional:
+answers, or for work who moves next: one name, with any later steps in the body). The body's
+first sentence after the title states what the owner does, in under 120 characters; context
+follows. Optional:
 `order`, `area` (free text), `due` (ISO date), `evidence`. A decision or review may carry
 `options` (each `key`, `label`, optional `detail`, and `score` and `noise` from a blind review),
 `recommended` (an option key; a list where `multiple: true` lets the person pick several) and `images` (option key to
@@ -84,8 +87,10 @@ items up.
 1. At start, read `docs/agent-work/items/` in every repo the work touches. Where no goal item
    exists and the work spans sessions or delegates, create `goal.md` with the goal quoted from
    the person's message; another repo's goal goes to a session in that repo. A work item outside
-   the session's goal waits for its own session, whoever owns it. Check: the goal item quotes the
-   person.
+   the session's goal waits for its own session, whoever owns it. A `/goal` stop-hook rejection is
+   a model's reading of the goal: it never decides an open decision item or overrides a ruling of
+   the person. On the second such rejection, stop the loop, say why once, and give the person the
+   `/goal clear` or `/goal <new condition>` line. Check: the goal item quotes the person.
 2. Every message from the person that adds, decides or changes work gets its item in the same
    turn. A block pasted from the page ("Copy answers") holds one `repo:id: ` line per answer,
    then, comma-separated and each only where given: `agree` or `veto` on an assumed item, each
@@ -115,13 +120,17 @@ items up.
 5. Before each commit that touches `docs/agent-work/items/`, run `bun run admin-check` in the repo.
    Check: it prints `ok`.
 6. A report and an item state the current state only. A later batch on the same topic edits that
-   report and deletes what it superseded. Earlier rounds and raw reviews go to the scratchpad.
-7. The page reads every repo under `~/dev` with `docs/agent-work/items/` or an
-   `@hackersandwizards` dependency at its last commit, so the commit is all an item change needs.
+   report and deletes what it superseded. Earlier rounds and raw reviews go to the scratchpad. A
+   clock time an item or report carries is the value a command printed in the tool call that
+   writes it (`NOW=$(date '+%H:%M')`); an event no command timed gets no time, or 'after <the
+   timed event>'.
+7. The page reads each repo at its last commit, so the commit is all an item change needs.
    Check: where `curl -s http://admin.localhost:4329/` answers, the page lists the item. A batch
    that changes an asset an item's images show, such as a logo, colour or lockup, re-renders those
    images in that batch.
-8. When the person returns, report from the items, ordered by what each costs if missed. Before
+8. When the person returns, put the open `decision` items to them in one AskUserQuestion call, each
+   with its background and the full text of every option read from the item, and report the rest
+   from the items, all ordered by what each costs if missed. Before
    ending the session, read the transcript from its first message: every item of the first
    report, every question put and its answer, every promise. Check: each unfinished one has an
    item.
@@ -141,9 +150,8 @@ The shared checkout is the default. Give a delegate a worktree only where the sh
 more than the worktree: several delegates committing in one repo at once, or a long run changing
 app code that the full gate checks. Short record and document edits stay in the shared checkout.
 
-A worktree in os costs about 1.5 GB of disk and 5 s to create, `bun install` about 2 s from a warm
-cache, plus cold Astro and Vite caches. The gate's lock serialises runs within one checkout only,
-so each worktree's full gate runs beside the others.
+The gate's lock serialises runs within one checkout only, so each worktree's full gate runs beside
+the others.
 
 - Before the fan-out, commit and push everything the delegates need: a worktree starts from
   `origin/main`.
@@ -154,8 +162,9 @@ so each worktree's full gate runs beside the others.
 - A hand-made worktree goes outside the repo with no branch:
   `git worktree add --detach <scratchpad>/<run>-wt origin/main`.
 - The delegate commits in its worktree, then runs `git fetch`, `git rebase origin/main` and
-  `git push origin HEAD:main`, repeating on rejection, before its run ends. Check:
-  `git log origin/main..HEAD` prints nothing.
+  `git push origin HEAD:main`, repeating on rejection, before its run ends. A rebase there runs
+  the post-checkout hook on `origin/main`'s lockfile: run `bun install --frozen-lockfile` again
+  before a render, measurement or gate. Check: `git log origin/main..HEAD` prints nothing.
 - Remove each worktree as soon as its delegate's work is on `main`, while the session goes on, so
   none outlives it: `git worktree remove <path>` once, inside it, `git log origin/main..HEAD` and
   `git status --porcelain` both print nothing. Delete a `worktree-<name>` branch with

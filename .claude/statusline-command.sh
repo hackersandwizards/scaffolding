@@ -3,7 +3,7 @@
 # (extract/pct_color/time_color/render_bar assign via `printf -v "$var"`, which
 #  the linter cannot trace, so it flags every consumer as unset.)
 #
-#   [Project ·] [Branch* ·] [(REBASING 3/7) ·] [ahead/behind ·] [Agent ·] Model · [Effort ·] context bar XX% · [rate-limit bar XX% Xh Xm] [· account] [· $cost] [· status]
+#   [Project ·] [Branch* ·] [(REBASING 3/7) ·] [ahead/behind ·] [Agent ·] Model · [Effort ·] context bar XX% · [rate-limit bar XX% Xh Xm] [· $cost] [· status]
 #
 # Colors match the starship prompt; effort badges match Claude's UI.
 
@@ -110,24 +110,6 @@ extract '"effort":\{[^}]*"level":"([^"]+)"'             effort      ""
 extract '"five_hour":\{[^}]*"used_percentage":([0-9]+)' rl5_pct     ""
 extract '"five_hour":\{[^}]*"resets_at":([0-9]+)'       rl5_resets  ""
 extract '"total_cost_usd":([0-9]+(\.[0-9]+)?)[,}]'      cost_usd    ""
-
-# .claude.json is 160 KB with emailAddress near the end, so the answer is cached.
-# An account switch rewrites the file, so mtime invalidates the cache. Keyed by
-# source path: a session pinned to another CLAUDE_CONFIG_DIR keeps its own entry.
-acct_file="${CLAUDE_CONFIG_DIR:-$HOME}/.claude.json"
-acct_cache="$CACHE_DIR/claude-statusline-account${acct_file//\//-}.cc"
-account=""
-if [[ -z $CACHE_DIR || $acct_file -nt $acct_cache ]]; then
-    # The local part alone collides across accounts held in one name; the first
-    # domain label separates them and the rest carries no signal.
-    extract '"emailAddress"[[:space:]]*:[[:space:]]*"([^@"]+@[^."]+)' account "" \
-            "$(grep -oE '"emailAddress"[[:space:]]*:[[:space:]]*"[^"]*"' "$acct_file" 2>/dev/null)"
-    [[ -z $CACHE_DIR ]] ||
-        { printf '%s\n' "$account" > "$acct_cache.tmp" && mv "$acct_cache.tmp" "$acct_cache"; }
-elif [[ -f $acct_cache ]]; then
-    read -r account < "$acct_cache"
-fi
-[[ $account =~ ^[A-Za-z0-9._%+-]+@[A-Za-z0-9-]+$ ]] || account=""
 
 # Claude excludes output_tokens from context usage. Strip rate_limits first so the token
 # regexes only see the context-window block; "input_tokens" does not match inside
@@ -238,7 +220,6 @@ if [[ -n $rl5_pct ]]; then
     out+=" ${SEP} ${rl5_bar} ${rl5_time_color}${rl5_time}${RESET}"
 fi
 
-[[ -n $account ]] && out+=" ${SEP} ${GRAY}${account}${RESET}"
 # %f reads and writes under LC_NUMERIC: a comma-decimal locale both rejects the
 # JSON number and prints the wrong one.
 LC_ALL=C printf -v cost_disp "\$%.2f" "${cost_usd:-0}"

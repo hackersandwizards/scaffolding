@@ -100,8 +100,9 @@ through it with today's state: no marker, no record, the run that starts tomorro
 
 A cleanup of skills and rules has three equal goals: cut what another owner states or what only
 narrates history, collapse special cases, and leave no two passages contradicting each other,
-reported in their own section. A skill checked into a repository stays on: this machine's usage
-counters measure only one person's sessions.
+reported in their own section. A skill checked into a repository stays on there: this machine's usage
+counters measure only one person's sessions. One the person does not run is switched off for them
+alone, in the git-ignored `.claude/settings.local.json` (`skillOverrides`).
 
 A line obliging an agent to report a value is incomplete until it names the field the consumer
 joins on. Open the consuming artifact and carry its key back into the line.

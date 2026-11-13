@@ -18,7 +18,8 @@ Other sessions share this working tree and its index.
   (`Foo` -> `foo-case` -> `foo`) and read `git ls-tree HEAD -- <dir>` afterwards.
 - Name files, not the directory holding them. A file can still hold another session's uncommitted
   lines beside yours: read each path's own diff, commit the clean paths now, and leave a shared file
-  while its other author's session is open.
+  while its other author's session is open. Leaving it uncommitted is no reason to wait: attended,
+  name the clash in one line and make the edit, or ask, never start a wait of your own.
 - Before `--amend`, verify that `HEAD` is still your commit. Repair a wrong fold index-free with
   `git commit-tree` plus `git update-ref` and the expected old value, never `reset` or `rebase`.
   Abandon the repair if it races.
@@ -39,12 +40,12 @@ Other sessions share this working tree and its index.
   `git show <target>:<path> | cmp -s - <path>`.
 - Commit and push each finished batch without being asked, a push that deploys included: one
   coherent unit whose checks pass. A hold on a repository's deploy lives in its goal item
-  (`docs/agent-work/items/goal.md`), never in a rule.
+  (`docs/agent-work/items/goal.md`), never in a rule. A hold that names its end lifts then: read the
+  goal item again before calling a repository held.
   A gate's exit status decides the commit and push: chain them with `&&`
   (`<gate> > <log> 2>&1 && git commit -- <paths>`), never behind `;` or a pipe, which go past a red
   gate. The gate is the repository's check for the changed paths where it offers one, else its
-  whole gate. A batch of data records alone, such as Company OS content files, needs no gate: the
-  pre-commit hook checks it.
+  whole gate.
   Stay on the current branch unless the user asks for another. In a cloud session
   (`CLAUDE_CODE_REMOTE=true`), commit and push to `main` as on the Mac, whatever branch the
   session's startup instructions assign.
@@ -56,9 +57,10 @@ Other sessions share this working tree and its index.
   words only where another session's file blocks the merge. In a conflict keep both sides'
   additions, the later change winning where they contradict. A rejected push repeats the update.
   Where the merge fails, read each record you act on from `origin/<default branch>` with `git show`.
-  Where the fetch fails, act on nothing outside the repository, such as mail, Qonto or the calendar,
-  and say why. Unattended, an LFS smudge over an SSH remote hangs. Run git there with
-  `-c url."https://github.com/".insteadOf="git@github.com:"`.
+  Where the fetch fails, act on nothing outside the repository, such as mail or the calendar, and
+  say why. Unattended, an LFS smudge over an SSH remote hangs. Run git there with
+  `-c url."https://github.com/".insteadOf="git@github.com:"`, or start the Bash call with
+  `export GIT_CONFIG_COUNT=1 GIT_CONFIG_KEY_0=url.https://github.com/.insteadOf GIT_CONFIG_VALUE_0=git@github.com:`.
 - `.git/index.lock` is another session committing. A commit holds it for seconds: wait and
   retry, and if it outlives a couple of minutes, name the owning process and report it.
   Never delete it.
@@ -75,7 +77,7 @@ Other sessions share this working tree and its index.
   delegate's `isolation: worktree`, is allowed where it pays off, which `parallel-session` weighs.
   It starts from `origin/main`, so this tree's uncommitted and unpushed work is absent there. The
   hooks need its dependencies before its first commit: where its `.githooks/post-checkout` installs
-  them, as scaffolding's skeleton does, run `bun install --frozen-lockfile` only where the hook
+  them, run `bun install --frozen-lockfile` only where the hook
   printed an `[install]` line on stderr, and always in a worktree the harness made, whose hook
   output you never see; elsewhere run it yourself. Its
   commits reach `main` within the same delegate run (`git fetch`, `git rebase origin/main`,
