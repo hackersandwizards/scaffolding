@@ -7,10 +7,11 @@ export const companyRemote = (repo: string) =>
   `${process.env.SCAFFOLDING_GIT_BASE || "https://github.com/hackersandwizards/"}${repo}.git`;
 
 /** SCAFFOLDING_FETCH_WAIT_S, the seconds a read from a remote may take: 20 unless it is a whole
- * number above 0, as in session-start. */
+ * number above 0, as in session-start, and at most the longest timer (2^31 - 1 ms), past which a
+ * timeout fires at once. */
 export const fetchWaitS = (): number => {
   const set = process.env.SCAFFOLDING_FETCH_WAIT_S ?? "";
-  return /^\d*[1-9]\d*$/.test(set) ? Number(set) : 20;
+  return /^\d*[1-9]\d*$/.test(set) ? Math.min(Number(set), Math.floor((2 ** 31 - 1) / 1000)) : 20;
 };
 
 /** The highest v<major>.<minor>.<patch> tag `remote` holds, or undefined where none is read within
@@ -26,15 +27,12 @@ export async function newestTag(remote: string): Promise<string | undefined> {
   });
   let out = "";
   git.stdout.on("data", (chunk) => (out += chunk));
-  const timer = setTimeout(
-    () => {
-      console.error(`git ls-remote ${remote}: no answer within ${wait} s`);
-      try {
-        process.kill(-git.pid!, "SIGTERM");
-      } catch {} // the group is already gone
-    },
-    Math.min(wait * 1000, 2 ** 31 - 1),
-  );
+  const timer = setTimeout(() => {
+    console.error(`git ls-remote ${remote}: no answer within ${wait} s`);
+    try {
+      process.kill(-git.pid!, "SIGTERM");
+    } catch {} // the group is already gone
+  }, wait * 1000);
   const code = await new Promise<number | null>((done) => {
     git.on("error", () => done(null));
     git.on("close", done);

@@ -118,9 +118,12 @@ const named = new Set([
   ...Object.keys(skip),
   ...(config.check ?? []).flat(),
 ]);
-for (const [glob, steps] of Object.entries(config.changed ?? {}))
-  for (const step of Array.isArray(steps) ? steps : [steps])
+for (const [glob, steps] of Object.entries(config.changed ?? {})) {
+  // A string would be read letter by letter, and its step skipped on a green gate.
+  if (!Array.isArray(steps)) fail(`scaffolding.changed["${glob}"] is no list of steps`);
+  for (const step of steps)
     if (!named.has(step)) fail(`scaffolding.changed["${glob}"] names no step: ${step}`);
+}
 
 // --changed runs the quick shared checks and the steps scaffolding.changed maps the changed paths
 // to: those of the ranges given (the pre-push hook passes each pushed branch), else the commits not
@@ -182,7 +185,6 @@ function changedSteps(): Set<string> | undefined {
   console.error(`[scaffolding] --changed: ${paths.length} paths since ${since}`);
   return steps;
 }
-// A step --changed leaves out says so, so the skip leaves a trace.
 const runs = (name: string) => {
   if (!selected || selected.has(name)) return true;
   console.error(`[scaffolding] skipped ${name}: no changed path maps to it`);

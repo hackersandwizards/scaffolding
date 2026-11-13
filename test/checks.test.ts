@@ -1992,13 +1992,13 @@ describe("check-confidential", () => {
     const dir = repo({ "package.json": "{}", "a.md": "a\n" });
     sh(dir, ["push", "-q", remote, "HEAD:refs/heads/main"]);
     sh(dir, ["remote", "add", "origin", remote]);
-    const push = (uploadpack: string) => {
+    const push = (uploadpack: string, wait = "1") => {
       sh(dir, ["config", "remote.origin.uploadpack", uploadpack]);
       return spawnSync(process.execPath, [bin("check-confidential"), "prepush", "origin"], {
         cwd: dir,
         input: `refs/heads/x ${sh(dir, ["rev-parse", "HEAD"]).stdout.toString().trim()} refs/heads/x ${"0".repeat(40)}\n`,
         encoding: "utf8",
-        env: { ...process.env, SCAFFOLDING_FETCH_WAIT_S: "1" },
+        env: { ...process.env, SCAFFOLDING_FETCH_WAIT_S: wait },
       });
     };
     const slow = push("sleep 3; git-upload-pack");
@@ -2007,6 +2007,8 @@ describe("check-confidential", () => {
     );
     expect(slow.status).toBe(1);
     expect(push("git-upload-pack").status).toBe(0);
+    // A bound past the longest timer is capped: uncapped, bun ended the fetch within half a second.
+    expect(push("sleep 1; git-upload-pack", "2147484").status).toBe(0);
   });
 
   test("purged adds to the repository's list under its salt, a redirect's empty file included", () => {
@@ -2674,6 +2676,11 @@ describe("scaffolding check", () => {
     rmSync(join(dir, "other.txt"));
     write(dir, { "bunfig.toml": "\n" });
     expect(run(dir, "scaffolding", ["check", "--changed"], lock).out).toContain("src-ran");
+    // A string in place of the list is red, on the whole gate too.
+    const word = gate({ skip, changed: { "docs/**": "check:docs" }, check: ["check:docs"] });
+    expect(run(word, "scaffolding", ["check"], lock).out).toContain(
+      'scaffolding.changed["docs/**"] is no list of steps',
+    );
     // A step the map names that the gate lacks is red, on the whole gate too.
     const typo = gate({ skip, changed: { "docs/**": ["check:dosc"] }, check: ["check:docs"] });
     expect(run(typo, "scaffolding", ["check"], lock).out).toContain(

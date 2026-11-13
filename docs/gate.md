@@ -32,10 +32,10 @@ whole gate runs, saying why, where a path matches no glob, where it is `package.
 `bunfig.toml` or a config every step reads (`tsconfig*.json`, `eslint.config.*`,
 `prettier.config.*`, `.prettierrc*`, `.prettierignore`, `stylelint.config.*`, `astro.config.*`),
 where a range starts a new branch (`<from>` all zeros) or at a commit the clone lacks, and where git
-cannot list the changes. A step the map names that the gate lacks is red on every run. The pre-push
-hook runs `--changed` over each pushed branch's range ([Hooks and CI](hooks.md)), so a push counts
-only its own commits, never another session's file in the working tree, while every step still
-reads the working tree.
+cannot list the changes. A step the map names that the gate lacks, and a value that is no list,
+is red on every run. The pre-push hook runs `--changed` over each pushed branch's range ([Hooks and
+CI](hooks.md)), so a push counts only its own commits, never another session's file in the working
+tree, while every step still reads the working tree.
 
 ```json
 { "changed": { "docs/**": ["check:refs"], "src/**": ["test", "catalog", "check:markers"] } }
