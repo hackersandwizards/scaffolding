@@ -30,6 +30,9 @@ build.
 - Take a fact another repository owns, such as a brand value, a price or a product fact, from its
   package, never retyped or copied. The one copy allowed is a file the repository serves while it
   cannot install the package, recorded beside the copy with its origin and version.
+- Read a dependency's licence before adding it. Add it only under a licence on the allow list in
+  scaffolding's `docs/gate.md` § Licences, or with its exact licence string and a reason under
+  `scaffolding.licenses`. In a repository with its own licence check, that check's list decides.
 - A check of consumers ships as a command each consumer runs in its own gate, never as a script in
   the owner that reads their checkouts.
 - Where two repositories only look alike, each keeps its own code rather than sharing a package.
