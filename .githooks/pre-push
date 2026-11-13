@@ -1,9 +1,10 @@
 #!/bin/sh
 # check-confidential prepush refuses commits purged from history (.confidential-purged.json),
 # then hands the refs to Git LFS where the push may carry LFS objects or touch a lockable file.
-# A push carrying branches then runs scaffolding check --changed over each pushed range
-# (<remote tip>..<local tip>): the quick shared steps and the steps those paths map to, the whole
-# gate for a new branch, a remote tip this clone lacks or a path that maps to nothing.
+# A push carrying branches then runs scaffolding check --changed on the working tree, the steps
+# picked by the paths each pushed range (<remote tip>..<local tip>) changes: the quick shared steps
+# and the steps those paths map to, the whole gate for a new branch, a remote tip this clone lacks
+# or a path that maps to nothing.
 [ -d node_modules ] || { echo "$(basename "$0"): no node_modules in this checkout: run bun install, then try again" >&2; exit 1; }
 refs=$(cat)
 { [ -z "$refs" ] || printf '%s\n' "$refs"; } | bun run --silent check-confidential prepush "$@" || exit
