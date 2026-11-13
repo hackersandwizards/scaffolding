@@ -38,13 +38,14 @@ RL5_RED=80   RL5_YELLOW=50
 
 STATUS_CACHE_TTL=300   STATUS_FETCH_TIMEOUT=5
 
-# $TMPDIR is mode 700 on macOS. Without it the caches go to the user's own cache
-# dir, never the shared /tmp, and umask keeps them unreadable to other users. Every
-# value read back is still validated before use.
+# $TMPDIR is mode 700 on macOS, $XDG_RUNTIME_DIR on Linux. With none of the three
+# set nothing is cached and the status check is skipped, never the shared /tmp.
+# umask keeps the caches unreadable to other users. Every value read back is still
+# validated before use.
 umask 077
-CACHE_DIR="${TMPDIR:-${XDG_CACHE_HOME:-$HOME/.cache}}"
+CACHE_DIR="${TMPDIR:-${XDG_CACHE_HOME:-${XDG_RUNTIME_DIR:-}}}"
 CACHE_DIR="${CACHE_DIR%/}"
-[[ -d $CACHE_DIR ]] || mkdir -p "$CACHE_DIR"
+[[ -z $CACHE_DIR || -d $CACHE_DIR ]] || mkdir -p "$CACHE_DIR"
 
 format_countdown() {
     local secs="$1" var="$2"
@@ -116,12 +117,13 @@ extract '"total_cost_usd":([0-9]+(\.[0-9]+)?)[,}]'      cost_usd    ""
 acct_file="${CLAUDE_CONFIG_DIR:-$HOME}/.claude.json"
 acct_cache="$CACHE_DIR/claude-statusline-account${acct_file//\//-}.cc"
 account=""
-if [[ $acct_file -nt $acct_cache ]]; then
+if [[ -z $CACHE_DIR || $acct_file -nt $acct_cache ]]; then
     # The local part alone collides across accounts held in one name; the first
     # domain label separates them and the rest carries no signal.
     extract '"emailAddress"[[:space:]]*:[[:space:]]*"([^@"]+@[^."]+)' account "" \
             "$(grep -oE '"emailAddress"[[:space:]]*:[[:space:]]*"[^"]*"' "$acct_file" 2>/dev/null)"
-    printf '%s\n' "$account" > "$acct_cache.tmp" && mv "$acct_cache.tmp" "$acct_cache"
+    [[ -z $CACHE_DIR ]] ||
+        { printf '%s\n' "$account" > "$acct_cache.tmp" && mv "$acct_cache.tmp" "$acct_cache"; }
 elif [[ -f $acct_cache ]]; then
     read -r account < "$acct_cache"
 fi
@@ -251,7 +253,7 @@ status_expiry=0
 # because the input redirect is opened before 2>/dev/null takes effect.
 [[ -f "$status_expiry_file" ]] && read -r status_expiry < "$status_expiry_file"
 [[ $status_expiry =~ ^[0-9]+$ ]] || status_expiry=0
-if (( now >= status_expiry )); then
+if [[ -n $CACHE_DIR ]] && (( now >= status_expiry )); then
     # Pre-write next expiry so parallel renders don't all spawn fetches; also
     # debounces retries when the upstream is unreachable (curl fails -> cache stays).
     echo $(( now + STATUS_CACHE_TTL )) > "$status_expiry_file"
@@ -263,7 +265,7 @@ if (( now >= status_expiry )); then
         fi
     ) >/dev/null 2>&1 &
 fi
-if [[ -s $status_cache ]]; then
+if [[ -n $CACHE_DIR && -s $status_cache ]]; then
     read -r cc_status < "$status_cache"
     case "$cc_status" in
         operational|"")       label="" ;;
