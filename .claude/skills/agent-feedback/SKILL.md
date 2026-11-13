@@ -128,6 +128,10 @@ the person names that scope.
 
 ## Mirrors and sync
 
+A hub rule or skill works in every repository and on every machine it reaches: it names no
+absolute path and no file or check of another repository, only hub skills and what the reader's
+own repository holds.
+
 A participant repository, a training repository without our `CLAUDE.md` at its root that
 participants build in the training, carries no rules or skills of ours either. Its harness settings
 stay, and a sweep across every repository leaves it out and says so.
