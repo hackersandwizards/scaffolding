@@ -1,5 +1,4 @@
-import { globSync, readFileSync, renameSync, writeFileSync } from "node:fs";
-import { join } from "node:path";
+import { readFileSync } from "node:fs";
 
 // The stylesheets of the home, of a state's page (dashboard) and of a state alone (stories).
 export const CSS = "virtual:scaffolding/catalog-css/";
@@ -60,17 +59,26 @@ export function rewriteRoute(
   return serverOnly ? code.replaceAll(client, " />") : code;
 }
 
-/** Every route Astrobook wrote into the codegen folder `dir`, rewritten in place. Another Astro
- * process on the same root rewrites the same files at the same time and reads them meanwhile, so
- * each lands whole through a rename: written in place, a file read while it is being written is
- * empty, and that process fails its setup. Astrobook (0.13.3) writes its own routes in place, so
- * a setup reading while another process's Astrobook writes can still fail the same way. */
-export function rewriteRoutes(dir: string, serverOnly: boolean): void {
-  for (const file of globSync("**/*.astro", { cwd: dir })) {
-    const path = join(dir, file);
-    const code = rewriteRoute(file, readFileSync(path, "utf8"), serverOnly);
-    if (code === undefined) continue;
-    writeFileSync(`${path}.${process.pid}`, code);
-    renameSync(`${path}.${process.pid}`, path);
+/** The route Astrobook wrote at `path` (`file`, relative to the codegen folder), rewritten as Vite
+ * loads it; the file on disk stays Astrobook's. Every Astro process on the root rewrites the same
+ * files on its setup, Astrobook (0.13.3) in place, so a read can find a route empty or cut while
+ * another process writes it: a route that does not rewrite is read again until it does, `waitMs`
+ * at most, then fails as rewriteRoute does. Rewritten on disk, a page built or served while another
+ * process's setup ran lost its CSS without an error. */
+export async function loadRoute(
+  path: string,
+  file: string,
+  serverOnly: boolean,
+  waitMs = 2000,
+): Promise<string> {
+  const until = Date.now() + waitMs;
+  for (;;) {
+    const source = readFileSync(path, "utf8");
+    try {
+      return rewriteRoute(file, source, serverOnly) ?? source;
+    } catch (e) {
+      if (Date.now() >= until) throw e;
+    }
+    await new Promise((done) => setTimeout(done, 10));
   }
 }

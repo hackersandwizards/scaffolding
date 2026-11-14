@@ -25,7 +25,7 @@ import { dirname, join } from "node:path";
 import { pathToFileURL } from "node:url";
 import { brandFallbacks } from "../catalog/fallbacks.ts";
 import { catalogPath } from "../catalog/path.ts";
-import { rewriteRoute, rewriteRoutes } from "../catalog/route.ts";
+import { loadRoute, rewriteRoute } from "../catalog/route.ts";
 import { rejection } from "../lib/rejection.ts";
 import { applyAllow, commentSyntax, installedCommit, newestTag, tagCommit } from "../lib/repo.ts";
 
@@ -3895,24 +3895,25 @@ describe("catalog", () => {
     expect(() => rewriteRoute("other/a.astro", route, false)).toThrow(/CSS import/);
   });
 
-  test("rewriteRoutes replaces each route whole, so another Astro process never reads it empty", () => {
+  test("loadRoute reads a route another process is writing again until it is whole", async () => {
     const dir = temp();
     mkdirSync(join(dir, "stories"));
     const file = join(dir, "stories", "a.astro");
-    writeFileSync(
-      file,
-      [
-        "import { parseStoryDefaultExport, parseStoryNamedExport } from 'astrobook/client';",
-        "const { decorators, args } = parseStoryNamedExport(m, './a.stories.ts', 'One');",
-        "",
-      ].join("\n"),
+    const route = [
+      "import { parseStoryDefaultExport, parseStoryNamedExport } from 'astrobook/client';",
+      "const { decorators, args } = parseStoryNamedExport(m, './a.stories.ts', 'One');",
+      "",
+    ].join("\n");
+    // Another process's Astrobook has truncated the file and writes it 50 ms later.
+    writeFileSync(file, "");
+    setTimeout(() => writeFileSync(file, route), 50);
+    expect(await loadRoute(file, "stories/a.astro", false)).toContain(
+      "virtual:scaffolding/catalog-css/stories",
     );
-    const before = statSync(file).ino;
-    rewriteRoutes(dir, false);
-    // A write in place keeps the inode, and a reader between its truncation and its write gets "".
-    expect(statSync(file).ino).not.toBe(before);
-    expect(readFileSync(file, "utf8")).toContain("virtual:scaffolding/catalog-css/stories");
-    expect(readdirSync(join(dir, "stories"))).toEqual(["a.astro"]);
+    // The file on disk stays Astrobook's.
+    expect(readFileSync(file, "utf8")).toBe(route);
+    writeFileSync(file, "");
+    expect(await rejection(loadRoute(file, "stories/a.astro", false, 100))).toContain("CSS import");
   });
 
   test(
@@ -4250,17 +4251,9 @@ describe("catalog", () => {
       expect(state).toContain("if (top) main.before(top);");
       expect(page("stories/Parts/box-parts/two")).not.toContain('id="hw-catalog-bar"');
       expect(home).not.toContain('id="hw-catalog-bar"');
-      // `serverOnly`: no state's route keeps Astrobook's client:load branch.
-      const codegen = join(
-        fixture,
-        "catalog/.astro/integrations/_hackersandwizards_scaffolding_catalog",
-      );
-      const routes = readdirSync(codegen, { recursive: true, encoding: "utf8" }).filter((f) =>
-        f.endsWith(".astro"),
-      );
-      expect(routes.length).toBe(48);
-      for (const f of routes)
-        expect(readFileSync(join(codegen, f), "utf8")).not.toContain("client:load");
+      // `serverOnly`: no state's route keeps Astrobook's client:load branch, so no story module
+      // ships to the browser.
+      expect(globSync("_astro/*.stories.*", { cwd: dist })).toEqual([]);
       // `copy`: each match at its own path, the rest of the folder left out.
       expect(readdirSync(join(dist, "assets")).sort()).toEqual(["logo.svg", "nested"]);
       expect(readFileSync(join(dist, "assets/nested/page.css"), "utf8")).toBe(

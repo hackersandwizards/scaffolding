@@ -19,7 +19,7 @@ import { basename, dirname, join, matchesGlob, posix, relative } from "node:path
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { brandFallbacks } from "./fallbacks.ts";
 import { catalogPath, storiesDir } from "./path.ts";
-import { CSS, retitleLayout, rewriteRoutes } from "./route.ts";
+import { CSS, loadRoute, retitleLayout } from "./route.ts";
 
 export { renderCatalog } from "./render.ts";
 export type { CatalogData, CatalogGroup, CatalogItem } from "./render.ts";
@@ -437,6 +437,7 @@ export function catalog(options: CatalogOptions): AstroIntegration {
           [`${CSS}dashboard`]: imports(lists.dashboard),
           [`${CSS}stories`]: imports(lists.stories),
         };
+        const codegen = fileURLToPath(params.createCodegenDir());
         params.updateConfig({
           // Astro's own default only: an outDir the config sets stays.
           ...(own &&
@@ -454,12 +455,21 @@ export function catalog(options: CatalogOptions): AstroIntegration {
                 // Ahead of Vite's CSS plugin, which reads the file's text.
                 name: "scaffolding-catalog-fallbacks",
                 enforce: "pre" as const,
-                // Astrobook's layout as loaded, before Astro compiles it: each page gets its own
-                // title. The bare file only: its <style> blocks come as queries on the same path.
-                load: (id: string) =>
-                  id.endsWith("/@astrobook/ui/dist/components/layout.astro")
-                    ? retitleLayout(readFileSync(id, "utf8"), join(import.meta.dirname, "words.ts"))
-                    : undefined,
+                // Astrobook's layout and the routes it writes into this integration's codegen
+                // folder, one per state, as loaded, before Astro compiles them: each page gets its
+                // own title, each route its CSS. The bare file only: its <style> blocks come as
+                // queries on the same path.
+                load: (id: string) => {
+                  if (id.endsWith("/@astrobook/ui/dist/components/layout.astro"))
+                    return retitleLayout(
+                      readFileSync(id, "utf8"),
+                      join(import.meta.dirname, "words.ts"),
+                    );
+                  const file = relative(codegen, id);
+                  return id.endsWith(".astro") && !file.startsWith("..")
+                    ? loadRoute(id, file, options.serverOnly ?? false)
+                    : undefined;
+                },
                 // Every stylesheet beside this file is the shell's.
                 transform: (code: string, id: string) => {
                   const file = id.split("?")[0]!;
@@ -486,9 +496,6 @@ export function catalog(options: CatalogOptions): AstroIntegration {
           home: options.home ?? join(import.meta.dirname, "Home.astro"),
         });
         await inner.hooks["astro:config:setup"]?.(params);
-        // Astrobook writes one route per state into this integration's codegen folder.
-        const dir = fileURLToPath(params.createCodegenDir());
-        rewriteRoutes(dir, options.serverOnly ?? false);
       },
       "astro:routes:resolved": ({ routes }) => {
         pageRoutes.clear();
