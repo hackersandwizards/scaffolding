@@ -31,7 +31,8 @@ behind, with the failing check or advisory ID.
 
 ## Pins only
 
-With the argument `pins`, raise only the `@hackersandwizards/*` pins, in each repository given:
+With the argument `pins`, raise only the Git pins on our own repositories, whatever the package's
+name, in each repository given:
 
 1. `git fetch` and `git merge origin/<default branch>`. Skip a repository whose branch then holds a
    commit `origin` lacks other than a merge or a `pins: raise` commit, and name it: its push would
@@ -42,8 +43,7 @@ With the argument `pins`, raise only the `@hackersandwizards/*` pins, in each re
    "Script not found". Skip a repository with no `node_modules/.bin/raise-pins` after it, and name
    it: it pins a scaffolding older than v5.18.0.
 3. `bun run raise-pins --commit`. Read its `[raise-pins]` lines, never its exit status: a pin it
-   keeps because it read no tag from the remote exits 1 after a green commit too. A pin whose name
-   lacks the scope is left out without a line.
+   keeps because it read no tag from the remote exits 1 after a green commit too.
 4. After a `committed "<message>"` line, push. A rejected push repeats step 1 once. After `gate
    red`, fix what broke as step 2 of the first list says, then commit and push. A run whose approval
    excludes fixes changes nothing instead: the raise stays uncommitted in `package.json` and
