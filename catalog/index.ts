@@ -19,7 +19,7 @@ import { basename, dirname, join, matchesGlob, posix, relative } from "node:path
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { brandFallbacks } from "./fallbacks.ts";
 import { catalogPath, storiesDir } from "./path.ts";
-import { CSS, retitleLayout, rewriteRoute } from "./route.ts";
+import { CSS, retitleLayout, rewriteRoutes } from "./route.ts";
 
 export { renderCatalog } from "./render.ts";
 export type { CatalogData, CatalogGroup, CatalogItem } from "./render.ts";
@@ -488,11 +488,7 @@ export function catalog(options: CatalogOptions): AstroIntegration {
         await inner.hooks["astro:config:setup"]?.(params);
         // Astrobook writes one route per state into this integration's codegen folder.
         const dir = fileURLToPath(params.createCodegenDir());
-        for (const file of globSync("**/*.astro", { cwd: dir })) {
-          const path = join(dir, file);
-          const code = rewriteRoute(file, readFileSync(path, "utf8"), options.serverOnly ?? false);
-          if (code !== undefined) writeFileSync(path, code);
-        }
+        rewriteRoutes(dir, options.serverOnly ?? false);
       },
       "astro:routes:resolved": ({ routes }) => {
         pageRoutes.clear();

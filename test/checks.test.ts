@@ -25,7 +25,7 @@ import { dirname, join } from "node:path";
 import { pathToFileURL } from "node:url";
 import { brandFallbacks } from "../catalog/fallbacks.ts";
 import { catalogPath } from "../catalog/path.ts";
-import { rewriteRoute } from "../catalog/route.ts";
+import { rewriteRoute, rewriteRoutes } from "../catalog/route.ts";
 import { rejection } from "../lib/rejection.ts";
 import { applyAllow, commentSyntax, installedCommit, newestTag, tagCommit } from "../lib/repo.ts";
 
@@ -449,6 +449,33 @@ describe("check-coupling", () => {
       `[check-coupling] tools/fonts.py: ${installed} (node_modules' / '@hackersandwizards)`,
       `[check-coupling] tools/fonts.py: ${installed} (node_modules/@hackersandwizards/brand/data)`,
       `[check-coupling] tools/fonts.py: ${installed} (node_modules/@hackersandwizards/brand/tokens/fonts)`,
+    ]);
+  });
+
+  test("a package of ours without our scope is ours by its repository's owner", () => {
+    const pin = (owner: string, name: string) =>
+      `git+https://github.com/${owner}/${name}.git#v1.0.0`;
+    const dir = repo({
+      "package.json": JSON.stringify({
+        name: "fx",
+        dependencies: {
+          practitioners: pin("hackersandwizards", "practitioners"),
+          lodash: pin("lodash", "lodash"),
+        },
+      }),
+      "node_modules/practitioners/package.json": JSON.stringify({
+        name: "practitioners",
+        version: "1.0.0",
+        exports: { "./schema": "./src/lib/schema.ts" },
+      }),
+      "node_modules/lodash/package.json": JSON.stringify({ name: "lodash", version: "1.0.0" }),
+      "src/schema.ts": 'export const s = "node_modules/practitioners/src/lib/schema.ts";\n',
+      "src/segments.ts": 'export const d = join(root, "node_modules", "practitioners");\n',
+      "src/other.ts": 'export const o = "node_modules/lodash/lodash.js";\n',
+    });
+    expect(lines(run(dir, "check-coupling").out, "check-coupling").sort()).toEqual([
+      `[check-coupling] src/schema.ts: ${installed} (node_modules/practitioners/src/lib/schema.ts)`,
+      `[check-coupling] src/segments.ts: ${installed} (node_modules", "practitioners)`,
     ]);
   });
 
@@ -3866,6 +3893,26 @@ describe("catalog", () => {
       rewriteRoute("stories/a.astro", route.replace("'astrobook/client'", "'x'"), false),
     ).toThrow(/CSS import/);
     expect(() => rewriteRoute("other/a.astro", route, false)).toThrow(/CSS import/);
+  });
+
+  test("rewriteRoutes replaces each route whole, so another Astro process never reads it empty", () => {
+    const dir = temp();
+    mkdirSync(join(dir, "stories"));
+    const file = join(dir, "stories", "a.astro");
+    writeFileSync(
+      file,
+      [
+        "import { parseStoryDefaultExport, parseStoryNamedExport } from 'astrobook/client';",
+        "const { decorators, args } = parseStoryNamedExport(m, './a.stories.ts', 'One');",
+        "",
+      ].join("\n"),
+    );
+    const before = statSync(file).ino;
+    rewriteRoutes(dir, false);
+    // A write in place keeps the inode, and a reader between its truncation and its write gets "".
+    expect(statSync(file).ino).not.toBe(before);
+    expect(readFileSync(file, "utf8")).toContain("virtual:scaffolding/catalog-css/stories");
+    expect(readdirSync(join(dir, "stories"))).toEqual(["a.astro"]);
   });
 
   test(

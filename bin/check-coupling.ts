@@ -10,6 +10,7 @@ import {
   finish,
   git,
   listFiles,
+  ourRepository,
   readPackage,
   reader,
   repoRoot,
@@ -45,7 +46,7 @@ const SHELL = "@hackersandwizards/scaffolding";
 const CSS =
   /["'`(](?:[^"'`()\s]*?\/)??(node_modules\/)?(@hackersandwizards\/[\w.-]+)\/([^"'`()\s?#]+\.css)(?:[?#][^"'`()\s]*)?["'`)]/g;
 const INSTALLED =
-  /node_modules[\s"'`,/\\)+]{1,8}(@hackersandwizards(?:\/[\w.-]*)?)(\/[^\s"'`)\]},;$?#]*)?/g;
+  /node_modules[\s"'`,/\\)+]{1,8}(@[\w.-]+(?:\/[\w.-]*)?|[\w.-]+)(\/[^\s"'`)\]},;$?#]*)?/g;
 // A docstring opens the file or the block a line ending in ":" starts.
 const DOCSTRING = /(^\s*|:[ \t]*\n\s*)(?:"""[\s\S]*?"""|'''[\s\S]*?''')/g;
 const SPECIFIER =
@@ -117,6 +118,16 @@ const withoutAllow = (json: string) => {
   if (pkg.scaffolding) pkg.scaffolding = { ...pkg.scaffolding, allow: undefined };
   return JSON.stringify(pkg, null, 2);
 };
+const FIELDS = ["dependencies", "devDependencies", "optionalDependencies", "peerDependencies"];
+// Ours: our scope, or a Git pin on a repository we own, whatever the package's name.
+const pinnedOurs = new Set(
+  FIELDS.flatMap((field) =>
+    Object.entries((pkg[field] ?? {}) as Record<string, string>)
+      .filter(([, spec]) => ourRepository(spec))
+      .map(([name]) => name),
+  ),
+);
+const ours = (name: string) => name.startsWith("@hackersandwizards") || pinnedOurs.has(name);
 const leaves = "path leaves the repository; take it from the package its owner publishes";
 const outside = (target: string, base = root) => target !== base && !target.startsWith(`${base}/`);
 for (const path of listFiles(root, staged)) {
@@ -150,7 +161,7 @@ for (const path of listFiles(root, staged)) {
   // by a disk path; a stylesheet may name one, but only to a file an export maps (a stylesheet's .css
   // path is the CSS rule's). A comment, a docstring or a Tailwind @source names the path
   // without using it.
-  if (text.includes("@hackersandwizards"))
+  if (text.includes("node_modules"))
     for (const line of (path.endsWith(".py") ? text.replace(DOCSTRING, "$1") : text)
       .replace(commentSyntax(path), (comment, kept = "", at: number, all: string) => {
         // A line mark after an unclosed quote (`x//y`) sits in a string: code follows.
@@ -161,7 +172,7 @@ for (const path of listFiles(root, staged)) {
       })
       .split("\n"))
       for (const m of line.matchAll(INSTALLED)) {
-        if (m[1] === own || line.slice(0, m.index).includes("@source")) continue;
+        if (!ours(m[1]!) || m[1] === own || line.slice(0, m.index).includes("@source")) continue;
         if (STYLES.test(path)) {
           const file = m[2]?.slice(1) && posix.normalize(m[2].slice(1));
           if (!file || (!file.endsWith(".css") && !publishes(m[1], file, true)))
@@ -214,12 +225,7 @@ const GIT =
   /^(?:github:|gitlab:|bitbucket:|git\+|git:|git@|https?:\/\/\S+\.git(?:#|$))|^[\w.-]+\/[\w.-]+(?:#|$)/;
 const TAG = /#(?:semver:)?v?\d+\.\d+\.\d+(?:[-+][\w.-]+)?$/;
 if (!staged || listFiles(root, true).includes("package.json")) {
-  for (const field of [
-    "dependencies",
-    "devDependencies",
-    "optionalDependencies",
-    "peerDependencies",
-  ])
+  for (const field of FIELDS)
     for (const [name, spec] of Object.entries((pkg[field] ?? {}) as Record<string, string>)) {
       if (/^(?:file|link|portal):/.test(spec))
         flag("package.json", `${name}@${spec}`, "local path dependency");

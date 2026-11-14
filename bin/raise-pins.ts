@@ -8,7 +8,15 @@ import { spawnSync } from "node:child_process";
 import { existsSync, readFileSync, statSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { help } from "../lib/help.ts";
-import { git, newestTag, readPackage, repoRoot, underLock, withoutEnvFile } from "../lib/repo.ts";
+import {
+  git,
+  newestTag,
+  ourRepository,
+  readPackage,
+  repoRoot,
+  underLock,
+  withoutEnvFile,
+} from "../lib/repo.ts";
 
 help("raise-pins");
 withoutEnvFile("raise-pins");
@@ -48,15 +56,12 @@ if (MANIFESTS.some((path) => changed().has(path))) {
 }
 
 const PIN = /^(git\+[^#]+)#v(\d+\.\d+\.\d+)$/;
-// Ours by the repository's owner, whatever host and protocol, since a package name need not carry
-// our scope.
-const OURS = /[/:]hackersandwizards\/[^/]+$/;
 const FIELDS = ["dependencies", "devDependencies", "optionalDependencies"];
 const pkg = readPackage(root);
 const pins = FIELDS.flatMap((field) =>
   Object.entries((pkg[field] ?? {}) as Record<string, string>).flatMap(([name, spec]) => {
     const pin = PIN.exec(spec);
-    return pin && OURS.test(pin[1]!) ? [{ name, spec, url: pin[1]!, from: `v${pin[2]}` }] : [];
+    return pin && ourRepository(pin[1]!) ? [{ name, spec, url: pin[1]!, from: `v${pin[2]}` }] : [];
   }),
 );
 

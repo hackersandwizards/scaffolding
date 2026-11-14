@@ -101,8 +101,9 @@ repository. In a stylesheet, a path into `node_modules` names the file on disk a
 `exports` entry targets it, a font or image under a `/*` export included.
 
 **Installed paths.** Code, markup and data (every file `check-coupling` reads but stylesheets, Python
-included, `package.json` with its scripts and tests included) name no `node_modules/@hackersandwizards/...`
-path, joined or as path segments: code takes a file through
+included, `package.json` with its scripts and tests included) name no path into `node_modules/` to a
+company package, one under our scope or pinned to a Git repository hackersandwizards owns whatever its
+name (`practitioners`), joined or as path segments: code takes a file through
 `import.meta.resolve("@hackersandwizards/brand/logos/mark.svg")`, which the package's `exports`
 answer (its folder through its `./package.json`), and a command from `node_modules/.bin`; a catalog
 page or its data names a file the preset's `copy` serves by its package path. Comments, a
@@ -155,7 +156,8 @@ warning that `bun.lock` entries are not installed, unless no installed package a
 needs one: Tailwind's `@tailwindcss/oxide-wasm32-wasi` uses its bundled copies, and the top-level
 entries bun skips serve only packages left out on this platform.
 
-Shipped exceptions, which may match nothing: `@hackersandwizards/*` (our own packages) and sharp's
+Shipped exceptions, which may match nothing: `@hackersandwizards/*` (our own packages; one under
+another name, such as `practitioners`, keeps an entry of its own with its reason) and sharp's
 LGPL libvips builds (`@img/sharp-libvips-*`, `@img/sharp-win32-*`, `@img/sharp-wasm32`, each with
 its exact licence string), a shared library loaded on our own machines and conveyed in nothing we
 hand out. A repository keeps any other package with its exact licence string and a reason, a `*`

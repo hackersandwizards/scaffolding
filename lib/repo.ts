@@ -6,6 +6,11 @@ import { join } from "node:path";
 export const companyRemote = (repo: string) =>
   `${process.env.SCAFFOLDING_GIT_BASE || "https://github.com/hackersandwizards/"}${repo}.git`;
 
+/** Whether a Git dependency's URL names a repository hackersandwizards owns, on any host and in
+ * https, ssh or scp form, its #ref aside: a package of ours need not carry our scope. */
+export const ourRepository = (url: string) =>
+  /[/:]hackersandwizards\/[^/#]+$/.test(url.replace(/#.*/, ""));
+
 /** SCAFFOLDING_FETCH_WAIT_S, the seconds a read from a remote may take: 20 unless it is a whole
  * number above 0, as in session-start, and at most the longest timer (2^31 - 1 ms), past which a
  * timeout fires at once. */
