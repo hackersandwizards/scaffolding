@@ -4542,10 +4542,12 @@ describe("catalog", () => {
       expect(branded).toContain(
         '<nav class="hw-header-nav" aria-label="Main" data-hw-catalogs><a class="hw-header-link" href="https://example.com/other/">Other</a><a class="hw-header-link" href="/catalog/" aria-current="page">Fx</a></nav>',
       );
-      // A state's page holds its header in a <template> the preload scanner skips, and only puts it
-      // into <main> once the parser has waited out the stylesheets: the page fetches its logo before
-      // they arrive, and leaves a logo marked lazy to the browser. The CSS answers once the logo is
-      // asked for, 8 s at most, so a loaded machine cannot reorder the two.
+      // A state's page holds its header in a <template> the preload scanner skips, and puts it into
+      // <main> as the parser reaches it: the page fetches its logo before the stylesheets arrive, and
+      // leaves a logo marked lazy to the browser. The CSS answers once the logo is asked for, 8 s at
+      // most, so a loaded machine cannot reorder the two. No script holds the parser before <main>,
+      // so the logo can be whole before the stylesheet's request reaches this server: the wait
+      // takes the stylesheet applied too.
       const order: string[] = [];
       let logoAsked = () => {};
       const asked = new Promise<void>((done) => (logoAsked = done));
@@ -4566,7 +4568,9 @@ describe("catalog", () => {
       });
       const browsing = await browse(`${slow.url}dashboard/Parts/box-parts/two/`);
       try {
-        await browsing.until(`document.querySelector("img.hw-header-logo")?.complete`);
+        await browsing.until(
+          `document.querySelector("img.hw-header-logo")?.complete && !!document.querySelector('link[rel="stylesheet"]')?.sheet`,
+        );
         expect(order).toContain("css arrived");
         const early = order.slice(0, order.indexOf("css arrived")).join();
         expect(early).toContain("lockup-screen");
