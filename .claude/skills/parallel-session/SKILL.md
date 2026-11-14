@@ -165,8 +165,10 @@ the others.
   `git push origin HEAD:main`, repeating on rejection, before its run ends. A rebase there runs
   the post-checkout hook on `origin/main`'s lockfile: run `bun install --frozen-lockfile` again
   before a render, measurement or gate. Check: `git log origin/main..HEAD` prints nothing.
-- Remove each worktree as soon as its delegate's work is on `main`, while the session goes on, so
-  none outlives it: `git worktree remove <path>` once, inside it, `git log origin/main..HEAD` and
+- As soon as a delegate's work is on `main`, while the session goes on, fast-forward the shared
+  checkout with `git merge --ff-only origin/main` there, since a server the person starts in it
+  serves the old state until then, and remove the worktree so none outlives it:
+  `git worktree remove <path>` once, inside it, `git log origin/main..HEAD` and
   `git status --porcelain` both print nothing. Delete a `worktree-<name>` branch with
   `git branch -D` once `git log origin/main..worktree-<name>` prints nothing. `git worktree remove`
   drops a clean worktree's unpushed commits without a warning.
