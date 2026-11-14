@@ -46,7 +46,9 @@ Tell each batch that zero changes is an acceptable result. Before deleting a com
 ## 3. Quality, performance, security review
 
 Run `/code-review high` and `/security-review` over the scope first; their findings join this
-phase's. In a repository with a UI, measure performance on a server the run starts itself on a
+phase's. `/security-review` reads the pending changes of the session's own repository, whatever its
+arguments name: where those are not the scope, review the scope's diff for security by hand and
+say so. In a repository with a UI, measure performance on a server the run starts itself on a
 free port (Lighthouse per public page type, response and render time per app route) and report
 before and after numbers for each fix in the repository's one `YYYY-MM-DD-performance.md`, in the
 folder its `CLAUDE.md` names for documents, written with today's date, deleting the previous one in the same commit. Serve the before state
