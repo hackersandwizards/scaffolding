@@ -17,8 +17,8 @@ checks the item files, and `admin-serve` serves the page across all repos at
   - `goal`: the goal in the person's words, the limits, a deploy hold, and one to eight done
     criteria, each checkable by someone who did none of the work and naming its proof.
     Usually `goal.md`, one per repo.
-  - `work`: one open piece of work, with `owner` (whoever moves next: the person, an agent or
-    anyone else) and `evidence` (a commit hash, a file, or "not established"). A question whether
+  - `work`: one open piece of work, with `owner` (whoever moves next: the person only for a
+    decision or a step no agent tool reaches, else an agent or anyone else) and `evidence` (a commit hash, a file, or "not established"). A question whether
     something is on the list for later asks for a `work` item the person owns: read-only
     preparation for it (an inventory, candidates, a decision item) is welcome, and the work itself
     waits.

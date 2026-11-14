@@ -22,7 +22,11 @@ description: Create, change, rename or review a scheduled task (the desktop app'
    carries only what is true because it runs on a schedule: the cadence, the working directory, the
    colleague it delegates to and the check on that colleague's report, the standing approval and
    its limit, what an empty run reports, and the ledger that dedupes across runs. A task has one
-   cron expression, so a cadence with two firing patterns is two tasks. Check: the
+   cron expression, so a cadence with two firing patterns is two tasks. A day-of-month and a
+   weekday in one expression are OR'd: `22-28 * 4` fires all seven days and every Thursday, and no
+   five-field expression says "last Thursday". Read the task's `nextRunAt` to confirm an
+   expression, and never try extended syntax such as `4L` on a live task: one the scheduler cannot
+   parse leaves the task unarmed. Check: the
    task file holds no step the skill could hold.
 4. Write the standing approval as a closed list of the outward acts and their limits, never the
    record writes, which the skill names. Check: every outward act the skill performs is on the list

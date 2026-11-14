@@ -111,4 +111,4 @@ with `defining function based on alias`, and one named `G`, a global alias for `
 `path`, `fpath`, `cdpath` and `manpath` are tied to their uppercase variables, so a loop variable
 named `path` empties the search path and every later command fails with `command not found`. An
 unquoted `$list` stays one word: `for x in $list` runs once and `git commit -- $files` passes one
-long pathspec. Split with `${=list}`, or `${(f)list}` for lines.
+long pathspec. Split with `${=list}`.

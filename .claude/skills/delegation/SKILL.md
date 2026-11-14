@@ -14,6 +14,8 @@ description: >-
 - Launch only while the 1-minute load (`uptime`) is at or below the core count
   (`getconf _NPROCESSORS_ONLN`): hold up to ten minutes, then launch one alone. A whole gate, a
   browser suite or a load run runs one at a time.
+- Launching a queue of several runs in an attended session, tell the person its estimated end as a
+  clock time a command printed, and the time per run it rests on.
 - Delegate to an Agent-tool subagent of the session you are in, Desktop or terminal, or to a new
   session the Desktop app starts, never to a nested `claude -p` process.
 - A subagent loads the `CLAUDE.md`, rules and skills of the session's start folder only. A brief for
@@ -32,9 +34,14 @@ description: >-
 - Before telling the person a background run is still working, read its log's last lines and its
   process in that turn: a monitor that ended without an event is no evidence, and a log ending in an
   API or connection error is a stopped run to relaunch.
+- Attended, while a delegate or background run you started works, give the person a status after
+  each one finishes and every 20 minutes at the latest: after each status, stop the previous timer
+  with TaskStop and start `sleep 1200` as a Bash call with `run_in_background: true`, whose
+  completion wakes the session.
 - A brief for a message names the channel's skill beside the voice skill and hands over facts and
   constraints, never the channel's draft script: a brief naming only the voice skill reads as
-  complete, and naming the script overrides the skill's choices.
+  complete, and naming the script overrides the skill's choices. A brief whose result feeds a reply
+  names that reply's thread.
 - After a stall, timeout or resume, reconcile the delegate's commits and working tree against its
   report and hand back any contradiction. Before relaying a defect as fixed, sweep the repository
   for its class.

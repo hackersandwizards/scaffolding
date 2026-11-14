@@ -26,7 +26,7 @@ handling that prevents data loss, security measures, or accessibility basics.
 - Verify each change with the checks that fit it, from the commands the repository's CLAUDE.md
   lists. You choose which; nothing requires the full gate every time, and your run is the only
   full one before the deploy.
-- A git hook holds only what is irreversible or takes under about a second, run over the staged
+- A pre-commit hook holds only what is irreversible or takes under about a second, run over the staged
   changes: the secret scan, format and lint, and checks of that size such as the
   `check-staged` set or a repository's own `check:skills` when `.claude/` is staged. CI builds, runs the integration tests a deploy needs, deploys and applies Terraform after
   a plan. A schedule runs only to notice an absence no commit reveals, such as a new advisory

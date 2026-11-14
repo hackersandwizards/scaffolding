@@ -2,8 +2,8 @@
 
 Write every page, report, deck, note or document a run produces as a file in the repository it
 belongs to, in the folder that repository's `CLAUDE.md` names for such documents, else in `docs/`.
-Run the repository's formatter on it as you write it, since an unformatted file reds every
-session's gate, and keep raw dumps and review rounds in the scratchpad. Commit it like any other change and give
+Run the repository's formatter on it as you write it and the repository's check before committing
+it, since a file either one fails reds every session's gate, and keep raw dumps and review rounds in the scratchpad. Commit it like any other change and give
 the reader its path. In a public repository, such a file and its images carry no company data (a client,
 deal, invoice or person record, or a screenshot of one): that evidence goes to a private repository,
 and the public file states only the measurement. A page to view is an `.html` file opened from disk.
