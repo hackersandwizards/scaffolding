@@ -49,7 +49,7 @@ names where its top shows, else the last group, so a click on a group near the e
 that group's chip takes the open entry's look. The rail's names scroll under the search to keep
 that label in view; a mark another script set stays. Without script nothing is marked. Astrobook draws each state, its sidebar
 hidden on every page. A state's page carries a bar instead: back to the home, the file's folder and name, the
-theme toggle, a link to the state alone, and the states: previous and next, with the left and right
+theme toggle where the header holds none (see `themeToggle`), a link to the state alone, and the states: previous and next, with the left and right
 arrow keys too, the position ("10 of 38"), and between them a link per state, or above 12 states a
 menu grouped by a word three or more state names share (`BlockImage` under Block, `AccentTheme`
 under Theme). The bar, rather than a list beside the canvas, keeps the canvas at full width, less the room of brand's focus ring (`--hw-focus-room`, brand v2.10.0 or later, defined where
@@ -98,10 +98,13 @@ The options beyond those above:
   and keeps its window size. A non-empty value is a selector for the part inside the marked element
   to draw (`data-hw-preview=".part"`); one that selects nothing draws the whole mark and logs an
   error in the console. A key naming no story group fails the build.
-- `themeToggle`: `false` leaves the "Dark theme" button out of a state's bar and `data-hw-night` off
-  every page, for a site without a dark theme. The button reads and writes the choice under
-  `theme`, the key brand's `ThemeToggle` keeps, so a choice made on the repository's own pages holds
-  in its catalog and back.
+- `themeToggle`: where the repository resolves brand, brand's `ThemeToggle` ends the header on the
+  home and on a state's page, so a repository's home passes none of its own; without brand the
+  "Dark theme" button sits in a state's bar instead. `false` leaves both out and `data-hw-night` off
+  every page, for a site without a dark theme. The choice is kept under `theme`, the key brand's
+  `ThemeToggle` writes, so a choice made on the repository's own pages holds in its catalog and
+  back: every page that turns stores each flip of its `data-theme` there, whatever made it, and
+  Astrobook's own toggle follows. A state alone, a tile's frame included, stores nothing.
 - `storyScale`: brand's `data-hw-scale` on every page that draws a story, a state's page and the
   state alone, such as `"screen"`; without it such a page keeps what the repository's `head` sets,
   else brand's default. The home is always `"dense"`.
@@ -134,9 +137,10 @@ The options beyond those above:
   the page needs only the tokens and faces its header and bar read and what it draws around the
   frame, such as `["@hackersandwizards/brand/tokens.root.css", "@hackersandwizards/brand/fonts.css"]`,
   and the focus ring where the page sets `hw-focus-ring` (see `htmlClass`).
-- `htmlClass`: classes on `<html>` of every page, set before the body draws, such as
-  `["hw-focus-ring"]` for brand's focus ring. With that class every page loads brand's
-  `elements/focus.css` ahead of its lists. A `head` that sets the class itself lists
+- `htmlClass`: classes on `<html>` of every page, set before the body draws, default
+  `["hw-focus-ring"]`, brand's focus ring, where the repository resolves brand, else none; `[]`
+  turns the ring off. With that class every page loads brand's `elements/focus.css` ahead of its
+  lists. A `head` that sets the class itself lists
   `"@hackersandwizards/brand/elements/focus.css"` in each list that leaves out `elements.css`, or
   that list's pages draw no focus ring.
 - `previewStates`: the states a tile draws and links first, each the story's export name in kebab
@@ -147,8 +151,8 @@ The options beyond those above:
   brand v1.52.0 or later, brand's `layers.css`, so a head on such a brand declares no order of its
   own.
 - `header`: default brand's `AppHeader`, `header.css` and `night.css`. The admin link, the `nav`
-  option's links and whatever the home's `nav` slot holds sit in that order in one `hw-header-nav`
-  group at the bar's right; a `nav` of class `hw-header-nav` passed there lays its items into that
+  option's links, whatever the home's `nav` slot holds and brand's theme switch sit in that order in
+  one `hw-header-nav` group at the bar's right; a `nav` of class `hw-header-nav` passed there lays its items into that
   group.
 - `nav`: the header's links on the home and on every state's page, which then carries the header
   above its bar, such as `{ items: catalogs, current: "Slides" }` with brand's `catalogs.json`. Each

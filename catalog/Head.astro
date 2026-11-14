@@ -92,7 +92,7 @@ const root = {
         {folder} / <strong>{label(mod.name)}</strong>
       </span>
       <span class="hw-catalog-bar-tools">
-        {shell.themeToggle && (
+        {shell.themeToggle && !shell.headerToggle && (
           <button type="button" data-hw-theme aria-pressed="false">
             Dark theme
           </button>
@@ -173,6 +173,20 @@ const root = {
       document
         .querySelector("[data-hw-theme]")
         ?.setAttribute("aria-pressed", String(theme()?.getTheme?.() === "dark"));
+    // brand's switch in the header flips data-theme and stores the choice; Astrobook's toggle
+    // follows, and a flip by Astrobook's is stored, on a page that turns at all: a state alone, a
+    // tile's frame included, keeps its day theme and leaves the stored choice alone.
+    const root = document.documentElement;
+    if (root.dataset.hwNight !== undefined)
+      new MutationObserver(() => {
+        const chosen = root.dataset.theme;
+        if (chosen !== "dark" && chosen !== "light") return;
+        if (theme()?.getTheme?.() !== chosen) theme()?.setTheme?.(chosen);
+        try {
+          localStorage.setItem(BRAND_KEY, chosen);
+        } catch {}
+        pressed();
+      }).observe(root, { attributeFilter: ["data-theme"] });
     const bar = document.getElementById("hw-catalog-bar");
     if (bar) {
       // The header's logo is the page's largest paint on a phone and waits in the template, which
