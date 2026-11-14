@@ -1,7 +1,8 @@
 ---
-// The header of the home and of a state's page: the repository's header, its nav and, under
-// `astro dev`, the admin link.
+// The header of the home and of a state's page: the repository's header, its nav, under
+// `astro dev` the admin link, and brand's theme switch unless `themeToggle` is false.
 import Header from "virtual:scaffolding/catalog-header";
+import Toggle from "virtual:scaffolding/catalog-toggle";
 import shell from "virtual:scaffolding/catalog";
 
 interface Props {
@@ -41,5 +42,6 @@ const nav: { name: string; href: string; current?: true }[] | undefined = shell.
       </nav>
     )}
     <slot />
+    {Toggle && <Toggle />}
   </div>
 </Header>

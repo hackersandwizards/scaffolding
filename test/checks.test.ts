@@ -4136,6 +4136,11 @@ describe("catalog", () => {
             `[document.documentElement.dataset.theme, localStorage.getItem("theme")]`,
           ),
         ).toEqual(["light", "light"]);
+        // A flip by anything else on <html>, brand's switch in the header among them, is stored and
+        // followed by Astrobook's toggle.
+        await painted.evaluate(`document.documentElement.dataset.theme = "dark"`);
+        await painted.until(`localStorage.getItem("theme") === "dark"`);
+        expect(await painted.evaluate(`window.astroThemeToggle.getTheme()`)).toBe("dark");
         // A state alone in the window keeps the room inside Astrobook's scrolling <main> too. It draws
         // in the day theme whatever the reader chose, as a tile's frame does, and keeps the choice.
         await painted.evaluate(
@@ -4154,6 +4159,13 @@ describe("catalog", () => {
             `[document.documentElement.dataset.theme, document.documentElement.classList.contains("dark"), localStorage.getItem("theme"), localStorage.getItem("theme-toggle")]`,
           ),
         ).toEqual(["light", false, "dark", "dark"]);
+        // It turns at no flip of its own, so it leaves the stored choice alone: a tile's frame
+        // writing it would turn every other page back.
+        await painted.evaluate(
+          `localStorage.setItem("theme", "light"); document.documentElement.dataset.theme = "dark"`,
+        );
+        await Bun.sleep(100);
+        expect(await painted.evaluate(`localStorage.getItem("theme")`)).toBe("light");
       } finally {
         painted.close();
         void served.stop(true);
@@ -4492,6 +4504,8 @@ describe("catalog", () => {
         "tokens/layers.css": "@layer properties, theme, base, components, utilities;\n",
         "night.css": "",
         "elements/focus.css": ".hw-focus-ring :focus-visible{outline:3px solid purple}\n",
+        "expert/components/ThemeToggle.astro":
+          '<button id="theme-toggle" class="hw-header-link" data-icon type="button">T</button>\n',
         "expert/components/AppHeader.astro":
           '---\nimport lockup from "../../logos/lockup-screen.svg?url";\nimport night from "../../logos/night-logo.svg?url";\n---\n\n<header class="hw-header"><img class="hw-header-logo" src={lockup} alt="" /><img src={night} alt="" loading="lazy" /><slot /></header>\n',
         "expert/catalogs.json": JSON.stringify([
@@ -4542,6 +4556,18 @@ describe("catalog", () => {
       expect(branded).toContain(
         '<nav class="hw-header-nav" aria-label="Main" data-hw-catalogs><a class="hw-header-link" href="https://example.com/other/">Other</a><a class="hw-header-link" href="/catalog/" aria-current="page">Fx</a></nav>',
       );
+      // brand's theme switch ends the header on the home and a state's page, whose bar then offers
+      // none of its own; brand's focus ring is on <html> unless `htmlClass` says otherwise.
+      const brandedState = readFileSync(
+        join(dist, "dashboard/Parts/box-parts/two/index.html"),
+        "utf8",
+      );
+      for (const html of [branded, brandedState]) {
+        expect(html).toMatch(/<\/nav><button id="theme-toggle"[^>]*>T<\/button><\/div>/);
+        expect(root(html)).toContain('"hwNight":""');
+        expect(html).toContain('classList.add(...["hw-focus-ring"])');
+      }
+      expect(brandedState).not.toContain('<button type="button" data-hw-theme');
       // A state's page holds its header in a <template> the preload scanner skips, and only puts it
       // into <main> once the parser has waited out the stylesheets: the page fetches its logo before
       // they arrive, and leaves a logo marked lazy to the browser. The CSS answers once the logo is
@@ -4577,9 +4603,16 @@ describe("catalog", () => {
       }
       rmSync(navless);
       // `htmlClass` holding brand's hw-focus-ring loads brand's focus ring on every page; without
-      // the class no page loads it.
+      // the class no page loads it. A `themeToggle` of false leaves brand's switch out of the
+      // header and offers the bar's none either.
+      expect(variant("unswitched", "themeToggle: false").status).toBe(0);
+      expect(page("")).not.toContain('id="theme-toggle"');
+      expect(page("dashboard/Parts/box-parts/two")).not.toContain(
+        '<button type="button" data-hw-theme',
+      );
       const ring = ".hw-focus-ring :focus-visible{outline:3px solid purple}";
       const ringPages = ["", "dashboard/Parts/box-parts/two", "stories/Parts/box-parts/two"];
+      expect(variant("ringoff", "htmlClass: []").status).toBe(0);
       for (const p of ringPages) expect(styles(page(p))).not.toContain(ring);
       expect(variant("ringed", 'htmlClass: ["hw-focus-ring"]').status).toBe(0);
       for (const p of ringPages) expect(styles(page(p))).toContain(ring);

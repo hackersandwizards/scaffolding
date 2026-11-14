@@ -44,15 +44,17 @@ export type CatalogOptions = {
    * [1440, 810] for a slide, or one per group, such as { Pages: [1440, 900] }; without one the
    * first state draws at three quarters, centred. */
   previewSize?: [number, number] | Record<string, [number, number]>;
-  /** The "Dark theme" button in a state's bar and brand's night.css turning a page with it,
+  /** brand's theme switch at the end of the header, where the repository resolves brand, else the
+   * "Dark theme" button in a state's bar, and brand's night.css turning a page with either,
    * default true; false for a site without a dark theme. */
   themeToggle?: boolean;
   /** brand's data-hw-scale on <html> of every page that draws a story (a state's page and the
    * state alone), such as "screen"; without it such a page keeps what the repository's head sets,
    * else brand's default. The home draws at "dense". */
   storyScale?: string;
-  /** Classes on <html> of every page, set before the body draws, such as ["hw-focus-ring"], with
-   * which every page also loads brand's elements/focus.css. */
+  /** Classes on <html> of every page, set before the body draws, default ["hw-focus-ring"] where the
+   * repository resolves brand, else none; with that class every page also loads brand's
+   * elements/focus.css. */
   htmlClass?: string[];
   /** Groups shown first, in this order; the rest follow alphabetically. */
   groupOrder?: string[];
@@ -119,6 +121,8 @@ const FORMER = new RegExp(`^/catalog(/(${Object.values(SUBPATHS).join("|")})(/|$
 // The cascade layer order alone, exported since brand v1.52.0.
 const BRAND_LAYERS = "@hackersandwizards/brand/layers.css";
 const BRAND_FOCUS = "@hackersandwizards/brand/elements/focus.css";
+const BRAND_TOGGLE = "@hackersandwizards/brand/expert/components/ThemeToggle.astro";
+const TOGGLE = "virtual:scaffolding/catalog-toggle";
 
 /** The nearest folder at or above `from` holding a package.json. */
 function packageDir(from: string): string {
@@ -347,11 +351,11 @@ export function catalog(options: CatalogOptions): AstroIntegration {
           );
         // brand's hw-focus-ring draws nothing without its focus.css, which a slim list leaves out.
         // First, so the lists' own sheets, brand's elements.css among them, still follow it.
-        const ring =
-          options.htmlClass?.includes("hw-focus-ring") &&
-          fromBrand(() => require.resolve(BRAND_FOCUS))
-            ? [BRAND_FOCUS]
-            : [];
+        const focus = fromBrand(() => require.resolve(BRAND_FOCUS));
+        const htmlClass = options.htmlClass ?? (focus ? ["hw-focus-ring"] : []);
+        const ring = htmlClass.includes("hw-focus-ring") && focus ? [BRAND_FOCUS] : [];
+        const themeToggle = options.themeToggle ?? true;
+        const toggle = themeToggle && !!fromBrand(() => require.resolve(BRAND_TOGGLE));
         const withRing = (list: string[]) => [...new Set([...ring, ...list])];
         const lists = {
           home: withRing(options.homeCss ?? options.css),
@@ -378,7 +382,7 @@ export function catalog(options: CatalogOptions): AstroIntegration {
         ];
         const imports = (list: string[]) => list.map((c) => `import ${spec(c)};`).join("");
         // classList.add throws on one of these, in the head of every page.
-        if (options.htmlClass?.some((c) => !/^\S+$/.test(c)))
+        if (htmlClass.some((c) => !/^\S+$/.test(c)))
           throw new Error("catalog htmlClass: one class per entry, without spaces");
         // A misspelt or renamed `current` would link this catalog's entry to the published site.
         if (nav?.current !== undefined && !nav.items.some(({ name }) => name === nav.current))
@@ -396,10 +400,12 @@ export function catalog(options: CatalogOptions): AstroIntegration {
           lead: options.lead,
           previews: options.previews ?? true,
           previewSize: options.previewSize,
-          themeToggle: options.themeToggle ?? true,
+          themeToggle,
+          // brand's switch in the header, where a state's page draws one too: the bar then offers none.
+          headerToggle: toggle && !!nav,
           onDisk,
           storyScale: options.storyScale,
-          htmlClass: options.htmlClass ?? [],
+          htmlClass,
           groupOrder: options.groupOrder ?? [],
           previewStates: options.previewStates ?? [],
           provenance,
@@ -428,6 +434,9 @@ export function catalog(options: CatalogOptions): AstroIntegration {
           [OPTIONS]: `export default ${JSON.stringify(shared)};`,
           [HEADER]: `export { default } from ${spec(header.component)};`,
           [HEAD]: `export { default } from ${spec(options.head ?? "astrobook/components/head.astro")};`,
+          [TOGGLE]: toggle
+            ? `export { default } from ${spec(BRAND_TOGGLE)};`
+            : "export default undefined;",
           [ICON]: fromBrand(() => require.resolve(BRAND_ICON))
             ? `export { default } from ${spec(`${BRAND_ICON}?url&no-inline`)};`
             : "export default undefined;",
