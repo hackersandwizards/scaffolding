@@ -5528,9 +5528,15 @@ describe("check-staged", () => {
 });
 
 describe("raise-pins", () => {
-  // Local stand-ins for company packages: b depends on a, and each has tags v1.0.0 to v1.10.0.
-  function packages(names = ["a", "b"]) {
-    const base = temp();
+  // Local stand-ins for company packages under an owner folder, as on GitHub: b depends on a, and
+  // each has tags v1.0.0 to v1.10.0.
+  function packages(
+    names = ["a", "b"],
+    scope = "@hackersandwizards/",
+    owner = "hackersandwizards",
+  ) {
+    const base = join(temp(), owner);
+    mkdirSync(base);
     for (const name of names) {
       const dir = join(base, name);
       mkdirSync(dir);
@@ -5539,7 +5545,7 @@ describe("raise-pins", () => {
         const deps = name === "b" ? { "@hackersandwizards/a": `git+file://${base}/a#v1.0.0` } : {};
         write(dir, {
           "package.json": JSON.stringify({
-            name: `@hackersandwizards/${name}`,
+            name: `${scope}${name}`,
             version,
             dependencies: deps,
           }),
@@ -5551,10 +5557,16 @@ describe("raise-pins", () => {
     }
     return base;
   }
-  function consumer(base: string, scripts: Record<string, string>, names = ["b", "a"]) {
+  function consumer(
+    base: string,
+    scripts: Record<string, string>,
+    names = ["b", "a"],
+    others: Record<string, string> = {},
+  ) {
     const dependencies = Object.fromEntries(
       names.map((name) => [`@hackersandwizards/${name}`, `git+file://${base}/${name}#v1.0.0`]),
     );
+    Object.assign(dependencies, others);
     const pkg = { name: "c", private: true, scripts, dependencies };
     const dir = repo({ "package.json": `${JSON.stringify(pkg, null, 2)}\n` }, false);
     const env = { ...process.env, BUN_INSTALL_CACHE_DIR: cacheDir };
@@ -5602,6 +5614,23 @@ describe("raise-pins", () => {
     expect(lines(again.out, "raise-pins")).toContain(
       "[raise-pins] nothing raised, so the gate did not run",
     );
+  });
+
+  test("selects a pin by its repository's owner, not its name: an unscoped one of ours rises, a foreign one stays", () => {
+    const ours = packages(["u"], "");
+    const foreign = packages(["f"], "", "someone");
+    const dir = consumer(ours, { check: "true" }, [], {
+      u: `git+file://${ours}/u#v1.0.0`,
+      f: `git+file://${foreign}/f#v1.0.0`,
+    });
+    const r = run(dir, "raise-pins", ["--commit"], identity);
+    expect(r.code).toBe(0);
+    expect(lines(r.out, "raise-pins")).toEqual([
+      "[raise-pins] u: v1.0.0 -> v1.10.0",
+      "[raise-pins] gate green with u v1.10.0",
+      '[raise-pins] committed "pins: raise u v1.10.0"',
+    ]);
+    expect(readFileSync(join(dir, "package.json"), "utf8")).toContain(`${foreign}/f#v1.0.0"`);
   });
 
   test("a remote not read keeps its pin and leaves the other raises to commit", () => {

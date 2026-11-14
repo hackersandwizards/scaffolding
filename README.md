@@ -68,7 +68,7 @@ Each runs through `bun run`, and [Commands](docs/commands.md) has the detail of 
 - `check-confidential`: confidential terms, Company OS screenshots and purged commits.
 - `check-lock <command>`: runs the command once no other locked command runs in the checkout.
 - `chrome-mcp`: the chrome-devtools MCP server on Chrome for Testing, for `.mcp.json`.
-- `raise-pins [--commit]`: raises every `@hackersandwizards/*` pin to its newest tag, then gates.
+- `raise-pins [--commit]`: raises every Git pin on a `hackersandwizards` repository to its newest tag, then gates.
 
 ## The gate
 

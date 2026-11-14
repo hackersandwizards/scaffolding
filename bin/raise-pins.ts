@@ -1,8 +1,9 @@
 #!/bin/sh
 // 2>/dev/null; exec bun --no-env-file "$0" "$@"
-// Raises every @hackersandwizards/* Git pin to the newest v<version> tag of its remote, in
-// dependency order, installing after each; then runs the gate once and reports per package. With
-// --commit, a green gate commits package.json, bun.lock and what check-structure --fix wrote.
+// Raises every Git pin on a hackersandwizards repository, whatever the package's name, to the
+// newest v<version> tag of its remote, in dependency order, installing after each; then runs the
+// gate once and reports per package. With --commit, a green gate commits package.json, bun.lock
+// and what check-structure --fix wrote.
 import { spawnSync } from "node:child_process";
 import { existsSync, readFileSync, statSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
@@ -47,12 +48,15 @@ if (MANIFESTS.some((path) => changed().has(path))) {
 }
 
 const PIN = /^(git\+[^#]+)#v(\d+\.\d+\.\d+)$/;
+// Ours by the repository's owner, whatever host and protocol, since a package name need not carry
+// our scope.
+const OURS = /[/:]hackersandwizards\/[^/]+$/;
 const FIELDS = ["dependencies", "devDependencies", "optionalDependencies"];
 const pkg = readPackage(root);
 const pins = FIELDS.flatMap((field) =>
   Object.entries((pkg[field] ?? {}) as Record<string, string>).flatMap(([name, spec]) => {
-    const pin = name.startsWith("@hackersandwizards/") ? PIN.exec(spec) : null;
-    return pin ? [{ name, spec, url: pin[1]!, from: `v${pin[2]}` }] : [];
+    const pin = PIN.exec(spec);
+    return pin && OURS.test(pin[1]!) ? [{ name, spec, url: pin[1]!, from: `v${pin[2]}` }] : [];
   }),
 );
 
@@ -115,7 +119,7 @@ for (const [at, { name, spec, url, from }] of ordered.entries()) {
     continue;
   }
   say(`${name}: ${from} -> ${to}`);
-  raised.push(`${name.slice("@hackersandwizards/".length)} ${to}`);
+  raised.push(`${name.replace(/^@hackersandwizards\//, "")} ${to}`);
   // A raise of this package brings its skeleton files, which the commit takes with it.
   if (name !== "@hackersandwizards/scaffolding") continue;
   const before = new Map([...changed()].map((path) => [path, read(path)]));
