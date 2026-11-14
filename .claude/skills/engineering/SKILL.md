@@ -35,7 +35,9 @@ handling that prevents data loss, security measures, or accessibility basics.
   else the project's own binary (`bun run vitest run <file>`), never `bunx`, `npx` or
   `node_modules/.bin`. A person runs a repository's scripts through one entry point that lists
   them, never by path: in a bun project a package.json script, elsewhere a `justfile` recipe with a
-  doc comment and a group, whose bare `just` lists them. Never both for one script.
+  doc comment and a group, whose bare `just` lists them. Never both for one script. A commit that
+  adds or changes a command a person runs also changes the README or CONTRIBUTING passage that
+  lists such commands.
   A repository pinning `@hackersandwizards/scaffolding` takes its hooks from scaffolding's skeleton
   (`check-structure --fix`). Elsewhere a hook is one line in `.githooks/` calling a script:
   `check:staged` runs `check-staged.ts` from this folder, `lfs:pre-push` runs `git lfs pre-push`
