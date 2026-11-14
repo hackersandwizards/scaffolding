@@ -36,10 +36,10 @@ description: Create, change, rename or review a scheduled task (the desktop app'
    which also stamps dispatches that never started. Where the script exits non-zero, the run takes
    its default and says so. The run reports how far back it reached. A task whose work belongs to
    its own day or slot says in one line that it does not catch up. Schedules fire only while the
-   desktop app runs, and no tool fires one on demand: catch a missed run up by working the task's
-   `SKILL.md` in the session or an Agent-tool subagent of it, never in a separate `claude` process.
-   The app logs no such run, so `last-run.ts` does not see it. Check: the task names its window
-   rule or the no-catch-up line.
+   desktop app runs. Catch a missed run up with the scheduled-tasks tool `run_scheduled_task` where
+   the session offers it, else by working the task's `SKILL.md` in the session or an Agent-tool
+   subagent of it, never in a separate `claude` process: the app logs no such run, so `last-run.ts`
+   does not see it. Check: the task names its window rule or the no-catch-up line.
 6. Every run ends its report with its outcome, done, deferred or blocked, and the reason for
    anything but done. Check: the task text demands that line.
 7. The model and permission mode live on the registration in the app's `scheduled-tasks.json`, the
