@@ -4568,37 +4568,47 @@ describe("catalog", () => {
         expect(html).toContain('classList.add(...["hw-focus-ring"])');
       }
       expect(brandedState).not.toContain('<button type="button" data-hw-theme');
-      // A state's page holds its header in a <template> the preload scanner skips, and puts it into
-      // <main> as the parser reaches it: the page fetches its logo before the stylesheets arrive, and
-      // leaves a logo marked lazy to the browser. The CSS answers once the logo is asked for, 8 s at
-      // most, so a loaded machine cannot reorder the two. No script holds the parser before <main>,
-      // so the logo can be whole before the stylesheet's request reaches this server: the wait
-      // takes the stylesheet applied too.
+      // A state's page holds its header in a <template> the preload scanner skips and puts it into
+      // <main> as the parser reaches it. The head's script asks for the logo before the rest of the
+      // document arrives, and leaves a logo marked lazy to the browser. The server holds the rest
+      // until the logo is whole in the page, 8 s at most: a lazy logo asked for in the same loop
+      // has reached the server by then, and a loaded machine cannot reorder the two.
       const order: string[] = [];
-      let logoAsked = () => {};
-      const asked = new Promise<void>((done) => (logoAsked = done));
+      let release = () => {};
+      const released = new Promise<void>((done) => (release = done));
       const slow = Bun.serve({
         port: 0,
         hostname: "127.0.0.1",
         async fetch(req) {
           const { pathname } = new URL(req.url);
           order.push(pathname);
-          if (pathname.includes("lockup-screen")) logoAsked();
-          if (pathname.endsWith(".css")) {
-            await Promise.race([asked, Bun.sleep(8000)]);
-            order.push("css arrived");
-          }
           const path = join(dist, decodeURIComponent(pathname));
-          return new Response(Bun.file(pathname.endsWith("/") ? join(path, "index.html") : path));
+          if (!pathname.endsWith("/")) return new Response(Bun.file(path));
+          const html = readFileSync(join(path, "index.html"), "utf8");
+          const cut = html.indexOf("</head>");
+          return new Response(
+            new ReadableStream({
+              async start(stream) {
+                stream.enqueue(new TextEncoder().encode(html.slice(0, cut)));
+                await Promise.race([released, Bun.sleep(8000)]);
+                order.push("rest sent");
+                stream.enqueue(new TextEncoder().encode(html.slice(cut)));
+                stream.close();
+              },
+            }),
+            { headers: { "content-type": "text/html; charset=utf-8" } },
+          );
         },
       });
       const browsing = await browse(`${slow.url}dashboard/Parts/box-parts/two/`);
       try {
         await browsing.until(
-          `document.querySelector("img.hw-header-logo")?.complete && !!document.querySelector('link[rel="stylesheet"]')?.sheet`,
+          `performance.getEntriesByType("resource").some((e) => e.name.includes("lockup-screen"))`,
         );
-        expect(order).toContain("css arrived");
-        const early = order.slice(0, order.indexOf("css arrived")).join();
+        release();
+        await browsing.until(`document.querySelector("img.hw-header-logo")?.complete`);
+        expect(order).toContain("rest sent");
+        const early = order.slice(0, order.indexOf("rest sent")).join();
         expect(early).toContain("lockup-screen");
         expect(early).not.toContain("night-logo");
       } finally {
