@@ -27,8 +27,11 @@ description: >-
 - A brief's stop condition names which hits count: the consumer's tracked source
   (`git -C <repo> grep`), never reports or build output.
 - A session that delegates its procedure delegates every request a person adds later too.
-- Prod a quiet agent with SendMessage; never spawn a replacement. Where it is gone for good, do its
-  phase yourself.
+- Prod a quiet agent with SendMessage; never spawn a replacement. A prod waits for the agent's next
+  tool round: where the last entry of its transcript (`subagents/agent-<id>.jsonl`) is a tool call
+  with no result for over ten minutes, the Bash tool's cap, stop its task with TaskStop and send
+  the prod again, which resumes it with its context. Where it is gone for good, do its phase
+  yourself.
 - Stop a finished delegate's task before the process it left, or it wakes to re-report everything.
   Stop a process by its PID after reading its command line, never by pattern.
 - Before telling the person a background run is still working, read its log's last lines and its
