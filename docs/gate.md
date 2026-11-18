@@ -1,7 +1,7 @@
 # The gate
 
 `scaffolding check` runs `bun install --frozen-lockfile`, then the shared steps side by side, the
-catalog build once a typecheck that runs Astro has finished:
+catalog build and lint once a typecheck that runs Astro has finished (it writes the content types the typed rules read):
 format, lint, styles (stylelint), typecheck, structure, coupling, cycles, spaces, confidential, licenses, the tests, the catalog build (`bun run build`) and admin (the item files, with the pinned
 `@hackersandwizards/admin`'s `admin-check`; a repository without admin pinned needs `skip.admin`). Once those pass, the repository's own steps from
 `scaffolding.check`, in order, an inner array side by side; a red one stops those after it. Format, lint and styles walk past every

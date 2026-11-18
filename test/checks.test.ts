@@ -2663,6 +2663,18 @@ describe("scaffolding check", () => {
     expect(r.out).toMatch(/failed in [\d.]+ s: cycles/);
   });
 
+  test("lint waits for a typecheck that runs Astro, whose content types it reads", () => {
+    const { lint: _l, typecheck: _t, ...rest } = skip;
+    // `bun --bun <name>` runs a script of that name: the stand-ins for astro check and eslint.
+    const dir = gate(
+      { skip: rest, typecheck: "typecheck" },
+      { typecheck: "sleep 0.5; echo astro > synced.txt", eslint: "test -f synced.txt #" },
+    );
+    const r = run(dir, "scaffolding", ["check"], { CHECK_LOCK: join(dir, ".lock") });
+    expect(r.out).toContain("ok   lint");
+    expect(r.code).toBe(0);
+  });
+
   test("runs the repository's steps in order and passes", () => {
     const dir = gate({ skip, check: ["mine", ["true", "true"]] }, { mine: "echo ran-mine" });
     const r = run(dir, "scaffolding", ["check"], { CHECK_LOCK: join(dir, ".lock") });

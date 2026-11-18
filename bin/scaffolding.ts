@@ -72,13 +72,14 @@ const bin = (name: string) => `bun ${quote(join(home, "bin", `${name}.ts`))}`;
 const submodules = submodulePaths(root).map((path) => quote(`${path}/**`));
 const ignored = submodules.map((p) => ` --ignore-pattern ${p}`).join("");
 const shared: Record<string, string> = {
+  // Ahead of lint, which waits for it where it runs Astro (below).
+  typecheck: `bun --bun ${config.typecheck ?? "tsc --noEmit"}`,
   format: `bun --bun prettier --check --cache --log-level warn .${submodules.map((p) => ` '!'${p}`).join("")}`,
   // No --cache: a typed rule's verdict on a file changes with the types it imports, which the
   // cache, keyed by the file alone, would keep. One process: each worker builds the type program
   // again, which took longer than linting in turn (30 s against 20 s over 540 files).
   lint: `bun --bun eslint .${ignored}`,
   styles: `bun --bun stylelint "${styleFiles}" ${stylelintFlags(root).join(" ")}${ignored}`,
-  typecheck: `bun --bun ${config.typecheck ?? "tsc --noEmit"}`,
   structure: bin("check-structure"),
   coupling: bin("check-coupling"),
   cycles: bin("check-cycles"),
@@ -300,7 +301,9 @@ if (ok && !process.env.CHROME_BINARY && existsSync(join(root, "node_modules/pupp
 // A typecheck of `astro check` and the catalog's `astro build` both run Astro's sync, whose Vite
 // server optimizes dependencies into one folder (node_modules/.astro/vite-sync). On a cache an
 // install invalidated, two at once race on its rename and one fails with ENOTEMPTY, so the catalog
-// build waits for a typecheck that runs Astro. A plain tsc shares no folder with it.
+// build waits for a typecheck that runs Astro. A plain tsc shares no folder with it. Lint waits
+// for it too: the sync writes the content types (.astro/), and without them the typed rules read
+// every content entry as `any` (1,724 findings against 899 in one fresh checkout).
 // `bun --bun <name>` runs a package script of that name before a binary.
 const typecheck = config.typecheck ?? "";
 const sync = /\bastro\b/.test(
@@ -311,7 +314,7 @@ const order = Object.keys(shared);
 if (ok)
   ok = await group(
     Object.entries(shared).filter(([name]) => quick(name) || runs(name)),
-    sync ? { catalog: "typecheck" } : {},
+    sync ? { catalog: "typecheck", lint: "typecheck" } : {},
     new Set(Object.keys(shared).filter(quick)),
     1,
   );
