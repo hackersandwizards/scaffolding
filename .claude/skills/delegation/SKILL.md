@@ -56,12 +56,12 @@ description: >-
 Default: whatever `.codex/config.toml` sets, a repository's own before `~/.codex/config.toml`. Each
 repository pins its own model and effort for the work it holds. Read the value there.
 
-| Pick | For |
-|------|-----|
-| the repository's pin | everyday work |
-| gpt-6.1-sol high | planning, hard bugs, architecture, final review |
+| Pick                                       | For                               |
+| ------------------------------------------ | --------------------------------- |
+| the repository's pin, `gpt-6.2-sol` medium | everyday work                     |
+| gpt-6.2-astra high                         | planning, hard bugs, architecture |
 
-- Sol accepts `low`, `medium`, `high`, `xhigh`, `max`, `ultra`. It has no `none`.
+- Sol and Astra accept `low`, `medium`, `high`, `xhigh`, `max`, `ultra`. Neither has `none`.
 - `codex exec --model` overrides the config per invocation. Heavier one-off work goes there, not
   into the repository's pin.
 - `--full-auto` does not exist: the workspace-write auto-review is
@@ -78,7 +78,7 @@ Codex hands Claude every piece of prose a human reads. An agent's own conversati
 with the user (replies, questions, status, explanations, technical answers) it writes itself.
 
 ```bash
-claude -p --model opus --effort high "Write the <mail/message>. Facts: sender+signature, recipients, language, purpose, must/must-not facts, new mail or reply. For mails: subject line AND body. Output only the text."
+claude -p --model fable --effort high "Write the <mail/message>. Facts: sender+signature, recipients, language, purpose, must/must-not facts, new mail or reply. For mails: subject line AND body. Output only the text."
 ```
 
 Check facts (names, dates, links, recipients, language, signature), content correctness, and
@@ -88,7 +88,9 @@ re-casing, no polish. Any text change goes through another `claude -p` call.
 
 ## Claude -> Codex
 
-Claude starts Codex only for a capability Claude does not have, image generation, or as an
-independent blind reviewer. Codex never authors text.
+Claude hands Codex every task except prose a human reads: code, scripts, tests, dependency
+updates, records, research and sweeps, run as `codex exec` in the repository the work belongs to.
+Claude keeps the conversation with the person, the prose, and the review: a fresh Claude subagent
+reviews what Codex produced before it is reported done.
 
 Verify what a run did with `git log`, never from its own summary.
