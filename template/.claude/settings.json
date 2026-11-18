@@ -1,6 +1,6 @@
 {
-  "model": "opus",
-  "effortLevel": "medium",
+  "model": "fable",
+  "effortLevel": "low",
   "env": {
     "CLAUDE_CODE_SUBAGENT_MODEL": "opus"
   },
