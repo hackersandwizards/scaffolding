@@ -2,7 +2,7 @@
 
 `scaffolding check` runs `bun install --frozen-lockfile`, then the shared steps side by side, the
 catalog build once a typecheck that runs Astro has finished:
-format, lint, styles (stylelint), typecheck, structure, coupling, spaces, confidential, licenses, the tests, the catalog build (`bun run build`) and admin (the item files, with the pinned
+format, lint, styles (stylelint), typecheck, structure, coupling, cycles, spaces, confidential, licenses, the tests, the catalog build (`bun run build`) and admin (the item files, with the pinned
 `@hackersandwizards/admin`'s `admin-check`; a repository without admin pinned needs `skip.admin`). Once those pass, the repository's own steps from
 `scaffolding.check`, in order, an inner array side by side; a red one stops those after it. Format, lint and styles walk past every
 submodule `.gitmodules` names, which its own repository checks. A shared step drops only with a reason, a
@@ -18,6 +18,27 @@ non-blank string in `skip`:
   }
 }
 ```
+
+**Typed lint.** In `.ts`, `.tsx`, `.mts` and `.cts` files the shared ESLint config reads types:
+a promise nobody awaits or handles (`no-floating-promises`), a promise where a value or a `void`
+callback is expected (`no-misused-promises`), an `await` on what is no promise (`await-thenable`), a
+`switch` over a union that misses a member (`switch-exhaustiveness-check`), and an `any` assigned,
+read, passed, called or returned (`no-unsafe-assignment`, `-member-access`, `-argument`, `-call`,
+`-return`). The fix for an `any` is a type at its source: a schema parse, a guard on `unknown`, a
+JSON module import. Each such file sits in a `tsconfig.json`; one in none is red with "was not
+found by the project service", so add it to `include`. The step runs without ESLint's cache, whose
+entry for a file would outlive a change to the types it imports, and in one process. `check-staged`
+leaves these rules out, since building the types cost a commit of three files 1.9 s against 0.45 s;
+they go red in the gate and at pre-push. Limit: an `.astro` file is not read with types. In its
+frontmatter every element a callback returns has an unresolved type, which `no-unsafe-return`
+reports, and its `<script>` blocks reach the rules without types.
+
+**Cycles.** The `cycles` step fails on a runtime import cycle among the repository's tracked
+`.js` and `.ts` files of every flavour, read with dependency-cruiser through the root
+`tsconfig.json`'s path aliases, and names the modules on it. A cycle of imports TypeScript erases,
+`import type` or a name used only as a type, passes. The fix moves what both sides need into a
+module neither imports back from; the step reads no allow list. Limits: an `.astro` file is not
+read, so a cycle through one passes, and a submodule is its own repository's to check.
 
 **Changed paths.** `scaffolding check --changed` (`bun run check --changed`) runs install and the
 quick shared steps, and of `test`, `catalog` and the repository's own steps only those that

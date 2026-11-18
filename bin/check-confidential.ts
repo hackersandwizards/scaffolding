@@ -44,6 +44,8 @@ import {
   fetchWaitS,
   finish,
   git,
+  isStrings,
+  jsonObject,
   reader,
   readPackage,
   repoRoot,
@@ -175,7 +177,9 @@ if (argv[0] === "purged") {
   let old: { salt: string; hashes: string[] } | undefined;
   for (const read of [reader(top, false), reader(top, true)])
     try {
-      old = JSON.parse(read(".confidential-purged.json").toString());
+      const kept = jsonObject(read(".confidential-purged.json"));
+      if (typeof kept.salt === "string" && isStrings(kept.hashes))
+        old = { salt: kept.salt, hashes: kept.hashes };
       break;
     } catch {}
   const salt = old?.salt ?? randomBytes(16).toString("hex");
@@ -333,15 +337,16 @@ type TermList = {
 };
 const parse = (text: string): TermList | undefined => {
   try {
-    const l = JSON.parse(text);
-    const valid =
-      Array.isArray(l?.hashes) &&
-      (l.never === undefined || Array.isArray(l.never)) &&
-      typeof l.salt === "string" &&
-      Number.isInteger(l.maxTokens) &&
-      l.maxTokens >= 1 &&
-      l.maxTokens <= 6;
-    return valid ? l : undefined;
+    const { built, salt, maxTokens, hashes, never } = jsonObject(text);
+    return isStrings(hashes) &&
+      (never === undefined || isStrings(never)) &&
+      typeof salt === "string" &&
+      typeof maxTokens === "number" &&
+      Number.isInteger(maxTokens) &&
+      maxTokens >= 1 &&
+      maxTokens <= 6
+      ? { built: typeof built === "string" ? built : undefined, salt, maxTokens, hashes, never }
+      : undefined;
   } catch {
     return undefined;
   }
@@ -546,8 +551,8 @@ function ocrBinary(): string | undefined {
 const ENTITY: Record<string, string> = { amp: "&", lt: "<", gt: ">", quot: '"', apos: "'" };
 const fromCode = (code: number, m: string) => (code <= 0x10ffff ? String.fromCodePoint(code) : m);
 const decode = (s: string) =>
-  s.replace(/&(?:#(\d+)|#x([\da-f]+)|(\w+));/gi, (m, d, x, name) =>
-    d || x ? fromCode(parseInt(d ?? x, d ? 10 : 16), m) : (ENTITY[name] ?? m),
+  s.replace(/&(?:#(\d+)|#x([\da-f]+)|(\w+));/gi, (m, d?: string, x?: string, name?: string) =>
+    d || x ? fromCode(parseInt(d || x || "", d ? 10 : 16), m) : (ENTITY[name ?? ""] ?? m),
   );
 
 /** The entries of a zip archive (Office, OpenDocument, iWork, .zip), or why it cannot be read. */

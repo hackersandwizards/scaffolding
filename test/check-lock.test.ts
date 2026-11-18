@@ -19,6 +19,7 @@ import { createHash } from "node:crypto";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { afterAll, describe, expect, it } from "bun:test";
+import { jsonObject } from "../lib/json.ts";
 
 // A test's own limit stretches with load as the runner's default does: the gate sets
 // SCAFFOLDING_TEST_TIMEOUT_MS from the machine's load, 5000 on an idle machine.
@@ -135,7 +136,7 @@ describe("check-lock serialises the checks", () => {
 
       expect(await status).toBe(1);
       expect(stdout).not.toContain("ran");
-      expect(JSON.parse(readFileSync(lock, "utf-8")).pid).toBe(process.pid);
+      expect(jsonObject(readFileSync(lock)).pid).toBe(process.pid);
     },
     limit(30_000),
   );
@@ -220,7 +221,7 @@ describe("check-lock serialises the checks", () => {
       expect(await status).toBe(1);
       expect(stdout).not.toContain("ran");
       expect(readFileSync(`${base}.1`, "utf-8")).toBe(String(process.pid));
-      expect(JSON.parse(readFileSync(lock, "utf-8")).pid).toBe(999_999);
+      expect(jsonObject(readFileSync(lock)).pid).toBe(999_999);
     },
     limit(30_000),
   );
@@ -252,7 +253,7 @@ describe("check-lock serialises the checks", () => {
       expect(result.status).toBe(1);
       expect(result.stdout).not.toContain("ran");
       expect(result.stderr).toContain(`pid ${process.pid} still holds`);
-      expect(JSON.parse(readFileSync(lock, "utf-8")).pid).toBe(process.pid);
+      expect(jsonObject(readFileSync(lock)).pid).toBe(process.pid);
     },
     limit(30_000),
   );

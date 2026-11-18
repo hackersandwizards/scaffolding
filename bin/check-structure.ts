@@ -16,13 +16,17 @@ import {
   writeFileSync,
 } from "node:fs";
 import { basename, dirname, join, posix } from "node:path";
+import own from "../package.json";
+import skeleton from "../skeleton.json";
 import { help } from "../lib/help.ts";
 import {
   applyAllow,
   finish,
   git,
   installedCommit,
+  isObject,
   isReason,
+  jsonObject,
   listFiles,
   readPackage,
   repoRoot,
@@ -35,8 +39,6 @@ const started = performance.now();
 const fix = process.argv.includes("--fix");
 const root = repoRoot();
 const home = join(import.meta.dir, "..");
-const skeleton = JSON.parse(readFileSync(join(home, "skeleton.json"), "utf8"));
-const own = JSON.parse(readFileSync(join(home, "package.json"), "utf8"));
 const findings: Finding[] = [];
 // Repairs run after applyAllow, so --fix never writes a path an allow entry keeps.
 const repairs = new Map<Finding, () => unknown>();
@@ -70,7 +72,7 @@ for (const path of exempt.absent)
     add(path, "not kept in a private repository (check-structure --fix)", "", () =>
       rmSync(at(path)),
     );
-for (const path of (skeleton.same as string[]).filter((p) => !exempt.absent.includes(p))) {
+for (const path of skeleton.same.filter((p) => !exempt.absent.includes(p))) {
   const template = join(home, "template", path);
   if (exists(path) && readFileSync(at(path)).equals(readFileSync(template))) continue;
   add(
@@ -87,7 +89,7 @@ for (const path of (skeleton.same as string[]).filter((p) => !exempt.absent.incl
 }
 // Git skips a hook that is not executable, with a hint, and commits unchecked: the same bytes stored
 // or checked out 100644 passed as equal.
-for (const path of (skeleton.same as string[]).filter((p) => p.startsWith(".githooks/"))) {
+for (const path of skeleton.same.filter((p) => p.startsWith(".githooks/"))) {
   if (!exists(path)) continue;
   const [, mode, blob] = /^(\d+) (\S+)/.exec(
     git(["ls-files", "-s", "--", `:(literal)${path}`], root).toString(),
@@ -102,7 +104,7 @@ for (const path of (skeleton.same as string[]).filter((p) => p.startsWith(".gith
 // The owned file pins this version's full commit, which the check matches offline against the
 // installed short SHA; only --fix asks the remote for the rest.
 const commit = installedCommit(home);
-for (const path of skeleton.owned as string[]) {
+for (const path of skeleton.owned) {
   if (!exists(path)) continue;
   const template = readFileSync(join(home, "template-catalog", path), "utf8").replaceAll(
     "{{version}}",
@@ -126,12 +128,11 @@ for (const path of skeleton.owned as string[]) {
     writeFileSync(at(path), template.replace("{{commit}}", tagCommit(own.version, commit))),
   );
 }
-for (const path of skeleton.present as string[])
+for (const path of skeleton.present)
   if (!exists(path) && !exempt.optional.includes(path)) add(path, "missing");
-for (const path of skeleton.absent as string[])
-  if (exists(path)) add(path, "not allowed by the skeleton");
+for (const path of skeleton.absent) if (exists(path)) add(path, "not allowed by the skeleton");
 
-for (const [path, target] of Object.entries<string>(skeleton.symlinks)) {
+for (const [path, target] of Object.entries(skeleton.symlinks)) {
   if (!exists(path) && !exists(posix.join(posix.dirname(path), target))) continue;
   if (exists(path) && lstatSync(at(path)).isSymbolicLink() && readlinkSync(at(path)) === target)
     continue;
@@ -150,12 +151,17 @@ for (const [path, target] of Object.entries<string>(skeleton.symlinks)) {
 
 // Prettier's own resolution, so the rules count from any config form, the shared one included.
 const prettierEntry = join(root, "node_modules/prettier/index.mjs");
-const prettier = await import(existsSync(prettierEntry) ? prettierEntry : "prettier").catch(
+const loaded: unknown = await import(existsSync(prettierEntry) ? prettierEntry : "prettier").catch(
   () => undefined,
 );
+const isPrettier = (module: unknown): module is typeof import("prettier") =>
+  isObject(module) &&
+  typeof module.resolveConfig === "function" &&
+  typeof module.format === "function";
+const prettier = isPrettier(loaded) ? loaded : undefined;
 if (!prettier) add("prettier config", "prettier not installed: bun install");
 else {
-  const rc = (await prettier.resolveConfig(at("package.json"))) ?? {};
+  const rc: Record<string, unknown> = (await prettier.resolveConfig(at("package.json"))) ?? {};
   for (const [key, value] of Object.entries(skeleton.prettier))
     if (rc[key] !== value)
       add(
@@ -169,12 +175,10 @@ else {
 // at each key path; where that value is a list, each of its items, beside the repository's own,
 // an item with the same `matcher` as one of the skeleton's being an older copy of it. --fix writes
 // them in, formatted as the repository's prettier would.
-const isObject = (v: unknown): v is Record<string, unknown> =>
-  typeof v === "object" && v !== null && !Array.isArray(v);
 const same = (a: unknown, b: unknown) => JSON.stringify(a) === JSON.stringify(b);
-for (const [path, keys] of Object.entries<string[][]>(skeleton.entries)) {
+for (const [path, keys] of Object.entries(skeleton.entries)) {
   if (!exists(path)) continue;
-  const template = JSON.parse(readFileSync(join(home, "template", path), "utf8"));
+  const template = jsonObject(readFileSync(join(home, "template", path)));
   let file: unknown;
   try {
     file = JSON.parse(readFileSync(at(path), "utf8"));
@@ -194,10 +198,13 @@ for (const [path, keys] of Object.entries<string[][]>(skeleton.entries)) {
     }
     const has = holder[key.at(-1)!];
     if (Array.isArray(want)) {
+      const wanted: unknown[] = want;
       const ours = (o: unknown) =>
-        want.some((item) => same(o, item) || (isObject(o) && o.matcher === item.matcher));
-      const own = (Array.isArray(has) ? has : []).filter((o) => !ours(o));
-      const merged = [...want, ...own];
+        wanted.some(
+          (item) => same(o, item) || (isObject(o) && isObject(item) && o.matcher === item.matcher),
+        );
+      const kept: unknown[] = Array.isArray(has) ? has : [];
+      const merged = [...wanted, ...kept.filter((o) => !ours(o))];
       if (same(has, merged)) continue;
       holder[key.at(-1)!] = merged;
     } else if (same(has, want)) continue;
@@ -220,7 +227,7 @@ if (existsSync(at("package.json"))) {
     add("package.json", `packageManager must be ${own.packageManager}`, String(pkg.packageManager));
   const surface = !isReason(pkg.scaffolding?.skip?.catalog);
   const scripts = [...skeleton.package.scripts, ...(surface ? skeleton.catalog.scripts : [])];
-  for (const script of scripts as string[])
+  for (const script of scripts)
     if (!pkg.scripts?.[script]) add("package.json", `script ${script} missing`, script);
   // The gate stretches a test's limit under load only through this variable, and no runner reads it
   // unasked: bun takes it as a flag, vitest from its config.

@@ -3,7 +3,7 @@
 import { spawnSync } from "node:child_process";
 import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
-import { isReason, readPackage, repoRoot } from "../lib/repo.ts";
+import { isObject, isReason, readPackage, repoRoot } from "../lib/repo.ts";
 
 const ALLOWED = new Set([
   "MIT",
@@ -142,19 +142,27 @@ function checkLicenses() {
     encoding: "utf8",
     maxBuffer: Infinity,
   });
-  let groups: Record<string, { name?: unknown; license?: unknown; versions?: unknown }[]> = {};
+  let groups: Record<string, unknown> = {};
   try {
     if (run.status !== 0) throw new Error();
-    groups = JSON.parse(run.stdout);
-    if (!groups || typeof groups !== "object" || Array.isArray(groups)) throw new Error();
+    const listed: unknown = JSON.parse(run.stdout);
+    if (!isObject(listed)) throw new Error();
+    groups = listed;
   } catch {
     problems.push(
       `bun pm licenses --json gave no package list (exit ${run.status}): ${`${run.stderr}`.trim()}; run bun install`,
     );
     done();
   }
-  const packages = Object.values(groups).flat();
-  if (!packages.length) problems.push("bun pm licenses lists no package: run bun install");
+  const listed: unknown[] = Object.values(groups).flat();
+  type Listed = { name: string; license: string; versions?: unknown[] };
+  const isListed = (p: unknown): p is Listed =>
+    isObject(p) &&
+    typeof p.name === "string" &&
+    typeof p.license === "string" &&
+    (p.versions === undefined || Array.isArray(p.versions));
+  const packages = listed.filter(isListed);
+  if (!listed.length) problems.push("bun pm licenses lists no package: run bun install");
   if (/not installed/.test(run.stderr)) {
     const needed = neededMissing(root);
     if (needed?.length !== 0)
@@ -162,7 +170,7 @@ function checkLicenses() {
         `${run.stderr.trim()}: ${needed ? `${needed.join(", ")} needed` : "bun.lock does not read"}, run bun install`,
       );
   }
-  if (packages.some((p) => typeof p?.name !== "string" || typeof p?.license !== "string"))
+  if (packages.length < listed.length)
     problems.push("bun pm licenses --json changed shape: an entry lacks a name or licence string");
   if (problems.length) done();
 
@@ -174,7 +182,7 @@ function checkLicenses() {
   const exceptions = [...Object.entries(own), ...Object.entries(DEFAULTS)];
   const used = new Set<string>();
 
-  for (const p of packages as { name: string; license: string; versions?: string[] }[]) {
+  for (const p of packages) {
     const kept = exceptions.find(
       ([pattern, e]) => exceptionCovers(pattern, p.name) && (!e.license || e.license === p.license),
     );
@@ -188,9 +196,7 @@ function checkLicenses() {
   }
   for (const [pattern, e] of Object.entries(own)) {
     if (used.has(pattern)) continue;
-    const found = (packages as { name: string; license: string }[]).filter((p) =>
-      exceptionCovers(pattern, p.name),
-    );
+    const found = packages.filter((p) => exceptionCovers(pattern, p.name));
     problems.push(
       found.length
         ? `scaffolding.licenses["${pattern}"] pins "${e?.license}", installed is "${[...new Set(found.map((p) => p.license))].join('", "')}"`

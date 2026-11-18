@@ -12,8 +12,10 @@ import {
   writeFileSync,
 } from "node:fs";
 import { basename, dirname, join, resolve } from "node:path";
+import own from "../package.json";
+import skeleton from "../skeleton.json";
 import { help } from "../lib/help.ts";
-import { companyRemote, installedCommit, newestTag, tagCommit } from "../lib/repo.ts";
+import { companyRemote, installedCommit, newestTag, readPackage, tagCommit } from "../lib/repo.ts";
 
 const usage =
   "usage: scaffold <dir> [--name <package name>] [--port <port>] [--catalog-in <repo>] [--admin-in <repo>]";
@@ -52,7 +54,6 @@ if (!/^\d+$/.test(port)) {
 const catalogIn = option("--catalog-in");
 const adminIn = option("--admin-in");
 const home = join(import.meta.dir, "..");
-const own = JSON.parse(readFileSync(join(home, "package.json"), "utf8"));
 
 async function newestTagOf(repo: string): Promise<string> {
   const remote = companyRemote(repo);
@@ -83,8 +84,7 @@ if (!catalogIn) cpSync(join(home, "template-catalog"), target, { recursive: true
 for (const file of readdirSync(target, { recursive: true, encoding: "utf8" }))
   if (file.endsWith(".tmpl")) renameSync(join(target, file), join(target, file.slice(0, -5)));
 // A Git dependency installs without symlinks, so the skeleton's links are made here.
-const { symlinks } = JSON.parse(readFileSync(join(home, "skeleton.json"), "utf8"));
-for (const [path, link] of Object.entries<string>(symlinks)) {
+for (const [path, link] of Object.entries(skeleton.symlinks)) {
   mkdirSync(dirname(join(target, path)), { recursive: true });
   symlinkSync(link, join(target, path));
 }
@@ -112,8 +112,11 @@ for (const file of filled) {
   );
 }
 const pkgPath = join(target, "package.json");
-const pkg = JSON.parse(readFileSync(pkgPath, "utf8"));
-const company = (repo: string, tag: string) => [
+const pkg = readPackage(target);
+const gate = (pkg.scaffolding ??= {});
+const skip = (gate.skip ??= {});
+const ownPins: Record<string, string> = own.devDependencies;
+const company = (repo: string, tag: string): [string, string] => [
   `@hackersandwizards/${repo}`,
   `git+https://github.com/hackersandwizards/${repo}.git#${tag}`,
 ];
@@ -130,14 +133,14 @@ pkg.engines = { bun: own.engines.bun, ...pkg.engines };
 pkg.scripts = { prepare: own.scripts.prepare, fix: own.scripts.fix, ...pkg.scripts };
 pkg.devDependencies = Object.fromEntries(
   [
-    ...tools.map((t) => [t, own.devDependencies[t]]),
+    ...tools.map((t): [string, string] => [t, ownPins[t]!]),
     company("scaffolding", `v${own.version}`),
     ...Object.entries(pins).map(([repo, tag]) => company(repo, tag)),
   ].sort(([a], [b]) => a.localeCompare(b)),
 );
 if (catalogIn) {
   const reason = `the catalog lives in ${catalogIn}`;
-  Object.assign(pkg.scaffolding.skip, { catalog: reason, styles: reason });
+  Object.assign(skip, { catalog: reason, styles: reason });
 } else {
   Object.assign(pkg.scripts, {
     dev: "ASTRO_DEV_BACKGROUND=1 bun --bun astro dev --root catalog",
@@ -146,9 +149,9 @@ if (catalogIn) {
     preview: 'ASTRO_PREVIEW_BACKGROUND=1 bun --bun astro preview --root "$PWD/catalog"',
     "check:retired": "brand-retired dist",
   });
-  pkg.scaffolding.check.push("check:retired");
+  (gate.check ??= []).push("check:retired");
 }
-if (adminIn) pkg.scaffolding.skip.admin = `the admin area lives in ${adminIn}`;
+if (adminIn) skip.admin = `the admin area lives in ${adminIn}`;
 writeFileSync(pkgPath, `${JSON.stringify(pkg, null, 2)}\n`);
 if (!catalogIn) {
   // As text: prettier keeps a short array on one line, JSON.stringify would not.

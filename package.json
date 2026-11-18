@@ -1,6 +1,6 @@
 {
   "name": "@hackersandwizards/scaffolding",
-  "version": "5.28.0",
+  "version": "5.29.0",
   "description": "Repository skeleton, gate commands, shared configs and the catalog shell: scaffold, scaffolding check, check-structure, check-confidential, check-staged, check-lock, chrome-mcp, raise-pins, and the catalog preset.",
   "keywords": [
     "astro-component"
@@ -132,6 +132,7 @@
   "dependencies": {
     "@eslint/js": "10.0.1",
     "chrome-devtools-mcp": "1.13.0",
+    "dependency-cruiser": "18.8.0",
     "eslint-config-prettier": "10.1.8",
     "globals": "17.14.0",
     "postcss-html": "2.0.0",

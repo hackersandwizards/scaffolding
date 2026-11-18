@@ -6,6 +6,7 @@ import { createRequire } from "node:module";
 import { dirname, join } from "node:path";
 import { cachedChrome, chromeBinary, INSTALL_HINT, NO_KEYCHAIN } from "../lib/chrome.ts";
 import { help } from "../lib/help.ts";
+import { isObject, jsonObject } from "../lib/json.ts";
 
 help("chrome-mcp");
 
@@ -18,11 +19,16 @@ if (!chrome) {
   process.exit(1);
 }
 const pkg = createRequire(import.meta.url).resolve("chrome-devtools-mcp/package.json");
-const { bin } = JSON.parse(readFileSync(pkg, "utf8"));
+const { bin } = jsonObject(readFileSync(pkg));
+const entry = isObject(bin) ? bin["chrome-devtools-mcp"] : undefined;
+if (typeof entry !== "string") {
+  console.error("[chrome-mcp] chrome-devtools-mcp names no bin of that name");
+  process.exit(1);
+}
 const server = spawn(
   process.execPath,
   [
-    join(dirname(pkg), bin["chrome-devtools-mcp"]),
+    join(dirname(pkg), entry),
     `--executablePath=${chrome}`,
     "--headless",
     "--isolated",

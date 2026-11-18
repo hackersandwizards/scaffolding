@@ -14,6 +14,7 @@ import {
 } from "node:fs";
 import { createRequire } from "node:module";
 import { homedir } from "node:os";
+import { isObject } from "./json.ts";
 import { join, relative, sep } from "node:path";
 import { promisify } from "node:util";
 
@@ -26,7 +27,10 @@ const kindOf = (shell?: boolean) => (shell ? "chrome-headless-shell" : "chrome")
 function pinnedBuild(shell?: boolean): string | undefined {
   try {
     const require = createRequire(join(process.cwd(), "package.json"));
-    return require("puppeteer-core/internal/revisions.js").PUPPETEER_REVISIONS[kindOf(shell)];
+    const revisions: unknown = require("puppeteer-core/internal/revisions.js");
+    const pinned = isObject(revisions) ? revisions.PUPPETEER_REVISIONS : undefined;
+    const build = isObject(pinned) ? pinned[kindOf(shell)] : undefined;
+    return typeof build === "string" ? build : undefined;
   } catch {
     return undefined;
   }

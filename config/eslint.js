@@ -9,6 +9,20 @@ import { submodulePaths } from "./submodules.js";
 const code = "{js,jsx,ts,tsx,mjs,cjs,mts,cts}";
 const testFiles = [`**/{__tests__,test,tests,e2e}/**/*.${code}`, `**/*.{test,spec}.${code}`];
 const testCall = "/^(it|test|describe)$/";
+// The type program costs a commit of three files more than a second (1.9 s against 0.45 s), so
+// check-staged sets this and the typed rules run in the gate's lint step alone.
+const typed = !process.env.SCAFFOLDING_LINT_UNTYPED;
+const typedRules = [
+  "no-floating-promises",
+  "no-misused-promises",
+  "await-thenable",
+  "switch-exhaustiveness-check",
+  "no-unsafe-assignment",
+  "no-unsafe-member-access",
+  "no-unsafe-argument",
+  "no-unsafe-call",
+  "no-unsafe-return",
+];
 
 export default [
   {
@@ -54,5 +68,16 @@ export default [
       ],
     },
   },
+  ...(typed
+    ? [
+        {
+          files: ["**/*.{ts,tsx,mts,cts}"],
+          languageOptions: { parserOptions: { projectService: true } },
+          rules: Object.fromEntries(
+            typedRules.map((rule) => [`@typescript-eslint/${rule}`, "error"]),
+          ),
+        },
+      ]
+    : []),
   prettier,
 ];

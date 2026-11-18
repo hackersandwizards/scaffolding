@@ -73,11 +73,15 @@ const submodules = submodulePaths(root).map((path) => quote(`${path}/**`));
 const ignored = submodules.map((p) => ` --ignore-pattern ${p}`).join("");
 const shared: Record<string, string> = {
   format: `bun --bun prettier --check --cache --log-level warn .${submodules.map((p) => ` '!'${p}`).join("")}`,
-  lint: `bun --bun eslint --cache --concurrency=auto .${ignored}`,
+  // No --cache: a typed rule's verdict on a file changes with the types it imports, which the
+  // cache, keyed by the file alone, would keep. One process: each worker builds the type program
+  // again, which took longer than linting in turn (30 s against 20 s over 540 files).
+  lint: `bun --bun eslint .${ignored}`,
   styles: `bun --bun stylelint "${styleFiles}" ${stylelintFlags(root).join(" ")}${ignored}`,
   typecheck: `bun --bun ${config.typecheck ?? "tsc --noEmit"}`,
   structure: bin("check-structure"),
   coupling: bin("check-coupling"),
+  cycles: bin("check-cycles"),
   spaces: bin("check-spaces"),
   // The index: what the next commit holds, judged by its own allow list.
   confidential: `${bin("check-confidential")} --index`,

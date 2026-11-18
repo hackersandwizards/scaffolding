@@ -1,3 +1,4 @@
+import { jsonObject } from "./json.ts";
 import { spawn, spawnSync } from "node:child_process";
 import { existsSync, readFileSync, realpathSync } from "node:fs";
 import { join } from "node:path";
@@ -240,7 +241,10 @@ export function listFiles(root: string, staged: boolean): string[] {
 export const reader = (root: string, staged: boolean) => (path: string) =>
   staged ? git(["show", `:${path}`], root) : readFileSync(`${root}/${path}`);
 
+export { isObject, isStrings, jsonObject } from "./json.ts";
+
 export type Package = {
+  name?: string;
   type?: string;
   packageManager?: string;
   engines?: Record<string, string>;
@@ -269,12 +273,12 @@ export type Package = {
 export function readPackage(root: string, rev?: string): Package {
   if (rev === undefined) {
     const file = `${root}/package.json`;
-    return existsSync(file) ? JSON.parse(readFileSync(file, "utf8")) : {};
+    return existsSync(file) ? jsonObject(readFileSync(file)) : {};
   }
   const index = rev === ":";
   const listed = git(index ? ["ls-files", "package.json"] : ["ls-tree", rev, "package.json"], root);
   if (!listed.length) return {};
-  return JSON.parse(git(["show", `${index ? "" : rev}:package.json`], root).toString("utf8"));
+  return jsonObject(git(["show", `${index ? "" : rev}:package.json`], root));
 }
 
 // `**/` also stands for no folder at all, as in Git and Bun.Glob: `**/x.ts` covers the root's x.ts.

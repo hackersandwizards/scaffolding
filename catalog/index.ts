@@ -17,6 +17,7 @@ import { spawnSync } from "node:child_process";
 import { createRequire } from "node:module";
 import { basename, dirname, join, matchesGlob, posix, relative } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
+import { isObject, jsonObject } from "../lib/json.ts";
 import { brandFallbacks } from "./fallbacks.ts";
 import { catalogPath, storiesDir } from "./path.ts";
 import { CSS, loadRoute, retitleLayout } from "./route.ts";
@@ -148,14 +149,17 @@ function checkout(dir: string): string {
 function installed(name: string, from: string): string | undefined {
   for (let dir = from; ; dir = dirname(dir)) {
     const file = join(dir, "node_modules", name, "package.json");
-    if (existsSync(file)) return JSON.parse(readFileSync(file, "utf8")).version;
+    if (existsSync(file)) {
+      const { version } = jsonObject(readFileSync(file));
+      return typeof version === "string" ? version : undefined;
+    }
     if (dirname(dir) === dir) return undefined;
   }
 }
 
 /** What `read` takes from brand; undefined only where brand is missing. Every brand the shell
  * accepts (v2.5.0 and later) exports each path read here, so an export it drops fails the build. */
-function fromBrand<T>(read: () => T): T | undefined {
+function fromBrand(read: () => unknown): unknown {
   try {
     return read();
   } catch (e) {
@@ -170,12 +174,16 @@ function brandNav(
   require: ReturnType<typeof createRequire>,
   product: string,
 ): CatalogOptions["nav"] {
-  const items = fromBrand<{ name: string; href: string }[]>(() =>
-    require("@hackersandwizards/brand/catalogs.json"),
-  );
-  return (
-    items && { items, current: items.some(({ name }) => name === product) ? product : undefined }
-  );
+  const listed = fromBrand(() => require("@hackersandwizards/brand/catalogs.json"));
+  if (listed === undefined) return undefined;
+  const isItem = (item: unknown): item is { name: string; href: string } =>
+    isObject(item) && typeof item.name === "string" && typeof item.href === "string";
+  if (!Array.isArray(listed) || !listed.every(isItem))
+    throw new Error("@hackersandwizards/brand/catalogs.json lists no { name, href } items");
+  return {
+    items: listed,
+    current: listed.some(({ name }) => name === product) ? product : undefined,
+  };
 }
 
 const POINTER = "version https://git-lfs.github.com/spec/";
@@ -318,18 +326,17 @@ export function catalog(options: CatalogOptions): AstroIntegration {
         };
         const stories = storiesDir(root);
         const pkgFile = join(repo, "package.json");
-        const pkg = existsSync(pkgFile) ? JSON.parse(readFileSync(pkgFile, "utf8")) : {};
+        const pkg = existsSync(pkgFile) ? jsonObject(readFileSync(pkgFile)) : {};
+        const names = (field: unknown) => (isObject(field) ? Object.keys(field) : []);
         const name = String(pkg.name ?? basename(repo)).replace(/^@[^/]+\//, "");
         // A package the repository declares, or its own, unless a folder of the repository has
         // that name.
         const declared = new Set([
           pkg.name,
-          ...Object.keys({
-            ...pkg.dependencies,
-            ...pkg.devDependencies,
-            ...pkg.peerDependencies,
-            ...pkg.optionalDependencies,
-          }),
+          ...names(pkg.dependencies),
+          ...names(pkg.devDependencies),
+          ...names(pkg.peerDependencies),
+          ...names(pkg.optionalDependencies),
         ]);
         const require = createRequire(pkgFile);
         for (const pattern of options.copy ?? []) {
@@ -373,8 +380,12 @@ export function catalog(options: CatalogOptions): AstroIntegration {
         // A relative specifier counts from the Astro root, as Astrobook reads `head` and `home`.
         const spec = (s: string) => JSON.stringify(s.startsWith(".") ? join(root, s) : s);
         const nav = options.nav ?? brandNav(require, options.product);
-        const tokens: Record<string, string> =
-          fromBrand(() => require("@hackersandwizards/brand/tokens.json").tokens) ?? {};
+        const brandTokens = fromBrand(() => require("@hackersandwizards/brand/tokens.json"));
+        const tokens = Object.fromEntries(
+          Object.entries(
+            isObject(brandTokens) && isObject(brandTokens.tokens) ? brandTokens.tokens : {},
+          ).filter((entry): entry is [string, string] => typeof entry[1] === "string"),
+        );
         const around = [
           join(import.meta.dirname, "ground.css"),
           ...(header.css ?? []),
@@ -427,7 +438,7 @@ export function catalog(options: CatalogOptions): AstroIntegration {
           // The hub serves only on this machine, so a published page carries no link to it.
           admin:
             dev && options.admin
-              ? `http://admin.localhost:4329/${encodeURIComponent(pkg.admin?.name ?? checkout(repo))}/dashboard`
+              ? `http://admin.localhost:4329/${encodeURIComponent(isObject(pkg.admin) && typeof pkg.admin.name === "string" ? pkg.admin.name : checkout(repo))}/dashboard`
               : undefined,
         };
         const modules: Record<string, string> = {

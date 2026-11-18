@@ -27,7 +27,27 @@ import { brandFallbacks } from "../catalog/fallbacks.ts";
 import { catalogPath } from "../catalog/path.ts";
 import { loadRoute, rewriteRoute } from "../catalog/route.ts";
 import { rejection } from "../lib/rejection.ts";
-import { applyAllow, commentSyntax, installedCommit, newestTag, tagCommit } from "../lib/repo.ts";
+import {
+  applyAllow,
+  commentSyntax,
+  installedCommit,
+  isObject,
+  jsonObject,
+  newestTag,
+  readPackage,
+  tagCommit,
+} from "../lib/repo.ts";
+import ownPackage from "../package.json";
+import templateMcp from "../template/.mcp.json";
+import templateSettings from "../template/.claude/settings.json";
+
+/** The member of parsed JSON at `path`, undefined where a step meets no object or list. */
+const member = (value: unknown, ...path: (string | number)[]): unknown =>
+  path.reduce<unknown>((v, key) => {
+    if (isObject(v)) return v[key];
+    const list: unknown[] = Array.isArray(v) ? v : [];
+    return list[Number(key)];
+  }, value);
 
 // A test's own limit stretches with load as the runner's default does: the gate sets
 // SCAFFOLDING_TEST_TIMEOUT_MS from the machine's load, 5000 on an idle machine.
@@ -76,12 +96,13 @@ async function browse(url: string, args: string[] = []) {
   );
   let ws: WebSocket;
   try {
-    let target: { webSocketDebuggerUrl: string } | undefined;
-    for (let i = 0; i < 100 && !target; i++)
+    let target: unknown;
+    for (let i = 0; i < 100 && typeof target !== "string"; i++)
       target = await fetch(`http://127.0.0.1:${port}/json/new?${url}`, { method: "PUT" })
-        .then((r) => r.json())
+        .then(async (r) => member(await r.json(), "webSocketDebuggerUrl"))
         .catch(() => new Promise((r) => setTimeout(r, 100)));
-    ws = new WebSocket(target!.webSocketDebuggerUrl);
+    if (typeof target !== "string") throw new Error("Chrome opened no page to attach to");
+    ws = new WebSocket(target);
     await new Promise((r) => ws.addEventListener("open", r, { once: true }));
   } catch (e) {
     browser.kill();
@@ -92,10 +113,11 @@ async function browse(url: string, args: string[] = []) {
     new Promise<{ value?: unknown }>((done) => {
       const call = ++id;
       const on = (event: MessageEvent) => {
-        const message = JSON.parse(String(event.data));
+        const message = jsonObject(String(event.data));
         if (message.id !== call) return;
         ws.removeEventListener("message", on);
-        done(message.result?.result ?? {});
+        const result = member(message, "result", "result");
+        done(isObject(result) ? result : {});
       };
       ws.addEventListener("message", on);
       ws.send(JSON.stringify({ id: call, method, params }));
@@ -237,13 +259,14 @@ test("every command answers --help first on stdout, and check-lock passes a late
       env,
       encoding: "utf8",
     });
-  for (const [name, path] of Object.entries<string>(ownPackage.bin)) {
+  for (const [name, path] of Object.entries(ownPackage.bin)) {
     const r = help(path);
-    expect({ name, status: r.status, stderr: r.stderr, usage: r.stdout.split("\n")[0] }).toEqual({
+    const usage = r.stdout.split("\n")[0] ?? "";
+    expect({ name, status: r.status, stderr: r.stderr, usage }).toEqual({
       name,
       status: 0,
       stderr: "",
-      usage: expect.stringMatching(new RegExp(`^usage: ${name}( |$)`)),
+      usage: new RegExp(`^usage: ${name}( |$)`).test(usage) ? usage : `usage: ${name}`,
     });
     // Its row of docs/commands.md, which the skeleton's copy of check-lock has no way to read.
     if (name !== "check-lock") expect(r.stdout).toContain("\nRuns in: ");
@@ -587,8 +610,7 @@ function remotes(tags: string[]) {
   return `${base}/`;
 }
 process.env.SCAFFOLDING_GIT_BASE = remotes(["v0.9.0", "v0.10.0", "v0.2.0", "latest"]);
-const ownPackage = JSON.parse(readFileSync(join(import.meta.dir, "..", "package.json"), "utf8"));
-const ownVersion = ownPackage.version as string;
+const ownVersion = ownPackage.version;
 // A decodable 1x1 PNG: OCR reads it and finds no text.
 const PNG = Buffer.from(
   "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8DwHwAFBQIAX8jx0gAAAABJRU5ErkJggg==",
@@ -651,7 +673,7 @@ test("every bin target and every file in bin/ is stored executable, wherever the
   const root = join(import.meta.dir, "..");
   const { bin } = ownPackage;
   const stored = new Map(
-    sh(root, ["ls-files", "-s", "--", "bin", ...Object.values<string>(bin), "README.md"])
+    sh(root, ["ls-files", "-s", "--", "bin", ...Object.values(bin), "README.md"])
       .stdout.toString()
       .trim()
       .split("\n")
@@ -663,9 +685,9 @@ test("every bin target and every file in bin/ is stored executable, wherever the
   // Control: the same read of a file stored plain has to answer 100644.
   expect(stored.get("README.md")).toBe("100644");
   stored.delete("README.md");
-  expect(Object.values<string>(bin).filter((path) => !stored.has(path))).toEqual([]);
+  expect(Object.values(bin).filter((path) => !stored.has(path))).toEqual([]);
   // No `env -S`: BusyBox `env`, as on Alpine, refuses it.
-  for (const path of Object.values<string>(bin))
+  for (const path of Object.values(bin))
     expect([path, readFileSync(join(root, path), "utf8").split("\n").slice(0, 2)]).toEqual([
       path,
       ["#!/bin/sh", '// 2>/dev/null; exec bun --no-env-file "$0" "$@"'],
@@ -690,6 +712,22 @@ test("a tag install, GitHub's archive of the tag, holds what files names, templa
   expect(archived.sort()).toEqual(committed.sort());
 });
 
+/** A scaffolded repository's package.json, with every section `scaffold` writes present. */
+function scaffolded(dir: string) {
+  const pkg = readPackage(dir);
+  const { scripts, devDependencies, engines, scaffolding } = pkg;
+  if (!scripts || !devDependencies || !engines || !scaffolding?.skip || !scaffolding.check)
+    throw new Error(`${dir}/package.json lacks a section scaffold writes`);
+  const { skip, check } = scaffolding;
+  return {
+    ...pkg,
+    scripts,
+    devDependencies,
+    engines,
+    scaffolding: { ...scaffolding, skip, check },
+  };
+}
+
 describe("scaffold and check-structure", () => {
   const parent = temp();
   const dir = join(parent, "demo");
@@ -711,7 +749,7 @@ describe("scaffold and check-structure", () => {
       verbatimSymlinks: true,
       filter: (path) => !path.endsWith("/node_modules"),
     });
-    const pkg = JSON.parse(readFileSync(join(other, "package.json"), "utf8"));
+    const pkg = scaffolded(other);
     Object.assign(pkg.scaffolding, config);
     write(other, { "package.json": JSON.stringify(pkg, null, 2), ...files });
     for (const path of gone) rmSync(join(other, path));
@@ -721,12 +759,14 @@ describe("scaffold and check-structure", () => {
 
   test("a scaffolded repository passes", () => {
     expect(made.code).toBe(0);
-    const pkg = JSON.parse(readFileSync(join(dir, "package.json"), "utf8"));
+    const pkg = scaffolded(dir);
     expect(pkg.name).toBe("demo");
     // The bun floor and the shared scripts are this package's own.
-    const own = JSON.parse(readFileSync(join(import.meta.dir, "../package.json"), "utf8"));
-    expect(pkg.engines.bun).toBe(own.engines.bun);
-    expect([pkg.scripts.prepare, pkg.scripts.fix]).toEqual([own.scripts.prepare, own.scripts.fix]);
+    expect(pkg.engines?.bun).toBe(ownPackage.engines.bun);
+    expect([pkg.scripts?.prepare, pkg.scripts?.fix]).toEqual([
+      ownPackage.scripts.prepare,
+      ownPackage.scripts.fix,
+    ]);
     // Every placeholder filled and every .tmpl renamed, in whichever template file it sits.
     const files = sh(dir, ["ls-files", "-co", "--exclude-standard"]).stdout.toString().split("\n");
     expect(files.filter((f) => f.endsWith(".tmpl"))).toEqual([]);
@@ -743,7 +783,7 @@ describe("scaffold and check-structure", () => {
   });
 
   test("a full repository has its catalog, brand and admin on their newest tags", () => {
-    const pkg = JSON.parse(readFileSync(join(dir, "package.json"), "utf8"));
+    const pkg = scaffolded(dir);
     expect(pkg.devDependencies["@hackersandwizards/brand"]).toBe(
       "git+https://github.com/hackersandwizards/brand.git#v0.10.0",
     );
@@ -787,9 +827,7 @@ describe("scaffold and check-structure", () => {
     expect(config).toContain('base: "/scoped"');
     expect(config).toContain('product: "scoped"');
     expect(readFileSync(join(at, "scoped/README.md"), "utf8")).toStartWith("# scoped\n");
-    expect(JSON.parse(readFileSync(join(at, "scoped/package.json"), "utf8")).name).toBe(
-      "@acme/scoped",
-    );
+    expect(readPackage(join(at, "scoped")).name).toBe("@acme/scoped");
     expect(run(at, "scaffold", ["inner", "--catalog-in", "x"]).out).toEndWith(
       [
         "Next, in the terminal: cd inner && bun install && bun run check",
@@ -807,7 +845,7 @@ describe("scaffold and check-structure", () => {
 
   test("the skeleton has no preinstall, and its prepare sets the hooks path at the top level only", () => {
     const other = fixture("prepare", {});
-    const { scripts } = JSON.parse(readFileSync(join(other, "package.json"), "utf8"));
+    const { scripts } = scaffolded(other);
     expect(scripts.preinstall).toBeUndefined();
     const prepare = (cwd: string) => spawnSync("sh", ["-c", scripts.prepare], { cwd });
     sh(other, ["config", "--unset", "core.hooksPath"]);
@@ -832,7 +870,7 @@ describe("scaffold and check-structure", () => {
     install(minimal);
     write(minimal, { "bun.lock": "" });
     sh(minimal, ["config", "core.hooksPath", ".githooks"]);
-    const pkg = JSON.parse(readFileSync(join(minimal, "package.json"), "utf8"));
+    const pkg = scaffolded(minimal);
     expect(
       Object.keys(pkg.devDependencies).filter((d) => d.startsWith("@hackersandwizards/")),
     ).toEqual(["@hackersandwizards/scaffolding"]);
@@ -960,23 +998,18 @@ describe("scaffold and check-structure", () => {
     ]);
     run(other, "check-structure", ["--fix"]);
     expect(run(other, "check-structure").code).toBe(0);
-    const template = (path: string) =>
-      JSON.parse(readFileSync(join(import.meta.dir, "..", "template", path), "utf8"));
-    const mcp = JSON.parse(readFileSync(join(other, ".mcp.json"), "utf8"));
+    const mcp = jsonObject(readFileSync(join(other, ".mcp.json")));
     expect(mcp.mcpServers).toEqual({
       own: { command: "x" },
-      "chrome-devtools": template(".mcp.json").mcpServers["chrome-devtools"],
+      "chrome-devtools": templateMcp.mcpServers["chrome-devtools"],
     });
     // The repository's own SessionStart hook stays beside the skeleton's; an older copy of the
     // skeleton's, under its matcher, goes.
-    const settings = JSON.parse(readFileSync(join(other, ".claude/settings.json"), "utf8"));
+    const settings = jsonObject(readFileSync(join(other, ".claude/settings.json")));
     expect(settings).toEqual({
       model: "x",
       hooks: {
-        SessionStart: [
-          ...template(".claude/settings.json").hooks.SessionStart,
-          { matcher: "resume", hooks: [] },
-        ],
+        SessionStart: [...templateSettings.hooks.SessionStart, { matcher: "resume", hooks: [] }],
       },
     });
     // A file whose value in the way is no object is a finding, never a crash.
@@ -1033,7 +1066,7 @@ describe("scaffold and check-structure", () => {
           ".agents/skills",
         ],
       );
-      const pkg = JSON.parse(readFileSync(join(other, "package.json"), "utf8"));
+      const pkg = scaffolded(other);
       write(other, { "package.json": JSON.stringify({ ...pkg, bin: { x: "bin/x.ts" } }) });
       sh(other, ["config", "--unset", "core.hooksPath"]);
       sh(other, ["add", "bin/x.ts"]);
@@ -1092,8 +1125,7 @@ describe("scaffold and check-structure", () => {
     const other = join(parent, "other");
     run(parent, "scaffold", ["other"]);
     install(other);
-    const pkg = JSON.parse(readFileSync(join(other, "package.json"), "utf8"));
-    delete pkg.prettier;
+    const { prettier: _prettier, ...pkg } = readPackage(other);
     write(other, {
       "package.json": JSON.stringify(pkg),
       "bun.lock": "",
@@ -1117,7 +1149,7 @@ describe("scaffold and check-structure", () => {
     install(other);
     write(other, { "bun.lock": "" });
     sh(other, ["config", "core.hooksPath", ".githooks"]);
-    const pkg = JSON.parse(readFileSync(join(other, "package.json"), "utf8"));
+    const pkg = scaffolded(other);
     const structure = (
       scaffolding: object,
       scripts: object,
@@ -1189,7 +1221,7 @@ describe("scaffold and check-structure", () => {
     install(other);
     write(other, { "bun.lock": "" });
     sh(other, ["config", "core.hooksPath", ".githooks"]);
-    const pkg = JSON.parse(readFileSync(join(other, "package.json"), "utf8"));
+    const pkg = scaffolded(other);
     // false gives no reason, as a missing skip.catalog does.
     pkg.scaffolding.skip.catalog = false;
     pkg.scaffolding.check = ["brand-colours", ["check:markers", "lint"]];
@@ -1265,8 +1297,8 @@ describe("check-confidential", () => {
   test("the list holds hashes, not names, drops dictionary words and carries its build time", () => {
     const text = readFileSync(list, "utf8");
     expect(text).not.toMatch(/acme|jane|zyx/i);
-    expect(JSON.parse(text).hashes).toHaveLength(4);
-    expect(Date.now() - Date.parse(JSON.parse(text).built)).toBeLessThan(60_000);
+    expect(jsonObject(text).hashes).toHaveLength(4);
+    expect(Date.now() - Date.parse(String(jsonObject(text).built))).toBeLessThan(60_000);
   });
 
   test("a term the public text already carries is left out, its legal-form variant too", () => {
@@ -1280,7 +1312,7 @@ describe("check-confidential", () => {
         encoding: "utf8",
       },
     );
-    expect(JSON.parse(r.stdout).hashes).toHaveLength(1);
+    expect(jsonObject(r.stdout).hashes).toHaveLength(1);
   });
 
   test("a staged name goes red, ordinary text stays green", () => {
@@ -2040,8 +2072,11 @@ describe("check-confidential", () => {
 
   test("purged adds to the repository's list under its salt, a redirect's empty file included", () => {
     const dir = repo({ "package.json": "{}" });
-    const purged = (shas: string[]) =>
-      JSON.parse(run(dir, "check-confidential", ["purged", ...shas]).out);
+    const purged = (shas: string[]) => {
+      const { salt, hashes } = jsonObject(run(dir, "check-confidential", ["purged", ...shas]).out);
+      const listed: unknown[] = Array.isArray(hashes) ? hashes : [];
+      return { salt, hashes: listed };
+    };
     const first = purged(["a".repeat(40)]);
     write(dir, { ".confidential-purged.json": JSON.stringify(first) });
     const both = purged(["b".repeat(40), "a".repeat(40)]);
@@ -2188,7 +2223,7 @@ describe("check-confidential never", () => {
   };
 
   test("build keeps every never name, hashed, and a cased one also in any case", () => {
-    const built = JSON.parse(readFileSync(list, "utf8"));
+    const built = jsonObject(readFileSync(list));
     expect(readFileSync(list, "utf8")).not.toMatch(/qzx|zwox|brennwald|marigold/i);
     // Marigold, public and a word, leaves the terms but stays a never name.
     expect(built.hashes).toHaveLength(1);
@@ -2221,7 +2256,8 @@ describe("check-confidential never", () => {
     const r = run(dir, "check-confidential", both, {}, "Acme Widgets\nZWOX\n\0QZX\nBrennwald AG\n");
     expect(r.code).toBe(0);
     // ZWOX before the NUL is a term: QZX two hashes, Brennwald AG and Brennwald one each.
-    expect([JSON.parse(r.out).hashes.length, JSON.parse(r.out).never.length]).toEqual([2, 4]);
+    expect(jsonObject(r.out).hashes).toHaveLength(2);
+    expect(jsonObject(r.out).never).toHaveLength(4);
     const none = run(dir, "check-confidential", both, {}, "Acme Widgets\nQZX\n");
     expect(none.code).toBe(1);
     expect(none.out).toContain("--never: no name");
@@ -2592,6 +2628,7 @@ describe("scaffolding check", () => {
     typecheck: "t",
     structure: "t",
     coupling: "t",
+    cycles: "t",
   };
   const skip = {
     ...all,
@@ -2614,6 +2651,18 @@ describe("scaffolding check", () => {
     ).not.toContain("names no check");
   });
 
+  test("a runtime import cycle fails the gate under the step's name", () => {
+    const { cycles: _c, ...rest } = skip;
+    const dir = gate({ skip: rest });
+    write(dir, {
+      "a.ts": 'import { b } from "./b.ts";\nexport const a = (): number => b();\n',
+      "b.ts": 'import { a } from "./a.ts";\nexport const b = (): number => a();\n',
+    });
+    const r = run(dir, "scaffolding", ["check"], { CHECK_LOCK: join(dir, ".lock") });
+    expect(r.code).toBe(1);
+    expect(r.out).toMatch(/failed in [\d.]+ s: cycles/);
+  });
+
   test("runs the repository's steps in order and passes", () => {
     const dir = gate({ skip, check: ["mine", ["true", "true"]] }, { mine: "echo ran-mine" });
     const r = run(dir, "scaffolding", ["check"], { CHECK_LOCK: join(dir, ".lock") });
@@ -2630,7 +2679,7 @@ describe("scaffolding check", () => {
     });
     const dir = gate({ skip: { ...rest, spaces: "t" } });
     sh(dir, ["-c", "protocol.file.allow=always", "submodule", "add", "-q", inner, "vendor/inner"]);
-    const pkg = JSON.parse(readFileSync(join(dir, "package.json"), "utf8"));
+    const pkg = readPackage(dir);
     write(dir, {
       "package.json": `${JSON.stringify(pkg, null, 2)}\n`,
       "eslint.config.js": `export { default } from "${join(import.meta.dir, "..", "config", "eslint.js")}";\n`,
@@ -3236,8 +3285,7 @@ exec "${process.execPath}" "$@"
   });
   const read = (path: string) => (existsSync(path) ? readFileSync(path, "utf8") : "");
   // The MCP server's start in dir, from the skeleton's .mcp.json, its project folder as the last argument.
-  const mcp = JSON.parse(readFileSync(join(import.meta.dir, "../template/.mcp.json"), "utf8"))
-    .mcpServers["chrome-devtools"];
+  const mcp = templateMcp.mcpServers["chrome-devtools"];
   const mcpStart = (dir: string, options: Parameters<typeof spawnSync>[2]) =>
     spawnSync(mcp.command, [...mcp.args.slice(0, -1), dir], options);
   const head = (dir: string) => sh(dir, ["rev-parse", "HEAD"]).stdout.toString().trim();
@@ -3690,6 +3738,34 @@ describe("skeleton SessionStart hook", () => {
 });
 
 describe("shared eslint config", () => {
+  // The untyped rules alone, as check-staged runs them: these fixtures sit in no tsconfig.
+  const untyped = { ...process.env, SCAFFOLDING_LINT_UNTYPED: "1" };
+
+  test("the typed rules go red on a floating promise and an any, and only in the gate", () => {
+    const dir = repo({
+      "eslint.config.js": `import base from "${join(import.meta.dir, "..", "config", "eslint.js")}";\nexport default base;\n`,
+      "tsconfig.json": '{ "compilerOptions": { "strict": true }, "include": ["src"] }\n',
+      "src/a.ts": "const later = async (): Promise<number> => 1;\nlater();\n",
+      "src/b.ts": 'const parsed = JSON.parse("{}");\nexport const n: number = parsed.n;\n',
+      "src/c.ts":
+        'const later = async (): Promise<number> => 1;\nexport const n = await later();\nconst parsed: unknown = JSON.parse("{}");\nexport const s = typeof parsed === "string" ? parsed : "";\n',
+      "outside.ts": "export const a = 1;\n",
+    });
+    const eslint = join(import.meta.dir, "..", "node_modules", ".bin", "eslint");
+    const r = spawnSync(eslint, ["."], { cwd: dir, encoding: "utf8" });
+    expect(r.status).toBe(1);
+    const of = (file: string) => r.stdout.split("\n\n").find((part) => part.includes(file)) ?? "";
+    expect(of("src/a.ts")).toContain("@typescript-eslint/no-floating-promises");
+    expect(of("src/b.ts")).toContain("@typescript-eslint/no-unsafe-assignment");
+    expect(of("src/b.ts")).toContain("@typescript-eslint/no-unsafe-member-access");
+    expect(r.stdout).not.toContain("src/c.ts");
+    // A file in no tsconfig has no types to read: red, never passed unread.
+    expect(of("outside.ts")).toContain("was not found by the project service");
+    // check-staged's run: the same files pass, since no type program is built.
+    const staged = spawnSync(eslint, ["."], { cwd: dir, encoding: "utf8", env: untyped });
+    expect(staged.stdout).toBe("");
+    expect(staged.status).toBe(0);
+  });
   test("an empty test body or an unused name goes red, a real test stays green", () => {
     const dir = repo({
       "eslint.config.js": `import base from "${join(import.meta.dir, "..", "config", "eslint.js")}";\nexport default base;\n`,
@@ -3705,7 +3781,7 @@ describe("shared eslint config", () => {
       "h.mjs": "console.log(Bun.version);\n",
     });
     const eslint = join(import.meta.dir, "..", "node_modules", ".bin", "eslint");
-    const r = spawnSync(eslint, ["."], { cwd: dir, encoding: "utf8" });
+    const r = spawnSync(eslint, ["."], { cwd: dir, encoding: "utf8", env: untyped });
     expect(r.status).toBe(1);
     for (const file of ["a.test.ts", "c.spec.ts", "tests/d.ts", "e2e/e.js", "f.test.ts", "g.ts"])
       expect(r.stdout).toContain(file);
@@ -3724,7 +3800,7 @@ describe("shared eslint config", () => {
       "c.ts": unused,
     });
     const eslint = join(import.meta.dir, "..", "node_modules", ".bin", "eslint");
-    const r = spawnSync(eslint, ["."], { cwd: dir, encoding: "utf8" });
+    const r = spawnSync(eslint, ["."], { cwd: dir, encoding: "utf8", env: untyped });
     expect(r.stdout).toContain("c.ts");
     expect(r.stdout).not.toContain("vendor/sub");
     expect(r.stdout).not.toContain("dist/b.js");
@@ -3739,7 +3815,7 @@ describe("shared eslint config", () => {
       "c.test.ts": 'test("x", async () => { expect(await Promise.resolve(1)).toBe(1); });\n',
     });
     const eslint = join(import.meta.dir, "..", "node_modules", ".bin", "eslint");
-    const r = spawnSync(eslint, ["."], { cwd: dir, encoding: "utf8" });
+    const r = spawnSync(eslint, ["."], { cwd: dir, encoding: "utf8", env: untyped });
     expect(r.stdout).toContain("a.test.ts");
     expect(r.stdout).toContain("b.test.ts");
     expect(r.stdout).not.toContain("c.test.ts");
@@ -3772,7 +3848,7 @@ describe("shared eslint config", () => {
     const r = spawnSync(eslint, ["a.astro"], { cwd: dir, encoding: "utf8" });
     expect(r.stdout + r.stderr).toBe("");
     expect(r.status).toBe(0);
-    const config = JSON.parse(
+    const config = jsonObject(
       spawnSync(eslint, ["--print-config", "a.astro"], { cwd: dir, encoding: "utf8" }).stdout,
     );
     expect(config.processor).toBe("astro/client-side-ts");
@@ -4642,10 +4718,9 @@ describe("catalog", () => {
       expect(alone.indexOf(ring)).toBeLessThan(alone.indexOf(".box{color:teal}"));
       expect(build().status).toBe(0);
       for (const p of ["", "stories/Parts/box-parts/two"]) {
-        expect(links(page(p), "icon")).toEqual([
-          expect.stringMatching(/^\/_astro\/favicon\..*\.svg$/),
-          "/assets/logo.svg",
-        ]);
+        const [icon, ...others] = links(page(p), "icon");
+        expect(icon).toMatch(/^\/_astro\/favicon\..*\.svg$/);
+        expect(others).toEqual(["/assets/logo.svg"]);
       }
       // The shell's type sizes are brand's tokens.json steps (brand v2.5.0), the focus ring's room is
       // brand's --hw-focus-room (v2.10.0).
@@ -4892,8 +4967,9 @@ describe("catalog", () => {
         const { ws, send, evaluate, until } = page;
         const failed: string[] = [];
         ws.addEventListener("message", (event) => {
-          const m = JSON.parse(String(event.data));
-          if (m.method === "Network.loadingFailed") failed.push(m.params.errorText);
+          const m = jsonObject(String(event.data));
+          if (m.method === "Network.loadingFailed")
+            failed.push(String(member(m, "params", "errorText")));
         });
         await send("Network.enable");
         const frames = (prefix: string) => asked.filter((p) => p.startsWith(prefix)).length;
@@ -5427,6 +5503,19 @@ describe("check-staged", () => {
     expect(readFileSync(join(dir, "args.txt"), "utf8")).toEndWith("--\n--no-config.ts\n");
   });
 
+  test("eslint runs without the typed rules, which the gate's lint step holds", () => {
+    const dir = repo({
+      "package.json": JSON.stringify({ scaffolding: { private: true, skip: { format: "f" } } }),
+      "node_modules/.bin/eslint":
+        '#!/bin/sh\nprintf "%s" "$SCAFFOLDING_LINT_UNTYPED" > untyped.txt\n',
+    });
+    chmodSync(join(dir, "node_modules/.bin/eslint"), 0o755);
+    write(dir, { "a.ts": "export {};\n" });
+    sh(dir, ["add", "a.ts"]);
+    expect(run(dir, "check-staged").code).toBe(0);
+    expect(readFileSync(join(dir, "untyped.txt"), "utf8")).toBe("1");
+  });
+
   test("a coupling or licence step the gate skips with a reason is skipped here too", () => {
     const staged = (skip: object) => {
       const dir = repo({
@@ -5663,9 +5752,8 @@ describe("raise-pins", () => {
     return dir;
   }
   const version = (dir: string, name: string) =>
-    JSON.parse(
-      readFileSync(join(dir, "node_modules/@hackersandwizards", name, "package.json"), "utf8"),
-    ).version;
+    jsonObject(readFileSync(join(dir, "node_modules/@hackersandwizards", name, "package.json")))
+      .version;
   // Fixture clones get new commits every run: a cache of their own keeps them out of the user's.
   const cacheDir = temp();
   const identity = {
@@ -6008,6 +6096,63 @@ describe("check-spaces", () => {
       });
     expect(run(allowed("<span></span>"), "check-spaces").code).toBe(0);
     expect(run(allowed("nothing"), "check-spaces").out).toContain("allow entry matches nothing");
+  });
+});
+
+describe("check-cycles", () => {
+  const cycle = (files: Record<string, string>) => run(repo(files), "check-cycles");
+
+  test("a runtime import cycle goes red once, naming its modules", () => {
+    const r = cycle({
+      "src/a.ts": 'import { b } from "./b.ts";\nexport const a = (): number => b() + 1;\n',
+      "src/b.ts": 'import { a } from "./a.ts";\nexport const b = (): number => a() + 1;\n',
+      "src/c.ts": 'import { a } from "./a.ts";\nexport const c = a();\n',
+    });
+    expect(r.code).toBe(1);
+    expect(lines(r.out, "cycles")).toHaveLength(1);
+    expect(r.out).toContain("src/a.ts -> src/b.ts -> src/a.ts");
+  });
+
+  test("a cycle of type-only imports passes, with the keyword or without", () => {
+    const r = cycle({
+      "src/a.ts":
+        'import type { B } from "./b.ts";\nimport { C } from "./c.ts";\nexport type A = { b?: B; c?: C };\n',
+      "src/b.ts": 'import type { A } from "./a.ts";\nexport type B = { a?: A };\n',
+      "src/c.ts": 'import { A } from "./a.ts";\nexport type C = { a?: A };\n',
+    });
+    expect(r.out).toBe("");
+    expect(r.code).toBe(0);
+  });
+
+  test("a cycle through a tsconfig path alias goes red", () => {
+    const r = cycle({
+      "tsconfig.json": '{ "compilerOptions": { "paths": { "@/*": ["./src/*"] } } }\n',
+      "src/a.ts": 'import { b } from "@/b";\nexport const a = (): number => b() + 1;\n',
+      "src/b.ts": 'import { a } from "@/a";\nexport const b = (): number => a() + 1;\n',
+    });
+    expect(r.code).toBe(1);
+    expect(lines(r.out, "cycles")).toHaveLength(1);
+  });
+
+  test("a submodule's cycle is its own repository's, and a repository without code passes", () => {
+    const loop = {
+      "a.ts": 'import { b } from "./b.ts";\nexport const a = (): number => b();\n',
+      "b.ts": 'import { a } from "./a.ts";\nexport const b = (): number => a();\n',
+    };
+    const dir = repo({ "README.md": "x\n" });
+    expect(run(dir, "check-cycles").code).toBe(0);
+    sh(dir, [
+      "-c",
+      "protocol.file.allow=always",
+      "submodule",
+      "add",
+      "-q",
+      repo(loop),
+      "vendor/in",
+    ]);
+    expect(run(dir, "check-cycles").code).toBe(0);
+    // Control: the same files in the repository itself.
+    expect(cycle(loop).code).toBe(1);
   });
 });
 
@@ -6402,10 +6547,10 @@ describe("chrome-mcp", () => {
         for await (const chunk of server.stdout) out += new TextDecoder().decode(chunk);
       })();
       const call = async (id: number, method: string, params: object) => {
-        server.stdin.write(`${JSON.stringify({ jsonrpc: "2.0", id, method, params })}\n`);
+        await server.stdin.write(`${JSON.stringify({ jsonrpc: "2.0", id, method, params })}\n`);
         for (const end = Date.now() + 60_000; Date.now() < end; await Bun.sleep(100)) {
           const line = out.split("\n").find((l) => l.includes(`"id":${id}`));
-          if (line) return JSON.parse(line).result;
+          if (line) return jsonObject(line).result;
         }
         throw new Error(`no answer to ${method}`);
       };
@@ -6415,10 +6560,12 @@ describe("chrome-mcp", () => {
           capabilities: {},
           clientInfo: { name: "test", version: "0" },
         });
-        expect(init.serverInfo.version).toBe(ownPackage.dependencies["chrome-devtools-mcp"]);
-        server.stdin.write('{"jsonrpc":"2.0","method":"notifications/initialized"}\n');
+        expect(member(init, "serverInfo", "version")).toBe(
+          ownPackage.dependencies["chrome-devtools-mcp"],
+        );
+        await server.stdin.write('{"jsonrpc":"2.0","method":"notifications/initialized"}\n');
         const pages = await call(2, "tools/call", { name: "list_pages", arguments: {} });
-        expect(pages.content[0].text).toContain("about:blank");
+        expect(member(pages, "content", 0, "text")).toContain("about:blank");
       } finally {
         server.kill("SIGTERM");
         await server.exited;
@@ -6468,7 +6615,7 @@ describe("chrome-mcp", () => {
         stdout: "pipe",
         stderr: "ignore",
       });
-      server.stdin.write(
+      await server.stdin.write(
         `${JSON.stringify({ jsonrpc: "2.0", id: 1, method: "initialize", params: { protocolVersion: "2025-06-18", capabilities: {}, clientInfo: { name: "test", version: "0" } } })}\n`,
       );
       let out = "";

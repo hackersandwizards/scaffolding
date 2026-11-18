@@ -9,6 +9,8 @@ import {
   exportTargets,
   finish,
   git,
+  isObject,
+  jsonObject,
   listFiles,
   ourRepository,
   readPackage,
@@ -81,7 +83,7 @@ const manifests = new Map<string, Record<string, unknown> | null>();
 function manifest(name: string) {
   if (!manifests.has(name)) {
     const file = `${root}/node_modules/${name}/package.json`;
-    manifests.set(name, existsSync(file) ? JSON.parse(readFileSync(file, "utf8")) : null);
+    manifests.set(name, existsSync(file) ? jsonObject(readFileSync(file)) : null);
   }
   return manifests.get(name);
 }
@@ -111,11 +113,11 @@ const pkg = readPackage(root, staged ? ":" : undefined);
 const withoutAllow = (json: string) => {
   let pkg;
   try {
-    pkg = JSON.parse(json);
+    pkg = jsonObject(json);
   } catch {
     return json;
   }
-  if (pkg.scaffolding) pkg.scaffolding = { ...pkg.scaffolding, allow: undefined };
+  if (isObject(pkg.scaffolding)) pkg.scaffolding = { ...pkg.scaffolding, allow: undefined };
   return JSON.stringify(pkg, null, 2);
 };
 const FIELDS = ["dependencies", "devDependencies", "optionalDependencies", "peerDependencies"];
@@ -163,13 +165,16 @@ for (const path of listFiles(root, staged)) {
   // without using it.
   if (text.includes("node_modules"))
     for (const line of (path.endsWith(".py") ? text.replace(DOCSTRING, "$1") : text)
-      .replace(commentSyntax(path), (comment, kept = "", at: number, all: string) => {
-        // A line mark after an unclosed quote (`x//y`) sits in a string: code follows.
-        let open = "";
-        for (const c of all.slice(all.lastIndexOf("\n", at) + 1, at) + kept)
-          if (open ? c === open : "\"'`".includes(c)) open = open ? "" : c;
-        return open && !comment.startsWith("/*", kept.length) ? comment : kept;
-      })
+      .replace(
+        commentSyntax(path),
+        (comment: string, kept: string = "", at: number, all: string) => {
+          // A line mark after an unclosed quote (`x//y`) sits in a string: code follows.
+          let open = "";
+          for (const c of all.slice(all.lastIndexOf("\n", at) + 1, at) + kept)
+            if (open ? c === open : "\"'`".includes(c)) open = open ? "" : c;
+          return open && !comment.startsWith("/*", kept.length) ? comment : kept;
+        },
+      )
       .split("\n"))
       for (const m of line.matchAll(INSTALLED)) {
         if (!ours(m[1]!) || m[1] === own || line.slice(0, m.index).includes("@source")) continue;

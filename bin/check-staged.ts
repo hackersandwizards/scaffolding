@@ -10,6 +10,7 @@ import { join } from "node:path";
 import { help } from "../lib/help.ts";
 import {
   isReason,
+  jsonObject,
   readPackage,
   repoRoot,
   styled,
@@ -19,6 +20,9 @@ import {
 
 help("check-staged");
 withoutEnvFile("check:staged");
+// The shared ESLint config leaves its typed rules to the gate: their type program alone costs a
+// commit more than a second.
+process.env.SCAFFOLDING_LINT_UNTYPED = "1";
 
 function refuseCommit(message: string): never {
   console.error(`[check:staged] ${message}`);
@@ -163,7 +167,7 @@ async function runStagedTool(
     child.stdin.end(stdin);
     let out = "";
     const stdout: Buffer[] = [];
-    child.stdout.on("data", (data) => stdout.push(data));
+    child.stdout.on("data", (data: Buffer) => stdout.push(data));
     child.stderr.on("data", (data) => (out += data));
     child.on("error", (error) =>
       done({ out: `${String(error)}\n`, code: 1, stdout: Buffer.alloc(0) }),
@@ -195,7 +199,7 @@ async function prettierPasses(bin: string, path: string, input: Buffer, r: ToolR
   if (r.stdout.length) return false;
   if (/\S/.test(`${input}`)) return true;
   const info = await runStagedTool(bin, ["--file-info", path]);
-  return !info.code && JSON.parse(`${info.stdout}`).inferredParser === null;
+  return !info.code && jsonObject(info.stdout).inferredParser === null;
 }
 
 // Run what the gate runs: each tool unless scaffolding.skip gives its gate step a reason, declared
