@@ -2,8 +2,8 @@
 name: blind-review
 description: >-
   Decide how much review a result a person will see deserves, from none to a large blind panel, and
-  run it blind (personas, criteria, scoring, noise, stop rules, screenshots, the Claude reviewer
-  command). Use before handing over or shipping anything a person will read or see: copy,
+  run it blind (personas, criteria, scoring, noise, stop rules, screenshots, the Claude and Codex
+  reviewer commands). Use before handing over or shipping anything a person will read or see: copy,
   mail, a page, a document, slides, a logo or other brand element, a value one surface or scale sets
   for a shared element (a brief's request included), a design variant, a report, and
   for "blind review", "review this", "panel", "score the variants", "which version is better".
@@ -19,9 +19,9 @@ Ask: who is hurt and how much if this is wrong, and how hard is it to take back?
 Examples, not triggers:
 
 - **None:** a thank-you or receipt mail, an internal note.
-- **Small:** one persona from the real recipient or audience, one run.
-- **Medium:** 2 to 3 personas, the current state scored against the new one.
-- **Large:** 4 to 6 personas, two runs, noise measured, an independent counter-draft
+- **Small:** one persona from the real recipient or audience, Codex, one run.
+- **Medium:** 2 to 3 personas, Claude and Codex, the current state scored against the new one.
+- **Large:** 4 to 6 personas, both models, two runs, noise measured, an independent counter-draft
   scored alongside.
 
 Cadence: a review per batch. Time pressure shortens a review (fewer rounds, parallel reviewers) and
@@ -83,7 +83,8 @@ none, because receipt".
    by element and fix one or two causes. Fix only what a real reader or user would notice.
 8. Noise is the score spread between two runs of the same reviewer. A lead inside the noise is a
    tie, and a tie goes to the variant with fewer exceptions. A surface keeps an exception to the
-   shared standard only where its lead stands outside the noise in both runs (a lead of 0.75 at noise 0.58 on a 10-point scale counted); that exception goes to the person
+   shared standard only where its lead stands outside the noise in both runs and with both models
+   (a lead of 0.75 at noise 0.58 on a 10-point scale counted); that exception goes to the person
    as the recommended option. A second-best variant that needs no exception may beat a best one
    that does. A value a brief or a consumer's override sets for one surface or scale of a shared
    element is such an exception, scored as in step 5 before it is built. Check: the report gives the
@@ -96,6 +97,14 @@ none, because receipt".
 
 ## Reviewer commands
 
-Run each reviewer read-only, the prompt naming each artifact by absolute path: a fresh Agent-tool
-subagent with `model: fable`, told to change no file, never a fork, which carries the conversation.
-Images go in as absolute paths the reviewer reads.
+Run each reviewer read-only, the prompt naming each artifact by absolute path. A Claude reviewer is
+a fresh Agent-tool subagent with `model: fable`, told to change no file, never a fork, which carries
+the conversation. Codex takes images with `-i <file>`, placed after the prompt: `-i` is variadic, and a prompt after it is
+read as an image and Codex answers "No prompt provided via stdin". Check: every Codex output file
+is non-empty.
+
+```bash
+codex exec -m gpt-6.1-sol -c model_reasoning_effort="high" --skip-git-repo-check --ephemeral -s read-only "<prompt>" < /dev/null
+```
+
+Codex reviews; it never authors the text under review.
