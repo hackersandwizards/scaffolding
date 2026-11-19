@@ -73,6 +73,10 @@ Run the /simplify skill on the accumulated diff. Apply its fixes.
 
 Then run phase 3 again over the accumulated diff rather than the tree.
 
+Where the repository has a `mutation` script, run it over the source files in the scope
+(`bun run mutation --mutate <files>`). Give each mutant that survives in a line the scope changed a
+test through the module's interface, or name it in the summary as equivalent.
+
 One pass of each. Name any finding you dismissed, and why, in the final summary, and print the prune lists there.
 
 ## 5. Verify
