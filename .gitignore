@@ -6,3 +6,5 @@ node_modules/
 **/.claude/settings.local.json
 .eslintcache
 **/.astro/
+/.stryker-tmp/
+/.stryker-reports/

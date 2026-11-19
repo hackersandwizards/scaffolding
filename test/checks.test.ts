@@ -3821,7 +3821,7 @@ describe("shared eslint config", () => {
     expect(r.stdout).not.toContain("dist/b.js");
   });
 
-  test("expect().rejects and .resolves go red in a test; rejection() gives the error's text", async () => {
+  test("expect().rejects and .resolves go red in a test", () => {
     const dir = repo({
       "eslint.config.js": `import base from "${join(import.meta.dirname, "..", "config", "eslint.js")}";\nexport default base;\n`,
       "a.test.ts": 'test("x", async () => { await expect(Promise.reject(1)).rejects.toBe(1); });\n',
@@ -3835,19 +3835,6 @@ describe("shared eslint config", () => {
     expect(r.stdout).toContain("b.test.ts");
     expect(r.stdout).not.toContain("c.test.ts");
     expect(r.stdout).toContain("await rejection() from @hackersandwizards/scaffolding/rejection");
-    expect(await rejection(Promise.reject(new Error("no answer")))).toBe("Error: no answer");
-    expect(await rejection(rejection(Promise.resolve({ a: 1 })))).toBe(
-      'Error: expected a rejection, resolved with {"a":1}',
-    );
-    expect(await rejection(rejection(Promise.resolve(1n)))).toBe(
-      "Error: expected a rejection, resolved with 1",
-    );
-    // A long value is cut, and the trace names the line that called rejection().
-    const failure = await rejection(Promise.resolve("x".repeat(5000))).catch((e: Error) => e);
-    expect((failure as Error).message).toBe(
-      `expected a rejection, resolved with "${"x".repeat(199)}… (5002 characters)`,
-    );
-    expect((failure as Error).stack).toContain("checks.test.ts");
   });
 
   test("the astro preset parses an .astro file's TypeScript with its own typescript-eslint", () => {

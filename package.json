@@ -86,6 +86,7 @@
     "prepare": "[ \"$(git rev-parse --show-toplevel 2>/dev/null)\" = \"$(pwd -P)\" ] && git config core.hooksPath .githooks || true",
     "check": "bun --no-env-file bin/scaffolding.ts check",
     "test": "bun --bun vitest run",
+    "mutation": "stryker run",
     "check:staged": "bun --no-env-file bin/check-staged.ts",
     "fix": "bun --bun eslint --cache --concurrency=auto . --fix && bun --bun prettier --write .",
     "check-confidential": "bun --no-env-file bin/check-confidential.ts",
@@ -93,6 +94,8 @@
     "chrome-mcp": "bun --no-env-file bin/chrome-mcp.ts"
   },
   "devDependencies": {
+    "@stryker-mutator/core": "10.1.1",
+    "@stryker-mutator/vitest-runner": "10.1.1",
     "@types/bun": "1.4.4",
     "@typescript/native": "npm:typescript@7.0.2",
     "astro": "7.4.11",

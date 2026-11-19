@@ -15,6 +15,12 @@ screenshot goes in, and `check-confidential` runs in its own hooks.
 suite on Bun through `bun run test`. The catalog build test builds a copy of `test/fixture/` with the
 preset. The pre-commit hook runs `bun run check:staged`.
 
+`bun run mutation` runs Stryker on `lib/rejection.ts` using `test/rejection.test.ts` (51 ms for the
+focused Vitest run), outside the gate, and writes `.stryker-reports/mutation.json`.
+The command, hook, config, catalog and other library sources stay outside this run with the
+subprocess, browser and build suites in `test/check-lock.test.ts` (141.61 s) and `test/checks.test.ts`
+(151.05 s).
+
 ## Releases
 
 A changed command name, argument or exported path is a release whose commit names the change,
