@@ -19,7 +19,7 @@ Ask: who is hurt and how much if this is wrong, and how hard is it to take back?
 Examples, not triggers:
 
 - **None:** a thank-you or receipt mail, an internal note.
-- **Small:** one persona from the real recipient or audience, Codex, one run.
+- **Small:** one persona from the real recipient or audience, the other model, one run.
 - **Medium:** 2 to 3 personas, Claude and Codex, the current state scored against the new one.
 - **Large:** 4 to 6 personas, both models, two runs, noise measured, an independent counter-draft
   scored alongside.
@@ -104,7 +104,8 @@ read as an image and Codex answers "No prompt provided via stdin". Check: every 
 is non-empty.
 
 ```bash
-codex exec -m gpt-6.1-sol -c model_reasoning_effort="high" --skip-git-repo-check --ephemeral -s read-only "<prompt>" < /dev/null
+codex exec -m gpt-6.2-sol -c model_reasoning_effort="high" --skip-git-repo-check --ephemeral -s read-only "<prompt>" < /dev/null
 ```
 
-Codex reviews; it never authors the text under review.
+Where one model reviews, it is the one that did not author the work: Codex reviews Claude's text,
+Claude reviews Codex's code. Codex never authors the text under review.

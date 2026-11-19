@@ -2,9 +2,10 @@
 name: delegation
 description: >-
   Launch, prod, stop and check a delegate (an Agent-tool subagent or a new session),
-  which model tier and effort to run Codex at, how Codex hands authored copy to Claude, and what
-  Claude starts Codex for: before starting any delegate, when running or configuring Codex, or when
-  either side needs copy written.
+  which model tier and effort to run Codex at, how Codex hands authored copy to Claude, and which
+  code work Claude hands Codex: before starting any delegate, before code work (an implementation,
+  a bug fix, a refactor, tests, a script, a dependency update, a polish pass), when running or
+  configuring Codex, or when either side needs copy written.
 ---
 
 # Delegation
@@ -56,10 +57,10 @@ description: >-
 Default: whatever `.codex/config.toml` sets, a repository's own before `~/.codex/config.toml`. Each
 repository pins its own model and effort for the work it holds. Read the value there.
 
-| Pick | For |
-|------|-----|
-| the repository's pin | everyday work |
-| gpt-6.1-sol high | planning, hard bugs, architecture, final review |
+| Pick                                       | For                               |
+| ------------------------------------------ | --------------------------------- |
+| the repository's pin, `gpt-6.2-sol` medium | everyday work                     |
+| gpt-6.2-sol high                           | planning, hard bugs, architecture |
 
 - Sol accepts `low`, `medium`, `high`, `xhigh`, `max`, `ultra`. It has no `none`.
 - `codex exec --model` overrides the config per invocation. Heavier one-off work goes there, not
@@ -78,7 +79,7 @@ Codex hands Claude every piece of prose a human reads. An agent's own conversati
 with the user (replies, questions, status, explanations, technical answers) it writes itself.
 
 ```bash
-claude -p --model fable --effort high "Write the <mail/message>. Facts: sender+signature, recipients, language, purpose, must/must-not facts, new mail or reply. For mails: subject line AND body. Output only the text."
+claude -p --model fable --effort low "Write the <mail/message>. Facts: sender+signature, recipients, language, purpose, must/must-not facts, new mail or reply. For mails: subject line AND body. Output only the text."
 ```
 
 Check facts (names, dates, links, recipients, language, signature), content correctness, and
@@ -88,7 +89,12 @@ re-casing, no polish. Any text change goes through another `claude -p` call.
 
 ## Claude -> Codex
 
-Claude starts Codex only for a capability Claude does not have, image generation, or as an
-independent blind reviewer. Codex never authors text.
+Claude hands Codex the code work: implementation, bug fixes, refactors, tests, scripts, dependency
+updates and the polish pass, run as `codex exec` in the repository the work belongs to. Claude keeps
+the conversation with the person, records, rules, skills, research and every text a person reads.
+Claude reviews what Codex produced, as far as `blind-review` sizes the review, and pushes after it.
+
+Where `codex` is not installed or not signed in (`codex login status`), Claude does the work itself
+and a second Claude subagent takes the review.
 
 Verify what a run did with `git log`, never from its own summary.

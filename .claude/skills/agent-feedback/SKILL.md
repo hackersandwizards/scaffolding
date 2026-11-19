@@ -92,7 +92,9 @@ line it folds into, and show the wordings before committing, or name them in the
 a length cap and asks for the removal-first diff. A rule the person states for every session goes
 into a hub rule or skill, never memory or one repository's rule. The remedy for an agent behaviour
 is a line in the artifact that owns it, never a hook, a validator or other automated block, and
-rule text never says "guardrail". A fix to a skill driving a person-facing UI is a sentence telling
+rule text never says "guardrail". A correction about a property of the code, such as a forbidden
+import or a misused API, is no agent behaviour: its remedy is a lint rule whose message says what to
+do instead, in the shared lint configuration where it reaches several repositories. A fix to a skill driving a person-facing UI is a sentence telling
 the agent to use the site's own control, not script logic or stub tests. A rule for a person's
 writing voice says when a practice helps and when not, from fetched research where it borrows a
 best practice: an absolute is a defect. Before reporting a fix, walk the person's own example

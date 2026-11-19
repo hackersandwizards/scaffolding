@@ -47,6 +47,17 @@ Reads as correct, passes every gate, and never fires.
 
 Found by running the thing, not reading it.
 
+## Shallow modules
+
+A module whose interface is nearly as large as what it hides.
+
+- Deletion test: imagine the module gone. Complexity that vanishes was a pass-through; complexity
+  that reappears in every caller was earning its place.
+- Understanding one concept means reading many small files.
+- A test reaches past the interface to check the module.
+
+Look first where `git log` shows the most changes.
+
 ## Weakened verification
 
 Diff the test files for a check weakened to make it pass: a production branch keyed on a fixture

@@ -22,15 +22,22 @@ const scan = spawnSync(
 if (scan.error) refuseCommit("gitleaks not found: brew install gitleaks");
 if (scan.status !== 0) process.exit(1);
 
-const pkg = JSON.parse(readFileSync("package.json", "utf8"));
+function jsonMember(value: unknown, key: string): unknown {
+  return value !== null && typeof value === "object" && Object.hasOwn(value, key)
+    ? Reflect.get(value, key)
+    : undefined;
+}
+
+const pkg: unknown = JSON.parse(readFileSync("package.json", "utf8"));
+const scripts = jsonMember(pkg, "scripts");
 // Deletions count: removing a file can break a link the validator checks. Any status but 0
 // (no change) runs it, so a failing git diff fails closed.
 const claudeStaged =
   spawnSync("git", ["diff", "--cached", "--quiet", "--", ".claude"]).status !== 0;
 // The script's former name would otherwise turn the validation off without a word.
-if (claudeStaged && pkg.scripts?.["validate:skills"] && !pkg.scripts["check:skills"])
+if (claudeStaged && jsonMember(scripts, "validate:skills") && !jsonMember(scripts, "check:skills"))
   refuseCommit("rename the script validate:skills to check:skills: check-staged runs check:skills");
-const skills = Boolean(pkg.scripts?.["check:skills"]) && claudeStaged;
+const skills = Boolean(jsonMember(scripts, "check:skills")) && claudeStaged;
 
 const listed = spawnSync("git", ["diff", "--cached", "--name-only", "--diff-filter=ACMR", "-z"], {
   encoding: "utf8",
@@ -107,8 +114,8 @@ async function runStagedTool(bin: string, args: string[], stdin?: Buffer): Promi
     child.stdin.end(stdin);
     let out = "";
     const stdout: Buffer[] = [];
-    child.stdout.on("data", (data) => stdout.push(data));
-    child.stderr.on("data", (data) => (out += data));
+    child.stdout.on("data", (data: Buffer) => stdout.push(data));
+    child.stderr.on("data", (data: Buffer) => (out += data.toString()));
     child.on("error", (error) =>
       done({ out: `${String(error)}\n`, code: 1, stdout: Buffer.alloc(0) }),
     );
@@ -139,7 +146,7 @@ async function prettierPasses(bin: string, path: string, input: Buffer, r: ToolR
   if (r.stdout.length) return false;
   if (/\S/.test(`${input}`)) return true;
   const info = await runStagedTool(bin, ["--file-info", path]);
-  return !info.code && JSON.parse(`${info.stdout}`).inferredParser === null;
+  return !info.code && jsonMember(JSON.parse(`${info.stdout}`), "inferredParser") === null;
 }
 
 // Each tool with a staged file to judge runs unless scaffolding.skip gives its gate step a reason (a
@@ -150,12 +157,11 @@ const gateStep: Record<string, string> = {
   eslint: "lint",
   stylelint: "styles",
 };
-const skip = pkg.scaffolding?.skip ?? {};
-const active = Object.entries(tools).filter(
-  ([tool]) =>
-    mine(tool, staged).length &&
-    !(typeof skip[gateStep[tool]] === "string" && skip[gateStep[tool]].trim()),
-);
+const skip = jsonMember(jsonMember(pkg, "scaffolding"), "skip");
+const active = Object.entries(tools).filter(([tool]) => {
+  const reason = jsonMember(skip, gateStep[tool]);
+  return mine(tool, staged).length && !(typeof reason === "string" && reason.trim());
+});
 for (const [tool] of active)
   // Fail closed: a checkout without `bun install`, such as a fresh worktree, or a repository that
   // never installed the tool, would pass every file.
