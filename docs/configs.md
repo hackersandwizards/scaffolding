@@ -25,10 +25,12 @@ component sets from its markup (a `style` attribute) is read with a fallback,
 
 ## Vitest and Stryker
 
-Scaffolding 5.30.0 supplies Vitest 5.1.0 and Stryker core and its Vitest runner at 10.1.1.
+Scaffolding supplies Vitest 5.1.0 and Stryker core and its Vitest runner at 10.1.1.
 After the release tag is available, update the scaffolding pin in `devDependencies` to
-`git+https://github.com/hackersandwizards/scaffolding.git#v5.30.0`. Remove the direct
+`git+https://github.com/hackersandwizards/scaffolding.git#v5.30.1`. Remove the direct
 `vitest`, `@stryker-mutator/core` and `@stryker-mutator/vitest-runner` pins where present.
+Scaffolding 5.30.1 ships TypeScript declarations for both configs, so remove any local
+declarations for those imports.
 Keep any coverage provider the repository uses at the version matching Vitest. Run `bun install`
 to refresh the lockfile. The existing test and mutation scripts still run the same commands with
 Bun's hoisted installs. On Node 22, those commands need at least Node 22.12.
