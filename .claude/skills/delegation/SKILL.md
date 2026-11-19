@@ -90,8 +90,11 @@ re-casing, no polish. Any text change goes through another `claude -p` call.
 ## Claude -> Codex
 
 Claude hands Codex the code work: implementation, bug fixes, refactors, tests, scripts, dependency
-updates and the polish pass, run as `codex exec` in the repository the work belongs to. Claude keeps
-the conversation with the person, records, rules, skills, research and every text a person reads.
+updates and the polish pass, run as `codex exec` in the repository the work belongs to. Public web
+research (companies, events, tools, vendors) goes to `codex --search exec`; before a result reaches a
+person, Claude checks its version numbers and dates against the cited source. Claude keeps the
+conversation with the person, records, rules, skills, research that needs our channels or records,
+and every text a person reads.
 Claude reviews what Codex produced, as far as `blind-review` sizes the review, and pushes after it.
 
 Where `codex` is not installed or not signed in (`codex login status`), Claude does the work itself
