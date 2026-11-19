@@ -1,4 +1,4 @@
-import { afterAll, beforeAll, describe, expect, test } from "bun:test";
+import { afterAll, beforeAll, describe, expect, test } from "vitest";
 import { spawn, spawnSync } from "node:child_process";
 import { createHash } from "node:crypto";
 import {
@@ -53,12 +53,12 @@ const member = (value: unknown, ...path: (string | number)[]): unknown =>
 // SCAFFOLDING_TEST_TIMEOUT_MS from the machine's load, 5000 on an idle machine.
 const limit = (ms: number) => (ms * Number(process.env.SCAFFOLDING_TEST_TIMEOUT_MS || 5000)) / 5000;
 
-const bin = (name: string) => join(import.meta.dir, "..", "bin", `${name}.ts`);
+const bin = (name: string) => join(import.meta.dirname, "..", "bin", `${name}.ts`);
 const PREVIEW = 'ASTRO_PREVIEW_BACKGROUND=1 bun --bun astro preview --root "$PWD/catalog"';
 const made: string[] = [];
 afterAll(() => made.forEach((dir) => rmSync(dir, { recursive: true, force: true })));
 
-const cache = join(import.meta.dir, "..", "node_modules", ".cache", "scaffolding");
+const cache = join(import.meta.dirname, "..", "node_modules", ".cache", "scaffolding");
 // A stopped run skips afterAll: the next run removes its folders once an hour old, so a run still
 // going keeps its own.
 for (const root of [tmpdir(), cache])
@@ -254,7 +254,7 @@ test("every command answers --help first on stdout, and check-lock passes a late
   const dir = temp();
   const env = { PATH: "/usr/bin:/bin", HOME: dir };
   const help = (path: string, args = ["--help"]) =>
-    spawnSync(process.execPath, ["--no-env-file", join(import.meta.dir, "..", path), ...args], {
+    spawnSync(process.execPath, ["--no-env-file", join(import.meta.dirname, "..", path), ...args], {
       cwd: dir,
       env,
       encoding: "utf8",
@@ -592,7 +592,7 @@ describe("check-coupling", () => {
 function install(dir: string) {
   mkdirSync(join(dir, "node_modules/@hackersandwizards"), { recursive: true });
   symlinkSync(
-    join(import.meta.dir, ".."),
+    join(import.meta.dirname, ".."),
     join(dir, "node_modules/@hackersandwizards/scaffolding"),
   );
 }
@@ -617,7 +617,7 @@ const PNG = Buffer.from(
   "base64",
 );
 // Run from its own checkout, the package pins its HEAD.
-const ownHead = sh(join(import.meta.dir, ".."), ["rev-parse", "HEAD"])
+const ownHead = sh(join(import.meta.dirname, ".."), ["rev-parse", "HEAD"])
   .stdout.toString()
   .trim();
 
@@ -639,14 +639,16 @@ test("check-structure: a bin file is stored executable, and --fix makes it so", 
   ]);
   run(dir, "check-structure", ["--fix"]);
   expect(binLines()).toEqual([]);
-  expect(sh(dir, ["ls-files", "-s", "bin/x.ts"]).stdout.toString()).toStartWith("100755");
+  expect(sh(dir, ["ls-files", "-s", "bin/x.ts"]).stdout.toString().startsWith("100755")).toBe(true);
   // --fix stages the mode alone, never an uncommitted edit.
   sh(dir, ["update-index", "--chmod=-x", "bin/x.ts"]);
   writeFileSync(join(dir, "bin/x.ts"), "#!/usr/bin/env bun\nedited;\n");
   run(dir, "check-structure", ["--fix"]);
-  expect(sh(dir, ["ls-files", "-s", "bin/x.ts"]).stdout.toString()).toStartWith(
-    `100755 ${sh(dir, ["rev-parse", "HEAD:bin/x.ts"]).stdout.toString().trim()} `,
-  );
+  expect(
+    sh(dir, ["ls-files", "-s", "bin/x.ts"])
+      .stdout.toString()
+      .startsWith(`100755 ${sh(dir, ["rev-parse", "HEAD:bin/x.ts"]).stdout.toString().trim()} `),
+  ).toBe(true);
 });
 
 test("check-structure: a hook with the skeleton's bytes but no executable bit fails, and --fix sets it", () => {
@@ -664,13 +666,13 @@ test("check-structure: a hook with the skeleton's bytes but no executable bit fa
   ]);
   run(dir, "check-structure", ["--fix"]);
   expect(hookLines()).toEqual([]);
-  expect(sh(dir, ["ls-files", "-s", ".githooks/post-merge"]).stdout.toString()).toStartWith(
-    "100755",
-  );
+  expect(
+    sh(dir, ["ls-files", "-s", ".githooks/post-merge"]).stdout.toString().startsWith("100755"),
+  ).toBe(true);
 });
 
 test("every bin target and every file in bin/ is stored executable, wherever the target lives", () => {
-  const root = join(import.meta.dir, "..");
+  const root = join(import.meta.dirname, "..");
   const { bin } = ownPackage;
   const stored = new Map(
     sh(root, ["ls-files", "-s", "--", "bin", ...Object.values(bin), "README.md"])
@@ -696,7 +698,7 @@ test("every bin target and every file in bin/ is stored executable, wherever the
 });
 
 test("a tag install, GitHub's archive of the tag, holds what files names, template's dotfiles too", () => {
-  const root = join(import.meta.dir, "..");
+  const root = join(import.meta.dirname, "..");
   const shipped = ["package.json", "README.md", "LICENSE", ...ownPackage.files];
   const committed = sh(root, ["ls-tree", "-r", "--name-only", "HEAD", "--", ...shipped])
     .stdout.toString()
@@ -802,9 +804,11 @@ describe("scaffold and check-structure", () => {
     expect(config).toContain('site: "https://hackersandwizards.github.io"');
     expect(config).toContain("port: 4655 }");
     // The catalog's .astro files are linted by the Astro config, with its plugin pinned.
-    expect(readFileSync(join(dir, "eslint.config.js"), "utf8")).toStartWith(
-      'import base from "@hackersandwizards/scaffolding/eslint/astro";',
-    );
+    expect(
+      readFileSync(join(dir, "eslint.config.js"), "utf8").startsWith(
+        'import base from "@hackersandwizards/scaffolding/eslint/astro";',
+      ),
+    ).toBe(true);
     expect(pkg.devDependencies["eslint-plugin-astro"]).toBe(
       ownPackage.devDependencies["eslint-plugin-astro"],
     );
@@ -814,7 +818,7 @@ describe("scaffold and check-structure", () => {
     // No placeholder item: the hub would list it as the repository's open goal.
     expect(readdirSync(join(dir, "docs/agent-work"))).toEqual([".gitkeep"]);
     expect(readFileSync(join(dir, "tsconfig.json"), "utf8")).toContain('"catalog/**/*.ts"]');
-    const prettier = join(import.meta.dir, "..", "node_modules", ".bin", "prettier");
+    const prettier = join(import.meta.dirname, "..", "node_modules", ".bin", "prettier");
     const formatted = spawnSync(prettier, ["--check", "."], { cwd: dir, encoding: "utf8" });
     expect(`${formatted.stdout}${formatted.stderr}`).toContain("All matched files use Prettier");
     expect(formatted.status).toBe(0);
@@ -826,16 +830,15 @@ describe("scaffold and check-structure", () => {
     const config = readFileSync(join(at, "scoped/catalog/astro.config.ts"), "utf8");
     expect(config).toContain('base: "/scoped"');
     expect(config).toContain('product: "scoped"');
-    expect(readFileSync(join(at, "scoped/README.md"), "utf8")).toStartWith("# scoped\n");
+    expect(readFileSync(join(at, "scoped/README.md"), "utf8").startsWith("# scoped\n")).toBe(true);
     expect(readPackage(join(at, "scoped")).name).toBe("@acme/scoped");
-    expect(run(at, "scaffold", ["inner", "--catalog-in", "x"]).out).toEndWith(
-      [
-        "Next, in the terminal: cd inner && bun install && bun run check",
-        "[scaffold] Then by hand:",
-        "[scaffold]   1. add inner to the hub's sync list",
-        "[scaffold]   2. create hackersandwizards/inner on GitHub and push to it\n",
-      ].join("\n"),
-    );
+    const next = [
+      "Next, in the terminal: cd inner && bun install && bun run check",
+      "[scaffold] Then by hand:",
+      "[scaffold]   1. add inner to the hub's sync list",
+      "[scaffold]   2. create hackersandwizards/inner on GitHub and push to it\n",
+    ].join("\n");
+    expect(run(at, "scaffold", ["inner", "--catalog-in", "x"]).out.endsWith(next)).toBe(true);
     for (const name of ['a"b', "Upper"]) {
       const bad = run(at, "scaffold", ["bad", "--name", name]);
       expect(bad.out).toContain("is no npm package name");
@@ -1622,7 +1625,7 @@ describe("check-confidential", () => {
     ]);
   });
 
-  test.if(process.platform === "darwin")(
+  test.runIf(process.platform === "darwin")(
     "OCR reads a transparent image, every page of a TIFF and a PDF page without text or with an image",
     () => {
       const dir = repo({ "package.json": "{}" });
@@ -1888,7 +1891,7 @@ describe("check-confidential", () => {
     ]);
   });
 
-  test.if(process.platform === "darwin")(
+  test.runIf(process.platform === "darwin")(
     "an image whose name holds a term is still kept as read",
     () => {
       const dir = repo({ "package.json": "{}" });
@@ -1935,7 +1938,7 @@ describe("check-confidential", () => {
     expect(run(staged, "check-confidential", ["--staged"], env).code).toBe(0);
   });
 
-  test.if(process.platform === "darwin")("an image that cannot be decoded is refused", () => {
+  test.runIf(process.platform === "darwin")("an image that cannot be decoded is refused", () => {
     const dir = repo({ "package.json": "{}" });
     write(dir, { "bad.png": "not an image at all" });
     sh(dir, ["add", "bad.png"]);
@@ -2694,11 +2697,11 @@ describe("scaffolding check", () => {
     const pkg = readPackage(dir);
     write(dir, {
       "package.json": `${JSON.stringify(pkg, null, 2)}\n`,
-      "eslint.config.js": `export { default } from "${join(import.meta.dir, "..", "config", "eslint.js")}";\n`,
+      "eslint.config.js": `export { default } from "${join(import.meta.dirname, "..", "config", "eslint.js")}";\n`,
       "stylelint.config.js": 'export default { rules: { "color-named": "never" } };\n',
       "ok.css": "a {\n  color: #f00;\n}\n",
     });
-    symlinkSync(join(import.meta.dir, "..", "node_modules"), join(dir, "node_modules"));
+    symlinkSync(join(import.meta.dirname, "..", "node_modules"), join(dir, "node_modules"));
     const r = run(dir, "scaffolding", ["check"], { CHECK_LOCK: join(dir, ".lock") });
     expect(r.out).not.toContain("vendor/inner");
     expect(r.code).toBe(0);
@@ -2824,7 +2827,7 @@ describe("scaffolding check", () => {
         CHECK_LOCK: join(temp(), "lock"),
         REFS_LOG: refs,
       };
-      const hooks = join(import.meta.dir, "..", "template/.githooks");
+      const hooks = join(import.meta.dirname, "..", "template/.githooks");
       const commit = (cwd: string, files: Record<string, string>) => {
         write(cwd, files);
         sh(cwd, ["add", ...Object.keys(files)]);
@@ -2904,7 +2907,7 @@ describe("scaffolding check", () => {
       sh(dir, ["worktree", "add", "-q", "--detach", tree]);
       mkdirSync(join(tree, "node_modules"));
       const log = join(temp(), "env");
-      const hooks = join(import.meta.dir, "..", "template/.githooks");
+      const hooks = join(import.meta.dirname, "..", "template/.githooks");
       const push = spawnSync(
         "git",
         ["-c", `core.hooksPath=${hooks}`, "push", "-q", remote, "HEAD:refs/heads/main"],
@@ -3059,7 +3062,7 @@ describe("scaffolding check", () => {
   test("a package path holding a space runs every bin step", () => {
     const home = join(temp(), "with space");
     for (const folder of ["bin", "lib", "config", "template/.githooks"])
-      cpSync(join(import.meta.dir, "..", folder), join(home, folder), { recursive: true });
+      cpSync(join(import.meta.dirname, "..", folder), join(home, folder), { recursive: true });
     const dir = gate({ skip });
     const r = spawnSync(
       process.execPath,
@@ -3179,7 +3182,7 @@ describe("scaffolding check", () => {
         exports: { "./tokens.root.css": "./tokens.root.css" },
       }),
       "node_modules/@hackersandwizards/brand/tokens.root.css": ":root { --color-ink: #000; }\n",
-      "stylelint.config.js": `import styles from "${join(import.meta.dir, "..", "config", "stylelint.js")}";\nexport default { ...styles(), ignoreFiles: ["nested/**"] };\n`,
+      "stylelint.config.js": `import styles from "${join(import.meta.dirname, "..", "config", "stylelint.js")}";\nexport default { ...styles(), ignoreFiles: ["nested/**"] };\n`,
       "src/bad.css": "a { color: var(--color-nope); }\n",
       "nested/.stylelintrc.json": "{}",
       "nested/Odd.astro": "---\nconst x = 1;\n---\n<p>{x}</p>\n",
@@ -3188,7 +3191,7 @@ describe("scaffolding check", () => {
     });
     mkdirSync(join(dir, "node_modules/.bin"));
     symlinkSync(
-      join(import.meta.dir, "..", "node_modules/stylelint/bin/stylelint.mjs"),
+      join(import.meta.dirname, "..", "node_modules/stylelint/bin/stylelint.mjs"),
       join(dir, "node_modules/.bin/stylelint"),
     );
     const r = run(dir, "scaffolding", ["check"], { CHECK_LOCK: join(dir, ".lock") });
@@ -3259,7 +3262,7 @@ describe("scaffolding check", () => {
 });
 
 describe("skeleton install hooks", () => {
-  const hooks = join(import.meta.dir, "..", "template/.githooks");
+  const hooks = join(import.meta.dirname, "..", "template/.githooks");
   // bun's install and the MCP server logged with whether the lock was held; every other call is
   // the real bun's, so check-lock runs as it does in a consumer.
   const fakeBun = () => {
@@ -3607,13 +3610,13 @@ exec "${process.execPath}" "$@"
 });
 
 describe("skeleton SessionStart hook", () => {
-  const hook = join(import.meta.dir, "..", "template/.githooks/session-start");
+  const hook = join(import.meta.dirname, "..", "template/.githooks/session-start");
   // A clone of an origin one commit ahead, its install a no-op that logs.
   const clone = () => {
     const origin = repo({ "a.txt": "1\n" });
     const dir = temp();
     spawnSync("git", ["clone", "-q", origin, dir]);
-    cpSync(join(import.meta.dir, "..", "template/.githooks"), join(dir, ".githooks"), {
+    cpSync(join(import.meta.dirname, "..", "template/.githooks"), join(dir, ".githooks"), {
       recursive: true,
     });
     write(origin, { "a.txt": "2\n" });
@@ -3755,7 +3758,7 @@ describe("shared eslint config", () => {
 
   test("the typed rules go red on a floating promise and an any, and only in the gate", () => {
     const dir = repo({
-      "eslint.config.js": `import base from "${join(import.meta.dir, "..", "config", "eslint.js")}";\nexport default base;\n`,
+      "eslint.config.js": `import base from "${join(import.meta.dirname, "..", "config", "eslint.js")}";\nexport default base;\n`,
       "tsconfig.json": '{ "compilerOptions": { "strict": true }, "include": ["src"] }\n',
       "src/a.ts": "const later = async (): Promise<number> => 1;\nlater();\n",
       "src/b.ts": 'const parsed = JSON.parse("{}");\nexport const n: number = parsed.n;\n',
@@ -3763,7 +3766,7 @@ describe("shared eslint config", () => {
         'const later = async (): Promise<number> => 1;\nexport const n = await later();\nconst parsed: unknown = JSON.parse("{}");\nexport const s = typeof parsed === "string" ? parsed : "";\n',
       "outside.ts": "export const a = 1;\n",
     });
-    const eslint = join(import.meta.dir, "..", "node_modules", ".bin", "eslint");
+    const eslint = join(import.meta.dirname, "..", "node_modules", ".bin", "eslint");
     const r = spawnSync(eslint, ["."], { cwd: dir, encoding: "utf8" });
     expect(r.status).toBe(1);
     const of = (file: string) => r.stdout.split("\n\n").find((part) => part.includes(file)) ?? "";
@@ -3780,7 +3783,7 @@ describe("shared eslint config", () => {
   });
   test("an empty test body or an unused name goes red, a real test stays green", () => {
     const dir = repo({
-      "eslint.config.js": `import base from "${join(import.meta.dir, "..", "config", "eslint.js")}";\nexport default base;\n`,
+      "eslint.config.js": `import base from "${join(import.meta.dirname, "..", "config", "eslint.js")}";\nexport default base;\n`,
       "a.test.ts": 'test("x", () => {});\n',
       "b.test.ts": 'test("x", () => { expect(1).toBe(1); });\n',
       // Every file the other checks count as a test, and a call two members deep.
@@ -3792,7 +3795,7 @@ describe("shared eslint config", () => {
       // Bun's global is known in a script, where typescript-eslint leaves no-undef on.
       "h.mjs": "console.log(Bun.version);\n",
     });
-    const eslint = join(import.meta.dir, "..", "node_modules", ".bin", "eslint");
+    const eslint = join(import.meta.dirname, "..", "node_modules", ".bin", "eslint");
     const r = spawnSync(eslint, ["."], { cwd: dir, encoding: "utf8", env: untyped });
     expect(r.status).toBe(1);
     for (const file of ["a.test.ts", "c.spec.ts", "tests/d.ts", "e2e/e.js", "f.test.ts", "g.ts"])
@@ -3804,14 +3807,14 @@ describe("shared eslint config", () => {
   test("a submodule's files and a dist folder at any depth are not linted", () => {
     const unused = "const unusedThing = 1;\nexport {};\n";
     const dir = repo({
-      "eslint.config.js": `import base from "${join(import.meta.dir, "..", "config", "eslint.js")}";\nexport default base;\n`,
+      "eslint.config.js": `import base from "${join(import.meta.dirname, "..", "config", "eslint.js")}";\nexport default base;\n`,
       // A name may hold a space.
       ".gitmodules": '[submodule "vendor sub"]\n\tpath = vendor/sub\n\turl = ../sub.git\n',
       "vendor/sub/a.ts": unused,
       "packages/web/dist/b.js": unused,
       "c.ts": unused,
     });
-    const eslint = join(import.meta.dir, "..", "node_modules", ".bin", "eslint");
+    const eslint = join(import.meta.dirname, "..", "node_modules", ".bin", "eslint");
     const r = spawnSync(eslint, ["."], { cwd: dir, encoding: "utf8", env: untyped });
     expect(r.stdout).toContain("c.ts");
     expect(r.stdout).not.toContain("vendor/sub");
@@ -3820,13 +3823,13 @@ describe("shared eslint config", () => {
 
   test("expect().rejects and .resolves go red in a test; rejection() gives the error's text", async () => {
     const dir = repo({
-      "eslint.config.js": `import base from "${join(import.meta.dir, "..", "config", "eslint.js")}";\nexport default base;\n`,
+      "eslint.config.js": `import base from "${join(import.meta.dirname, "..", "config", "eslint.js")}";\nexport default base;\n`,
       "a.test.ts": 'test("x", async () => { await expect(Promise.reject(1)).rejects.toBe(1); });\n',
       "b.test.ts":
         'test("x", async () => { await expect(Promise.resolve(1)).resolves.not.toBe(2); });\n',
       "c.test.ts": 'test("x", async () => { expect(await Promise.resolve(1)).toBe(1); });\n',
     });
-    const eslint = join(import.meta.dir, "..", "node_modules", ".bin", "eslint");
+    const eslint = join(import.meta.dirname, "..", "node_modules", ".bin", "eslint");
     const r = spawnSync(eslint, ["."], { cwd: dir, encoding: "utf8", env: untyped });
     expect(r.stdout).toContain("a.test.ts");
     expect(r.stdout).toContain("b.test.ts");
@@ -3852,11 +3855,11 @@ describe("shared eslint config", () => {
     // directory, where an isolated install of the consumer holds none.
     const dir = temp();
     write(dir, {
-      "eslint.config.js": `export { default } from "${join(import.meta.dir, "..", "config", "eslint-astro.js")}";\n`,
+      "eslint.config.js": `export { default } from "${join(import.meta.dirname, "..", "config", "eslint-astro.js")}";\n`,
       "a.astro":
         "---\nconst a: number = 1;\n---\n<p>{a}</p>\n<script>\n  const b: number = 2;\n  console.log(b);\n</script>\n",
     });
-    const eslint = join(import.meta.dir, "..", "node_modules", ".bin", "eslint");
+    const eslint = join(import.meta.dirname, "..", "node_modules", ".bin", "eslint");
     const r = spawnSync(eslint, ["a.astro"], { cwd: dir, encoding: "utf8" });
     expect(r.stdout + r.stderr).toBe("");
     expect(r.status).toBe(0);
@@ -3882,15 +3885,15 @@ describe("catalog", () => {
   // format never read, so a stopped run's output reaches neither them nor the next run. Its
   // configs import ../../../catalog, which the link beside the copy keeps.
   let fixture = "";
-  const astro = join(import.meta.dir, "..", "node_modules", ".bin", "astro");
+  const astro = join(import.meta.dirname, "..", "node_modules", ".bin", "astro");
   beforeAll(() => {
     const work = temp(cache);
     fixture = join(work, "test", "fixture");
-    const source = join(import.meta.dir, "fixture");
+    const source = join(import.meta.dirname, "fixture");
     const own = ["ls-files", "-z", "--cached", "--others", "--exclude-standard"];
     for (const file of spawnSync("git", own, { cwd: source, encoding: "utf8" }).stdout.split("\0"))
       if (file) cpSync(join(source, file), join(fixture, file));
-    symlinkSync(join(import.meta.dir, "..", "catalog"), join(work, "catalog"));
+    symlinkSync(join(import.meta.dirname, "..", "catalog"), join(work, "catalog"));
     // The package the fixture's homeCss names, for every test that builds or serves the fixture.
     write(join(fixture, "catalog", "node_modules", "@acme", "ui"), {
       "package.json": JSON.stringify({
@@ -3906,7 +3909,7 @@ describe("catalog", () => {
     write(dirname(left), { "x.js": "a;b  ;\n" });
     const run = (...args: string[]) =>
       spawnSync("bun", ["--bun", ...args, left], {
-        cwd: join(import.meta.dir, ".."),
+        cwd: join(import.meta.dirname, ".."),
         encoding: "utf8",
       });
     const lint = run("eslint");
@@ -4114,7 +4117,7 @@ describe("catalog", () => {
         ["sh", "-c", `cd ${fixture} && ${PREVIEW} --host "$HOST" --port "$PORT"`],
         {
           env: {
-            PATH: `${join(import.meta.dir, "..", "node_modules", ".bin")}:${process.env.PATH}`,
+            PATH: `${join(import.meta.dirname, "..", "node_modules", ".bin")}:${process.env.PATH}`,
           },
         },
       );
@@ -4296,9 +4299,11 @@ describe("catalog", () => {
       const bar = barOf(state);
       // A state's page carries the header above the bar, the current item marked as the place, not
       // the page.
-      expect(bar).toStartWith(
-        '<div data-hw-catalog-top><header class="fx-header"><a href="/">Fx</a><div class="hw-header-nav hw-catalog-nav"><nav class="hw-header-nav" aria-label="Main" data-hw-catalogs><a class="hw-header-link" href="/">Site</a><a class="hw-header-link" href="/catalog/" aria-current="true">Fx</a><a class="hw-header-link" href="https://example.com/other/">Other</a><a class="hw-header-link" href="//example.com/far/">Far</a></nav></div></header></div><nav class="hw-catalog-bar"',
-      );
+      expect(
+        bar.startsWith(
+          '<div data-hw-catalog-top><header class="fx-header"><a href="/">Fx</a><div class="hw-header-nav hw-catalog-nav"><nav class="hw-header-nav" aria-label="Main" data-hw-catalogs><a class="hw-header-link" href="/">Site</a><a class="hw-header-link" href="/catalog/" aria-current="true">Fx</a><a class="hw-header-link" href="https://example.com/other/">Other</a><a class="hw-header-link" href="//example.com/far/">Far</a></nav></div></header></div><nav class="hw-catalog-bar"',
+        ),
+      ).toBe(true);
       expect(bar).toContain('<nav class="hw-catalog-bar" aria-label="Catalog">');
       expect(bar).toContain('<a href="/catalog/"><span aria-hidden="true">');
       expect(bar).toMatch(/Parts \/ <strong>Box parts<\/strong>/);
@@ -4828,11 +4833,12 @@ describe("catalog", () => {
       writeFileSync(join(src, "pages", "catalog", "index.astro"), "<p>site catalog page</p>\n");
       // ASTRO_DEV_BACKGROUND=1, as the dev script in docs/catalog.md: under an agent astro dev otherwise moves
       // into the background and resolves --root from inside the folder.
+      // Astro disables its dev server middleware when the child inherits VITEST from the worker.
       const server = await serve(
         [
           "sh",
           "-c",
-          `cd '${fixture}' && exec '${astro}' dev --root catalog --base /fx --host $HOST --port $PORT`,
+          `unset VITEST && cd '${fixture}' && exec '${astro}' dev --root catalog --base /fx --host $HOST --port $PORT`,
         ],
         { env: { ASTRO_DEV_BACKGROUND: "1" }, timeoutMs: 30_000 },
       );
@@ -4906,7 +4912,7 @@ describe("catalog", () => {
           `window.addEventListener("keydown", (e) => e.preventDefault(), { once: true }); document.dispatchEvent(new KeyboardEvent("keydown", { key: "ArrowRight", bubbles: true, cancelable: true }))`,
         );
         await new Promise((r) => setTimeout(r, 500));
-        expect(String(await evaluate("location.pathname"))).toEndWith("/one/");
+        expect(String(await evaluate("location.pathname")).endsWith("/one/")).toBe(true);
         // The right arrow key steps to the next state.
         await evaluate(
           `document.dispatchEvent(new KeyboardEvent("keydown", { key: "ArrowRight", bubbles: true }))`,
@@ -4927,7 +4933,7 @@ describe("catalog", () => {
     async () => {
       const { renderCatalog } = await import("../catalog/render.ts");
       const shellCss = brandFallbacks(
-        readFileSync(join(import.meta.dir, "..", "catalog", "catalog.css"), "utf8"),
+        readFileSync(join(import.meta.dirname, "..", "catalog", "catalog.css"), "utf8"),
         BRAND_TOKENS,
       );
       // An even tile marks a full-width wrapper of its own ground around a smaller box, an odd one a
@@ -5064,7 +5070,7 @@ describe("catalog", () => {
     async () => {
       const { renderCatalog } = await import("../catalog/render.ts");
       const shellCss = brandFallbacks(
-        readFileSync(join(import.meta.dir, "..", "catalog", "catalog.css"), "utf8"),
+        readFileSync(join(import.meta.dirname, "..", "catalog", "catalog.css"), "utf8"),
         BRAND_TOKENS,
       );
       const html = `<!doctype html><html><head><style>${shellCss}</style></head><body>${renderCatalog(
@@ -5126,7 +5132,7 @@ describe("catalog", () => {
     async () => {
       const { renderCatalog } = await import("../catalog/render.ts");
       const shellCss = brandFallbacks(
-        readFileSync(join(import.meta.dir, "..", "catalog", "catalog.css"), "utf8"),
+        readFileSync(join(import.meta.dirname, "..", "catalog", "catalog.css"), "utf8"),
         BRAND_TOKENS,
       );
       const parts = [
@@ -5200,7 +5206,7 @@ describe("catalog", () => {
     async () => {
       const { renderCatalog } = await import("../catalog/render.ts");
       const shellCss = brandFallbacks(
-        readFileSync(join(import.meta.dir, "..", "catalog", "catalog.css"), "utf8"),
+        readFileSync(join(import.meta.dirname, "..", "catalog", "catalog.css"), "utf8"),
         BRAND_TOKENS,
       );
       const part =
@@ -5376,13 +5382,13 @@ describe("catalog", () => {
 
 describe("shared prettier config", () => {
   test("an .astro file is formatted, its plugin found from the package, not the repository", () => {
-    const config = join(import.meta.dir, "..", "config", "prettier.js");
+    const config = join(import.meta.dirname, "..", "config", "prettier.js");
     const dir = temp();
     write(dir, {
       "package.json": JSON.stringify({ prettier: config }),
       "A.astro": '---\nconst a=1\n---\n<div   class="x">{a}</div>\n',
     });
-    const prettier = join(import.meta.dir, "..", "node_modules", ".bin", "prettier");
+    const prettier = join(import.meta.dirname, "..", "node_modules", ".bin", "prettier");
     const r = spawnSync(prettier, ["--check", "--ignore-unknown", "A.astro"], {
       cwd: dir,
       encoding: "utf8",
@@ -5394,7 +5400,7 @@ describe("shared prettier config", () => {
 
 describe("shared stylelint config", () => {
   test("a custom property brand and the repository do not define goes red", () => {
-    const config = join(import.meta.dir, "..", "config", "stylelint.js");
+    const config = join(import.meta.dirname, "..", "config", "stylelint.js");
     const dir = repo({
       "package.json": JSON.stringify({ name: "fx", type: "module" }),
       "node_modules/@hackersandwizards/brand/package.json": JSON.stringify({
@@ -5407,7 +5413,7 @@ describe("shared stylelint config", () => {
       "src/ok.css": "a { color: var(--color-ink); margin: var(--own-gap); }\n",
       "src/bad.css": "a { color: var(--color-nope); }\n",
     });
-    const stylelint = join(import.meta.dir, "..", "node_modules", ".bin", "stylelint");
+    const stylelint = join(import.meta.dirname, "..", "node_modules", ".bin", "stylelint");
     const r = spawnSync(stylelint, ["src/*.css"], { cwd: dir, encoding: "utf8" });
     expect(r.status).toBe(2);
     const out = `${r.stdout}${r.stderr}`;
@@ -5430,7 +5436,7 @@ describe("shared stylelint config", () => {
   });
 
   test("a submodule's files are not linted", () => {
-    const config = join(import.meta.dir, "..", "config", "stylelint.js");
+    const config = join(import.meta.dirname, "..", "config", "stylelint.js");
     const dir = repo({
       "package.json": JSON.stringify({ name: "fx", type: "module" }),
       "node_modules/@hackersandwizards/brand/package.json": JSON.stringify({
@@ -5442,7 +5448,7 @@ describe("shared stylelint config", () => {
       "sub/a.css": "a { color: var(--color-nope); }\n",
       "b.css": "a { color: var(--color-nope); }\n",
     });
-    const stylelint = join(import.meta.dir, "..", "node_modules", ".bin", "stylelint");
+    const stylelint = join(import.meta.dirname, "..", "node_modules", ".bin", "stylelint");
     const r = spawnSync(stylelint, ["**/*.css"], { cwd: dir, encoding: "utf8" });
     const out = `${r.stdout}${r.stderr}`;
     expect(out).toContain("b.css");
@@ -5512,7 +5518,7 @@ describe("check-staged", () => {
     write(dir, { "--no-config.ts": "export {};\n" });
     sh(dir, ["add", "--", "--no-config.ts"]);
     run(dir, "check-staged");
-    expect(readFileSync(join(dir, "args.txt"), "utf8")).toEndWith("--\n--no-config.ts\n");
+    expect(readFileSync(join(dir, "args.txt"), "utf8").endsWith("--\n--no-config.ts\n")).toBe(true);
   });
 
   test("eslint runs without the typed rules, which the gate's lint step holds", () => {
@@ -5612,8 +5618,8 @@ describe("check-staged", () => {
   test(
     "staged CSS and Astro files run stylelint with the repository's config, unless skip.styles",
     () => {
-      const stylelint = join(import.meta.dir, "..", "node_modules/stylelint/bin/stylelint.mjs");
-      const html = join(import.meta.dir, "..", "node_modules/postcss-html/lib/index.js");
+      const stylelint = join(import.meta.dirname, "..", "node_modules/stylelint/bin/stylelint.mjs");
+      const html = join(import.meta.dirname, "..", "node_modules/postcss-html/lib/index.js");
       const skip = { format: "none", lint: "none" };
       const staged = (files: Record<string, string>, styles?: unknown, installed = true) => {
         const dir = repo({
@@ -5702,9 +5708,11 @@ describe("check-staged", () => {
     expect(r.out).toBe("");
     expect(r.code).toBe(0);
     expect(readFileSync(join(dir, "args.log"), "utf8")).not.toMatch(/\bsub\b/);
-    expect(readFileSync(join(dir, "items.log"), "utf8")).toStartWith(
-      `${realpathSync(dir)}/node_modules/.cache/scaffolding/staged-items-`,
-    );
+    expect(
+      readFileSync(join(dir, "items.log"), "utf8").startsWith(
+        `${realpathSync(dir)}/node_modules/.cache/scaffolding/staged-items-`,
+      ),
+    ).toBe(true);
   });
 
   test("a file staged in the old docs/tracking folder runs admin-check too", () => {
@@ -6549,7 +6557,7 @@ describe("chrome-mcp", () => {
     "starts the pinned chrome-devtools MCP server, which opens a page in Chrome for Testing",
     async () => {
       const server = Bun.spawn([process.execPath, "--no-env-file", bin("chrome-mcp")], {
-        cwd: join(import.meta.dir, ".."),
+        cwd: join(import.meta.dirname, ".."),
         stdin: "pipe",
         stdout: "pipe",
         stderr: "ignore",
@@ -6678,7 +6686,7 @@ describe("serve", () => {
   });
 
   test("stderr: true passes the server's stderr through; by default it stays quiet", () => {
-    const lib = JSON.stringify(join(import.meta.dir, "..", "lib", "serve.ts"));
+    const lib = JSON.stringify(join(import.meta.dirname, "..", "lib", "serve.ts"));
     const said = (options: string) =>
       spawnSync(
         process.execPath,
@@ -6710,7 +6718,7 @@ await serve([process.execPath, "-e", "console.error('boot failed: stack'); proce
           process.execPath,
           [
             "-e",
-            `console.log((await import(${JSON.stringify(join(import.meta.dir, "..", "lib", "serve.ts"))})).machineLoad().factor)`,
+            `console.log((await import(${JSON.stringify(join(import.meta.dirname, "..", "lib", "serve.ts"))})).machineLoad().factor)`,
           ],
           { env: { ...process.env, SCAFFOLDING_LOAD: load }, encoding: "utf8" },
         ).stdout,
@@ -6766,7 +6774,7 @@ await serve([process.execPath, "-e", "console.error('boot failed: stack'); proce
           [
             process.execPath,
             "-e",
-            `const s = await (await import(${JSON.stringify(join(import.meta.dir, "..", "lib", "serve.ts"))})).serve(${wrapped}); console.log(await (await fetch(s.url)).text()); ${stopped ? "s.stop();" : "await new Promise(() => {});"}`,
+            `const s = await (await import(${JSON.stringify(join(import.meta.dirname, "..", "lib", "serve.ts"))})).serve(${wrapped}); console.log(await (await fetch(s.url)).text()); ${stopped ? "s.stop();" : "await new Promise(() => {});"}`,
           ],
           { stdout: "pipe" },
         );

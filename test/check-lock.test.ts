@@ -18,7 +18,7 @@ import {
 import { createHash } from "node:crypto";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
-import { afterAll, describe, expect, it } from "bun:test";
+import { afterAll, describe, expect, it } from "vitest";
 import { jsonObject } from "../lib/json.ts";
 
 // A test's own limit stretches with load as the runner's default does: the gate sets
