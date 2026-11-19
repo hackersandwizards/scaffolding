@@ -1173,7 +1173,7 @@ describe("scaffold and check-structure", () => {
       return lines(run(other, "check-structure").out, "check-structure");
     };
     const red = [
-      "[check-structure] package.json: scaffolding.test passes no SCAFFOLDING_TEST_TIMEOUT_MS on: bun test --timeout ${SCAFFOLDING_TEST_TIMEOUT_MS:-5000}, or vitest's testTimeout read from it (test)",
+      "[check-structure] package.json: scaffolding.test passes no SCAFFOLDING_TEST_TIMEOUT_MS on: bun test --timeout ${SCAFFOLDING_TEST_TIMEOUT_MS:-5000}, vitest's testTimeout read from it, or the shared Vitest base (test)",
     ];
     expect(structure({ test: "test" }, { test: "bun test" })).toEqual(red);
     expect(
@@ -1213,6 +1213,20 @@ describe("scaffold and check-structure", () => {
         },
       ),
     ).toEqual([]);
+    for (const config of [
+      'export { default } from "@hackersandwizards/scaffolding/vitest";',
+      'import base from "@hackersandwizards/scaffolding/vitest";\nexport default base;',
+      'import { mergeConfig } from "vitest/config";\nimport base from "@hackersandwizards/scaffolding/vitest";\nexport default mergeConfig(base, { test: { include: ["test/*.ts"] } });',
+    ])
+      expect(structure({ test: "vitest run" }, {}, { "vitest.config.ts": config })).toEqual([]);
+    for (const config of [
+      '// export { default } from "@hackersandwizards/scaffolding/vitest";',
+      "const mention = 'export { default } from \"@hackersandwizards/scaffolding/vitest\";';\nexport default {};",
+      'import base from "@hackersandwizards/scaffolding/vitest";\nexport default {};',
+    ])
+      expect(structure({ test: "vitest run" }, {}, { "vitest.config.ts": config })).toEqual([
+        red[0].replace("(test)", "(vitest run)"),
+      ]);
     // A skipped test step runs nothing to pass it to.
     rmSync(join(other, "vitest.config.ts"));
     expect(structure({ skip: pkg.scaffolding.skip }, {})).toEqual([]);

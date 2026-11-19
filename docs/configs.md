@@ -22,3 +22,66 @@ name, is a file of the repository; any other path with a slash is a package's. T
 without brand installed, so a repository without brand gives `skip.styles` a reason. A property a
 component sets from its markup (a `style` attribute) is read with a fallback,
 `var(--accent, transparent)`.
+
+## Vitest and Stryker
+
+Scaffolding 5.30.0 supplies Vitest 5.1.0 and Stryker core and its Vitest runner at 10.1.1.
+After the release tag is available, update the scaffolding pin in `devDependencies` to
+`git+https://github.com/hackersandwizards/scaffolding.git#v5.30.0`. Remove the direct
+`vitest`, `@stryker-mutator/core` and `@stryker-mutator/vitest-runner` pins where present.
+Keep any coverage provider the repository uses at the version matching Vitest. Run `bun install`
+to refresh the lockfile. The existing test and mutation scripts still run the same commands with
+Bun's hoisted installs. On Node 22, those commands need at least Node 22.12.
+
+### `./vitest`
+
+Use this as the entire root `vitest.config.mjs` when the repository needs only the shared settings.
+
+```js
+export { default } from "@hackersandwizards/scaffolding/vitest";
+```
+
+To keep local settings, replace `export default defineConfig({ … })` with
+`export default mergeConfig(base, { … })` and use these imports.
+
+```js
+import base from "@hackersandwizards/scaffolding/vitest";
+import { mergeConfig } from "vitest/config";
+
+export default mergeConfig(base, {
+  test: { include: ["test/**/*.test.ts"] },
+});
+```
+
+Remove the duplicated timeout calculation and the `testTimeout` and `hookTimeout` properties.
+The base reads both from `SCAFFOLDING_TEST_TIMEOUT_MS` with a 5000 ms fallback. Keep any intentional
+timeout overrides, including project-level limits. It also excludes `**/.stryker-tmp/**` alongside
+Vitest's default exclusions and preserves symlinks in Vite resolution and worker arguments during
+mutation runs. Add local exclusions through `mergeConfig`, which appends them to the base array.
+Remove any duplicate `defaultExclude` spread from the local exclusion list.
+
+### `./stryker`
+
+Replace `stryker.config.json` with `stryker.config.mjs`. Stryker loads a JavaScript default export
+and has no config inheritance field in JSON. Drop the JSON `$schema` line and use this shape with
+the repository's existing mutation globs.
+
+```js
+import base from "@hackersandwizards/scaffolding/stryker";
+
+export default {
+  ...base,
+  mutate: ["src/example.ts"],
+  vitest: { ...base.vitest, configFile: "vitest.mutation.config.mjs" },
+  ignorePatterns: [...base.ignorePatterns, "/dist"],
+};
+```
+
+Keep the `vitest` and `ignorePatterns` overrides only where the repository needs a custom config,
+pool, test selection or additional ignores. When `related` was omitted from the JSON, add
+`related: true` to retain Stryker's original test selection. Keep custom plugins and measured
+concurrency after `...base`. The base sets `vitest.related` to `false`, uses per-test coverage and
+two workers, ignores dotfiles and static mutants, and cleans `.stryker-tmp` after each run.
+It writes the clear-text report to the terminal and the JSON and incremental reports to
+`.stryker-reports/mutation.json` and `.stryker-reports/incremental.json`. Run mutation testing
+with `bun run mutation` on demand.

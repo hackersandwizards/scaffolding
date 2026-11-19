@@ -79,8 +79,9 @@ vitest takes `--testTimeout=${SCAFFOLDING_TEST_TIMEOUT_MS:-5000}` or reads the v
 config. A test that sets its own limit scales it the same way,
 `ms * Number(process.env.SCAFFOLDING_TEST_TIMEOUT_MS || 5000) / 5000`: a fixed 30 s limit timed out
 under load where the default had stretched. Without it every test keeps its 5 s limit however loaded the machine is, so
-`check-structure` goes red where neither `scaffolding.test`, the script it names nor a root
-`vitest.config.*` or `vite.config.*` names `SCAFFOLDING_TEST_TIMEOUT_MS`.
+`check-structure` requires the test command, a script it runs or a root `vitest.config.*` or
+`vite.config.*` to use `SCAFFOLDING_TEST_TIMEOUT_MS`. A config can export the shared Vitest base
+directly or pass it as the first argument to `mergeConfig`. See [Configs](configs.md).
 
 **Environment.** No step sees a variable that only the checkout's `.env` set. Bun loads `.env`
 into every `bun` process it starts, so every bin here starts `bun --no-env-file` through a `#!/bin/sh` line and a second line that is a shell command and a TypeScript comment at once, which also runs under BusyBox `env` (Alpine refuses `env -S`), and the gate and

@@ -218,6 +218,25 @@ for (const [path, keys] of Object.entries(skeleton.entries)) {
       writeFileSync(at(path), prettier ? await prettier.format(text, options) : text);
     });
 }
+function usesSharedVitest(config: string): boolean {
+  const specifier = "@hackersandwizards/scaffolding/vitest";
+  if (!config.includes(specifier)) return false;
+  // Read the static export forms after Bun strips comments and TypeScript syntax.
+  let js: string;
+  try {
+    js = new Bun.Transpiler({ loader: "ts" }).transformSync(config);
+  } catch {
+    return false;
+  }
+  if (/^export \{ default \} from "@hackersandwizards\/scaffolding\/vitest";$/m.test(js))
+    return true;
+  const imported = js.match(
+    /^import ([\w$]+) from "@hackersandwizards\/scaffolding\/vitest";$/m,
+  )?.[1];
+  const used = js.match(/^export default (?:mergeConfig\(([\w$]+),|([\w$]+);$)/m);
+  return imported !== undefined && imported === (used?.[1] ?? used?.[2]);
+}
+
 if (existsSync(at("package.json"))) {
   if (pkg.type !== skeleton.package.type)
     add("package.json", `type must be ${skeleton.package.type}`);
@@ -243,11 +262,14 @@ if (existsSync(at("package.json"))) {
     for (const text of read)
       for (const [, name] of text.matchAll(/\brun\s+(?:--?\S+\s+)*([^\s;&|]+)/g))
         for (const found of script(name)) if (!read.includes(found)) read.push(found);
-    read.push(...configs.map((p) => readFileSync(at(p), "utf8")));
-    if (!read.some((text) => text.includes("SCAFFOLDING_TEST_TIMEOUT_MS")))
+    const configTexts = configs.map((p) => readFileSync(at(p), "utf8"));
+    if (
+      ![...read, ...configTexts].some((text) => text.includes("SCAFFOLDING_TEST_TIMEOUT_MS")) &&
+      !configTexts.some(usesSharedVitest)
+    )
       add(
         "package.json",
-        "scaffolding.test passes no SCAFFOLDING_TEST_TIMEOUT_MS on: bun test --timeout ${SCAFFOLDING_TEST_TIMEOUT_MS:-5000}, or vitest's testTimeout read from it",
+        "scaffolding.test passes no SCAFFOLDING_TEST_TIMEOUT_MS on: bun test --timeout ${SCAFFOLDING_TEST_TIMEOUT_MS:-5000}, vitest's testTimeout read from it, or the shared Vitest base",
         test,
       );
   }
