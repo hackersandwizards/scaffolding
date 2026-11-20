@@ -3869,6 +3869,58 @@ describe("shared eslint config", () => {
     );
     expect(config.processor).toBe("astro/client-side-ts");
   });
+
+  test("the Astro gate lints client scripts using the consumer's TypeScript project", () => {
+    const dir = temp();
+    write(dir, {
+      "eslint.config.js": `import base from "${join(import.meta.dirname, "..", "config", "eslint-astro.js")}";
+export default [...base, {
+  languageOptions: { parserOptions: { tsconfigRootDir: import.meta.dirname } },
+  rules: {
+    "no-restricted-imports": ["error", "./later"],
+    "no-restricted-syntax": ["error", "ImportDeclaration"],
+  },
+}];
+`,
+      "tsconfig.json":
+        '{"compilerOptions":{"strict":true,"module":"ESNext","moduleResolution":"bundler","paths":{"@fixture/*":["./src/*"]}}}\n',
+      "src/later.ts": "export const later = async () => 1;\n",
+      "src/probe.astro": `---
+import { later } from "./later";
+debugger;
+later();
+---
+<script>
+  import { later } from "./later";
+  debugger;
+  later();
+  import { later as aliasedLater } from "@fixture/later";
+  aliasedLater();
+</script>
+`,
+    });
+    const eslint = join(import.meta.dirname, "..", "node_modules", "eslint", "bin", "eslint.js");
+    for (const env of [{ ...process.env, SCAFFOLDING_LINT_UNTYPED: "" }, untyped]) {
+      const run = spawnSync(process.execPath, ["--bun", eslint, "src/probe.astro"], {
+        cwd: dir,
+        encoding: "utf8",
+        env,
+      });
+      expect(run.stderr).toBe("");
+      expect(run.status).toBe(1);
+      expect(run.stdout).toMatch(/2:1 .*no-restricted-imports/);
+      expect(run.stdout).toMatch(/2:1 .*no-restricted-syntax/);
+      expect(run.stdout).toMatch(/3:1 .*no-debugger/);
+      expect(run.stdout).toMatch(/7:3 .*no-restricted-imports/);
+      expect(run.stdout).toMatch(/7:3 .*no-restricted-syntax/);
+      expect(run.stdout).toMatch(/8:3 .*no-debugger/);
+      if (env.SCAFFOLDING_LINT_UNTYPED) expect(run.stdout).not.toContain("no-floating-promises");
+      else {
+        expect(run.stdout).toMatch(/9:3 .*@typescript-eslint\/no-floating-promises/);
+        expect(run.stdout).toMatch(/11:3 .*@typescript-eslint\/no-floating-promises/);
+      }
+    }
+  });
 });
 
 // Stand-ins for brand's tokens.json values the shell's layout reads, as brand v2.4.0 has them.

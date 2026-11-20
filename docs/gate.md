@@ -29,9 +29,10 @@ JSON module import. Each such file sits in a `tsconfig.json`; one in none is red
 found by the project service", so add it to `include`. The step runs without ESLint's cache, whose
 entry for a file would outlive a change to the types it imports, and in one process. `check-staged`
 leaves these rules out, since building the types cost a commit of three files 1.9 s against 0.45 s;
-they go red in the gate and at pre-push. Limit: an `.astro` file is not read with types. In its
-frontmatter every element a callback returns has an unresolved type, which `no-unsafe-return`
-reports, and its `<script>` blocks reach the rules without types.
+they go red in the gate and at pre-push. Extracted Astro `<script>` blocks get the same typed
+rules. The lint parser uses the nearest `tsconfig.json` and resolves relative imports from the
+component's directory. Local ESLint rules can target scripts with `**/*.astro/*.ts`. Astro
+frontmatter uses the untyped rules.
 
 **Cycles.** The `cycles` step fails on a runtime import cycle among the repository's tracked
 `.js` and `.ts` files of every flavour, read with dependency-cruiser through the root
