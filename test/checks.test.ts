@@ -1253,6 +1253,40 @@ describe("scaffold and check-structure", () => {
     expect(out).toContain("core.hooksPath must be .githooks");
   });
 
+  test("Stryker repositories run mutation testing through the capped wrapper", () => {
+    const other = fixture("mutation-wrapper", {});
+    const pkg = scaffolded(other);
+    const check = (mutation?: string, devDependencies = pkg.devDependencies) => {
+      write(other, {
+        "package.json": JSON.stringify({
+          ...pkg,
+          devDependencies,
+          scripts: { ...pkg.scripts, mutation },
+        }),
+      });
+      const { code, out } = run(other, "check-structure");
+      return { code, findings: lines(out, "check-structure") };
+    };
+    const red = {
+      code: 1,
+      findings: [
+        '[check-structure] package.json: set scripts.mutation to "mutation": "scaffolding-mutation"',
+      ],
+    };
+    const green = { code: 0, findings: [] };
+    expect(check()).toEqual(green);
+    expect(check(undefined, { ...pkg.devDependencies, "@stryker-mutator/core": "10.1.1" })).toEqual(
+      red,
+    );
+    write(other, { "stryker.config.mjs": "export default {};\n" });
+    expect(check("stryker run")).toEqual(red);
+    expect(check("echo scaffolding-mutation")).toEqual(red);
+    expect(check("scaffolding-mutation")).toEqual(green);
+    expect(check("BUN_OPTIONS='--preload vitest/node' bun --bun scaffolding-mutation")).toEqual(
+      green,
+    );
+  });
+
   test("the tests pass the gate's SCAFFOLDING_TEST_TIMEOUT_MS on, in the command, its script or a vitest config", () => {
     const other = join(parent, "timeout");
     run(parent, "scaffold", ["timeout", "--catalog-in", "x", "--admin-in", "x"]);

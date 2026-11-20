@@ -254,6 +254,17 @@ function usesSharedVitest(config: string): boolean {
   return imported !== undefined && imported === (used?.[1] ?? used?.[2]);
 }
 
+function runsMutationWrapper(script: unknown): boolean {
+  if (typeof script !== "string") return false;
+  const command = script.match(
+    /^\s*(?:env\s+)?(?:[a-zA-Z_]\w*=(?:'[^']*'|"[^"]*"|[^\s'";&|<>])*\s+)*(?:bun\s+(?:(?:run|--bun|--no-env-file)\s+)*)?(['"]?)([^\s'";&|<>]+)\1(?=$|[\s;&|<>])/,
+  )?.[2];
+  return (
+    command === "scaffolding-mutation" ||
+    (root === home && command === own.bin["scaffolding-mutation"])
+  );
+}
+
 if (existsSync(at("package.json"))) {
   if (pkg.type !== skeleton.package.type)
     add("package.json", `type must be ${skeleton.package.type}`);
@@ -265,6 +276,13 @@ if (existsSync(at("package.json"))) {
   const scripts = [...skeleton.package.scripts, ...(surface ? skeleton.catalog.scripts : [])];
   for (const script of scripts)
     if (!pkg.scripts?.[script]) add("package.json", `script ${script} missing`, script);
+  const hasStryker =
+    [pkg.dependencies, pkg.devDependencies, pkg.optionalDependencies, pkg.peerDependencies].some(
+      (deps) =>
+        isObject(deps) && Object.keys(deps).some((name) => name.startsWith("@stryker-mutator/")),
+    ) || listFiles(root, false).some((path) => /^stryker\.config\..+/.test(basename(path)));
+  if (hasStryker && !runsMutationWrapper(pkg.scripts?.mutation))
+    add("package.json", 'set scripts.mutation to "mutation": "scaffolding-mutation"');
   // The gate stretches a test's limit under load only through this variable, and no runner reads it
   // unasked: bun takes it as a flag, vitest from its config.
   const test = pkg.scaffolding?.test;
