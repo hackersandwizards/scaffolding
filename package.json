@@ -129,6 +129,9 @@
     "check": [],
     "typecheck": "tsc --noEmit",
     "test": "test",
+    "fullOnly": {
+      "test": "the integration suite builds a catalog and launches Chrome"
+    },
     "skip": {
       "catalog": "no surface: the package ships the catalog shell and has no catalog of its own",
       "styles": "brand is not installed here, so its token file is not there to read; the shell's CSS reads brand's names by rule",

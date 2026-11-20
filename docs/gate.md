@@ -50,30 +50,68 @@ The gate and pre-push hook run the typed rules.
 module neither imports back from; the step reads no allow list. Limits: an `.astro` file is not
 read, so a cycle through one passes, and a submodule is its own repository's to check.
 
-**Changed paths.** `scaffolding check --changed` (`bun run check --changed`) runs install and the
-quick shared steps, and of `test`, `catalog` and the repository's own steps only those that
-`scaffolding.changed` maps a changed path to: a path glob to the steps a change there needs. The
-changed paths are those of the ranges given (`--changed <from>..<to>...`, the commits reachable from
-`<to>` and not from `<from>`), else the commits not yet on the upstream, the staged and unstaged
-changes and the untracked files. Each step it leaves out prints `skipped <step>: no changed path
-maps to it`. `.claude/rules/**` and a skill's Markdown and YAML (`.claude/skills/**/*.md`,
-`*.yaml`, `*.yml`) map to no step beyond the quick ones unless the repository's own glob matches
-them; a skill's code and data map to nothing, since a repository's own checks may read them. The
-whole gate runs, saying why, where a path matches no glob, where it is `package.json`, `bun.lock`,
-`bunfig.toml` or a config every step reads (`tsconfig*.json`, `eslint.config.*`, `.oxlintrc.json`,
-`prettier.config.*`, `.prettierrc*`, `.prettierignore`, `stylelint.config.*`, `astro.config.*`),
-where a range starts a new branch (`<from>` all zeros) or at a commit the clone lacks, and where git
-cannot list the changes. A step the map names that the gate lacks, and a value that is no list,
-is red on every run. The pre-push hook runs `--changed` over each pushed branch's range ([Hooks and
-CI](hooks.md)), so a push counts only its own commits, never another session's file in the working
-tree, while every step still reads the working tree.
+## Changed paths
+
+`scaffolding check --changed` (`bun run check --changed`) always runs frozen install, then
+each enabled step among format, structure, coupling, spaces, confidential, licenses and admin.
+Paths are repository-relative, case-sensitive Bun globs. Every match adds its steps.
+
+| Default paths                                                                                                                         | Additional steps                              |
+| ------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------- |
+| `**/*.{js,jsx,cjs,mjs,ts,tsx,cts,mts,astro,mdx}`                                                                                      | typecheck, lint, oxlint, cycles, test         |
+| `**/*.{astro,mdx}`                                                                                                                    | styles                                        |
+| `**/*.{css,scss,sass,less}`                                                                                                           | styles, test                                  |
+| `{src,app,lib,bin,components,pages,catalog,site,talks,scripts,test,tests,fixtures,data,content,public,assets,e2e}/**`                 | typecheck, lint, oxlint, styles, cycles, test |
+| `docs/**/*.{md,txt}`, `{README,CONTRIBUTING,SECURITY,CLAUDE,AGENTS}.md`, `.claude/rules/**/*.md`, `.claude/skills/**/*.{md,yaml,yml}` | Always-run steps only                         |
+
+An unmatched path or a path below selects all enabled fast steps.
+
+- `**/package.json`
+- `**/{bun.lock,bun.lockb,package-lock.json,pnpm-lock.yaml,yarn.lock,bunfig.toml,.npmrc}`
+- `**/{tsconfig*.json,eslint.config.*,oxlint.config.*,.oxlintrc*,prettier.config.*,.prettierrc*,.prettierignore,stylelint.config.*,.stylelintrc*,.stylelintignore,astro.config.*,vite.config.*,vitest.config.*,playwright*.config.*}`
+- `.gitmodules`, `.githooks/**`, `.github/workflows/**`, `.gitlab-ci.yml`
+
+The pre-push hook passes every pushed branch's range as `--changed <from>..<to>...`. The gate
+unions the paths across ranges, including both paths of a rename and the old path of a deletion.
+A new branch, unreadable range, non-fast-forward update or failed Git enumeration selects all fast
+steps and prints the reason. Without explicit ranges, the gate compares the working tree to the
+upstream merge base, or to `HEAD` without an upstream, and includes untracked files. Each selected
+step still checks the working tree. Astro lint also selects the enabled typecheck that generates
+its content types and waits for it.
+
+### package.json fields
+
+`scaffolding.changed` adds paths and steps to the default map. Every entry takes a relative glob
+and a non-empty list of registered gate steps. A local path can match only your map. A
+`check:<what>` in `scaffolding.check` runs on any path until you name it in `scaffolding.changed`.
+Once scoped, it runs where a local glob selects it or when the gate falls back to every fast step.
+Map dependent local steps to the same paths if they need fresh output from each other.
+
+`scaffolding.fullOnly` maps `test` and registered `check:<what>` steps to non-blank reasons.
+The shared `catalog` build is always full-only. The gate validates both fields in either mode.
+An existing path map can still name a full-only step. The changed gate prints each selection,
+skip and deferral with its reason. The full gate runs full-only steps in their usual order.
+
+At the version raise, use the release commit's consumer list to add `scaffolding.fullOnly`
+reasons for suites that launch a browser, build or check generated output. Keep those commands in
+the full gate and keep fast unit commands eligible for path selection. A repository with no
+full-only marks runs every enabled non-catalog step at push on an unmapped path. Recognized paths
+use the table and local map. Config and Git fallbacks also run every eligible fast step.
 
 ```json
-{ "changed": { "docs/**": ["check:refs"], "src/**": ["test", "catalog", "check:markers"] } }
+{
+  "scaffolding": {
+    "test": "test",
+    "check": ["check:refs", "check:preview"],
+    "changed": { "docs/**": ["check:refs"] },
+    "fullOnly": { "check:preview": "builds and checks the preview site" }
+  }
+}
 ```
 
-Where the repository installs `puppeteer-core`, the gate installs the Chrome for Testing build it
-pins right after `bun install`, once, so steps that start Chrome never download it side by side.
+Where the repository installs `puppeteer-core`, the full gate prepares its pinned Chrome for
+Testing just after install. A changed run prepares Chrome if it selects a test or a local command
+that may launch it.
 
 **Output and load.** Each step prints its output and its `ok` or `FAIL` line the moment it ends, and
 the last line names the red steps in the gate's order. A signal to `bun run check` reaches every

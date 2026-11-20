@@ -6,6 +6,7 @@ import { join } from "node:path";
 import { help } from "../lib/help.ts";
 import {
   isReason,
+  isObject,
   readPackage,
   repoRoot,
   styleFiles,
@@ -33,6 +34,7 @@ const KEYS = new Set(
     styles: 0,
     licenses: 0,
     changed: 0,
+    fullOnly: 0,
   } satisfies Record<keyof NonNullable<Package["scaffolding"]>, 0>),
 );
 
@@ -42,7 +44,7 @@ const ranges = args.slice(2);
 if (
   args[0] !== "check" ||
   (!changed && args.length > 1) ||
-  ranges.some((r) => !/^[^.\s]+\.\.[^.\s]+$/.test(r))
+  ranges.some((r) => !/^(?:(?!\.\.)\S)+\.\.(?!\.)(?:(?!\.\.)\S)+$/.test(r))
 ) {
   console.error("usage: scaffolding check [--changed [<from>..<to>...]]");
   process.exit(2);
@@ -53,10 +55,10 @@ await underLock(root, args);
 
 const pkg = readPackage(root);
 const config = pkg.scaffolding ?? {};
-const fail = (message: string): never => {
+function fail(message: string): never {
   console.error(`[scaffolding] ${message}`);
   process.exit(1);
-};
+}
 for (const key of Object.keys(config)) if (!KEYS.has(key)) fail(`unknown key scaffolding.${key}`);
 // The checks that read scaffolding.allow: an entry naming any other is never read.
 const ALLOWS = new Set(["coupling", "confidential", "never-shown", "structure", "spaces"]);
@@ -110,95 +112,138 @@ if (
     "@hackersandwizards/brand is pinned and scaffolding.check runs no check:retired: add it (brand-retired <build folders>), or skip.retired with a reason",
   );
 const skip = { ...config.skip };
+const local = (config.check ?? []).flat();
+const named = new Set([...Object.keys(shared), ...local]);
 for (const [step, reason] of Object.entries(skip)) {
   if (step === "oxlint" || (!(step in shared) && !(step === "retired" && branded)))
     fail(`scaffolding.skip names no shared step: ${step}`);
   if (!isReason(reason)) fail(`scaffolding.skip.${step} has no reason`);
+  named.add(step);
   delete shared[step];
   if (step === "lint") delete shared.oxlint;
 }
 
-// scaffolding.changed maps a path glob to the steps a change there needs. Every step it names
-// exists, so a typo goes red on the whole gate too, not only where --changed would skip it.
-const named = new Set([
-  ...Object.keys(shared),
-  ...Object.keys(skip),
-  ...(config.check ?? []).flat(),
-]);
-for (const [glob, steps] of Object.entries(config.changed ?? {})) {
-  // A string would be read letter by letter, and its step skipped on a green gate.
-  if (!Array.isArray(steps)) fail(`scaffolding.changed["${glob}"] is no list of steps`);
-  for (const step of steps)
-    if (!named.has(step)) fail(`scaffolding.changed["${glob}"] names no step: ${step}`);
+const fullOnly = new Map([["catalog", "builds the catalog"]]);
+if (config.fullOnly !== undefined && !isObject(config.fullOnly))
+  fail("scaffolding.fullOnly must be a map of steps to reasons");
+for (const [step, reason] of Object.entries(config.fullOnly ?? {})) {
+  if (step !== "test" && !(step.startsWith("check:") && local.includes(step)))
+    fail(`scaffolding.fullOnly names no eligible step: ${step}`);
+  if (!isReason(reason)) fail(`scaffolding.fullOnly.${step} has no reason`);
+  fullOnly.set(step, reason);
 }
 
-// --changed runs the quick shared checks and the steps scaffolding.changed maps the changed paths
-// to: those of the ranges given (the pre-push hook passes each pushed branch), else the commits not
-// yet on the upstream, staged and unstaged changes and untracked files. The whole gate runs where a
-// path maps to no step, where it is a file every step reads, where a range starts a new branch or
-// at a commit this clone lacks, and where git cannot list the changes.
-const WHOLE = [
-  "package.json",
-  "bun.lock",
-  "bunfig.toml",
-  "**/tsconfig*.json",
-  "**/eslint.config.*",
-  "**/.oxlintrc.json",
-  "**/oxlint.config.*",
-  "**/prettier.config.*",
-  "**/.prettierrc*",
-  ".prettierignore",
-  "**/stylelint.config.*",
-  "**/astro.config.*",
+function validGlob(pattern: string): boolean {
+  if (
+    !pattern.trim() ||
+    pattern.includes("\0") ||
+    pattern.split("/").some((part) => ["", ".", ".."].includes(part))
+  )
+    return false;
+  const outsideClasses = pattern.replace(/\\[^\n]|\[[^\]]+\]/g, "");
+  if (/[[\]\\]/.test(outsideClasses)) return false;
+  let depth = 0;
+  for (const char of outsideClasses) {
+    if (char === "{") depth++;
+    if (char === "}" && --depth < 0) return false;
+  }
+  return depth === 0;
+}
+
+if (config.changed !== undefined && !isObject(config.changed))
+  fail("scaffolding.changed must be a map of paths to steps");
+const mappings = Object.entries(config.changed ?? {}).map(([glob, steps]) => {
+  if (!validGlob(glob)) fail(`scaffolding.changed["${glob}"] is no repository-relative glob`);
+  if (!Array.isArray(steps)) fail(`scaffolding.changed["${glob}"] is no list of steps`);
+  if (!steps.length) fail(`scaffolding.changed["${glob}"] is an empty list of steps`);
+  for (const step of steps)
+    if (!named.has(step)) fail(`scaffolding.changed["${glob}"] names no step: ${step}`);
+  return { glob: new Bun.Glob(glob), steps };
+});
+
+const always = ["format", "structure", "coupling", "spaces", "confidential", "licenses", "admin"];
+const source = ["typecheck", "lint", "oxlint", "cycles", "test"];
+const defaults = [
+  { glob: new Bun.Glob("**/*.{js,jsx,cjs,mjs,ts,tsx,cts,mts,astro,mdx}"), steps: source },
+  { glob: new Bun.Glob("**/*.{astro,mdx,css,scss,sass,less}"), steps: ["styles", "test"] },
+  {
+    glob: new Bun.Glob(
+      "{src,app,lib,bin,components,pages,catalog,site,talks,scripts,test,tests,fixtures,data,content,public,assets,e2e}/**",
+    ),
+    steps: [...source, "styles"],
+  },
+  { glob: new Bun.Glob("docs/**/*.{md,txt}"), steps: [] },
+  { glob: new Bun.Glob("{README,CONTRIBUTING,SECURITY,CLAUDE,AGENTS}.md"), steps: [] },
+  { glob: new Bun.Glob(".claude/rules/**/*.md"), steps: [] },
+  { glob: new Bun.Glob(".claude/skills/**/*.{md,yaml,yml}"), steps: [] },
 ];
-// The hub's rules and skill prose, which no step but the quick shared ones reads. Skill code and
-// data stay unmapped: a repository's own checks may read them, such as brand-colours a skill's JSON.
-const QUICK = [".claude/rules/**", ".claude/skills/**/*.md", ".claude/skills/**/*.{yaml,yml}"];
-const selected = changed ? changedSteps() : undefined;
-function changedSteps(): Set<string> | undefined {
-  const whole = (why: string) =>
-    void console.error(`[scaffolding] --changed: ${why}: the whole gate runs`);
+const crossCutting = [
+  "**/package.json",
+  "**/{bun.lock,bun.lockb,package-lock.json,pnpm-lock.yaml,yarn.lock,bunfig.toml,.npmrc}",
+  "**/{tsconfig*.json,eslint.config.*,oxlint.config.*,.oxlintrc*,prettier.config.*,.prettierrc*,.prettierignore,stylelint.config.*,.stylelintrc*,.stylelintignore,astro.config.*,vite.config.*,vitest.config.*,playwright*.config.*}",
+  ".gitmodules",
+  ".githooks/**",
+  ".github/workflows/**",
+  ".gitlab-ci.yml",
+].map((glob) => new Bun.Glob(glob));
+
+function changedSteps(): Map<string, string> {
+  const fallback = (why: string) => {
+    console.error(`[scaffolding] --changed: ${why}: all fast steps run`);
+    return new Map([...named].map((step) => [step, why]));
+  };
   const git = (...a: string[]) => spawnSync("git", a, { cwd: root, encoding: "utf8" });
+  const diffPaths = (...revs: string[]) =>
+    git("diff", "--name-only", "--no-renames", "--ignore-submodules=none", "-z", ...revs, "--");
   const lists: string[] = [];
   let since = "HEAD";
   if (ranges.length) {
     for (const range of ranges) {
       const [from, to] = range.split("..") as [string, string];
-      if (/^0+$/.test(from)) return whole(`${range} starts a new branch`);
-      const base = git("merge-base", from, to);
-      if (base.status) return whole(`${range} starts at a commit this clone lacks`);
-      const diff = git("diff", "--name-only", "--no-renames", "-z", base.stdout.trim(), to);
-      if (diff.status) return whole("git could not list the changes");
+      if (/^0+$/.test(from)) return fallback(`${range} starts a new branch`);
+      const tip = (rev: string) =>
+        git("rev-parse", "--verify", "--end-of-options", `${rev}^{commit}`);
+      const old = tip(from);
+      const next = tip(to);
+      if (old.status !== 0) return fallback(`${range} starts at a commit this clone lacks`);
+      if (next.status !== 0) return fallback(`${range} ends at a commit this clone lacks`);
+      const base = old.stdout.trim();
+      const head = next.stdout.trim();
+      const ancestor = git("merge-base", "--is-ancestor", base, head);
+      if (ancestor.status !== 0) return fallback(`${range} is not a verifiable fast-forward`);
+      const diff = diffPaths(base, head);
+      if (diff.status !== 0) return fallback("git could not list the changes");
       lists.push(diff.stdout);
     }
     since = ranges.map((r) => r.split("..")[0]!.slice(0, 9)).join(", ");
   } else {
     const upstream = git("rev-parse", "--verify", "-q", "@{upstream}").stdout.trim();
     const base = upstream ? git("merge-base", upstream, "HEAD").stdout.trim() : "HEAD";
-    const diff = git("diff", "--name-only", "--no-renames", "-z", base);
+    const diff = diffPaths(base);
     const untracked = git("ls-files", "--others", "--exclude-standard", "-z");
-    if (!base || diff.status || untracked.status) return whole("git could not list the changes");
+    if (!base || diff.status !== 0 || untracked.status !== 0)
+      return fallback("git could not list the changes");
     lists.push(diff.stdout, untracked.stdout);
     if (upstream) since = upstream.slice(0, 9);
   }
   const paths = [...new Set(lists.join("").split("\0").filter(Boolean))];
-  const steps = new Set<string>();
-  const match = (path: string) => (g: string) => new Bun.Glob(g).match(path);
+  const steps = new Map(always.map((step) => [step, "runs on every changed check"]));
+  const scoped = new Set(mappings.flatMap(({ steps }) => steps));
+  for (const step of local)
+    if (step.startsWith("check:") && !scoped.has(step)) steps.set(step, "no path scope configured");
+  const map = [...defaults, ...mappings];
   for (const path of paths) {
-    if (WHOLE.some(match(path))) return whole(`${path} is read by every step`);
-    const hits = Object.entries(config.changed ?? {}).filter(([g]) => match(path)(g));
-    if (!hits.length && !QUICK.some(match(path)))
-      return whole(`${path} maps to no step in scaffolding.changed`);
-    for (const [, s] of hits) for (const step of s) steps.add(step);
+    if (crossCutting.some((glob) => glob.match(path)))
+      return fallback(`${JSON.stringify(path)} is a shared configuration path`);
+    const hits = map.filter(({ glob }) => glob.match(path));
+    if (!hits.length) return fallback(`${JSON.stringify(path)} matches no path glob`);
+    for (const { steps: matched } of hits)
+      for (const step of matched)
+        if (!steps.has(step)) steps.set(step, `matches ${JSON.stringify(path)}`);
   }
   console.error(`[scaffolding] --changed: ${paths.length} paths since ${since}`);
   return steps;
 }
-const runs = (name: string) => {
-  if (!selected || selected.has(name)) return true;
-  console.error(`[scaffolding] skipped ${name}: no changed path maps to it`);
-  return false;
-};
 
 const { load, cores, factor } = machineLoad();
 // A test runner's per-test limit (bun's and vitest's default 5 s), stretched as serve's wait is;
@@ -218,7 +263,7 @@ const loaded = load > cores;
 const width = loaded ? Math.max(2, Math.floor((cores * cores) / load)) : Infinity;
 if (loaded)
   console.error(
-    `[scaffolding] load ${Math.round(load)} on ${cores} cores: test and catalog run one after another, the repository's steps ${width} at a time`,
+    `[scaffolding] load ${Math.round(load)} on ${cores} cores: ${changed ? "test runs after the other shared steps" : "test and catalog run one after another"}, the repository's steps ${width} at a time`,
   );
 
 const started = performance.now();
@@ -293,15 +338,6 @@ async function group(
   return (await Promise.all(runs.values())).every((r) => r.code === 0);
 }
 
-// Install first: a tree a pin-raising merge left behind gets installed, and a lockfile out of step
-// fails under its own name, not a later step's.
-let ok = await group([["install", "bun install --frozen-lockfile"]]);
-// Steps that found no Chrome for Testing each installed it into the shared cache at once, and the
-// downloads collided; so where the repository pins puppeteer-core its build is installed here once.
-if (ok && !process.env.CHROME_BINARY && existsSync(join(root, "node_modules/puppeteer-core"))) {
-  const { chromeBinary, INSTALL_HINT } = await import("../lib/chrome.ts");
-  if (!chromeBinary()) console.error(`[scaffolding] ${INSTALL_HINT}`);
-}
 // A typecheck of `astro check` and the catalog's `astro build` both run Astro's sync, whose Vite
 // server optimizes dependencies into one folder (node_modules/.astro/vite-sync). On a cache an
 // install invalidated, two at once race on its rename and one fails with ENOTEMPTY, so the catalog
@@ -313,20 +349,65 @@ const typecheck = config.typecheck ?? "";
 const sync = /\bastro\b/.test(
   [typecheck, ...typecheck.split(/\s+/).map((word) => pkg.scripts?.[word])].join(" "),
 );
+const selected = changed ? changedSteps() : undefined;
+if (
+  selected &&
+  sync &&
+  shared.typecheck &&
+  !selected.has("typecheck") &&
+  ((shared.lint && selected.has("lint")) || (shared.oxlint && selected.has("oxlint")))
+)
+  selected.set("typecheck", "Astro lint needs generated types");
+const runs = (name: string) => {
+  if (!selected) return true;
+  const reason = fullOnly.get(name);
+  const picked = selected.get(name);
+  if (reason) console.error(`[scaffolding] deferred ${name}: ${reason}`);
+  else if (picked) console.error(`[scaffolding] selected ${name}: ${picked}`);
+  else console.error(`[scaffolding] skipped ${name}: no changed path maps to it`);
+  return !reason && Boolean(picked);
+};
+if (selected) {
+  console.error("[scaffolding] selected install: runs on every changed check");
+  for (const [step, reason] of Object.entries(skip)) {
+    console.error(`[scaffolding] skipped ${step}: ${String(reason)}`);
+    if (step === "lint") console.error(`[scaffolding] skipped oxlint: ${String(reason)}`);
+  }
+}
+const sharedSteps = Object.entries(shared).filter(([name]) => runs(name));
+const localGroups = (config.check ?? []).map((entry) =>
+  (Array.isArray(entry) ? entry : [entry])
+    .filter(runs)
+    .map((s): [string, string] => [s, script(s)]),
+);
 const quick = (name: string) => name !== "test" && name !== "catalog";
 const order = Object.keys(shared);
+
+// Install first: a tree a pin-raising merge left behind gets installed, and a lockfile out of step
+// fails under its own name, not a later step's.
+let ok = await group([["install", "bun install --frozen-lockfile"]]);
+// An unclassified test or local command may launch Chrome. Prepare it once to avoid concurrent
+// downloads, but a changed run limited to shared static checks cannot reach those commands.
+const mayUseChrome =
+  !selected || sharedSteps.some(([name]) => name === "test") || localGroups.some((g) => g.length);
+if (
+  ok &&
+  mayUseChrome &&
+  !process.env.CHROME_BINARY &&
+  existsSync(join(root, "node_modules/puppeteer-core"))
+) {
+  const { chromeBinary, INSTALL_HINT } = await import("../lib/chrome.ts");
+  if (!chromeBinary()) console.error(`[scaffolding] ${INSTALL_HINT}`);
+}
 if (ok)
   ok = await group(
-    Object.entries(shared).filter(([name]) => quick(name) || runs(name)),
+    sharedSteps,
     sync ? { catalog: "typecheck", lint: "typecheck", oxlint: "typecheck" } : {},
     new Set(Object.keys(shared).filter(quick)),
     1,
   );
-for (const entry of config.check ?? []) {
+for (const steps of localGroups) {
   if (!ok) break;
-  const steps = (Array.isArray(entry) ? entry : [entry])
-    .filter(runs)
-    .map((s): [string, string] => [s, script(s)]);
   order.push(...steps.map(([s]) => s));
   ok = await group(steps);
 }

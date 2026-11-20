@@ -261,6 +261,7 @@ export type Package = {
     styles?: string[];
     licenses?: Record<string, { license?: string; reason?: unknown }>;
     changed?: Record<string, string[]>;
+    fullOnly?: Record<string, unknown>;
   };
   [field: string]: unknown;
 };

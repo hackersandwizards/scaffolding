@@ -2861,7 +2861,7 @@ describe("scaffolding check", () => {
     }
   });
 
-  test("--changed runs the steps the changed paths map to, and the whole gate where one maps to none", () => {
+  test("--changed adds local mappings to the defaults and falls back to every fast step", () => {
     const changed = { "docs/**": ["check:docs"], "src/**": ["check:src"] };
     const dir = gate(
       { skip, changed, check: [["check:docs", "check:src"]] },
@@ -2878,32 +2878,36 @@ describe("scaffolding check", () => {
     // Control: a path no glob maps runs every step.
     write(dir, { "other.txt": "x\n" });
     const unmapped = run(dir, "scaffolding", ["check", "--changed"], lock);
-    expect(unmapped.out).toContain(
-      "other.txt maps to no step in scaffolding.changed: the whole gate runs",
-    );
+    expect(unmapped.out).toContain('"other.txt" matches no path glob: all fast steps run');
     expect(unmapped.out).toContain("src-ran");
-    expect(unmapped.out).not.toContain("skipped");
+    expect(unmapped.out).toContain("selected check:src");
     // A file every step reads runs every step too.
     rmSync(join(dir, "other.txt"));
     write(dir, { "bunfig.toml": "\n" });
     expect(run(dir, "scaffolding", ["check", "--changed"], lock).out).toContain("src-ran");
-    // A string in place of the list is red, on the whole gate too.
-    const word = gate({ skip, changed: { "docs/**": "check:docs" }, check: ["check:docs"] });
-    expect(run(word, "scaffolding", ["check"], lock).out).toContain(
-      'scaffolding.changed["docs/**"] is no list of steps',
-    );
-    // A step the map names that the gate lacks is red, on the whole gate too.
-    const typo = gate({ skip, changed: { "docs/**": ["check:dosc"] }, check: ["check:docs"] });
-    expect(run(typo, "scaffolding", ["check"], lock).out).toContain(
-      'scaffolding.changed["docs/**"] names no step: check:dosc',
-    );
   });
 
-  test("--changed maps the hub's rules and skill prose to the quick steps, unless the repository maps them", () => {
+  test.each([
+    [{ changed: { "docs/**": "check:docs" } }, "is no list of steps"],
+    [{ changed: { "docs/**": [] } }, "is an empty list of steps"],
+    [{ changed: { "docs/**": ["check:dosc"] } }, "names no step: check:dosc"],
+    [{ changed: { "docs/{md": ["check:docs"] } }, "is no repository-relative glob"],
+    [{ fullOnly: { "check:typo": "builds output" } }, "names no eligible step: check:typo"],
+    [{ fullOnly: { "check:docs": " " } }, "scaffolding.fullOnly.check:docs has no reason"],
+  ])("validates path mappings and full-only declarations in both modes (%j)", (config, message) => {
+    const dir = gate({ skip, check: ["check:docs"], ...config });
+    const lock = { CHECK_LOCK: join(temp(), "lock") };
+    for (const args of [["check"], ["check", "--changed"]]) {
+      const result = run(dir, "scaffolding", args, lock);
+      expect(result.out).toContain(message);
+      expect(result.code).toBe(1);
+    }
+  });
+
+  test("--changed runs unscoped local checks on rules and skill prose", () => {
     const lock = { CHECK_LOCK: join(temp(), "lock") };
     const steps = { check: ["check:src"] };
     const scripts = { "check:src": "echo src-ran" };
-    // No map at all: rules and skill prose run only the quick steps.
     const bare = gate({ skip, ...steps }, scripts);
     write(bare, {
       ".claude/rules/r.md": "r\n",
@@ -2911,18 +2915,135 @@ describe("scaffolding check", () => {
       ".claude/skills/s/agents/a.yaml": "a\n",
     });
     const quick = run(bare, "scaffolding", ["check", "--changed"], lock);
-    expect(quick.out).toContain("[scaffolding] skipped check:src: no changed path maps to it");
+    expect(quick.out).toContain("selected check:src: no path scope configured");
+    expect(quick.out).toContain("src-ran");
     expect(quick.code).toBe(0);
-    // Control: skill code maps to nothing, so the whole gate runs.
+    // Skill data outside the default map falls back to the fast gate.
     write(bare, { ".claude/skills/s/x.json": "{}\n" });
     expect(run(bare, "scaffolding", ["check", "--changed"], lock).out).toContain(
-      ".claude/skills/s/x.json maps to no step in scaffolding.changed: the whole gate runs",
+      '".claude/skills/s/x.json" matches no path glob: all fast steps run',
     );
-    // The repository's own glob wins.
     const own = gate({ skip, ...steps, changed: { ".claude/**": ["check:src"] } }, scripts);
     write(own, { ".claude/rules/r.md": "r\n" });
-    expect(run(own, "scaffolding", ["check", "--changed"], lock).out).toContain("src-ran");
+    expect(run(own, "scaffolding", ["check", "--changed"], lock).out).toContain(
+      'selected check:src: matches ".claude/rules/r.md"',
+    );
   });
+
+  test(
+    "--changed selects shared steps across pushed ranges and defers builds",
+    () => {
+      const { lint: _lint, typecheck: _typecheck, test: _test, catalog: _catalog, ...rest } = skip;
+      const dir = gate(
+        {
+          skip: rest,
+          typecheck: "typecheck",
+          test: "test",
+          check: ["check:preview"],
+          changed: { "docs/**": ["check:preview"], "docs/lint.md": ["lint"] },
+          fullOnly: { "check:preview": "builds a preview" },
+        },
+        {
+          eslint: "test -f synced.txt && echo lint-ran #",
+          typecheck: "sleep 0.1; echo astro > synced.txt",
+          test: "echo test-ran",
+          build: "echo catalog-ran",
+          "check:preview": "echo preview-ran",
+        },
+      );
+      install(dir);
+      write(dir, {
+        ".oxlintrc.json": JSON.stringify(oxlintTemplate),
+        "tsconfig.json": '{"include":["src/**/*.ts"]}',
+      });
+      const lock = { CHECK_LOCK: join(temp(), "lock") };
+      const git = (...args: string[]) => {
+        const result = sh(dir, args);
+        expect(result.status, result.stderr.toString()).toBe(0);
+        return result.stdout.toString().trim();
+      };
+      const commit = (...paths: string[]) => {
+        git("add", "--", ...paths);
+        git("commit", "-qm", "fixture", "--", ...paths);
+        return git("rev-parse", "HEAD");
+      };
+      const base = git("rev-parse", "HEAD");
+      write(dir, { "docs/a.md": "a\n" });
+      const docs = commit("docs/a.md");
+      const docsRange = `${base}..${docs}`;
+      const changed = (...ranges: string[]) => {
+        const result = run(dir, "scaffolding", ["check", "--changed", ...ranges], lock);
+        expect(result.code, result.out).toBe(0);
+        expect(result.out).toContain("deferred catalog: builds the catalog");
+        expect(result.out).toContain("deferred check:preview: builds a preview");
+        expect(result.out).not.toMatch(/(?:catalog|preview)-ran/);
+        return result.out;
+      };
+      const prose = changed(docsRange);
+      expect(prose).toContain("skipped lint: no changed path maps to it");
+      expect(prose).toContain("skipped test: no changed path maps to it");
+      expect(prose).not.toMatch(/(?:lint|test)-ran/);
+
+      write(dir, { "docs/lint.md": "lint\n" });
+      const lint = commit("docs/lint.md");
+      const lintOnly = changed(`${docs}..${lint}`);
+      expect(lintOnly).toContain("selected typecheck: Astro lint needs generated types");
+      expect(lintOnly).toContain("lint-ran");
+      expect(lintOnly).not.toContain("test-ran");
+
+      write(dir, { "src/a.ts": "export {};\n", "src/b.ts": "export {};\n" });
+      const source = commit("src/a.ts", "src/b.ts");
+      const union = changed(docsRange, `${lint}..${source}`);
+      expect(union).toContain("3 paths since");
+      expect(union).toContain("lint-ran");
+      expect(union).toContain("test-ran");
+
+      git("mv", "src/a.ts", "docs/renamed.md");
+      git("commit", "-qm", "rename fixture", "--", "src/a.ts", "docs/renamed.md");
+      const rename = git("rev-parse", "HEAD");
+      const moved = changed(`${source}..${rename}`);
+      expect(moved).toContain("2 paths since");
+      expect(moved).toContain('selected lint: matches "src/a.ts"');
+      renameSync(join(dir, "src/b.ts"), join(dir, "node_modules/deleted.ts"));
+      const deleted = commit("src/b.ts");
+      expect(changed(`${rename}..${deleted}`)).toContain('selected test: matches "src/b.ts"');
+
+      write(dir, { "docs/yarn.lock": "", "unmapped.txt": "" });
+      const lockfile = commit("docs/yarn.lock");
+      const unknown = commit("unmapped.txt");
+      const configFallback = changed(`${deleted}..${lockfile}`);
+      expect(configFallback).toContain("is a shared configuration path");
+      expect(configFallback).toContain("test-ran");
+      const unknownFallback = changed(`${lockfile}..${unknown}`);
+      expect(unknownFallback).toContain("matches no path glob");
+      expect(unknownFallback).toContain("test-ran");
+      expect(changed(`${"0".repeat(40)}..${docs}`)).toContain("starts a new branch");
+      expect(changed(`${"1".repeat(40)}..${docs}`)).toContain(
+        "starts at a commit this clone lacks",
+      );
+      expect(changed(`${source}..${docs}`)).toContain("is not a verifiable fast-forward");
+
+      const pkg = readPackage(dir);
+      write(dir, {
+        "package.json": JSON.stringify({
+          ...pkg,
+          scaffolding: {
+            ...pkg.scaffolding,
+            fullOnly: { ...pkg.scaffolding?.fullOnly, test: "launches Chrome" },
+          },
+        }),
+      });
+      const sourceWithMarkedTest = changed(`${lint}..${source}`);
+      expect(sourceWithMarkedTest).toContain("deferred test: launches Chrome");
+      expect(sourceWithMarkedTest).not.toContain("test-ran");
+      const full = run(dir, "scaffolding", ["check"], lock);
+      expect(full.code, full.out).toBe(0);
+      expect(full.out).toContain("test-ran");
+      expect(full.out).toContain("catalog-ran");
+      expect(full.out).toContain("preview-ran");
+    },
+    limit(20_000),
+  );
 
   test(
     "a push runs --changed over each pushed range, and the whole gate for a new branch",
@@ -2930,7 +3051,11 @@ describe("scaffolding check", () => {
       const remote = temp();
       sh(remote, ["init", "-q", "--bare"]);
       const dir = gate(
-        { skip, changed: { "docs/**": ["check:docs"] }, check: [["check:docs", "check:src"]] },
+        {
+          skip,
+          changed: { "docs/**": ["check:docs"], "src/**": ["check:src"] },
+          check: [["check:docs", "check:src"]],
+        },
         {
           check: `bun --no-env-file ${JSON.stringify(bin("scaffolding"))} check`,
           // Keeps the refs it was handed, takes the hook's arguments, and passes.
@@ -2963,7 +3088,7 @@ describe("scaffolding check", () => {
       };
       commit(dir, { "docs/a.md": "a\n" });
       const first = push(dir, "HEAD:refs/heads/main");
-      expect(first.out).toContain("starts a new branch: the whole gate runs");
+      expect(first.out).toContain("starts a new branch: all fast steps run");
       expect(first.out).toContain("src-ran");
       expect(first.code).toBe(0);
       // check-confidential got the refs git handed the hook, line for line.
@@ -2987,15 +3112,13 @@ describe("scaffolding check", () => {
       mkdirSync(join(tree, "node_modules"));
       commit(tree, { "src/a.ts": "export {};\n" });
       const code = push(tree, "HEAD:refs/heads/main");
-      expect(code.out).toContain(
-        "src/a.ts maps to no step in scaffolding.changed: the whole gate runs",
-      );
+      expect(code.out).toContain('selected check:src: matches "src/a.ts"');
       expect(code.out).toContain("src-ran");
       commit(tree, { ".claude/rules/s.md": "s\n" });
       expect(push(tree, "HEAD:refs/heads/main").out).toContain("skipped check:src");
-      // A remote tip this clone lacks runs the whole gate.
+      // A remote tip this clone lacks runs all fast steps.
       const lacks = run(dir, "scaffolding", ["check", "--changed", `${"1".repeat(40)}..HEAD`], env);
-      expect(lacks.out).toContain("starts at a commit this clone lacks: the whole gate runs");
+      expect(lacks.out).toContain("starts at a commit this clone lacks: all fast steps run");
       // Control: a tag carries no branch, and the gate does not run.
       sh(dir, ["tag", "v1"]);
       const tag = push(dir, "refs/tags/v1");
