@@ -2342,6 +2342,16 @@ describe("check-confidential", () => {
       expect(
         both(repo({ "package.json": "{}", ".gitattributes": "*.psd lockable\n", "a.psd": "x" })),
       ).toEqual([3, 1]);
+      const renamed = repo({
+        "package.json": "{}",
+        ".gitattributes": "*.psd lockable\n",
+        "a.psd": "x",
+      });
+      expect(sh(renamed, ["update-ref", "refs/remotes/origin/main", "HEAD"]).status).toBe(0);
+      expect(sh(renamed, ["config", "diff.renames", "true"]).status).toBe(0);
+      expect(sh(renamed, ["mv", "a.psd", "a.txt"]).status).toBe(0);
+      expect(sh(renamed, ["commit", "-qm", "rename", "a.psd", "a.txt"]).status).toBe(0);
+      expect(both(renamed)).toEqual([3, 1]);
       // A merge whose resolution alone changes a lockable path.
       const merged = repo({
         "package.json": "{}",
@@ -2358,7 +2368,7 @@ describe("check-confidential", () => {
       sh(merged, ["commit", "-qam", "m"]);
       expect(both(merged)).toEqual([3, 1]);
       expect(logged()).toBe(
-        "pre-push origin x\n".repeat(3) + "pre-push backup x\n" + "pre-push origin x\n".repeat(3),
+        "pre-push origin x\n".repeat(3) + "pre-push backup x\n" + "pre-push origin x\n".repeat(4),
       );
     },
     limit(20_000),
@@ -5980,20 +5990,50 @@ describe("check-staged", () => {
     expect(run(dir, "check-staged").code).toBe(0);
   });
 
-  test("check:skills reads this commit's paths, deletions included, whatever the shell exports", () => {
+  test("check:skills reads staged paths, including deletions and both sides of renames", () => {
     const dir = repo({
       "package.json": JSON.stringify({
         scaffolding: { private: true, skip: { format: "fixture", lint: "fixture" } },
         scripts: { "check:skills": `printf '%s' "$VALIDATE_SKILLS_PATHS" > scope.txt` },
       }),
       ".claude/gone.md": "x\n",
+      ".claude/old.md": "rename this file\n",
     });
     write(dir, { ".claude/new.md": "y\n", ".claude/half.md": "unstaged\n" });
     sh(dir, ["rm", "-q", ".claude/gone.md"]);
     sh(dir, ["add", ".claude/new.md"]);
+    expect(sh(dir, ["config", "diff.renames", "true"]).status).toBe(0);
+    expect(sh(dir, ["mv", ".claude/old.md", ".claude/renamed.md"]).status).toBe(0);
     const r = run(dir, "check-staged", [], { VALIDATE_SKILLS_PATHS: "elsewhere/x.md" });
     expect(r.code).toBe(0);
-    expect(readFileSync(join(dir, "scope.txt"), "utf8")).toBe(".claude/gone.md\n.claude/new.md");
+    expect(readFileSync(join(dir, "scope.txt"), "utf8").split("\n").sort()).toEqual([
+      ".claude/gone.md",
+      ".claude/new.md",
+      ".claude/old.md",
+      ".claude/renamed.md",
+    ]);
+  });
+
+  test.each([
+    ["package hook", bin("check-staged")],
+    ["standalone hook", join(import.meta.dirname, "../.claude/skills/engineering/check-staged.ts")],
+  ])("%s checks a staged file moved in the working tree from the index", (_, hook) => {
+    const dir = repo({
+      "package.json": JSON.stringify({ scaffolding: { private: true, skip: { lint: "fixture" } } }),
+      "old.md": "before\n",
+    });
+    const prettier = "node_modules/.bin/prettier";
+    write(dir, {
+      [prettier]: '#!/bin/sh\ncase "$*" in *--stdin-filepath*) tee checked.txt;; esac\n',
+      "old.md": "staged\n",
+    });
+    chmodSync(join(dir, prettier), 0o755);
+    expect(sh(dir, ["config", "diff.renames", "true"]).status).toBe(0);
+    expect(sh(dir, ["add", "old.md"]).status).toBe(0);
+    renameSync(join(dir, "old.md"), join(dir, "new.md"));
+    expect(sh(dir, ["add", "-N", "new.md"]).status).toBe(0);
+    expect(spawnSync(process.execPath, ["--no-env-file", hook], { cwd: dir }).status).toBe(0);
+    expect(readFileSync(join(dir, "checked.txt"), "utf8")).toBe("staged\n");
   });
 
   test("a repository naming its validator only validate:skills is refused, not skipped", () => {

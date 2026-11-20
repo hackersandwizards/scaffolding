@@ -84,7 +84,7 @@ if (items && !existsSync("node_modules/.bin/admin-check"))
 
 // spawnSync's default maxBuffer refused a commit past about 1 MB of path names.
 const names = (args: string[]) => {
-  const listed = spawnSync("git", [...args, "--name-only", "-z"], {
+  const listed = spawnSync("git", [...args, "--name-only", "--no-renames", "-z"], {
     encoding: "utf8",
     maxBuffer: Infinity,
   });

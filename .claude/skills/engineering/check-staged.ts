@@ -45,7 +45,7 @@ const listed = spawnSync("git", ["diff", "--cached", "--name-only", "--diff-filt
 if (listed.status !== 0) refuseCommit("git diff --cached failed");
 const staged = listed.stdout.split("\0").filter(Boolean);
 if (staged.length === 0 && !skills) process.exit(0);
-const unstaged = spawnSync("git", ["diff", "--name-only", "-z"], { encoding: "utf8" });
+const unstaged = spawnSync("git", ["diff", "--name-only", "--no-renames", "-z"], { encoding: "utf8" });
 if (unstaged.status !== 0) refuseCommit("git diff failed");
 const differs = new Set(unstaged.stdout.split("\0"));
 const partial = staged.filter((path) => differs.has(path));
