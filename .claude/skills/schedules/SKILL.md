@@ -43,7 +43,9 @@ description: Create, change, rename or review a scheduled task (the desktop app'
 6. Every run ends its report with its outcome, done, deferred or blocked, and the reason for
    anything but done. Check: the task text demands that line.
 7. The model and permission mode live on the registration in the app's `scheduled-tasks.json`, the
-   tool grants in the app, never in the task's `SKILL.md`. Set and change them in the app's edit
+   tool grants in the app, never in the task's `SKILL.md`. A registration whose session only
+   delegates takes Haiku at high effort, one whose session also works itself Fable at low effort.
+   Set and change them in the app's edit
    form: the app rewrites that file from its own store and has dropped a permission mode edited
    there. Create and delete a task through the scheduled-tasks tools: a task directory written by
    hand never fires. In the listing,
