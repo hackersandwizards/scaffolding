@@ -43,10 +43,6 @@ const crossCutting = [
 
 type Mapping = { glob: Bun.Glob; steps: string[] };
 
-export function changedPathList(lists: string[]): string[] {
-  return [...new Set(lists.join("").split("\0").filter(Boolean))];
-}
-
 export const fastSteps = (available: string[], fullOnly: ReadonlyMap<string, string>) =>
   new Set(available.filter((step) => !fullOnly.has(step)));
 

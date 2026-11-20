@@ -7,6 +7,5 @@ import type { ViteUserConfig } from "vitest/config";
 
 expectTypeOf(vitestBase).toEqualTypeOf<ViteUserConfig>();
 expectTypeOf(strykerBase).toEqualTypeOf<PartialStrykerOptions>();
-test.prop([fc.string()])("the property export infers arbitrary types", (value) => {
-  expectTypeOf(value).toEqualTypeOf<string>();
-});
+const stringProperty = test.prop([fc.string()]);
+expectTypeOf(stringProperty).parameter(1).parameter(0).toEqualTypeOf<string>();

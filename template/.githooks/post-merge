@@ -1,4 +1,5 @@
 #!/bin/sh
+export SCAFFOLDING_GIT_HOOK=1
 # Installs where bun.lock or package.json changed; install names a skip or a failure on stderr.
 # check-lock stops it after CHECK_LOCK_RUN_S seconds, as in post-checkout.
 git diff --quiet ORIG_HEAD HEAD -- bun.lock package.json 2>/dev/null

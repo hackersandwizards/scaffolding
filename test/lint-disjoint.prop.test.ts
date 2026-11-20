@@ -28,9 +28,14 @@ test.prop([fc.dictionary(name, fc.tuple(severity, fc.boolean())), name])(
   },
 );
 
-test.prop([name, name])("resolves a plugin by its configured namespace", (alias, rule) => {
-  const native = new Set([`typescript/${rule}`]);
-  const rules = { [`${alias}/${rule}`]: "error" };
-  const plugins = { [alias]: { meta: { namespace: "@typescript-eslint" } } };
-  expect(lintRuleOverlaps("a.ts", native, { rules, plugins })).toHaveLength(1);
-});
+test.prop([fc.tuple(name, name).map(([scope, name]) => `@${scope}/${name}`), name])(
+  "resolves scoped plugin aliases for both TypeScript and core Oxlint rules",
+  (alias, rule) => {
+    const rules = { [`${alias}/${rule}`]: "error" };
+    const plugins = { [alias]: { meta: { namespace: "@typescript-eslint" } } };
+    expect(
+      lintRuleOverlaps("a.ts", new Set([`typescript/${rule}`]), { rules, plugins }),
+    ).toHaveLength(1);
+    expect(lintRuleOverlaps("a.ts", new Set([rule]), { rules, plugins })).toHaveLength(1);
+  },
+);

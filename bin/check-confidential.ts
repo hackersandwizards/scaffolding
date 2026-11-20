@@ -695,6 +695,7 @@ function scanBinaries(files: { where: string; data: Buffer }[]) {
   // only once either changes.
   const reader = createHash("sha256")
     .update(readFileSync(import.meta.path))
+    .update(readFileSync(new URL("../lib/confidential-input.ts", import.meta.url)))
     .update(readFileSync(OCR_SOURCE));
   const kept = files.map(({ data }) =>
     join(CACHE_DIR, "read", reader.copy().update(data).digest("hex").slice(0, 32)),

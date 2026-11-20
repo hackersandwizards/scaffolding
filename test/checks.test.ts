@@ -187,6 +187,10 @@ afterAll(() => {
   expect(cases).toBe(fc.readConfigureGlobal().numRuns);
 });
 test.prop([fc.integer({ min: 1, max: 100 })])("positive integers", (value) => {
+  const exploring = process.env.SCAFFOLDING_EXPLORING === "1";
+  expect(fc.readConfigureGlobal().seed).toBe(exploring ? -188 : 17401);
+  expect(fc.readConfigureGlobal().numRuns).toBe(exploring ? 512 : 64);
+  if (exploring) expect(process.env.SCAFFOLDING_TEST_TIMEOUT_MS).toBe("48000");
   expect(active).toBe(true);
   cases++;
   expect(value).toBeGreaterThan(0);
@@ -208,6 +212,14 @@ test("example must stay out of exploration", () => { throw new Error("example ra
     spawnSync(process.execPath, ["run", "explore", "--seed", "-188"], {
       cwd: dir,
       encoding: "utf8",
+      env: {
+        ...process.env,
+        CI: undefined,
+        GIT_INDEX_FILE: undefined,
+        SCAFFOLDING_CHANGED: undefined,
+        SCAFFOLDING_GIT_HOOK: undefined,
+        SCAFFOLDING_TEST_TIMEOUT_MS: "6000",
+      },
     });
   const passing = explore();
   expect(passing.status, passing.stdout + passing.stderr).toBe(0);
@@ -220,6 +232,67 @@ test("example must stay out of exploration", () => { throw new Error("example ra
   const output = failing.stdout + failing.stderr;
   expect(output).toContain("with seed=-188");
   expect(output).toContain("Counterexample: [1]");
+
+  writeFileSync(file, readFileSync(file, "utf8").replace("toBe(0)", "toBeGreaterThan(0)"));
+  writeFileSync(join(dir, "vitest.config.mjs"), "export default {};");
+  const direct = spawnSync(process.execPath, ["--bun", "vitest", "run", property], {
+    cwd: dir,
+    encoding: "utf8",
+    env: {
+      ...process.env,
+      SCAFFOLDING_EXPLORING: undefined,
+      SCAFFOLDING_EXPLORE_SEED: "42",
+      SCAFFOLDING_EXPLORE_RUNS: "2",
+    },
+  });
+  expect(direct.status, direct.stdout + direct.stderr).toBe(0);
+});
+
+test.each([
+  ["CI", "CI", "1"],
+  ["git hook", "SCAFFOLDING_GIT_HOOK", "1"],
+  ["git hook", "GIT_INDEX_FILE", "index"],
+  ["gate", "SCAFFOLDING_CHANGED", "0"],
+  ["gate", "SCAFFOLDING_CHANGED", "1"],
+])("explore refuses %s before choosing a seed (%s=%s)", (context, variable, value) => {
+  const result = spawnSync(process.execPath, ["--no-env-file", bin("scaffolding-explore")], {
+    cwd: temp(),
+    encoding: "utf8",
+    env: {
+      ...process.env,
+      CI: undefined,
+      SCAFFOLDING_GIT_HOOK: undefined,
+      GIT_INDEX_FILE: undefined,
+      SCAFFOLDING_CHANGED: undefined,
+      [variable]: value,
+    },
+  });
+  expect(result.status, result.stdout + result.stderr).toBe(2);
+  expect(result.stderr).toContain(context);
+  expect(result.stdout).toBe("");
+});
+
+test("the installed pre-commit hook marks the commands it calls", () => {
+  const dir = repo({
+    "package.json": JSON.stringify({
+      scripts: {
+        "check:staged": `env -u CI -u GIT_INDEX_FILE "${process.execPath}" --no-env-file "${bin("scaffolding-explore")}"`,
+      },
+    }),
+  });
+  mkdirSync(join(dir, "node_modules"));
+  write(dir, {
+    ".githooks/pre-commit": readFileSync(
+      join(import.meta.dirname, "../template/.githooks/pre-commit"),
+      "utf8",
+    ),
+  });
+  chmodSync(join(dir, ".githooks/pre-commit"), 0o755);
+  expect(sh(dir, ["config", "core.hooksPath", ".githooks"]).status).toBe(0);
+  const commit = sh(dir, ["commit", "--allow-empty", "-m", "exercise pre-commit"]);
+  expect(commit.status).toBe(1);
+  expect(commit.stderr.toString()).toContain("cannot run inside a git hook");
+  expect(commit.stdout.toString()).not.toContain("seed");
 });
 
 test("Vitest assertion lint accepts property callbacks with both assertion rules active", () => {
@@ -240,6 +313,41 @@ test("Vitest assertion lint accepts property callbacks with both assertion rules
   expect(output).toMatch(/missing\.prop\.test\.js:[^\n]*vitest\(expect-expect\)/);
   expect(output).toMatch(/standalone\.prop\.test\.js:[^\n]*vitest\(no-standalone-expect\)/);
 });
+
+test(
+  "ESLint detects assertion-free properties and properties outside exploration",
+  () => {
+    const dir = temp();
+    const root = join(import.meta.dirname, "..");
+    const property = "example.prop.test.js";
+    const ordinary = "example.test.js";
+    const imports = `import { fc, test } from "@hackersandwizards/scaffolding/property";
+import { expect } from "vitest";`;
+    write(dir, {
+      "eslint.config.mjs": `export { default } from ${JSON.stringify(join(root, "config/eslint.js"))};`,
+    });
+    const lint = (path: string, callback: string) => {
+      write(dir, {
+        [path]: `${imports}\ntest.prop([fc.integer()])("an integer", ${callback});`,
+      });
+      const result = spawnSync(
+        process.execPath,
+        ["--bun", join(root, "node_modules/.bin/eslint"), path],
+        { cwd: dir, encoding: "utf8" },
+      );
+      return { status: result.status, output: result.stdout + result.stderr };
+    };
+    const asserting = "(value) => expect(Number.isInteger(value)).toBe(true)";
+    expect(lint(property, asserting)).toEqual({ status: 0, output: "" });
+    const empty = lint(property, "(value) => { Number.isInteger(value); }");
+    expect(empty.status).toBe(1);
+    expect(empty.output).toContain("A property callback must assert");
+    const misplaced = lint(ordinary, asserting);
+    expect(misplaced.status).toBe(1);
+    expect(misplaced.output).toContain("Move this property to a *.prop.test.* file");
+  },
+  limit(10_000),
+);
 // SCAFFOLDING_LOAD 0: the gate runs its steps side by side whatever this machine's load is.
 function run(
   cwd: string,
@@ -1363,6 +1471,7 @@ describe("scaffold and check-structure", () => {
     write(other, { "stryker.config.mjs": "export default {};\n" });
     expect(check("stryker run")).toEqual(red);
     expect(check("echo scaffolding-mutation")).toEqual(red);
+    expect(check("FLAG='scaffolding-mutation' bun run stryker run")).toEqual(red);
     expect(check("scaffolding-mutation")).toEqual(green);
     expect(check("BUN_OPTIONS='--preload vitest/node' bun --bun scaffolding-mutation")).toEqual(
       green,
@@ -1775,6 +1884,45 @@ describe("check-confidential", () => {
       ).toEqual(expected);
     // Kept by content: the document and the font, never the file not read.
     expect(readdirSync(join(dir, "node_modules/.cache/scaffolding/read"))).toHaveLength(2);
+  });
+
+  test("changing just the XML decoder invalidates cached document text", () => {
+    const dir = repo({ "package.json": "{}" });
+    write(dir, { "word/document.xml": "<w:t>Acme&nbsp;Widgets</w:t>" });
+    expect(spawnSync("zip", ["-qr", "document.docx", "word"], { cwd: dir }).status).toBe(0);
+    expect(sh(dir, ["add", "document.docx"]).status).toBe(0);
+    const copy = temp();
+    const root = join(import.meta.dirname, "..");
+    for (const part of ["lib", "config"])
+      cpSync(join(root, part), join(copy, part), { recursive: true });
+    write(copy, { "bin/check-confidential.ts": readFileSync(bin("check-confidential"), "utf8") });
+    const scan = () => {
+      const result = spawnSync(
+        process.execPath,
+        ["--no-env-file", join(copy, "bin/check-confidential.ts"), "--index"],
+        { cwd: dir, env: { ...process.env, ...env, CI: "" }, encoding: "utf8" },
+      );
+      return { status: result.status, output: result.stdout + result.stderr };
+    };
+    const first = scan();
+    expect(first.status, first.output).toBe(0);
+    expect(readdirSync(join(dir, "node_modules/.cache/scaffolding/read"))).toContainEqual(
+      expect.stringMatching(/^[a-f0-9]{32}$/),
+    );
+    const decoder = join(copy, "lib/confidential-input.ts");
+    const source = readFileSync(decoder, "utf8");
+    const updated = source.replace(
+      "const ENTITY = new Map([",
+      'const ENTITY = new Map([["nbsp", " "],',
+    );
+    expect(updated).not.toBe(source);
+    writeFileSync(decoder, updated);
+
+    const second = scan();
+    expect(second.status, second.output).toBe(1);
+    expect(second.output).toContain(
+      "document.docx: confidential term from the company records (Acme Widgets)",
+    );
   });
 
   test("a Git LFS file is read where its content is at hand, from the working tree or the store", () => {
@@ -6500,6 +6648,19 @@ describe("raise-pins", () => {
     const pid = Number(readFileSync(join(dir, "pid"), "utf8"));
     await new Promise((r) => setTimeout(r, 200));
     expect(() => process.kill(pid, 0)).toThrow();
+  });
+
+  test("invalid and capped fetch timeouts still give Git time to read local tags", async () => {
+    const remote = join(packages(["a"]), "a");
+    const saved = { ...process.env };
+    try {
+      for (const wait of ["-1", "1e10", "99999999999"]) {
+        process.env.SCAFFOLDING_FETCH_WAIT_S = wait;
+        expect(await newestTag(remote)).toBe("v1.10.0");
+      }
+    } finally {
+      process.env = saved;
+    }
   });
 
   test("a scaffolding raise commits what check-structure --fix wrote, unless --fix rewrote an edit", () => {

@@ -3,13 +3,7 @@
 import { spawn, spawnSync } from "node:child_process";
 import { existsSync } from "node:fs";
 import { join } from "node:path";
-import {
-  allChangedSteps,
-  changedPathList,
-  fastSteps,
-  selectChangedSteps,
-  validGlob,
-} from "../lib/changed-steps.ts";
+import { allChangedSteps, fastSteps, selectChangedSteps, validGlob } from "../lib/changed-steps.ts";
 import { help } from "../lib/help.ts";
 import {
   isReason,
@@ -192,7 +186,7 @@ function changedSteps(): Map<string, string> {
     lists.push(diff.stdout, untracked.stdout);
     if (upstream) since = upstream.slice(0, 9);
   }
-  const paths = changedPathList(lists);
+  const paths = [...new Set(lists.join("").split("\0").filter(Boolean))];
   const { steps, fallback: why } = selectChangedSteps(paths, fast, local, mappings);
   if (why !== undefined) console.error(`[scaffolding] --changed: ${why}: all fast steps run`);
   else console.error(`[scaffolding] --changed: ${paths.length} paths since ${since}`);
@@ -207,6 +201,7 @@ const env = {
   PATH: `${join(root, "node_modules/.bin")}:${process.env.PATH}`,
   SCAFFOLDING_TEST_TIMEOUT_MS: String(Math.round(5000 * factor)),
   SCAFFOLDING_CHANGED: changed ? "1" : "0",
+  SCAFFOLDING_EXPLORING: undefined,
   SCAFFOLDING_EXPLORE_SEED: undefined,
   SCAFFOLDING_EXPLORE_RUNS: undefined,
   STRYKER_MUTATOR_WORKER: undefined,

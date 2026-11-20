@@ -1,4 +1,3 @@
-import { fileURLToPath } from "node:url";
 import { defaultExclude, defineConfig } from "vitest/config";
 
 const timeout = Number(process.env.SCAFFOLDING_TEST_TIMEOUT_MS || 5000);
@@ -9,7 +8,6 @@ export default defineConfig({
   test: {
     server: underStryker ? { deps: { inline: ["@fast-check/vitest"] } } : undefined,
     exclude: [...defaultExclude, "**/.stryker-tmp/**"],
-    setupFiles: [fileURLToPath(new URL("./property-setup.js", import.meta.url))],
     testTimeout: timeout,
     hookTimeout: timeout,
     execArgv: underStryker ? ["--preserve-symlinks"] : undefined,

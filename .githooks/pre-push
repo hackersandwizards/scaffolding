@@ -1,4 +1,5 @@
 #!/bin/sh
+export SCAFFOLDING_GIT_HOOK=1
 # check-confidential prepush refuses commits purged from history (.confidential-purged.json),
 # then hands the refs to Git LFS where the push may carry LFS objects or touch a lockable file.
 # A push carrying branches then runs scaffolding check --changed on the working tree, the steps

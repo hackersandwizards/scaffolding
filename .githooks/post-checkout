@@ -1,4 +1,5 @@
 #!/bin/sh
+export SCAFFOLDING_GIT_HOOK=1
 # $3 = 1 is a branch checkout. It installs where bun.lock or package.json changed, and where an
 # all-zero old HEAD (a new worktree, or a switch away from an unborn branch) finds no node_modules,
 # without which pre-commit would refuse every commit.

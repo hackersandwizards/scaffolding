@@ -57,6 +57,9 @@ read, so a cycle through one passes, and a submodule is its own repository's to 
 each enabled step among format, structure, coupling, spaces, confidential, licenses and admin.
 Paths are repository-relative, case-sensitive Bun globs. Every match adds its steps.
 
+The gate sets `SCAFFOLDING_CHANGED` for each step. A value of `1` marks a changed check and `0`
+marks a full check.
+
 | Default paths                                                                                                                         | Additional steps                              |
 | ------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------- |
 | `**/*.{js,jsx,cjs,mjs,ts,tsx,cts,mts,astro,mdx}`                                                                                      | typecheck, lint, oxlint, cycles, test         |

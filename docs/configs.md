@@ -99,7 +99,8 @@ Remove any duplicate `defaultExclude` spread from the local exclusion list.
 
 ### `./property`
 
-Keep properties in `*.prop.test.ts` files and use the shared Vitest config above.
+Keep properties in `*.prop.test.ts` files. Put an assertion such as `expect` in each property
+callback so the shared ESLint config can check it.
 
 ```ts
 import { fc, test } from "@hackersandwizards/scaffolding/property";
@@ -110,16 +111,21 @@ test.prop([fc.array(fc.integer())])("a copy preserves every element", (values) =
 });
 ```
 
-Examples fix a concrete input and result, including one regression per defect. Properties generate
-inputs and check a rule for every case. Mutation testing changes the code to judge the tests. Give
-each assertion one owner and keep an example regression for the shrunk input that exposed a defect.
+Give each statement one test. Use an example for a concrete regression or a property to cover a
+rule across generated inputs. When a shrunk input exposes a defect in a rule the property already
+owns, add the input to that property's `examples`. Mutation testing changes the code to judge
+the tests.
 
-The shared setup uses seed `17401` with 64 cases in the normal suite and 12 under Stryker. Vitest
-runs per-case hooks and reports the seed and shrunk counterexample on failure.
+Importing `./property` configures seed `17401` with 64 cases in the normal suite and 12 under
+Stryker. Vitest runs per-case hooks and reports the seed and shrunk counterexample on failure.
+Keep the shared defaults for `seed` and `numRuns`. Per-property overrides take precedence over
+the budgets and seed used by exploration and mutation testing.
 
 Set `"explore": "scaffolding-explore"` in `package.json`. Run `bun run explore` for 512 cases per
-property with a fresh seed and a two-minute wall limit. Run `bun run explore --seed <seed>` to
-replay the run. Exploration selects `*.prop.test.*` files from the Vitest suite.
+property with a fresh seed and a two-minute wall limit. The shared Vitest preset uses eight times
+the normal per-test timeout, capped at the wall limit. Run `bun run explore --seed <seed>` to replay
+the run. Exploration selects `*.prop.test.*` files from the Vitest suite and exits 2 in CI, a Git
+hook or the gate. Custom Git hooks can set `SCAFFOLDING_GIT_HOOK=1` before calling package scripts.
 
 ### `./stryker`
 
@@ -151,5 +157,6 @@ The command stops Stryker and its workers at the 15-minute wall limit and exits 
 To narrow a run, use `bun run mutation --mutate <files>`. Mutation testing stays outside the gate,
 hooks and CI.
 
-For suites that use Bun APIs, set `"mutation": "SCAFFOLDING_MUTATION_BUN=1 scaffolding-mutation"`
-and `pool: "forks"` in the Stryker config's `vitest` options.
+`SCAFFOLDING_MUTATION_BUN=1` runs Stryker on Bun. For suites that use Bun APIs, set
+`"mutation": "SCAFFOLDING_MUTATION_BUN=1 scaffolding-mutation"` and `pool: "forks"` in the Stryker
+config's `vitest` options.
