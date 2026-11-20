@@ -1,0 +1,15 @@
+{
+  "extends": ["./node_modules/@hackersandwizards/scaffolding/config/oxlint.json"],
+  "plugins": ["typescript"],
+  "env": { "browser": true, "node": true, "bun": true },
+  "options": { "typeAware": true },
+  "ignorePatterns": [
+    "node_modules/**",
+    "coverage/**",
+    "**/dist/**",
+    "**/.astro/**",
+    "/.claude/**",
+    "/.agents/**",
+    "/.githooks/**"
+  ]
+}

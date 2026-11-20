@@ -13,7 +13,7 @@ the item files and their hub from [admin](https://github.com/hackersandwizards/a
 | To know why a gate step is red, or keep a finding | [The gate](docs/gate.md)                             |
 | To know why a commit was refused for a term       | [The confidential-terms check](docs/confidential.md) |
 | To build a catalog                                | [The catalog](docs/catalog.md)                       |
-| To set up ESLint, Prettier, TypeScript, stylelint | [Configs](docs/configs.md)                           |
+| To set up Oxlint, ESLint, Prettier or TypeScript  | [Configs](docs/configs.md)                           |
 | To know what the git hooks and CI run             | [Hooks and CI](docs/hooks.md)                        |
 | To change this package                            | [Work on the package](#work-on-the-package)          |
 | To know whether you may use it                    | [Maintainer and license](#maintainer-and-license)    |
@@ -44,12 +44,12 @@ bun run check
 ```
 
 It writes the configs that import the package. In an existing repository,
-`bun run check-structure --fix` writes the skeleton's hooks and owned files and names the other files
-and settings the skeleton requires, which leave out `eslint.config.js`: copy
+`bun run check-structure --fix` writes the skeleton's hooks and owned files and adds the shared `.oxlintrc.json` if it is missing.
+For `eslint.config.js`, copy
 [`template/eslint.config.js.tmpl`](template/eslint.config.js.tmpl) with `{{eslint}}` as `eslint`, or
 `eslint/astro` where the repository has Astro files. The exports most repositories import, all of them in [Configs](docs/configs.md):
 
-- `./prettier`, `./eslint`, `./eslint/astro`, `./stylelint`: the shared format and lint configs.
+- `./prettier`, `./oxlint`, `./eslint`, `./eslint/astro`, `./stylelint`: the shared format and lint configs.
 - `./tsconfig/bun.json`, `./tsconfig/astro.json`: the base for `"extends"`.
 - `./catalog`: the catalog preset for an Astro config ([The catalog](docs/catalog.md)).
 - `./rejection`: the error a promise rejects with, as text, in a test.

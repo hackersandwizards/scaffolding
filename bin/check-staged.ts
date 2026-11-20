@@ -1,15 +1,26 @@
 #!/bin/sh
 // 2>/dev/null; exec bun --no-env-file "$0" "$@"
 // Check, never write: re-staging a rewritten file would sweep another session's unstaged lines in
-// that file into this commit. A file whose working tree differs from the index is checked from the
-// index on stdin, so those unstaged lines neither pass nor block this commit.
+// that file into this commit. Tools read a partly staged file from the index, so its unstaged
+// lines neither pass nor block this commit.
 import { spawn, spawnSync } from "node:child_process";
-import { existsSync, mkdirSync, mkdtempSync, rmSync } from "node:fs";
+import {
+  existsSync,
+  lstatSync,
+  mkdirSync,
+  mkdtempSync,
+  readFileSync,
+  rmSync,
+  symlinkSync,
+  writeFileSync,
+} from "node:fs";
 import { availableParallelism } from "node:os";
 import { join } from "node:path";
 import { help } from "../lib/help.ts";
+import { oxlintConfig, oxlintExtends, oxlintSource, runOxlint } from "../lib/oxlint.ts";
 import {
   isReason,
+  isObject,
   jsonObject,
   readPackage,
   repoRoot,
@@ -20,8 +31,6 @@ import {
 
 help("check-staged");
 withoutEnvFile("check:staged");
-// The shared ESLint config leaves its typed rules to the gate: their type program alone costs a
-// commit more than a second.
 process.env.SCAFFOLDING_LINT_UNTYPED = "1";
 
 function refuseCommit(message: string): never {
@@ -89,12 +98,15 @@ const listed = spawnSync("git", ["diff", "--cached", "--raw", "--diff-filter=ACM
 });
 if (listed.status !== 0) refuseCommit("git diff --cached failed");
 const staged: string[] = [];
+const oxlintPaths: string[] = [];
 const fields = listed.stdout.split("\0");
 for (let i = 0; i + 1 < fields.length;) {
   const [, mode, , , status] = fields[i].split(" ");
   const paths = /^[RC]/.test(status) ? 2 : 1;
   // A submodule's commit (mode 160000) is no file for the tools.
-  if (mode !== "160000") staged.push(fields[i + paths]);
+  const file = fields[i + paths];
+  if (mode !== "160000") staged.push(file);
+  if (mode?.startsWith("100") && oxlintSource.test(file)) oxlintPaths.push(file);
   i += paths + 1;
 }
 if (staged.length === 0 && !skills && !items) process.exit(0);
@@ -134,16 +146,21 @@ const stdinFlags: Record<string, (path: string) => string[]> = {
 };
 
 // Chunked: a commit touching most of a repository passes more path bytes than ARG_MAX holds.
-const chunks: string[][] = [[]];
-let bytes = 0;
-for (const path of whole) {
-  if (bytes + path.length > 100_000) {
-    chunks.push([]);
-    bytes = 0;
+function pathChunks(paths: string[]) {
+  const chunks: string[][] = [[]];
+  let bytes = 0;
+  for (const path of paths) {
+    const size = Buffer.byteLength(path) + 1;
+    if (bytes + size > 100_000) {
+      chunks.push([]);
+      bytes = 0;
+    }
+    chunks[chunks.length - 1].push(path);
+    bytes += size;
   }
-  chunks[chunks.length - 1].push(path);
-  bytes += path.length + 1;
+  return chunks;
 }
+const chunks = pathChunks(whole);
 
 // Bounded to the core count: unbounded, 400 partly staged files started 400 processes on 16 cores.
 let free = availableParallelism();
@@ -219,6 +236,55 @@ for (const [tool] of active)
     refuseCommit(
       `${tool} not installed: pin it and bun install, or skip.${gateStep[tool]} with a reason`,
     );
+if (oxlintPaths.length && !isReason(skip.lint)) {
+  const root = repoRoot();
+  const inputs = [oxlintConfig, ...oxlintPaths];
+  const base = oxlintExtends(root);
+  if (!base.startsWith("./node_modules/")) inputs.push(base.slice(2));
+  const cache = join(root, "node_modules/.cache/scaffolding");
+  mkdirSync(cache, { recursive: true });
+  const snapshot = mkdtempSync(join(cache, "staged-oxlint-"));
+  let code = 1;
+  try {
+    const checkout = spawnSync(
+      "git",
+      ["checkout-index", "-z", "--stdin", `--prefix=${snapshot}/`],
+      {
+        cwd: root,
+        input: inputs.join("\0") + "\0",
+        stdio: ["pipe", "inherit", "inherit"],
+      },
+    );
+    if (checkout.status !== 0) throw new Error("could not check out the staged oxlint inputs");
+    const configPath = join(snapshot, oxlintConfig);
+    if (!lstatSync(configPath).isFile()) throw new Error(`${oxlintConfig} must be a regular file`);
+    const config = jsonObject(readFileSync(configPath));
+    if (!isObject(config.options) || config.options.typeAware !== true)
+      throw new Error(`${oxlintConfig}: options.typeAware must be true`);
+    config.options = { ...config.options, typeAware: false, typeCheck: false };
+    writeFileSync(configPath, JSON.stringify(config));
+    symlinkSync(join(root, "node_modules"), join(snapshot, "node_modules"), "dir");
+    code = 0;
+    for (const paths of pathChunks(oxlintPaths)) {
+      const run = runOxlint(snapshot, [
+        "--no-ignore",
+        "--no-error-on-unmatched-pattern",
+        "--",
+        ...paths,
+      ]);
+      if (run.status !== 0) {
+        code = run.status ?? 1;
+        break;
+      }
+    }
+  } catch (error) {
+    console.error(`[check:staged] oxlint: ${(error as Error).message}`);
+  } finally {
+    rmSync(snapshot, { recursive: true, force: true });
+  }
+  if (code) refuseCommit("oxlint refused the staged files");
+}
+
 const runs = active.flatMap(([tool, args]) => {
   const bin = `node_modules/.bin/${tool}`;
   return [

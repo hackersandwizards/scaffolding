@@ -79,6 +79,7 @@ const shared: Record<string, string> = {
   // cache, keyed by the file alone, would keep. One process: each worker builds the type program
   // again, which took longer than linting in turn (30 s against 20 s over 540 files).
   lint: `bun --bun eslint .${ignored}`,
+  oxlint: `bun ${quote(join(home, "lib", "oxlint.ts"))}`,
   styles: `bun --bun stylelint "${styleFiles}" ${stylelintFlags(root).join(" ")}${ignored}`,
   structure: bin("check-structure"),
   coupling: bin("check-coupling"),
@@ -110,10 +111,11 @@ if (
   );
 const skip = { ...config.skip };
 for (const [step, reason] of Object.entries(skip)) {
-  if (!(step in shared) && !(step === "retired" && branded))
+  if (step === "oxlint" || (!(step in shared) && !(step === "retired" && branded)))
     fail(`scaffolding.skip names no shared step: ${step}`);
   if (!isReason(reason)) fail(`scaffolding.skip.${step} has no reason`);
   delete shared[step];
+  if (step === "lint") delete shared.oxlint;
 }
 
 // scaffolding.changed maps a path glob to the steps a change there needs. Every step it names
@@ -141,6 +143,8 @@ const WHOLE = [
   "bunfig.toml",
   "**/tsconfig*.json",
   "**/eslint.config.*",
+  "**/.oxlintrc.json",
+  "**/oxlint.config.*",
   "**/prettier.config.*",
   "**/.prettierrc*",
   ".prettierignore",
@@ -314,7 +318,7 @@ const order = Object.keys(shared);
 if (ok)
   ok = await group(
     Object.entries(shared).filter(([name]) => quick(name) || runs(name)),
-    sync ? { catalog: "typecheck", lint: "typecheck" } : {},
+    sync ? { catalog: "typecheck", lint: "typecheck", oxlint: "typecheck" } : {},
     new Set(Object.keys(shared).filter(quick)),
     1,
   );

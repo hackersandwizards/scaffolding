@@ -3,6 +3,7 @@
 import { existsSync, readFileSync, realpathSync } from "node:fs";
 import { homedir } from "node:os";
 import { basename, dirname, join, posix, relative, resolve } from "node:path";
+import oxlintTemplate from "../template/.oxlintrc.json";
 import {
   applyAllow,
   commentSyntax,
@@ -178,6 +179,12 @@ for (const path of listFiles(root, staged)) {
       .split("\n"))
       for (const m of line.matchAll(INSTALLED)) {
         if (!ours(m[1]!) || m[1] === own || line.slice(0, m.index).includes("@source")) continue;
+        // Oxlint's JSON extends accepts a relative file path, including when it names our export.
+        if (
+          path === ".oxlintrc.json" &&
+          line.trim() === `"extends": ${JSON.stringify(oxlintTemplate.extends)},`
+        )
+          continue;
         if (STYLES.test(path)) {
           const file = m[2]?.slice(1) && posix.normalize(m[2].slice(1));
           if (!file || (!file.endsWith(".css") && !publishes(m[1], file, true)))

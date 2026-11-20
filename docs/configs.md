@@ -2,7 +2,8 @@
 
 | Export                                         | Use                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                  |
 | ---------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `./eslint`, `./eslint/astro`                   | `export default [...base, ...]` in `eslint.config.js`; browser, Node and Bun globals; in a test, an empty test body and `expect().rejects` or `.resolves`, which bun waits for in a nested event loop that broke a shared puppeteer connection, go red; in TypeScript files the typed rules ([The gate](gate.md)), which need each file in a `tsconfig.json`; `dist/` at any depth and every submodule `.gitmodules` names are skipped                                                               |
+| `./eslint`, `./eslint/astro`                   | Use the plain preset for JavaScript or TypeScript, or the Astro preset for repositories with Astro. They provide the remaining ESLint rules, including the checks for empty tests and `expect().rejects` and `.resolves`.                                                                                                                                                                                                                                                                            |
+| `./oxlint`                                     | The base for `.oxlintrc.json`. The gate runs Oxlint and its TypeScript companion from scaffolding’s dependencies.                                                                                                                                                                                                                                                                                                                                                                                    |
 | `./tsconfig/bun.json`, `./tsconfig/astro.json` | `"extends"` in `tsconfig.json`; `include` and `paths` stay in the repository                                                                                                                                                                                                                                                                                                                                                                                                                         |
 | `./prettier`                                   | `"prettier": "@hackersandwizards/scaffolding/prettier"` in `package.json`, `.astro` included; a config adding plugins lists `...base.plugins` first                                                                                                                                                                                                                                                                                                                                                  |
 | `./stylelint`                                  | `export default styles({ importFrom: [...] })` in `stylelint.config.js`; every submodule `.gitmodules` names is skipped                                                                                                                                                                                                                                                                                                                                                                              |
@@ -22,6 +23,41 @@ name, is a file of the repository; any other path with a slash is a package's. T
 without brand installed, so a repository without brand gives `skip.styles` a reason. A property a
 component sets from its markup (a `style` attribute) is read with a fallback,
 `var(--accent, transparent)`.
+
+## Oxlint and ESLint
+
+Run `bun run check-structure --fix` after raising scaffolding. It creates the root
+`.oxlintrc.json` from the skeleton if the file is missing. Keep the skeleton's `extends`, `plugins`,
+`env`, `options.typeAware` and `ignorePatterns` entries. Oxlint's JSON `extends` takes a relative
+file path and does not inherit the plugins, environment or ignore patterns. Keep the repository's
+existing source and generated-file scopes in both configs where applicable. A submodule is skipped
+by the gate using `.gitmodules`.
+
+In `eslint.config.js`, keep the shared preset and any ESLint-only rules. Move the repository's
+`no-restricted-imports` blocks to `.oxlintrc.json`. A scoped policy can use an override such as
+
+```json
+{
+  "files": ["src/**/*.{ts,tsx,astro}"],
+  "excludeFiles": ["**/*.test.ts"],
+  "rules": {
+    "no-restricted-imports": [
+      "error",
+      {
+        "patterns": [{ "regex": "^@/server/", "allowTypeImports": true }]
+      }
+    ]
+  }
+}
+```
+
+Add this object to the root config's `overrides` array. An Astro file glob covers its frontmatter
+and client scripts. Where policies overlap, put every restriction that applies in the final matching
+block, because Oxlint replaces that rule's options. For a remaining ESLint rule that should apply
+to Astro client scripts, use `**/*.astro/*.ts`.
+
+Remove `baseUrl` from a TypeScript project that uses it and write each path target relative to
+`tsconfig.json`, for example `"@/*": ["./src/*"]`. Oxlint's TypeScript companion rejects `baseUrl`.
 
 ## Vitest and Stryker
 

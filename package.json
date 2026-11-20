@@ -30,7 +30,8 @@
     "./catalog/*": "./catalog/*",
     "./stylelint": "./config/stylelint.js",
     "./vitest": "./config/vitest.js",
-    "./stryker": "./config/stryker.js"
+    "./stryker": "./config/stryker.js",
+    "./oxlint": "./config/oxlint.json"
   },
   "files": [
     "bin",
@@ -142,6 +143,8 @@
     "dependency-cruiser": "18.8.0",
     "eslint-config-prettier": "10.1.8",
     "globals": "17.14.0",
+    "oxlint": "1.94.0",
+    "oxlint-tsgolint": "7.0.2007",
     "postcss-html": "2.0.0",
     "prettier-plugin-astro": "1.1.2",
     "stylelint-value-no-unknown-custom-properties": "6.1.1",

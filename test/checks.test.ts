@@ -38,6 +38,7 @@ import {
   tagCommit,
 } from "../lib/repo.ts";
 import ownPackage from "../package.json";
+import oxlintTemplate from "../template/.oxlintrc.json";
 import templateMcp from "../template/.mcp.json";
 import templateSettings from "../template/.claude/settings.json";
 
@@ -784,6 +785,27 @@ describe("scaffold and check-structure", () => {
     expect(r.code).toBe(0);
   });
 
+  test("the shared oxlint config is required and --fix preserves a local layer policy", () => {
+    const name = ".oxlintrc.json";
+    const other = fixture("oxlint-structure", {}, {}, [name]);
+    expect(run(other, "check-structure").out).toContain(`${name}: missing`);
+    expect(run(other, "check-structure", ["--fix"]).code).toBe(0);
+    const config = { ...oxlintTemplate, rules: { "no-restricted-imports": ["error", "blocked"] } };
+    write(other, { [name]: JSON.stringify(config) });
+    expect(run(other, "check-structure", ["--fix"]).code).toBe(0);
+    expect(jsonObject(readFileSync(join(other, name))).rules).toEqual(config.rules);
+    for (const broken of [
+      { extends: [] },
+      { options: { typeAware: false } },
+      { ignorePatterns: [] },
+    ]) {
+      write(other, { [name]: JSON.stringify({ ...config, ...broken }) });
+      const result = run(other, "check-structure");
+      expect(result.code).toBe(1);
+      expect(result.out).toContain(`${name}: ${Object.keys(broken)[0]}`);
+    }
+  });
+
   test("a full repository has its catalog, brand and admin on their newest tags", () => {
     const pkg = scaffolded(dir);
     expect(pkg.devDependencies["@hackersandwizards/brand"]).toBe(
@@ -806,7 +828,7 @@ describe("scaffold and check-structure", () => {
     // The catalog's .astro files are linted by the Astro config, with its plugin pinned.
     expect(
       readFileSync(join(dir, "eslint.config.js"), "utf8").startsWith(
-        'import base from "@hackersandwizards/scaffolding/eslint/astro";',
+        'export { default } from "@hackersandwizards/scaffolding/eslint/astro";',
       ),
     ).toBe(true);
     expect(pkg.devDependencies["eslint-plugin-astro"]).toBe(
@@ -2687,8 +2709,11 @@ describe("scaffolding check", () => {
       { skip: rest, typecheck: "typecheck" },
       { typecheck: "sleep 0.5; echo astro > synced.txt", eslint: "test -f synced.txt #" },
     );
+    install(dir);
+    write(dir, { ".oxlintrc.json": JSON.stringify(oxlintTemplate) });
     const r = run(dir, "scaffolding", ["check"], { CHECK_LOCK: join(dir, ".lock") });
     expect(r.out).toContain("ok   lint");
+    expect(r.out).toContain("ok   oxlint");
     expect(r.code).toBe(0);
   });
 
@@ -2700,7 +2725,7 @@ describe("scaffolding check", () => {
     expect(r.out).toContain("passed");
   });
 
-  test("format, lint and styles walk past a submodule, which its own repository checks", () => {
+  test("format, lint, oxlint and styles walk past a submodule, which its own repository checks", () => {
     const { format: _f, lint: _l, styles: _s, ...rest } = skip;
     const inner = repo({
       "bad.js": "const   unusedThing=1\n",
@@ -2710,15 +2735,20 @@ describe("scaffolding check", () => {
     sh(dir, ["-c", "protocol.file.allow=always", "submodule", "add", "-q", inner, "vendor/inner"]);
     const pkg = readPackage(dir);
     write(dir, {
-      "package.json": `${JSON.stringify(pkg, null, 2)}\n`,
+      ".oxlintrc.json": readFileSync(
+        join(import.meta.dirname, "../template/.oxlintrc.json"),
+        "utf8",
+      ),
+      "package.json": `${JSON.stringify({ ...pkg, prettier: join(import.meta.dirname, "../config/prettier.js") }, null, 2)}\n`,
       "eslint.config.js": `export { default } from "${join(import.meta.dirname, "..", "config", "eslint.js")}";\n`,
       "stylelint.config.js": 'export default { rules: { "color-named": "never" } };\n',
       "ok.css": "a {\n  color: #f00;\n}\n",
     });
-    symlinkSync(join(import.meta.dirname, "..", "node_modules"), join(dir, "node_modules"));
+    install(dir);
+    symlinkSync(join(import.meta.dirname, "../node_modules/.bin"), join(dir, "node_modules/.bin"));
     const r = run(dir, "scaffolding", ["check"], { CHECK_LOCK: join(dir, ".lock") });
     expect(r.out).not.toContain("vendor/inner");
-    expect(r.code).toBe(0);
+    expect(r.code, r.out).toBe(0);
   });
 
   test("no step sees a variable only .env set, a nested bun included", () => {
@@ -3770,32 +3800,82 @@ describe("shared eslint config", () => {
   // The untyped rules alone, as check-staged runs them: these fixtures sit in no tsconfig.
   const untyped = { ...process.env, SCAFFOLDING_LINT_UNTYPED: "1" };
 
-  test("the typed rules go red on a floating promise and an any, and only in the gate", () => {
+  test("oxlint owns physical TypeScript's typed rules and rejects files outside the project", () => {
     const dir = repo({
-      "eslint.config.js": `import base from "${join(import.meta.dirname, "..", "config", "eslint.js")}";\nexport default base;\n`,
+      ".oxlintrc.json": JSON.stringify(oxlintTemplate),
+      "eslint.config.js": `export { default } from "${join(import.meta.dirname, "..", "config", "eslint.js")}";\n`,
       "tsconfig.json": '{ "compilerOptions": { "strict": true }, "include": ["src"] }\n',
       "src/a.ts": "const later = async (): Promise<number> => 1;\nlater();\n",
       "src/b.ts": 'const parsed = JSON.parse("{}");\nexport const n: number = parsed.n;\n',
-      "src/c.ts":
-        'const later = async (): Promise<number> => 1;\nexport const n = await later();\nconst parsed: unknown = JSON.parse("{}");\nexport const s = typeof parsed === "string" ? parsed : "";\n',
-      "outside.ts": "export const a = 1;\n",
+      "src/c.ts": "const later = async () => 1;\nexport const n = await later();\n",
+      "src/unused.ts": "const unusedThing = 1;\nexport {};\n",
+      ".claude/x.ts": "debugger;\n",
+      ".agents/x.ts": "debugger;\n",
+      ".githooks/x.ts": "debugger;\n",
+      "packages/web/dist/b.js": "debugger;\n",
+      ".gitmodules": '[submodule "vendor sub"]\n\tpath = vendor/sub\n\turl = ../sub.git\n',
+      "vendor/sub/a.ts": "debugger;\n",
     });
+    install(dir);
+    const check = () =>
+      spawnSync(
+        process.execPath,
+        ["--no-env-file", join(import.meta.dirname, "../lib/oxlint.ts"), "-f", "json"],
+        { cwd: dir, encoding: "utf8" },
+      );
+    const red = check();
+    expect(red.status).toBe(1);
+    const diagnostics = jsonObject(red.stdout).diagnostics as { filename: string; code: string }[];
+    const findings = diagnostics.map(({ filename, code }) => [filename, code]);
+    expect(findings).toEqual(
+      expect.arrayContaining([
+        ["src/a.ts", "typescript(no-floating-promises)"],
+        ["src/b.ts", "typescript(no-unsafe-assignment)"],
+        ["src/b.ts", "typescript(no-unsafe-member-access)"],
+        ["src/unused.ts", "eslint(no-unused-vars)"],
+      ]),
+    );
+    expect(findings.every(([file]) => /^src\/(a|b|unused)\.ts$/.test(file))).toBe(true);
     const eslint = join(import.meta.dirname, "..", "node_modules", ".bin", "eslint");
-    const r = spawnSync(eslint, ["."], { cwd: dir, encoding: "utf8" });
-    expect(r.status).toBe(1);
-    const of = (file: string) => r.stdout.split("\n\n").find((part) => part.includes(file)) ?? "";
-    expect(of("src/a.ts")).toContain("@typescript-eslint/no-floating-promises");
-    expect(of("src/b.ts")).toContain("@typescript-eslint/no-unsafe-assignment");
-    expect(of("src/b.ts")).toContain("@typescript-eslint/no-unsafe-member-access");
-    expect(r.stdout).not.toContain("src/c.ts");
-    // A file in no tsconfig has no types to read: red, never passed unread.
-    expect(of("outside.ts")).toContain("was not found by the project service");
-    // check-staged's run: the same files pass, since no type program is built.
-    const staged = spawnSync(eslint, ["."], { cwd: dir, encoding: "utf8", env: untyped });
-    expect(staged.stdout).toBe("");
-    expect(staged.status).toBe(0);
+    expect(spawnSync(eslint, ["."], { cwd: dir }).status).toBe(0);
+    write(dir, { "outside.ts": "export const a = 1;\n" });
+    const outside = check();
+    expect(outside.status).toBe(1);
+    expect(outside.stderr).toContain("outside.ts: is outside tsconfig.json");
   });
-  test("an empty test body or an unused name goes red, a real test stays green", () => {
+
+  test("eslint keeps an overwritten write and oxlint catches redeclaration and const violations", () => {
+    const dir = repo({
+      ".oxlintrc.json": JSON.stringify(oxlintTemplate),
+      "eslint.config.js": `export { default } from "${join(import.meta.dirname, "../config/eslint.js")}";\n`,
+      "tsconfig.json": '{"include":["loop.ts"]}\n',
+      "loop.ts": "for (let day = new Date(0); day.valueOf() < 1; ) day.setTime(1);\n",
+      "control.js": "var same = 0;\nvar same = 1;\nconsole.log(same);\n",
+    });
+    install(dir);
+    const check = () =>
+      spawnSync(
+        process.execPath,
+        ["--no-env-file", join(import.meta.dirname, "../lib/oxlint.ts")],
+        {
+          cwd: dir,
+          encoding: "utf8",
+        },
+      );
+    const red = check();
+    expect(red.stdout).toContain("eslint(no-redeclare)");
+    expect(red.stdout).toContain("eslint(prefer-const)");
+    const eslint = join(import.meta.dirname, "../node_modules/.bin/eslint");
+    const fallback = spawnSync(eslint, ["control.js"], { cwd: dir, encoding: "utf8" });
+    expect(fallback.status).toBe(1);
+    expect(fallback.stdout).toContain("no-useless-assignment");
+    expect(fallback.stdout).not.toContain("no-redeclare");
+    const loop = join(dir, "loop.ts");
+    writeFileSync(loop, readFileSync(loop, "utf8").replace("let day", "const day"));
+    expect(check().stdout).not.toContain("eslint(prefer-const)");
+  });
+
+  test("an empty test body goes red and a real test stays green", () => {
     const dir = repo({
       "eslint.config.js": `import base from "${join(import.meta.dirname, "..", "config", "eslint.js")}";\nexport default base;\n`,
       "a.test.ts": 'test("x", () => {});\n',
@@ -3812,27 +3892,11 @@ describe("shared eslint config", () => {
     const eslint = join(import.meta.dirname, "..", "node_modules", ".bin", "eslint");
     const r = spawnSync(eslint, ["."], { cwd: dir, encoding: "utf8", env: untyped });
     expect(r.status).toBe(1);
-    for (const file of ["a.test.ts", "c.spec.ts", "tests/d.ts", "e2e/e.js", "f.test.ts", "g.ts"])
+    for (const file of ["a.test.ts", "c.spec.ts", "tests/d.ts", "e2e/e.js", "f.test.ts"])
       expect(r.stdout).toContain(file);
     expect(r.stdout).not.toContain("b.test.ts");
+    expect(r.stdout).not.toContain("g.ts");
     expect(r.stdout).not.toContain("h.mjs");
-  });
-
-  test("a submodule's files and a dist folder at any depth are not linted", () => {
-    const unused = "const unusedThing = 1;\nexport {};\n";
-    const dir = repo({
-      "eslint.config.js": `import base from "${join(import.meta.dirname, "..", "config", "eslint.js")}";\nexport default base;\n`,
-      // A name may hold a space.
-      ".gitmodules": '[submodule "vendor sub"]\n\tpath = vendor/sub\n\turl = ../sub.git\n',
-      "vendor/sub/a.ts": unused,
-      "packages/web/dist/b.js": unused,
-      "c.ts": unused,
-    });
-    const eslint = join(import.meta.dirname, "..", "node_modules", ".bin", "eslint");
-    const r = spawnSync(eslint, ["."], { cwd: dir, encoding: "utf8", env: untyped });
-    expect(r.stdout).toContain("c.ts");
-    expect(r.stdout).not.toContain("vendor/sub");
-    expect(r.stdout).not.toContain("dist/b.js");
   });
 
   test("expect().rejects and .resolves go red in a test", () => {
@@ -3867,39 +3931,72 @@ describe("shared eslint config", () => {
     const config = jsonObject(
       spawnSync(eslint, ["--print-config", "a.astro"], { cwd: dir, encoding: "utf8" }).stdout,
     );
-    expect(config.processor).toBe("astro/client-side-ts");
+    expect(config.processor).toMatch(/^scaffolding\/astro@/);
   });
 
-  test("the Astro gate lints client scripts using the consumer's TypeScript project", () => {
-    const dir = temp();
-    write(dir, {
-      "eslint.config.js": `import base from "${join(import.meta.dirname, "..", "config", "eslint-astro.js")}";
-export default [...base, {
-  languageOptions: { parserOptions: { tsconfigRootDir: import.meta.dirname } },
-  rules: {
-    "no-restricted-imports": ["error", "./later"],
-    "no-restricted-syntax": ["error", "ImportDeclaration"],
-  },
-}];
-`,
+  test("Astro templates keep syntax checks and a script's real project types reach typed lint", () => {
+    const dir = repo({
+      ".oxlintrc.json": JSON.stringify(oxlintTemplate),
+      "eslint.config.js": `export { default } from "${join(import.meta.dirname, "../config/eslint-astro.js")}";\n`,
       "tsconfig.json":
-        '{"compilerOptions":{"strict":true,"module":"ESNext","moduleResolution":"bundler","paths":{"@fixture/*":["./src/*"]}}}\n',
+        '{"compilerOptions":{"strict":true,"module":"ESNext","moduleResolution":"bundler","lib":["ESNext"],"paths":{"@fixture/*":["./src/*"]}}}\n',
       "src/later.ts": "export const later = async () => 1;\n",
       "src/probe.astro": `---
-import { later } from "./later";
+const label = "one";
 debugger;
-later();
+const Element = Fragment;
 ---
+<Element>{(() => { debugger; return label; })()}</Element>
+<script define:vars={{label}}>
+  console.log(label.toUpperCase());
+</script>
 <script>
   import { later } from "./later";
+  import { later as aliasedLater } from "@fixture/later";
   debugger;
   later();
-  import { later as aliasedLater } from "@fixture/later";
   aliasedLater();
+  const dialog = document.querySelector("dialog");
+  dialog?.showModal();
+  dialog?.nonexistent();
+</script>
+<script>
+  const dialog = document.querySelector("dialog");
+  dialog?.showModal();
+  const _mode: ScrollRestoration = "manual";
 </script>
 `,
     });
+    install(dir);
     const eslint = join(import.meta.dirname, "..", "node_modules", "eslint", "bin", "eslint.js");
+    const ox = spawnSync(
+      process.execPath,
+      ["--no-env-file", join(import.meta.dirname, "../lib/oxlint.ts"), "-f", "json"],
+      { cwd: dir, encoding: "utf8" },
+    );
+    expect(ox.stderr).toBe("");
+    expect(ox.status).toBe(1);
+    const diagnostics = jsonObject(ox.stdout).diagnostics as {
+      code: string;
+      labels: [{ span: { line: number } }];
+    }[];
+    expect(
+      diagnostics
+        .map(
+          ({
+            code,
+            labels: [
+              {
+                span: { line },
+              },
+            ],
+          }) => [line, code],
+        )
+        .sort(),
+    ).toEqual([
+      [13, "eslint(no-debugger)"],
+      [3, "eslint(no-debugger)"],
+    ]);
     for (const env of [{ ...process.env, SCAFFOLDING_LINT_UNTYPED: "" }, untyped]) {
       const run = spawnSync(process.execPath, ["--bun", eslint, "src/probe.astro"], {
         cwd: dir,
@@ -3908,16 +4005,15 @@ later();
       });
       expect(run.stderr).toBe("");
       expect(run.status).toBe(1);
-      expect(run.stdout).toMatch(/2:1 .*no-restricted-imports/);
-      expect(run.stdout).toMatch(/2:1 .*no-restricted-syntax/);
-      expect(run.stdout).toMatch(/3:1 .*no-debugger/);
-      expect(run.stdout).toMatch(/7:3 .*no-restricted-imports/);
-      expect(run.stdout).toMatch(/7:3 .*no-restricted-syntax/);
-      expect(run.stdout).toMatch(/8:3 .*no-debugger/);
+      expect(run.stdout).toMatch(/6:\d+ .*no-debugger/);
+      expect(run.stdout).not.toMatch(/(?:3:1|13:3) .*no-debugger/);
+      expect(run.stdout).not.toContain("no-undef");
       if (env.SCAFFOLDING_LINT_UNTYPED) expect(run.stdout).not.toContain("no-floating-promises");
       else {
-        expect(run.stdout).toMatch(/9:3 .*@typescript-eslint\/no-floating-promises/);
-        expect(run.stdout).toMatch(/11:3 .*@typescript-eslint\/no-floating-promises/);
+        expect(run.stdout).toMatch(/14:3 .*@typescript-eslint\/no-floating-promises/);
+        expect(run.stdout).toMatch(/15:3 .*@typescript-eslint\/no-floating-promises/);
+        expect(run.stdout).toMatch(/18:3 .*@typescript-eslint\/no-unsafe-call/);
+        expect(run.stdout).not.toMatch(/^\s+(?:8|17|22):\d+ .*no-unsafe/m);
       }
     }
   });
@@ -5574,17 +5670,40 @@ describe("check-staged", () => {
     expect(readFileSync(join(dir, "args.txt"), "utf8").endsWith("--\n--no-config.ts\n")).toBe(true);
   });
 
-  test("eslint runs without the typed rules, which the gate's lint step holds", () => {
+  test("oxlint reads the staged source and layer policy after both change in the working tree", () => {
+    const config = {
+      ...oxlintTemplate,
+      overrides: [
+        {
+          files: ["src/**/*.ts"],
+          rules: { "no-restricted-imports": ["error", { patterns: [{ regex: "^blocked$" }] }] },
+        },
+      ],
+    };
     const dir = repo({
-      "package.json": JSON.stringify({ scaffolding: { private: true, skip: { format: "f" } } }),
-      "node_modules/.bin/eslint":
-        '#!/bin/sh\nprintf "%s" "$SCAFFOLDING_LINT_UNTYPED" > untyped.txt\n',
+      "package.json": JSON.stringify({
+        scaffolding: { private: true, skip: { format: "fixture" } },
+      }),
+      "eslint.config.js": "export default [];\n",
+      ".oxlintrc.json": JSON.stringify(config),
     });
-    chmodSync(join(dir, "node_modules/.bin/eslint"), 0o755);
-    write(dir, { "a.ts": "export {};\n" });
-    sh(dir, ["add", "a.ts"]);
+    install(dir);
+    mkdirSync(join(dir, "node_modules/.bin"));
+    symlinkSync(
+      join(import.meta.dirname, "../node_modules/.bin/eslint"),
+      join(dir, "node_modules/.bin/eslint"),
+    );
+    write(dir, { "src/a.ts": 'import "blocked";\n' });
+    sh(dir, ["add", "src/a.ts"]);
+    write(dir, {
+      "src/a.ts": "export {};\n",
+      ".oxlintrc.json": JSON.stringify({ ...config, overrides: [] }),
+    });
+    const red = run(dir, "check-staged");
+    expect(red.out).toContain("no-restricted-imports");
+    expect(red.code).toBe(1);
+    sh(dir, ["add", "src/a.ts"]);
     expect(run(dir, "check-staged").code).toBe(0);
-    expect(readFileSync(join(dir, "untyped.txt"), "utf8")).toBe("1");
   });
 
   test("a coupling or licence step the gate skips with a reason is skipped here too", () => {

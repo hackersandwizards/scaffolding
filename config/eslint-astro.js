@@ -1,81 +1,83 @@
-// Needs eslint-plugin-astro in the repository, which an Astro repository has anyway.
-import { basename, dirname, join } from "node:path";
+import js from "@eslint/js";
 import astro from "eslint-plugin-astro";
 import prettier from "eslint-config-prettier/flat";
-import ts from "typescript";
 import tseslint from "typescript-eslint";
+import { astroTypePrograms } from "./eslint-astro-script.js";
 import base from "./eslint.js";
+import oxlint from "./oxlint.json" with { type: "json" };
 
-const scriptParser = {
-  meta: { ...tseslint.parser.meta, name: "scaffolding/astro-script-parser" },
-  parseForESLint(code, options) {
-    if (!options.projectService) return tseslint.parser.parseForESLint(code, options);
+const astroFiles = ["**/*.astro"];
+const scriptFiles = ["**/*.astro/*.ts"];
+const astroPreset = astro.configs.recommended;
+const astroParser = astroPreset.find((config) => config.name === "astro/base").languageOptions
+  .parser;
+const originalProcessor = astro.processors["client-side-ts"];
+const scripts = astroTypePrograms(originalProcessor, astroParser);
+const frontmatter = new Map();
+const retained = new Set(["no-dupe-args", "no-octal", "no-undef", "no-useless-assignment"]);
+const componentRules = {
+  ...js.configs.recommended.rules,
+  ...tseslint.configs.recommended.find((config) => config.name === "typescript-eslint/recommended")
+    .rules,
+  "no-empty": ["error", { allowEmptyCatch: true }],
+  "@typescript-eslint/no-unused-vars": "off",
+};
+const typedRules = Object.fromEntries(
+  Object.keys(
+    oxlint.overrides.find(({ rules }) => Object.hasOwn(rules, "typescript/no-floating-promises"))
+      .rules,
+  ).map((rule) => [rule.replace("typescript/", "@typescript-eslint/"), "error"]),
+);
 
+const processor = {
+  meta: { ...originalProcessor.meta, name: "scaffolding/astro" },
+  supportsAutofix: true,
+  preprocess(code, filename) {
     try {
-      // Astro hands ESLint a virtual file below the component. Give TypeScript an in-memory
-      // sibling so the project's compiler options and relative imports resolve from the component.
-      const astroFile = dirname(options.filePath);
-      const directory = dirname(astroFile);
-      const filePath = join(directory, `${basename(astroFile)}.${basename(options.filePath)}`);
-      const configPath = ts.findConfigFile(directory, ts.sys.fileExists);
-      const project = configPath
-        ? ts.getParsedCommandLineOfConfigFile(
-            configPath,
-            {},
-            {
-              ...ts.sys,
-              onUnRecoverableConfigFileDiagnostic(diagnostic) {
-                throw new Error(ts.flattenDiagnosticMessageText(diagnostic.messageText, "\n"));
-              },
-            },
-          )
-        : undefined;
-      const compilerOptions = project?.options ?? {
-        target: ts.ScriptTarget.ESNext,
-        module: ts.ModuleKind.ESNext,
-        moduleResolution: ts.ModuleResolutionKind.Bundler,
-      };
-      const host = ts.createCompilerHost(compilerOptions);
-      const getSourceFile = host.getSourceFile;
-      host.getSourceFile = (name, languageVersion, ...args) =>
-        name === filePath
-          ? ts.createSourceFile(name, code, languageVersion)
-          : getSourceFile(name, languageVersion, ...args);
-      const program = ts.createProgram({
-        rootNames: [...(project?.fileNames ?? []), filePath],
-        options: compilerOptions,
-        projectReferences: project?.projectReferences,
-        host,
-      });
-      return tseslint.parser.parseForESLint(code, {
-        ...options,
-        filePath,
-        projectService: false,
-        programs: [program],
-      });
-    } catch (error) {
-      // Astro's processor drops diagnostics without a source line.
-      if (error instanceof Error && !("lineNumber" in error))
-        Object.assign(error, { lineNumber: 1, column: 1 });
-      throw error;
+      const template = astroParser.parseTemplate(code);
+      const block = template.result.ast.frontmatter;
+      frontmatter.set(filename, block ? template.getLocFromIndex(block.end).line : 0);
+    } catch {
+      // The Astro parser reports the syntax error itself.
+      frontmatter.delete(filename);
     }
+    return scripts.preprocess(code, filename);
+  },
+  postprocess([component, ...blocks], filename) {
+    const end = frontmatter.get(filename);
+    frontmatter.delete(filename);
+    // Oxlint processes frontmatter and scripts, but does not read expressions in the template.
+    const messages = component.filter(
+      ({ ruleId, line }) =>
+        end === undefined ||
+        line > end ||
+        !Object.hasOwn(componentRules, ruleId) ||
+        retained.has(ruleId),
+    );
+    return scripts.postprocess([messages, ...blocks], filename);
   },
 };
 
 export default [
   ...base,
-  ...astro.configs.recommended,
-  // eslint-plugin-astro loads the TypeScript parser from the working directory, which an
-  // isolated install of the repository lacks: without it, TypeScript in an .astro file fails to parse.
+  ...astroPreset,
   {
-    files: ["**/*.astro"],
-    processor: "astro/client-side-ts",
+    files: astroFiles,
+    processor,
     languageOptions: { parserOptions: { parser: tseslint.parser } },
-    rules: { "@typescript-eslint/no-unused-vars": "off" },
+    rules: componentRules,
   },
   {
-    files: ["**/*.astro/*.ts"],
-    languageOptions: { parser: scriptParser },
+    files: scriptFiles,
+    languageOptions: { parser: scripts.parser },
+    rules: {
+      "@typescript-eslint/no-unused-vars": [
+        "error",
+        { argsIgnorePattern: "^_", varsIgnorePattern: "^_", caughtErrorsIgnorePattern: "^_" },
+      ],
+      "no-undef": "error",
+      ...(process.env.SCAFFOLDING_LINT_UNTYPED ? {} : typedRules),
+    },
   },
   prettier,
 ];

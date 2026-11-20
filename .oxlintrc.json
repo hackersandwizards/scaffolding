@@ -1,0 +1,25 @@
+{
+  "extends": ["./config/oxlint.json"],
+  "plugins": ["typescript"],
+  "env": {
+    "browser": true,
+    "node": true,
+    "bun": true
+  },
+  "options": {
+    "typeAware": true
+  },
+  "ignorePatterns": [
+    "node_modules/**",
+    "coverage/**",
+    "**/dist/**",
+    "**/.astro/**",
+    "/.claude/**",
+    "/.agents/**",
+    "/.githooks/**",
+    "/template/*",
+    "!/template/.githooks/",
+    "!/template/.githooks/**",
+    "/template-catalog/**"
+  ]
+}

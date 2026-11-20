@@ -2,7 +2,7 @@
 
 `scaffolding check` runs `bun install --frozen-lockfile`, then the shared steps side by side, the
 catalog build and lint once a typecheck that runs Astro has finished (it writes the content types the typed rules read):
-format, lint, styles (stylelint), typecheck, structure, coupling, cycles, spaces, confidential, licenses, the tests, the catalog build (`bun run build`) and admin (the item files, with the pinned
+format, lint (ESLint), oxlint, styles (stylelint), typecheck, structure, coupling, cycles, spaces, confidential, licenses, the tests, the catalog build (`bun run build`) and admin (the item files, with the pinned
 `@hackersandwizards/admin`'s `admin-check`; a repository without admin pinned needs `skip.admin`). Once those pass, the repository's own steps from
 `scaffolding.check`, in order, an inner array side by side; a red one stops those after it. Format, lint and styles walk past every
 submodule `.gitmodules` names, which its own repository checks. A shared step drops only with a reason, a
@@ -19,20 +19,26 @@ non-blank string in `skip`:
 }
 ```
 
-**Typed lint.** In `.ts`, `.tsx`, `.mts` and `.cts` files the shared ESLint config reads types:
-a promise nobody awaits or handles (`no-floating-promises`), a promise where a value or a `void`
-callback is expected (`no-misused-promises`), an `await` on what is no promise (`await-thenable`), a
-`switch` over a union that misses a member (`switch-exhaustiveness-check`), and an `any` assigned,
-read, passed, called or returned (`no-unsafe-assignment`, `-member-access`, `-argument`, `-call`,
-`-return`). The fix for an `any` is a type at its source: a schema parse, a guard on `unknown`, a
-JSON module import. Each such file sits in a `tsconfig.json`; one in none is red with "was not
-found by the project service", so add it to `include`. The step runs without ESLint's cache, whose
-entry for a file would outlive a change to the types it imports, and in one process. `check-staged`
-leaves these rules out, since building the types cost a commit of three files 1.9 s against 0.45 s;
-they go red in the gate and at pre-push. Extracted Astro `<script>` blocks get the same typed
-rules. The lint parser uses the nearest `tsconfig.json` and resolves relative imports from the
-component's directory. Local ESLint rules can target scripts with `**/*.astro/*.ts`. Astro
-frontmatter uses the untyped rules.
+**Lint.** Oxlint checks JavaScript and TypeScript, including the code in Astro frontmatter and
+client scripts. ESLint checks Astro templates, the Astro plugin rules, the test rules, and rules
+Oxlint cannot run with the same coverage. Both steps run unless the repository already has a
+`skip.lint` reason. `check-structure` requires the shared Oxlint base and its settings in
+`.oxlintrc.json`. It checks for legacy ESLint config filenames and leaves the contents of
+`eslint.config.js` to the repository. See [Configs](configs.md).
+
+The typed rules flag unhandled promises, promises used where a value or a void callback is
+expected, `await` on a non-promise, incomplete switches over unions, and unsafe assignments, member
+access, arguments, calls and returns. Oxlint checks that each physical TypeScript file it selects
+belongs to a TypeScript project before running those rules. Add an uncovered file to its
+`tsconfig.json` or import it from that project. ESLint checks the same typed rules in Astro client
+scripts using one TypeScript program per project. Relative imports resolve from the component's
+directory and the program uses the project's aliases and browser types. Frontmatter is linted
+without types.
+
+The gate runs these rules without a file cache because imported types can change a file's verdict.
+`check-staged` runs the syntax rules of both tools. For Oxlint it checks out the staged sources and
+`.oxlintrc.json` into a temporary directory and links the checkout's installed dependencies.
+The gate and pre-push hook run the typed rules.
 
 **Cycles.** The `cycles` step fails on a runtime import cycle among the repository's tracked
 `.js` and `.ts` files of every flavour, read with dependency-cruiser through the root
@@ -51,7 +57,7 @@ maps to it`. `.claude/rules/**` and a skill's Markdown and YAML (`.claude/skills
 `*.yaml`, `*.yml`) map to no step beyond the quick ones unless the repository's own glob matches
 them; a skill's code and data map to nothing, since a repository's own checks may read them. The
 whole gate runs, saying why, where a path matches no glob, where it is `package.json`, `bun.lock`,
-`bunfig.toml` or a config every step reads (`tsconfig*.json`, `eslint.config.*`,
+`bunfig.toml` or a config every step reads (`tsconfig*.json`, `eslint.config.*`, `.oxlintrc.json`,
 `prettier.config.*`, `.prettierrc*`, `.prettierignore`, `stylelint.config.*`, `astro.config.*`),
 where a range starts a new branch (`<from>` all zeros) or at a commit the clone lacks, and where git
 cannot list the changes. A step the map names that the gate lacks, and a value that is no list,

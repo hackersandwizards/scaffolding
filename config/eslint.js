@@ -1,5 +1,4 @@
 // Its plugins are this package's dependencies, so a repository installs none of them itself.
-import js from "@eslint/js";
 import prettier from "eslint-config-prettier/flat";
 import globals from "globals";
 import tseslint from "typescript-eslint";
@@ -9,21 +8,6 @@ import { submodulePaths } from "./submodules.js";
 const code = "{js,jsx,ts,tsx,mjs,cjs,mts,cts}";
 const testFiles = [`**/{__tests__,test,tests,e2e}/**/*.${code}`, `**/*.{test,spec}.${code}`];
 const testCall = "/^(it|test|describe)$/";
-// The type program costs a commit of three files more than a second (1.9 s against 0.45 s), so
-// check-staged sets this and the typed rules run in the gate's lint step alone.
-const typed = !process.env.SCAFFOLDING_LINT_UNTYPED;
-const typedRules = [
-  "no-floating-promises",
-  "no-misused-promises",
-  "await-thenable",
-  "switch-exhaustiveness-check",
-  "no-unsafe-assignment",
-  "no-unsafe-member-access",
-  "no-unsafe-argument",
-  "no-unsafe-call",
-  "no-unsafe-return",
-];
-
 export default [
   {
     ignores: [
@@ -36,17 +20,14 @@ export default [
       ...submodulePaths().map((path) => `${path}/**`),
     ],
   },
-  js.configs.recommended,
-  ...tseslint.configs.recommended,
+  tseslint.configs.recommended[0],
+  tseslint.configs.recommended[1],
   {
     languageOptions: { globals: { ...globals.browser, ...globals.node, ...globals.bunBuiltin } },
     rules: {
-      // An error: a warning exits 0, so a gate read only when red never shows it.
-      "@typescript-eslint/no-unused-vars": [
-        "error",
-        { argsIgnorePattern: "^_", varsIgnorePattern: "^_", caughtErrorsIgnorePattern: "^_" },
-      ],
-      "no-empty": ["error", { allowEmptyCatch: true }],
+      "no-dupe-args": "error",
+      "no-octal": "error",
+      "no-useless-assignment": "error",
     },
   },
   {
@@ -68,16 +49,5 @@ export default [
       ],
     },
   },
-  ...(typed
-    ? [
-        {
-          files: ["**/*.{ts,tsx,mts,cts}"],
-          languageOptions: { parserOptions: { projectService: true } },
-          rules: Object.fromEntries(
-            typedRules.map((rule) => [`@typescript-eslint/${rule}`, "error"]),
-          ),
-        },
-      ]
-    : []),
   prettier,
 ];

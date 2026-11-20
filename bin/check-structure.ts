@@ -19,6 +19,7 @@ import { basename, dirname, join, posix } from "node:path";
 import own from "../package.json";
 import skeleton from "../skeleton.json";
 import { help } from "../lib/help.ts";
+import { oxlintConfig, oxlintConfiguration } from "../lib/oxlint.ts";
 import {
   applyAllow,
   finish,
@@ -131,6 +132,20 @@ for (const path of skeleton.owned) {
 for (const path of skeleton.present)
   if (!exists(path) && !exempt.optional.includes(path)) add(path, "missing");
 for (const path of skeleton.absent) if (exists(path)) add(path, "not allowed by the skeleton");
+
+if (!isReason(pkg.scaffolding?.skip?.lint)) {
+  if (!exists(oxlintConfig))
+    add(oxlintConfig, "missing (check-structure --fix)", "", () =>
+      copyFileSync(join(home, "template", oxlintConfig), at(oxlintConfig)),
+    );
+  else {
+    try {
+      oxlintConfiguration(root);
+    } catch (error) {
+      add(oxlintConfig, (error as Error).message);
+    }
+  }
+}
 
 for (const [path, target] of Object.entries(skeleton.symlinks)) {
   if (!exists(path) && !exists(posix.join(posix.dirname(path), target))) continue;
