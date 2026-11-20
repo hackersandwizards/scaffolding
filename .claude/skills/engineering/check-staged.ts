@@ -5,8 +5,9 @@
 // lines neither pass nor block this commit. A repository defining a `check:skills` script also
 // runs it whenever the index touches `.claude/`; that validator reads the working tree.
 import { spawn, spawnSync } from "node:child_process";
-import { existsSync, readFileSync } from "node:fs";
+import { existsSync } from "node:fs";
 import { availableParallelism } from "node:os";
+import { delimiter, resolve } from "node:path";
 
 function refuseCommit(message: string): never {
   console.error(`[check:staged] ${message}`);
@@ -28,7 +29,7 @@ function jsonMember(value: unknown, key: string): unknown {
     : undefined;
 }
 
-const pkg: unknown = JSON.parse(readFileSync("package.json", "utf8"));
+const pkg: unknown = JSON.parse(stagedContent("package.json").toString("utf8"));
 const scripts = jsonMember(pkg, "scripts");
 // Deletions count: removing a file can break a link the validator checks. Any status but 0
 // (no change) runs it, so a failing git diff fails closed.
@@ -37,15 +38,19 @@ const claudeStaged =
 // The script's former name would otherwise turn the validation off without a word.
 if (claudeStaged && jsonMember(scripts, "validate:skills") && !jsonMember(scripts, "check:skills"))
   refuseCommit("rename the script validate:skills to check:skills: check-staged runs check:skills");
-const skills = Boolean(jsonMember(scripts, "check:skills")) && claudeStaged;
+const skills = jsonMember(scripts, "check:skills");
+const checkSkills = Boolean(skills) && claudeStaged;
 
-const listed = spawnSync("git", ["diff", "--cached", "--name-only", "--diff-filter=ACMR", "-z"], {
+const listed = spawnSync("git", ["diff", "--cached", "--name-only", "--diff-filter=ACMRT", "-z"], {
   encoding: "utf8",
 });
 if (listed.status !== 0) refuseCommit("git diff --cached failed");
 const staged = listed.stdout.split("\0").filter(Boolean);
-if (staged.length === 0 && !skills) process.exit(0);
-const unstaged = spawnSync("git", ["diff", "--name-only", "--no-renames", "-z"], { encoding: "utf8" });
+if (staged.length === 0 && !checkSkills) process.exit(0);
+// Listing both sides of an unstaged rename keeps its staged source on the stdin path.
+const unstaged = spawnSync("git", ["diff", "--no-renames", "--name-only", "-z"], {
+  encoding: "utf8",
+});
 if (unstaged.status !== 0) refuseCommit("git diff failed");
 const differs = new Set(unstaged.stdout.split("\0"));
 const partial = staged.filter((path) => differs.has(path));
@@ -102,11 +107,16 @@ let free = availableParallelism();
 const waiting: (() => void)[] = [];
 type ToolRun = { out: string; code: number; stdout: Buffer };
 
-async function runStagedTool(bin: string, args: string[], stdin?: Buffer): Promise<ToolRun> {
+async function runStagedTool(
+  bin: string,
+  args: string[],
+  stdin?: Buffer,
+  env = process.env,
+): Promise<ToolRun> {
   if (free === 0) await new Promise<void>((go) => waiting.push(go));
   else free--;
   const result = await new Promise<ToolRun>((done) => {
-    const child = spawn(bin, args, { stdio: "pipe" });
+    const child = spawn(bin, args, { stdio: "pipe", env });
     // A child that exits before reading stdin raises EPIPE: caught so it cannot crash the check, and
     // counted as a failure so an unread file never passes.
     let unread = false;
@@ -189,7 +199,34 @@ const runs = active.flatMap(([tool, flags]) => {
     }),
   ];
 });
-if (skills) runs.push(runStagedTool(process.execPath, ["run", "check:skills"]));
+async function runStagedSkills(): Promise<ToolRun> {
+  if (!differs.has("package.json")) return runStagedTool(process.execPath, ["run", "check:skills"]);
+
+  // Bun resolves script bodies from disk. If the manifest differs, execute the indexed lifecycle
+  // commands from the project root, where the validator expects to find its inputs.
+  if (typeof skills !== "string") refuseCommit("check:skills must be a script command");
+  const env = {
+    ...process.env,
+    PATH: [resolve("node_modules/.bin"), process.env.PATH].filter(Boolean).join(delimiter),
+    INIT_CWD: process.cwd(),
+    npm_package_json: resolve("package.json"),
+  };
+  let result: ToolRun = { out: "", code: 0, stdout: Buffer.alloc(0) };
+  for (const event of ["precheck:skills", "check:skills", "postcheck:skills"]) {
+    const command = jsonMember(scripts, event);
+    if (typeof command !== "string" || !command) continue;
+    const run = await runStagedTool("/bin/sh", ["-c", command], undefined, {
+      ...env,
+      npm_lifecycle_event: event,
+      npm_lifecycle_script: command,
+    });
+    result = { ...run, out: result.out + run.out };
+    if (result.code) break;
+  }
+  return result;
+}
+
+if (checkSkills) runs.push(runStagedSkills());
 
 // Concurrent for speed, reported in a fixed order so the output reads the same on every run.
 let failed = false;

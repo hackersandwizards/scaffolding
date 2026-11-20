@@ -174,7 +174,8 @@ Thin: n=18, so the opening and closing conventions here are provisional.
 ## 9. LinkedIn DM
 
 Measured over 5,910 hand-written outbound LinkedIn DMs, 2017 to 2024, numbers in
-`signature-phrases.md`. The channel changes five things a mail-shaped draft gets wrong; for
+`signature-phrases.md`. Read its ten recurring DM phrasings before drafting one and build the
+message from them. The channel changes five things a mail-shaped draft gets wrong; for
 everything else the message keeps whichever posture above it is otherwise in.
 
 - One message carries the whole turn. 19% of turns are more than one message, against 62% in the
