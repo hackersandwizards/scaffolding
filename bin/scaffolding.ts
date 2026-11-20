@@ -3,6 +3,13 @@
 import { spawn, spawnSync } from "node:child_process";
 import { existsSync } from "node:fs";
 import { join } from "node:path";
+import {
+  allChangedSteps,
+  changedPathList,
+  fastSteps,
+  selectChangedSteps,
+  validGlob,
+} from "../lib/changed-steps.ts";
 import { help } from "../lib/help.ts";
 import {
   isReason,
@@ -133,23 +140,6 @@ for (const [step, reason] of Object.entries(config.fullOnly ?? {})) {
   fullOnly.set(step, reason);
 }
 
-function validGlob(pattern: string): boolean {
-  if (
-    !pattern.trim() ||
-    pattern.includes("\0") ||
-    pattern.split("/").some((part) => ["", ".", ".."].includes(part))
-  )
-    return false;
-  const outsideClasses = pattern.replace(/\\[^\n]|\[[^\]]+\]/g, "");
-  if (/[[\]\\]/.test(outsideClasses)) return false;
-  let depth = 0;
-  for (const char of outsideClasses) {
-    if (char === "{") depth++;
-    if (char === "}" && --depth < 0) return false;
-  }
-  return depth === 0;
-}
-
 if (config.changed !== undefined && !isObject(config.changed))
   fail("scaffolding.changed must be a map of paths to steps");
 const mappings = Object.entries(config.changed ?? {}).map(([glob, steps]) => {
@@ -161,36 +151,12 @@ const mappings = Object.entries(config.changed ?? {}).map(([glob, steps]) => {
   return { glob: new Bun.Glob(glob), steps };
 });
 
-const always = ["format", "structure", "coupling", "spaces", "confidential", "licenses", "admin"];
-const source = ["typecheck", "lint", "oxlint", "cycles", "test"];
-const defaults = [
-  { glob: new Bun.Glob("**/*.{js,jsx,cjs,mjs,ts,tsx,cts,mts,astro,mdx}"), steps: source },
-  { glob: new Bun.Glob("**/*.{astro,mdx,css,scss,sass,less}"), steps: ["styles", "test"] },
-  {
-    glob: new Bun.Glob(
-      "{src,app,lib,bin,components,pages,catalog,site,talks,scripts,test,tests,fixtures,data,content,public,assets,e2e}/**",
-    ),
-    steps: [...source, "styles"],
-  },
-  { glob: new Bun.Glob("docs/**/*.{md,txt}"), steps: [] },
-  { glob: new Bun.Glob("{README,CONTRIBUTING,SECURITY,CLAUDE,AGENTS}.md"), steps: [] },
-  { glob: new Bun.Glob(".claude/rules/**/*.md"), steps: [] },
-  { glob: new Bun.Glob(".claude/skills/**/*.{md,yaml,yml}"), steps: [] },
-];
-const crossCutting = [
-  "**/package.json",
-  "**/{bun.lock,bun.lockb,package-lock.json,pnpm-lock.yaml,yarn.lock,bunfig.toml,.npmrc}",
-  "**/{tsconfig*.json,eslint.config.*,oxlint.config.*,.oxlintrc*,prettier.config.*,.prettierrc*,.prettierignore,stylelint.config.*,.stylelintrc*,.stylelintignore,astro.config.*,vite.config.*,vitest.config.*,playwright*.config.*}",
-  ".gitmodules",
-  ".githooks/**",
-  ".github/workflows/**",
-  ".gitlab-ci.yml",
-].map((glob) => new Bun.Glob(glob));
+const fast = fastSteps([...Object.keys(shared), ...local], fullOnly);
 
 function changedSteps(): Map<string, string> {
   const fallback = (why: string) => {
     console.error(`[scaffolding] --changed: ${why}: all fast steps run`);
-    return new Map([...named].map((step) => [step, why]));
+    return allChangedSteps(fast, why);
   };
   const git = (...a: string[]) => spawnSync("git", a, { cwd: root, encoding: "utf8" });
   const diffPaths = (...revs: string[]) =>
@@ -226,22 +192,10 @@ function changedSteps(): Map<string, string> {
     lists.push(diff.stdout, untracked.stdout);
     if (upstream) since = upstream.slice(0, 9);
   }
-  const paths = [...new Set(lists.join("").split("\0").filter(Boolean))];
-  const steps = new Map(always.map((step) => [step, "runs on every changed check"]));
-  const scoped = new Set(mappings.flatMap(({ steps }) => steps));
-  for (const step of local)
-    if (step.startsWith("check:") && !scoped.has(step)) steps.set(step, "no path scope configured");
-  const map = [...defaults, ...mappings];
-  for (const path of paths) {
-    if (crossCutting.some((glob) => glob.match(path)))
-      return fallback(`${JSON.stringify(path)} is a shared configuration path`);
-    const hits = map.filter(({ glob }) => glob.match(path));
-    if (!hits.length) return fallback(`${JSON.stringify(path)} matches no path glob`);
-    for (const { steps: matched } of hits)
-      for (const step of matched)
-        if (!steps.has(step)) steps.set(step, `matches ${JSON.stringify(path)}`);
-  }
-  console.error(`[scaffolding] --changed: ${paths.length} paths since ${since}`);
+  const paths = changedPathList(lists);
+  const { steps, fallback: why } = selectChangedSteps(paths, fast, local, mappings);
+  if (why !== undefined) console.error(`[scaffolding] --changed: ${why}: all fast steps run`);
+  else console.error(`[scaffolding] --changed: ${paths.length} paths since ${since}`);
   return steps;
 }
 
@@ -252,6 +206,10 @@ const env = {
   ...process.env,
   PATH: `${join(root, "node_modules/.bin")}:${process.env.PATH}`,
   SCAFFOLDING_TEST_TIMEOUT_MS: String(Math.round(5000 * factor)),
+  SCAFFOLDING_CHANGED: changed ? "1" : "0",
+  SCAFFOLDING_EXPLORE_SEED: undefined,
+  SCAFFOLDING_EXPLORE_RUNS: undefined,
+  STRYKER_MUTATOR_WORKER: undefined,
 };
 type Result = { name: string; code: number; ms: number };
 

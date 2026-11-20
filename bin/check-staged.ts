@@ -3,6 +3,7 @@
 // Check, never write: re-staging a rewritten file would sweep another session's unstaged lines in
 // that file into this commit. Tools read a partly staged file from the index, so its unstaged
 // lines neither pass nor block this commit.
+import { pathChunks, stagedPaths } from "../lib/staged-paths.ts";
 import { spawn, spawnSync } from "node:child_process";
 import {
   existsSync,
@@ -17,7 +18,7 @@ import {
 import { availableParallelism } from "node:os";
 import { join } from "node:path";
 import { help } from "../lib/help.ts";
-import { oxlintConfig, oxlintExtends, oxlintSource, runOxlint } from "../lib/oxlint.ts";
+import { oxlintConfig, oxlintExtends, runOxlint } from "../lib/oxlint.ts";
 import {
   isReason,
   isObject,
@@ -97,19 +98,7 @@ const listed = spawnSync("git", ["diff", "--cached", "--raw", "--diff-filter=ACM
   maxBuffer: Infinity,
 });
 if (listed.status !== 0) refuseCommit("git diff --cached failed");
-const staged: string[] = [];
-const oxlintPaths: string[] = [];
-const fields = listed.stdout.split("\0");
-for (let i = 0; i + 1 < fields.length;) {
-  const [, mode, , , status] = fields[i].split(" ");
-  const paths = /^[RC]/.test(status) ? 2 : 1;
-  const file = fields[i + paths];
-  const regular = mode?.startsWith("100");
-  // A type change can introduce a regular file in place of a symlink or submodule.
-  if (mode !== "160000" && (status !== "T" || regular)) staged.push(file);
-  if (regular && oxlintSource.test(file)) oxlintPaths.push(file);
-  i += paths + 1;
-}
+const { staged, oxlintPaths } = stagedPaths(listed.stdout);
 if (staged.length === 0 && !skills && !items) process.exit(0);
 if (
   staged.some((path) => path === "bun.lock" || path === "package.json") &&
@@ -146,21 +135,6 @@ const stdinFlags: Record<string, (path: string) => string[]> = {
   stylelint: (path) => [...flags.stylelint, "--stdin", "--stdin-filename", path],
 };
 
-// Chunked: a commit touching most of a repository passes more path bytes than ARG_MAX holds.
-function pathChunks(paths: string[]) {
-  const chunks: string[][] = [[]];
-  let bytes = 0;
-  for (const path of paths) {
-    const size = Buffer.byteLength(path) + 1;
-    if (bytes + size > 100_000) {
-      chunks.push([]);
-      bytes = 0;
-    }
-    chunks[chunks.length - 1].push(path);
-    bytes += size;
-  }
-  return chunks;
-}
 const chunks = pathChunks(whole);
 
 // Bounded to the core count: unbounded, 400 partly staged files started 400 processes on 16 cores.

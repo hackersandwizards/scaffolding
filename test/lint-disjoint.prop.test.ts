@@ -1,0 +1,36 @@
+import { fc, test } from "@hackersandwizards/scaffolding/property";
+import { expect } from "vitest";
+import { lintRuleOverlaps } from "../lib/lint-disjoint.ts";
+
+const name = fc.stringMatching(/^[a-z]{1,10}$/);
+const severity = fc.constantFrom(0, 1, 2, "off", "warn", "error", "deny");
+
+test.prop([fc.dictionary(name, fc.tuple(severity, fc.boolean())), name])(
+  "reports exactly the active shared rules for the file",
+  (settings, file) => {
+    const path = `src/${file}.ts`;
+    const rules = Object.fromEntries(
+      Object.entries(settings).map(([rule, [level]]) => [rule, [level, {}]]),
+    );
+    const native = new Set(Object.keys(settings).filter((rule) => settings[rule]?.[1]));
+    const shared = Object.entries(settings)
+      .filter(([, [level, enabled]]) => enabled && level !== 0 && level !== "off")
+      .map(([rule]) => ({
+        check: "structure",
+        path,
+        text: "",
+        message: `ESLint rule ${rule} overlaps Oxlint rule ${rule}. Enable the rule in only one linter for this code`,
+      }));
+    expect(lintRuleOverlaps(path, native, { rules })).toEqual(shared);
+    expect(
+      lintRuleOverlaps(path, new Set([...native].map((rule) => `another/${rule}`)), { rules }),
+    ).toEqual([]);
+  },
+);
+
+test.prop([name, name])("resolves a plugin by its configured namespace", (alias, rule) => {
+  const native = new Set([`typescript/${rule}`]);
+  const rules = { [`${alias}/${rule}`]: "error" };
+  const plugins = { [alias]: { meta: { namespace: "@typescript-eslint" } } };
+  expect(lintRuleOverlaps("a.ts", native, { rules, plugins })).toHaveLength(1);
+});

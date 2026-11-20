@@ -3,11 +3,11 @@
 import { existsSync, readFileSync, realpathSync } from "node:fs";
 import { homedir } from "node:os";
 import { basename, dirname, join, posix, relative, resolve } from "node:path";
+import { exported, targeted } from "../lib/package-exports.ts";
 import oxlintTemplate from "../template/.oxlintrc.json";
 import {
   applyAllow,
   commentSyntax,
-  exportTargets,
   finish,
   git,
   isObject,
@@ -54,31 +54,6 @@ const INSTALLED =
 const DOCSTRING = /(^\s*|:[ \t]*\n\s*)(?:"""[\s\S]*?"""|'''[\s\S]*?''')/g;
 const SPECIFIER =
   /(?:\bfrom\s*|\bimport\s*\(?\s*|\brequire\s*\(\s*|@(?:import|use|forward|source|plugin|reference|config)\s+(?:url\()?\s*)["'`]([^"'`\n]+)["'`]/g;
-
-/** Whether an exports key or target, with one `*` at most that crosses folders, matches a path. */
-function matches(pattern: string, path: string): boolean {
-  const [head, tail] = pattern.split("*");
-  return tail === undefined
-    ? head === path
-    : path.length >= head.length + tail.length && path.startsWith(head) && path.endsWith(tail);
-}
-
-function exported(exports: unknown, subpath: string): boolean {
-  if (typeof exports === "string" || Array.isArray(exports)) return false;
-  if (!exports || typeof exports !== "object") return true;
-  const keys = Object.keys(exports).filter((k) => k.startsWith("."));
-  if (keys.length === 0) return false;
-  const want = `./${subpath}`;
-  return keys.some((key) => {
-    if ((exports as Record<string, unknown>)[key] === null) return false;
-    return matches(key, want) || (!key.includes("*") && key.endsWith("/") && want.startsWith(key));
-  });
-}
-
-/** Whether a file of the package, named by its path on disk, is the target of an export. */
-function targeted(exports: unknown, subpath: string): boolean {
-  return exportTargets(exports).some((target) => matches(posix.normalize(target), subpath));
-}
 
 const manifests = new Map<string, Record<string, unknown> | null>();
 function manifest(name: string) {

@@ -131,6 +131,27 @@ function oxlintRules(root: string) {
   };
 }
 
+export function lintRuleOverlaps(
+  path: string,
+  native: ReadonlySet<string>,
+  eslintConfig: ESLintConfig,
+  region = "",
+): Finding[] {
+  const findings: Finding[] = [];
+  for (const [rule, setting] of Object.entries(eslintConfig.rules ?? {})) {
+    if (!activeSeverity(setting)) continue;
+    const match = eslintRuleIds(rule, eslintConfig.plugins).find((id) => native.has(id));
+    if (match === undefined) continue;
+    findings.push({
+      check: "structure",
+      path,
+      text: region,
+      message: `ESLint rule ${rule} overlaps Oxlint rule ${match}. Enable the rule in only one linter for this code`,
+    });
+  }
+  return findings;
+}
+
 export async function lintOverlaps(root: string): Promise<Finding[]> {
   const files = oxlintFiles(root)
     .filter((file) => oxlintSource.test(file))
@@ -152,21 +173,8 @@ export async function lintOverlaps(root: string): Promise<Finding[]> {
     const component = (await eslint.calculateConfigForFile(file)) as ESLintConfig | undefined;
     if (!component) continue;
     const native = nativeRules(file);
-    const compare = (path: string, eslintConfig: ESLintConfig, region = "") => {
-      for (const [rule, setting] of Object.entries(eslintConfig.rules ?? {})) {
-        if (!activeSeverity(setting)) continue;
-        const match = eslintRuleIds(rule, eslintConfig.plugins).find((id) => native.has(id));
-        if (match === undefined) continue;
-        overlaps.push({
-          check: "structure",
-          path,
-          text: region,
-          message: `ESLint rule ${rule} overlaps Oxlint rule ${match}. Enable the rule in only one linter for this code`,
-        });
-      }
-    };
     if (!file.endsWith(".astro")) {
-      compare(file, component);
+      overlaps.push(...lintRuleOverlaps(file, native, component));
       continue;
     }
     const { processor } = component;
@@ -186,10 +194,13 @@ export async function lintOverlaps(root: string): Promise<Finding[]> {
       ),
     );
     if (!regions || regions.ranges.length)
-      compare(
-        file,
-        { ...component, rules: componentRules },
-        "Astro component in frontmatter or script",
+      overlaps.push(
+        ...lintRuleOverlaps(
+          file,
+          native,
+          { ...component, rules: componentRules },
+          "Astro component in frontmatter or script",
+        ),
       );
     for (const [index, block] of blocks.entries()) {
       if (typeof block === "string") continue;
@@ -197,7 +208,15 @@ export async function lintOverlaps(root: string): Promise<Finding[]> {
       if (!frontmatter && regions && !regions.scripts.has(index)) continue;
       const path = join(file, `${index}_${block.filename}`);
       const config = (await eslint.calculateConfigForFile(path)) as ESLintConfig | undefined;
-      if (config) compare(path, config, frontmatter ? "Astro frontmatter" : "Astro client script");
+      if (config)
+        overlaps.push(
+          ...lintRuleOverlaps(
+            path,
+            native,
+            config,
+            frontmatter ? "Astro frontmatter" : "Astro client script",
+          ),
+        );
     }
   }
   return overlaps;

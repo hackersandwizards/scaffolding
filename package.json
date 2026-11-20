@@ -16,6 +16,7 @@
     "chrome-mcp": "bin/chrome-mcp.ts",
     "scaffolding": "bin/scaffolding.ts",
     "scaffolding-mutation": "bin/scaffolding-mutation.ts",
+    "scaffolding-explore": "bin/scaffolding-explore.ts",
     "raise-pins": "bin/raise-pins.ts"
   },
   "exports": {
@@ -31,6 +32,7 @@
     "./catalog/*": "./catalog/*",
     "./stylelint": "./config/stylelint.js",
     "./vitest": "./config/vitest.js",
+    "./property": "./config/property.js",
     "./stryker": "./config/stryker.js",
     "./oxlint": "./config/oxlint.json"
   },
@@ -90,7 +92,8 @@
     "prepare": "[ \"$(git rev-parse --show-toplevel 2>/dev/null)\" = \"$(pwd -P)\" ] && git config core.hooksPath .githooks || true",
     "check": "bun --no-env-file bin/scaffolding.ts check",
     "test": "bun --bun vitest run",
-    "mutation": "bun --no-env-file bin/scaffolding-mutation.ts",
+    "mutation": "SCAFFOLDING_MUTATION_BUN=1 bun --no-env-file bin/scaffolding-mutation.ts",
+    "explore": "bun --no-env-file bin/scaffolding-explore.ts",
     "check:staged": "bun --no-env-file bin/check-staged.ts",
     "fix": "bun --bun eslint --cache --concurrency=auto . --fix && bun --bun prettier --write .",
     "check-confidential": "bun --no-env-file bin/check-confidential.ts",
@@ -129,9 +132,6 @@
     "check": [],
     "typecheck": "tsc --noEmit",
     "test": "test",
-    "fullOnly": {
-      "test": "the integration suite builds a catalog and launches Chrome"
-    },
     "skip": {
       "catalog": "no surface: the package ships the catalog shell and has no catalog of its own",
       "styles": "brand is not installed here, so its token file is not there to read; the shell's CSS reads brand's names by rule",
@@ -141,6 +141,7 @@
   "dependencies": {
     "@astrojs/astro2tsx": "0.1.4",
     "@eslint/js": "10.0.1",
+    "@fast-check/vitest": "0.5.0",
     "@stryker-mutator/api": "10.1.1",
     "@stryker-mutator/core": "10.1.1",
     "@stryker-mutator/vitest-runner": "10.1.1",
@@ -149,6 +150,7 @@
     "chrome-devtools-mcp": "1.13.0",
     "dependency-cruiser": "18.8.0",
     "eslint-config-prettier": "10.1.8",
+    "fast-check": "4.10.3",
     "globals": "17.14.0",
     "oxlint": "1.94.0",
     "oxlint-tsgolint": "7.0.2007",

@@ -21,11 +21,12 @@ blocks relative imports from `lib/` and `config/` into `bin/`, including type im
 suite on Bun through `bun run test`. The catalog build test builds a copy of `test/fixture/` with the
 preset. The pre-commit hook runs `bun run check:staged`.
 
-`bun run mutation` runs Stryker on `lib/rejection.ts` using `test/rejection.test.ts` (51 ms for the
-focused Vitest run), outside the gate, and writes `.stryker-reports/mutation.json`.
-The command, hook, config, catalog and other library sources stay outside this run with the
-subprocess, browser and build suites in `test/check-lock.test.ts` (141.61 s) and `test/checks.test.ts`
-(151.05 s).
+Changed checks run the same test step with the browser, build and lock integration suites excluded.
+The full gate and direct `bun run test` run every suite.
+
+`bun run mutation` runs Stryker on the modules named in `stryker.config.mjs` and writes
+`.stryker-reports/mutation.json`. Mutation testing and `bun run explore` run on demand outside the
+gate. [Test setup](docs/configs.md#property) describes the shared property configuration.
 
 ## Releases
 

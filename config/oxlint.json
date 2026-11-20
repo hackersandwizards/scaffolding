@@ -72,6 +72,14 @@
   },
   "overrides": [
     {
+      "files": ["**/*.prop.test.{js,jsx,ts,tsx,mjs,cjs,mts,cts}"],
+      "plugins": ["vitest"],
+      "rules": {
+        "vitest/expect-expect": ["error", { "additionalTestBlockFunctions": ["test.prop"] }],
+        "vitest/no-standalone-expect": ["error", { "additionalTestBlockFunctions": ["test.prop"] }]
+      }
+    },
+    {
       "files": ["**/*.{js,jsx,mjs,cjs,astro}"],
       "rules": {
         "constructor-super": "error",

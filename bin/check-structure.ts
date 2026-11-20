@@ -1,5 +1,6 @@
 #!/bin/sh
 // 2>/dev/null; exec bun --no-env-file "$0" "$@"
+import { runsMutationWrapper, usesSharedVitest } from "../lib/test-config.ts";
 import { spawnSync } from "node:child_process";
 import {
   chmodSync,
@@ -235,36 +236,6 @@ for (const [path, keys] of Object.entries(skeleton.entries)) {
       writeFileSync(at(path), prettier ? await prettier.format(text, options) : text);
     });
 }
-function usesSharedVitest(config: string): boolean {
-  const specifier = "@hackersandwizards/scaffolding/vitest";
-  if (!config.includes(specifier)) return false;
-  // Read the static export forms after Bun strips comments and TypeScript syntax.
-  let js: string;
-  try {
-    js = new Bun.Transpiler({ loader: "ts" }).transformSync(config);
-  } catch {
-    return false;
-  }
-  if (/^export \{ default \} from "@hackersandwizards\/scaffolding\/vitest";$/m.test(js))
-    return true;
-  const imported = js.match(
-    /^import ([\w$]+) from "@hackersandwizards\/scaffolding\/vitest";$/m,
-  )?.[1];
-  const used = js.match(/^export default (?:mergeConfig\(([\w$]+),|([\w$]+);$)/m);
-  return imported !== undefined && imported === (used?.[1] ?? used?.[2]);
-}
-
-function runsMutationWrapper(script: unknown): boolean {
-  if (typeof script !== "string") return false;
-  const command = script.match(
-    /^\s*(?:env\s+)?(?:[a-zA-Z_]\w*=(?:'[^']*'|"[^"]*"|[^\s'";&|<>])*\s+)*(?:bun\s+(?:(?:run|--bun|--no-env-file)\s+)*)?(['"]?)([^\s'";&|<>]+)\1(?=$|[\s;&|<>])/,
-  )?.[2];
-  return (
-    command === "scaffolding-mutation" ||
-    (root === home && command === own.bin["scaffolding-mutation"])
-  );
-}
-
 if (existsSync(at("package.json"))) {
   if (pkg.type !== skeleton.package.type)
     add("package.json", `type must be ${skeleton.package.type}`);
@@ -281,7 +252,13 @@ if (existsSync(at("package.json"))) {
       (deps) =>
         isObject(deps) && Object.keys(deps).some((name) => name.startsWith("@stryker-mutator/")),
     ) || listFiles(root, false).some((path) => /^stryker\.config\..+/.test(basename(path)));
-  if (hasStryker && !runsMutationWrapper(pkg.scripts?.mutation))
+  if (
+    hasStryker &&
+    !runsMutationWrapper(
+      pkg.scripts?.mutation,
+      root === home ? own.bin["scaffolding-mutation"] : undefined,
+    )
+  )
     add("package.json", 'set scripts.mutation to "mutation": "scaffolding-mutation"');
   // The gate stretches a test's limit under load only through this variable, and no runner reads it
   // unasked: bun takes it as a flag, vitest from its config.

@@ -3,27 +3,8 @@
 import { spawnSync } from "node:child_process";
 import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
+import { licenceAllowed } from "../lib/licence-expression.ts";
 import { isObject, isReason, readPackage, repoRoot } from "../lib/repo.ts";
-
-const ALLOWED = new Set([
-  "MIT",
-  "MIT-0",
-  "ISC",
-  "Apache-2.0",
-  "BSD-2-Clause",
-  "BSD-3-Clause",
-  "0BSD",
-  "BlueOak-1.0.0",
-  "CC0-1.0",
-  "CC-BY-4.0",
-  "Python-2.0",
-  "PSF-2.0",
-  "Unlicense",
-  "Zlib",
-  "WTFPL",
-  "OFL-1.1",
-  "MPL-2.0",
-]);
 
 type Exception = { license?: unknown; reason?: unknown };
 const LIBVIPS =
@@ -34,47 +15,6 @@ const DEFAULTS: Record<string, Exception> = {
   "@img/sharp-win32-*": { license: "Apache-2.0 AND LGPL-3.0-or-later", reason: LIBVIPS },
   "@img/sharp-wasm32": { license: "Apache-2.0 AND LGPL-3.0-or-later AND MIT", reason: LIBVIPS },
 };
-
-function licenceAllowed(expression: string): boolean {
-  const tokens = expression.match(/\(|\)|[^\s()]+/g) ?? [];
-  let at = 0;
-  const fail = () => {
-    throw new Error(expression);
-  };
-  const atom = (): boolean => {
-    const token = tokens[at++];
-    if (token === "(") {
-      const value = or();
-      if (tokens[at++] !== ")") fail();
-      return value;
-    }
-    if (!token || /^(AND|OR|WITH|\))$/.test(token)) fail();
-    if (tokens[at] === "WITH" && /^(AND|OR|WITH|\(|\))?$/.test(tokens[(at += 2) - 1] ?? "")) fail();
-    return ALLOWED.has(token);
-  };
-  const and = (): boolean => {
-    let value = atom();
-    while (tokens[at] === "AND") {
-      at++;
-      value = atom() && value;
-    }
-    return value;
-  };
-  const or = (): boolean => {
-    let value = and();
-    while (tokens[at] === "OR") {
-      at++;
-      value = and() || value;
-    }
-    return value;
-  };
-  try {
-    const value = or();
-    return at === tokens.length && value;
-  } catch {
-    return false;
-  }
-}
 
 const exceptionCovers = (pattern: string, name: string) =>
   pattern.endsWith("*") ? name.startsWith(pattern.slice(0, -1)) : name === pattern;

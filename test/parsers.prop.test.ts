@@ -1,0 +1,158 @@
+import { fc, test } from "@hackersandwizards/scaffolding/property";
+import { expect, vi } from "vitest";
+import { jsonObject, isStrings } from "../lib/json.ts";
+import { licenceAllowed } from "../lib/licence-expression.ts";
+import { exported, targeted } from "../lib/package-exports.ts";
+import {
+  applyAllow,
+  commentSyntax,
+  exportTargets,
+  fetchWaitS,
+  ourRepository,
+  styled,
+} from "../lib/repo.ts";
+
+const word = fc.stringMatching(/^[a-z]{1,10}$/);
+const segment = fc.stringMatching(/^[a-z][a-z0-9-]{0,12}$/);
+
+test.prop([fc.integer({ min: 1, max: 10_000_000 }), fc.nat(12)])(
+  "the fetch timeout reads a positive decimal and caps it at the timer limit",
+  (seconds, zeros) => {
+    vi.stubEnv("SCAFFOLDING_FETCH_WAIT_S", `${"0".repeat(zeros)}${seconds}`);
+    try {
+      expect(fetchWaitS()).toBe(Math.min(seconds, Math.floor(2_147_483_647 / 1000)));
+      vi.stubEnv("SCAFFOLDING_FETCH_WAIT_S", `-${seconds}`);
+      expect(fetchWaitS()).toBe(20);
+    } finally {
+      vi.unstubAllEnvs();
+    }
+  },
+);
+
+test.prop([fc.array(word), word, fc.constantFrom(["ts", "//"], ["yml", "#"], ["sh", "#"])])(
+  "stripping a line comment preserves all preceding quoted tokens",
+  (words, note, [extension, marker]) => {
+    const content = words.map((word) => `"${marker}${word}"`).join(" ");
+    const code = `command ${content} `;
+    expect(`${code}${marker} ${note}`.replace(commentSyntax(`file.${extension}`), "$1")).toBe(code);
+  },
+);
+
+test.prop([fc.dictionary(fc.string(), fc.jsonValue())])(
+  "JSON objects round trip from text and buffers",
+  (value) => {
+    const json = JSON.stringify(value);
+    const expected: unknown = JSON.parse(json);
+    expect(jsonObject(json)).toEqual(expected);
+    expect(jsonObject(Buffer.from(json))).toEqual(expected);
+  },
+);
+
+test.prop([
+  fc.oneof(fc.array(fc.jsonValue()), fc.string(), fc.integer(), fc.boolean(), fc.constant(null)),
+])("non-object JSON cannot pass as an object", (value) => {
+  expect(() => jsonObject(JSON.stringify(value))).toThrow("the JSON holds no object");
+});
+
+test.prop([fc.array(fc.string()), fc.integer()])(
+  "string lists reject a non-string anywhere",
+  (strings, number) => {
+    expect(isStrings(strings)).toBe(true);
+    expect(isStrings([...strings, number, ...strings])).toBe(false);
+  },
+);
+
+const leaf = fc.constantFrom(
+  { source: "MIT", allowed: true },
+  { source: "Apache-2.0", allowed: true },
+  { source: "GPL-3.0-only", allowed: false },
+  { source: "Unknown", allowed: false },
+);
+const licence = fc.letrec<{ expression: { source: string; allowed: boolean } }>((tie) => ({
+  expression: fc.oneof(
+    { depthSize: "small" },
+    leaf,
+    fc
+      .tuple(tie("expression"), fc.constantFrom("AND", "OR"), tie("expression"))
+      .map(([left, operator, right]) => ({
+        source: `(${left.source} ${operator} ${right.source})`,
+        allowed: operator === "AND" ? left.allowed && right.allowed : left.allowed || right.allowed,
+      })),
+  ),
+})).expression;
+
+test.prop([licence])(
+  "SPDX boolean expressions follow their tree and reject an unmatched parenthesis",
+  ({ source, allowed }) => {
+    expect(licenceAllowed(source)).toBe(allowed);
+    expect(licenceAllowed(`(${source}`)).toBe(false);
+  },
+);
+
+test.prop([segment, fc.array(segment, { minLength: 1 }), word])(
+  "wildcard exports match paths across directories within their prefix and suffix",
+  (prefix, parts, suffix) => {
+    const fragment = parts.join("/");
+    const exports = { [`./${prefix}/*.${suffix}`]: `./dist/${prefix}/*.${suffix}` };
+    expect(exported(exports, `${prefix}/${fragment}.${suffix}`)).toBe(true);
+    expect(exported(exports, `another/${prefix}/${fragment}.${suffix}`)).toBe(false);
+    expect(targeted(exports, `dist/${prefix}/${fragment}.${suffix}`)).toBe(true);
+    expect(targeted(exports, `dist/${prefix}/${fragment}.${suffix}.map`)).toBe(false);
+  },
+);
+
+test.prop([segment])("a null export blocks a wildcard for that exact path", (file) => {
+  const exports = { "./*": "./dist/*", [`./${file}`]: null };
+  expect(exported(exports, file)).toBe(false);
+  expect(exported(exports, `other/${file}`)).toBe(true);
+});
+
+test.prop([segment, segment])("a specific null wildcard blocks a broader export", (dir, file) => {
+  const exports = { "./*": "./dist/*", [`./${dir}/*`]: null };
+  expect(exported(exports, `${dir}/${file}`)).toBe(false);
+  expect(exported(exports, `outside/${dir}/${file}`)).toBe(true);
+});
+
+test.prop([fc.array(segment), fc.array(segment)])(
+  "conditional exports enumerate file targets and omit null branches",
+  (esm, cjs) => {
+    const paths = esm.map((name) => `./${name}.js`);
+    const fallback = cjs.map((name) => `./${name}.cjs`);
+    expect(
+      exportTargets({ ".": { import: paths, require: [null, ...fallback] }, "./private": null }),
+    ).toEqual([...paths, ...fallback]);
+  },
+);
+
+test.prop([
+  segment,
+  segment,
+  fc.constantFrom("https://example.test/", "ssh://example.test/", "git@example.test:"),
+])("an owned git URL uses the organization segment and ignores its ref", (repo, ref, base) => {
+  expect(ourRepository(`${base}hackersandwizards/${repo}.git#${ref}`)).toBe(true);
+  expect(ourRepository(`${base}other-hackersandwizards/${repo}.git#${ref}`)).toBe(false);
+});
+
+test.prop([segment, fc.constantFrom("astro", "css")])(
+  "style paths match their final extension",
+  (name, extension) => {
+    expect(styled(`src/${name}.${extension}`)).toBe(true);
+    expect(styled(`src/${name}.${extension}.txt`)).toBe(false);
+  },
+);
+
+test.prop([segment, word])("an allowance applies to its check and path together", (file, text) => {
+  const path = `src/${file}.ts`;
+  const check = "coupling";
+  const pkg = {
+    name: "example",
+    scaffolding: { allow: [{ check, path, text, reason: "generated case" }] },
+  };
+  const finding = { check, path, text, message: "finding" };
+  const otherFile = { ...finding, path: `test/${file}.ts` };
+  const otherCheck = { ...finding, check: "structure" };
+  expect(applyAllow(pkg, check, [finding, otherFile, otherCheck], true)).toEqual([
+    otherFile,
+    otherCheck,
+  ]);
+});

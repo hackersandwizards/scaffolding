@@ -26,6 +26,7 @@ import { pathToFileURL } from "node:url";
 import { brandFallbacks } from "../catalog/fallbacks.ts";
 import { catalogPath } from "../catalog/path.ts";
 import { loadRoute, rewriteRoute } from "../catalog/route.ts";
+import { runOxlint } from "../lib/oxlint.ts";
 import { rejection } from "../lib/rejection.ts";
 import {
   applyAllow,
@@ -158,6 +159,87 @@ function write(dir: string, files: Record<string, string>) {
     writeFileSync(join(dir, path), text);
   }
 }
+
+test("the consumer explore command runs properties only and reports the shrunk failing case", () => {
+  const dir = temp();
+  const property = "sample.prop.test.ts";
+  write(dir, {
+    "package.json": JSON.stringify({
+      name: "property-consumer",
+      type: "module",
+      scripts: { explore: "scaffolding-explore" },
+    }),
+    "vitest.config.mjs": 'export { default } from "@hackersandwizards/scaffolding/vitest";\n',
+    [property]: `
+import { fc, test } from "@hackersandwizards/scaffolding/property";
+import { afterAll, afterEach, beforeEach, expect } from "vitest";
+let active = false;
+let cases = 0;
+beforeEach(() => {
+  expect(active).toBe(false);
+  active = true;
+});
+afterEach(() => {
+  expect(active).toBe(true);
+  active = false;
+});
+afterAll(() => {
+  expect(cases).toBe(fc.readConfigureGlobal().numRuns);
+});
+test.prop([fc.integer({ min: 1, max: 100 })])("positive integers", (value) => {
+  expect(active).toBe(true);
+  cases++;
+  expect(value).toBeGreaterThan(0);
+});`,
+    "example.prop.test.folder/sample.test.ts": `
+import { test } from "vitest";
+test("example must stay out of exploration", () => { throw new Error("example ran"); });`,
+  });
+  const home = join(import.meta.dirname, "..");
+  const scope = join(dir, "node_modules", "@hackersandwizards");
+  const commands = join(dir, "node_modules", ".bin");
+  mkdirSync(scope, { recursive: true });
+  mkdirSync(commands, { recursive: true });
+  symlinkSync(home, join(scope, "scaffolding"));
+  symlinkSync(join(home, "node_modules", "vitest"), join(dir, "node_modules", "vitest"));
+  symlinkSync(bin("scaffolding-explore"), join(commands, "scaffolding-explore"));
+  symlinkSync(join(home, "node_modules", ".bin", "vitest"), join(commands, "vitest"));
+  const explore = () =>
+    spawnSync(process.execPath, ["run", "explore", "--seed", "-188"], {
+      cwd: dir,
+      encoding: "utf8",
+    });
+  const passing = explore();
+  expect(passing.status, passing.stdout + passing.stderr).toBe(0);
+  expect(passing.stdout).toContain("seed -188, 512 runs per property");
+
+  const file = join(dir, property);
+  writeFileSync(file, readFileSync(file, "utf8").replace("toBeGreaterThan(0)", "toBe(0)"));
+  const failing = explore();
+  expect(failing.status, failing.stdout + failing.stderr).toBe(1);
+  const output = failing.stdout + failing.stderr;
+  expect(output).toContain("with seed=-188");
+  expect(output).toContain("Counterexample: [1]");
+});
+
+test("Vitest assertion lint accepts property callbacks with both assertion rules active", () => {
+  const dir = temp();
+  const root = join(import.meta.dirname, "..");
+  const missing = "missing.prop.test.js";
+  const standalone = "standalone.prop.test.js";
+  write(dir, {
+    ".oxlintrc.json": JSON.stringify({ extends: [join(root, "config/oxlint.json")] }),
+    [missing]: 'import { test } from "vitest";\ntest("missing assertion", () => {});',
+    [standalone]: `import { expect } from "vitest";\nexpect(true).toBe(true);`,
+  });
+  const passing = runOxlint(root, ["test/changed-steps.prop.test.ts"], true);
+  expect(passing.status, passing.stdout + passing.stderr).toBe(0);
+  const failing = runOxlint(dir, [missing, standalone], true);
+  expect(failing.status).toBe(1);
+  const output = failing.stdout + failing.stderr;
+  expect(output).toMatch(/missing\.prop\.test\.js:[^\n]*vitest\(expect-expect\)/);
+  expect(output).toMatch(/standalone\.prop\.test\.js:[^\n]*vitest\(no-standalone-expect\)/);
+});
 // SCAFFOLDING_LOAD 0: the gate runs its steps side by side whatever this machine's load is.
 function run(
   cwd: string,
@@ -2929,7 +3011,7 @@ describe("scaffolding check", () => {
     }
   });
 
-  test("--changed adds local mappings to the defaults and falls back to every fast step", () => {
+  test("--changed adds local mappings to the defaults and recognizes shared configuration", () => {
     const changed = { "docs/**": ["check:docs"], "src/**": ["check:src"] };
     const dir = gate(
       { skip, changed, check: [["check:docs", "check:src"]] },
@@ -2943,14 +3025,7 @@ describe("scaffolding check", () => {
     expect(mapped.out).not.toContain("src-ran");
     expect(mapped.out).toContain("[scaffolding] skipped check:src: no changed path maps to it");
     expect(mapped.code).toBe(0);
-    // Control: a path no glob maps runs every step.
-    write(dir, { "other.txt": "x\n" });
-    const unmapped = run(dir, "scaffolding", ["check", "--changed"], lock);
-    expect(unmapped.out).toContain('"other.txt" matches no path glob: all fast steps run');
-    expect(unmapped.out).toContain("src-ran");
-    expect(unmapped.out).toContain("selected check:src");
     // A file every step reads runs every step too.
-    rmSync(join(dir, "other.txt"));
     write(dir, { "bunfig.toml": "\n" });
     expect(run(dir, "scaffolding", ["check", "--changed"], lock).out).toContain("src-ran");
   });
@@ -3071,20 +3146,15 @@ describe("scaffolding check", () => {
       const rename = git("rev-parse", "HEAD");
       const moved = changed(`${source}..${rename}`);
       expect(moved).toContain("2 paths since");
-      expect(moved).toContain('selected lint: matches "src/a.ts"');
       renameSync(join(dir, "src/b.ts"), join(dir, "node_modules/deleted.ts"));
       const deleted = commit("src/b.ts");
       expect(changed(`${rename}..${deleted}`)).toContain('selected test: matches "src/b.ts"');
 
-      write(dir, { "docs/yarn.lock": "", "unmapped.txt": "" });
+      write(dir, { "docs/yarn.lock": "" });
       const lockfile = commit("docs/yarn.lock");
-      const unknown = commit("unmapped.txt");
       const configFallback = changed(`${deleted}..${lockfile}`);
       expect(configFallback).toContain("is a shared configuration path");
       expect(configFallback).toContain("test-ran");
-      const unknownFallback = changed(`${lockfile}..${unknown}`);
-      expect(unknownFallback).toContain("matches no path glob");
-      expect(unknownFallback).toContain("test-ran");
       expect(changed(`${"0".repeat(40)}..${docs}`)).toContain("starts a new branch");
       expect(changed(`${"1".repeat(40)}..${docs}`)).toContain(
         "starts at a commit this clone lacks",
@@ -6430,19 +6500,6 @@ describe("raise-pins", () => {
     const pid = Number(readFileSync(join(dir, "pid"), "utf8"));
     await new Promise((r) => setTimeout(r, 200));
     expect(() => process.kill(pid, 0)).toThrow();
-  });
-
-  test("a SCAFFOLDING_FETCH_WAIT_S that is no whole number above 0 is 20 s, and a long one is capped", async () => {
-    const remote = join(packages(["a"]), "a");
-    const saved = { ...process.env };
-    try {
-      for (const wait of ["-1", "1e10", "99999999999"]) {
-        process.env.SCAFFOLDING_FETCH_WAIT_S = wait;
-        expect(await newestTag(remote)).toBe("v1.10.0");
-      }
-    } finally {
-      process.env = saved;
-    }
   });
 
   test("a scaffolding raise commits what check-structure --fix wrote, unless --fix rewrote an edit", () => {

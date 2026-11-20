@@ -23,6 +23,13 @@
 //                                             --never adds the never section, every name kept;
 //                                             --never - reads it from stdin after a NUL byte
 //   check-confidential purged <sha>...        prints .confidential-purged.json for purged commits
+import {
+  addedLines,
+  decodeEntities,
+  parsePurgedList,
+  parseTermList,
+  type TermList,
+} from "../lib/confidential-input.ts";
 import { spawnSync } from "node:child_process";
 import { createHash, randomBytes } from "node:crypto";
 import {
@@ -44,8 +51,6 @@ import {
   fetchWaitS,
   finish,
   git,
-  isStrings,
-  jsonObject,
   reader,
   readPackage,
   repoRoot,
@@ -71,13 +76,6 @@ const hasher = (salt: string) => (s: string) =>
     .update(salt + s)
     .digest("hex")
     .slice(0, 32);
-
-function parsePurgedList(text: string) {
-  const { salt, hashes } = jsonObject(text);
-  if (typeof salt !== "string" || !isStrings(hashes))
-    throw new Error("expected a salt and a list of hashes");
-  return { salt, hashes };
-}
 
 // NFKC first: macOS file names and some pasted text arrive decomposed, which splits words at accents.
 const words = (s: string) => s.normalize("NFKC").match(/[\p{L}\p{N}]+/gu) ?? [];
@@ -349,29 +347,6 @@ if (argv[0] === "prepush") {
   finish("check-confidential", findings, started);
 }
 
-type TermList = {
-  built?: string;
-  salt: string;
-  maxTokens: number;
-  hashes: string[];
-  never?: string[];
-};
-const parse = (text: string): TermList | undefined => {
-  try {
-    const { built, salt, maxTokens, hashes, never } = jsonObject(text);
-    return isStrings(hashes) &&
-      (never === undefined || isStrings(never)) &&
-      typeof salt === "string" &&
-      typeof maxTokens === "number" &&
-      Number.isInteger(maxTokens) &&
-      maxTokens >= 1 &&
-      maxTokens <= 6
-      ? { built: typeof built === "string" ? built : undefined, salt, maxTokens, hashes, never }
-      : undefined;
-  } catch {
-    return undefined;
-  }
-};
 const age = (file: string) => (existsSync(file) ? Date.now() - statSync(file).mtimeMs : Infinity);
 const warn = (message: string) => console.error(`[check-confidential] ${message}`);
 
@@ -390,7 +365,7 @@ function fetchList(): string | undefined {
     { encoding: "utf8", timeout: 20_000 },
   );
   if (r.error) return `gh: ${r.error.message}`;
-  if (r.status !== 0 || !parse(r.stdout))
+  if (r.status !== 0 || !parseTermList(r.stdout))
     return `gh: ${(r.stderr || r.stdout).trim().replace(/^gh: /, "").split("\n")[0] || `exit ${r.status}`}`;
   writeFileSync(`${CACHE}.tmp`, r.stdout);
   renameSync(`${CACHE}.tmp`, CACHE);
@@ -405,7 +380,7 @@ function loadList(optional = false): { list?: TermList; problem?: string; absent
   // A copy fetched before Company OS built the never section is fetched again for the never scan.
   const old =
     age(CACHE) >= DAY ||
-    (neverMode && existsSync(CACHE) && !parse(readFileSync(CACHE, "utf8"))?.never?.length);
+    (neverMode && existsSync(CACHE) && !parseTermList(readFileSync(CACHE, "utf8"))?.never?.length);
   if (!file && old && due) {
     problem = fetchList();
     if (problem && existsSync(CACHE)) warn(`${problem}; using the copy fetched before`);
@@ -416,7 +391,7 @@ function loadList(optional = false): { list?: TermList; problem?: string; absent
         : "no copy; next fetch within the hour, or now by `check-confidential fetch`",
     );
   const source = file ?? CACHE;
-  const list = existsSync(source) ? parse(readFileSync(source, "utf8")) : undefined;
+  const list = existsSync(source) ? parseTermList(readFileSync(source, "utf8")) : undefined;
   if (!list)
     return { problem: problem ?? `no valid list at ${source}`, absent: !existsSync(source) };
   const built = Date.parse(list.built ?? "");
@@ -569,13 +544,6 @@ function ocrBinary(): string | undefined {
   return built.status === 0 ? bin : undefined;
 }
 
-const ENTITY: Record<string, string> = { amp: "&", lt: "<", gt: ">", quot: '"', apos: "'" };
-const fromCode = (code: number, m: string) => (code <= 0x10ffff ? String.fromCodePoint(code) : m);
-const decode = (s: string) =>
-  s.replace(/&(?:#(\d+)|#x([\da-f]+)|(\w+));/gi, (m, d?: string, x?: string, name?: string) =>
-    d || x ? fromCode(parseInt(d || x || "", d ? 10 : 16), m) : (ENTITY[name ?? ""] ?? m),
-  );
-
 /** The entries of a zip archive (Office, OpenDocument, iWork, .zip), or why it cannot be read. */
 function unzip(data: Buffer): { name: string; data: Buffer }[] | string {
   try {
@@ -715,7 +683,7 @@ function scanBinaries(files: { where: string; data: Buffer }[]) {
       add(
         where,
         XML.test(name) || text.startsWith("<?xml")
-          ? decode(
+          ? decodeEntities(
               `${text.replace(/<[^>]*>/g, " ")}\n${text.replace(BLOCK, "\n").replace(/<[^>]*>/g, "")}`,
             )
           : text,
@@ -765,24 +733,6 @@ function scanBinaries(files: { where: string; data: Buffer }[]) {
     if (nav.length >= 3) report(where, nav.join(", "), "Company OS screenshot");
     scanText(where, text);
   }
-}
-
-/** Added lines per path; `paths` are the diff's files in its order, one per `diff --git` line. */
-function addedLines(diff: string, paths: string[]) {
-  const added = new Map<string, string[]>();
-  let path: string | undefined;
-  let file = -1;
-  let hunk = false;
-  for (const line of diff.split("\n")) {
-    // A hunk's lines start with " ", "+", "-" or "\\", so only a file's header starts "diff --git".
-    if (line.startsWith("diff --git ")) [path, hunk] = [paths[++file], false];
-    else if (line.startsWith("@@")) hunk = true;
-    else if (hunk && path !== undefined && line.startsWith("+")) {
-      if (!added.has(path)) added.set(path, []);
-      added.get(path)!.push(line.slice(1));
-    }
-  }
-  return added;
 }
 
 let full = false;

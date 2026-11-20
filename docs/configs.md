@@ -97,6 +97,30 @@ Vitest's default exclusions and preserves symlinks in Vite resolution and worker
 mutation runs. Add local exclusions through `mergeConfig`, which appends them to the base array.
 Remove any duplicate `defaultExclude` spread from the local exclusion list.
 
+### `./property`
+
+Keep properties in `*.prop.test.ts` files and use the shared Vitest config above.
+
+```ts
+import { fc, test } from "@hackersandwizards/scaffolding/property";
+import { expect } from "vitest";
+
+test.prop([fc.array(fc.integer())])("a copy preserves every element", (values) => {
+  expect(values.slice()).toEqual(values);
+});
+```
+
+Examples fix a concrete input and result, including one regression per defect. Properties generate
+inputs and check a rule for every case. Mutation testing changes the code to judge the tests. Give
+each assertion one owner and keep an example regression for the shrunk input that exposed a defect.
+
+The shared setup uses seed `17401` with 64 cases in the normal suite and 12 under Stryker. Vitest
+runs per-case hooks and reports the seed and shrunk counterexample on failure.
+
+Set `"explore": "scaffolding-explore"` in `package.json`. Run `bun run explore` for 512 cases per
+property with a fresh seed and a two-minute wall limit. Run `bun run explore --seed <seed>` to
+replay the run. Exploration selects `*.prop.test.*` files from the Vitest suite.
+
 ### `./stryker`
 
 Replace `stryker.config.json` with `stryker.config.mjs`. Stryker loads a JavaScript default export
@@ -126,3 +150,6 @@ Set `"mutation": "scaffolding-mutation"` in `package.json` and run `bun run muta
 The command stops Stryker and its workers at the 15-minute wall limit and exits with status 124.
 To narrow a run, use `bun run mutation --mutate <files>`. Mutation testing stays outside the gate,
 hooks and CI.
+
+For suites that use Bun APIs, set `"mutation": "SCAFFOLDING_MUTATION_BUN=1 scaffolding-mutation"`
+and `pool: "forks"` in the Stryker config's `vitest` options.

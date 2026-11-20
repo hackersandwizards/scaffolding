@@ -52,6 +52,7 @@ For `eslint.config.js`, copy
 - `./prettier`, `./oxlint`, `./eslint`, `./eslint/astro`, `./stylelint`: the shared format and lint configs.
 - `./tsconfig/bun.json`, `./tsconfig/astro.json`: the base for `"extends"`.
 - `./vitest`, `./stryker`: the shared test and mutation configs.
+- `./property` provides the Vitest property testing API. [Test setup](docs/configs.md#property)
 - `./catalog`: the catalog preset for an Astro config ([The catalog](docs/catalog.md)).
 - `./rejection`: the error a promise rejects with, as text, in a test.
 - `./serve`, `./chrome`: a gate server on a free port, and Chrome for Testing.
@@ -91,6 +92,7 @@ and load, Environment and the exceptions a repository keeps are in [docs/gate.md
 - `bun run check`: the gate on the package itself.
 - `bun run test` runs the Vitest suite on Bun.
 - `bun run mutation` runs Stryker on demand with a 15-minute wall limit.
+- `bun run explore` runs the property files on demand with a fresh seed and a two-minute wall limit.
 
 A release bumps `version` and pushes the tag `v<version>`; [CLAUDE.md](CLAUDE.md) has the rules.
 
