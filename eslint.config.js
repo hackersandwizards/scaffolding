@@ -1,4 +1,4 @@
-import base from "./config/eslint.js";
+import base from "./config/eslint-astro.js";
 
 export default [
   ...base,

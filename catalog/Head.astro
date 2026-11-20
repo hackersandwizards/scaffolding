@@ -166,13 +166,13 @@ const root = {
     if (document.documentElement.dataset.hwNight !== undefined)
       try {
         const chosen = localStorage.getItem(BRAND_KEY);
-        if ((chosen === "dark" || chosen === "light") && theme()?.getTheme?.() !== chosen)
-          theme()?.setTheme?.(chosen);
+        if ((chosen === "dark" || chosen === "light") && theme()?.getTheme() !== chosen)
+          theme()?.setTheme(chosen);
       } catch {}
     const pressed = () =>
       document
         .querySelector("[data-hw-theme]")
-        ?.setAttribute("aria-pressed", String(theme()?.getTheme?.() === "dark"));
+        ?.setAttribute("aria-pressed", String(theme()?.getTheme() === "dark"));
     // brand's switch in the header flips data-theme and stores the choice; Astrobook's toggle
     // follows, and a flip by Astrobook's is stored, on a page that turns at all: a state alone, a
     // tile's frame included, keeps its day theme and leaves the stored choice alone.
@@ -181,25 +181,27 @@ const root = {
       new MutationObserver(() => {
         const chosen = root.dataset.theme;
         if (chosen !== "dark" && chosen !== "light") return;
-        if (theme()?.getTheme?.() !== chosen) theme()?.setTheme?.(chosen);
+        if (theme()?.getTheme() !== chosen) theme()?.setTheme(chosen);
         try {
           localStorage.setItem(BRAND_KEY, chosen);
         } catch {}
         pressed();
       }).observe(root, { attributeFilter: ["data-theme"] });
     const bar = document.getElementById("hw-catalog-bar");
-    if (bar) {
+    if (bar instanceof HTMLTemplateElement) {
       // The preload scanner skips the template, so the header's logo is otherwise asked for only
       // once the parser reaches <main>: on a slow connection, with the rest of the document, 30 to
       // 57 ms later on DevTools' 3G and no longer ahead of the stylesheets' requests.
       bar.content.querySelectorAll('img[src]:not([loading="lazy"])').forEach((img) => {
-        new Image().src = img.getAttribute("src");
+        const src = img.getAttribute("src");
+        if (src !== null) new Image().src = src;
       });
       new MutationObserver((_, observer) => {
         const main = document.querySelector("main");
         if (!main) return;
         observer.disconnect();
         const parts = bar.content.cloneNode(true);
+        if (!(parts instanceof DocumentFragment)) return;
         const top = parts.querySelector("[data-hw-catalog-top]");
         if (top) main.before(top);
         main.prepend(parts);
@@ -207,15 +209,19 @@ const root = {
       }).observe(document, { childList: true, subtree: true });
     }
     document.addEventListener("click", (event) => {
-      if (!event.target.closest?.("[data-hw-theme]")) return;
-      theme()?.setTheme?.(theme().getTheme?.() === "dark" ? "light" : "dark");
-      try {
-        localStorage.setItem(BRAND_KEY, theme().getTheme());
-      } catch {}
+      if (!(event.target instanceof Element && event.target.closest("[data-hw-theme]"))) return;
+      const toggle = theme();
+      if (toggle) {
+        toggle.setTheme(toggle.getTheme() === "dark" ? "light" : "dark");
+        try {
+          localStorage.setItem(BRAND_KEY, toggle.getTheme());
+        } catch {}
+      }
       pressed();
     });
     document.addEventListener("change", (event) => {
-      if (event.target.matches?.("[data-hw-states]")) location.href = event.target.value;
+      if (event.target instanceof HTMLSelectElement && event.target.matches("[data-hw-states]"))
+        location.href = event.target.value;
     });
     // The arrow keys step through the states unless a field or the story has the focus, or a
     // story's own handler, which runs after this one, takes the key.
@@ -228,15 +234,19 @@ const root = {
         event.shiftKey
       )
         return;
-      const on = event.target.closest?.bind(event.target);
+      const target = event.target;
       if (
-        on?.("input, select, textarea, [contenteditable]") ||
-        (on?.("main") && !on(".hw-catalog-bar"))
+        target instanceof Element &&
+        (target.closest("input, select, textarea, [contenteditable]") ||
+          (target.closest("main") && !target.closest(".hw-catalog-bar")))
       )
         return;
-      const rel = { ArrowLeft: "prev", ArrowRight: "next" }[event.key];
+      const rel = event.key === "ArrowLeft" ? "prev" : event.key === "ArrowRight" ? "next" : "";
       const link = rel && document.querySelector(`.hw-catalog-bar a[rel="${rel}"]`);
-      if (link) setTimeout(() => event.defaultPrevented || (location.href = link.href));
+      if (link instanceof HTMLAnchorElement)
+        setTimeout(() => {
+          if (!event.defaultPrevented) location.href = link.href;
+        });
     });
   })();
 </script>
