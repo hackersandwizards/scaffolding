@@ -9,6 +9,12 @@ commands through `bun run`. docs/commands.md says what each command checks.
 This repository is public. No client, deal, invoice, person record, term list or Company OS
 screenshot goes in, and `check-confidential` runs in its own hooks.
 
+## Layers
+
+Command entry points live in `bin/`, shared command code in `lib/`, and reusable configuration in
+`config/`. The catalog may use `lib/`. The `no-restricted-imports` override in `.oxlintrc.json`
+blocks relative imports from `lib/` and `config/` into `bin/`, including type imports.
+
 ## Checks
 
 `bun run check` is the full gate, `scaffolding check` run on the package itself. It runs the Vitest

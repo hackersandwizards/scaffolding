@@ -9,6 +9,24 @@
   "options": {
     "typeAware": true
   },
+  "overrides": [
+    {
+      "files": ["lib/**", "config/**"],
+      "rules": {
+        "no-restricted-imports": [
+          "error",
+          {
+            "patterns": [
+              {
+                "regex": "^(\\.\\./)+bin/",
+                "message": "Keep command entry points in bin. Put reusable code in lib or config."
+              }
+            ]
+          }
+        ]
+      }
+    }
+  ],
   "ignorePatterns": [
     "node_modules/**",
     "coverage/**",
