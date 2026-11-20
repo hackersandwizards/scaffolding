@@ -16,7 +16,7 @@ interface Props {
 // A state's page takes the preset's values; the home passes its own, which a repository's home may
 // override.
 const { product = shell.product, href = shell.href, admin = shell.admin, current } = Astro.props;
-const nav: { name: string; href: string; current?: true }[] | undefined = shell.nav;
+const { nav } = shell;
 ---
 
 <Header product={product} href={href}>

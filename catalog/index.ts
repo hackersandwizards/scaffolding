@@ -103,6 +103,31 @@ export type CatalogOptions = {
   serverOnly?: boolean;
 };
 
+export type CatalogRuntimeConfig = Required<
+  Pick<
+    CatalogOptions,
+    | "product"
+    | "href"
+    | "title"
+    | "lead"
+    | "previews"
+    | "themeToggle"
+    | "htmlClass"
+    | "groupOrder"
+    | "previewStates"
+  >
+> &
+  Pick<CatalogOptions, "previewSize" | "storyScale"> & {
+    nav?: { name: string; href: string; current?: true }[];
+    link: string;
+    headerToggle: boolean;
+    onDisk: boolean;
+    provenance: string;
+    layers: string;
+    slash: "/" | "";
+    admin?: string;
+  };
+
 const BRAND_HEADER = {
   component: "@hackersandwizards/brand/expert/components/AppHeader.astro",
   // night.css turns the header under the data-hw-night that Head.astro sets.
@@ -398,7 +423,7 @@ export function catalog(options: CatalogOptions): AstroIntegration {
         // A misspelt or renamed `current` would link this catalog's entry to the published site.
         if (nav?.current !== undefined && !nav.items.some(({ name }) => name === nav.current))
           throw new Error(`catalog nav: current "${nav.current}" names no item`);
-        const shared = {
+        const shared: CatalogRuntimeConfig = {
           product: options.product,
           href: options.href ?? `${base}/`,
           nav: nav?.items.map(({ name, href }) =>

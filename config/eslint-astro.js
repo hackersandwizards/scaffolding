@@ -2,6 +2,7 @@ import js from "@eslint/js";
 import astro from "eslint-plugin-astro";
 import prettier from "eslint-config-prettier/flat";
 import tseslint from "typescript-eslint";
+import { frontmatterBlock, frontmatterFiles } from "./eslint-astro-frontmatter.js";
 import { astroClientScript, astroTypePrograms } from "./eslint-astro-script.js";
 import base from "./eslint.js";
 import oxlint from "./oxlint.json" with { type: "json" };
@@ -13,6 +14,7 @@ const astroParser = astroPreset.find((config) => config.name === "astro/base").l
   .parser;
 const originalProcessor = astro.processors["client-side-ts"];
 const scripts = astroTypePrograms(originalProcessor, astroParser);
+const untyped = Boolean(process.env.SCAFFOLDING_LINT_UNTYPED);
 const componentRegions = new Map();
 const retained = new Set(["no-dupe-args", "no-octal", "no-undef", "no-useless-assignment"]);
 const componentRules = {
@@ -84,6 +86,7 @@ function inRegion({ line, column }, [start, end]) {
 const processor = {
   meta: { ...originalProcessor.meta, name: "scaffolding/astro" },
   supportsAutofix: true,
+  frontmatterBlock,
   reportsInOxlintRegion,
   oxlintRegions(filename) {
     return componentRegions.get(filename);
@@ -111,8 +114,11 @@ const processor = {
 };
 
 export default [
-  ...base,
-  ...astroPreset,
+  ...[...base, ...astroPreset].map((config) =>
+    config.rules
+      ? { ...config, ignores: [...(config.ignores ?? []), ...frontmatterFiles] }
+      : config,
+  ),
   {
     files: astroFiles,
     processor,
@@ -128,8 +134,17 @@ export default [
         { argsIgnorePattern: "^_", varsIgnorePattern: "^_", caughtErrorsIgnorePattern: "^_" },
       ],
       "no-undef": "error",
-      ...(process.env.SCAFFOLDING_LINT_UNTYPED ? {} : typedRules),
+      ...(untyped ? {} : typedRules),
     },
   },
+  ...(untyped
+    ? []
+    : [
+        {
+          files: frontmatterFiles,
+          languageOptions: { parser: scripts.parser },
+          rules: typedRules,
+        },
+      ]),
   prettier,
 ];

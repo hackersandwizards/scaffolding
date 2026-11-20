@@ -24,7 +24,7 @@ client scripts. ESLint checks Astro templates, the Astro plugin rules, the test 
 Oxlint cannot run with the same coverage. Both steps run unless the repository already has a
 `skip.lint` reason. `check-structure` requires the shared Oxlint base and its settings in
 `.oxlintrc.json`. It checks for legacy ESLint config filenames and compares the effective
-rules on files both linters select, including Astro's extracted scripts. A rule enabled as a
+rules on files both linters select, including Astro frontmatter and extracted client scripts. A rule enabled as a
 warning or an error in both linters for the same code fails structure. The finding names the
 file and both rule IDs. Adjust the local config so one linter owns the rule there. See
 [Configs](configs.md).
@@ -33,10 +33,11 @@ The typed rules flag unhandled promises, promises used where a value or a void c
 expected, `await` on a non-promise, incomplete switches over unions, and unsafe assignments, member
 access, arguments, calls and returns. Oxlint checks that each physical TypeScript file it selects
 belongs to a TypeScript project before running those rules. Add an uncovered file to its
-`tsconfig.json` or import it from that project. ESLint checks the same typed rules in Astro client
-scripts using one TypeScript program per project. Relative imports resolve from the component's
-directory and the program uses the project's aliases and browser types. Frontmatter is linted
-without types.
+`tsconfig.json` or import it from that project. ESLint checks the same typed rules in Astro
+frontmatter and client scripts using one TypeScript program per project. Relative imports resolve
+from the component's directory. The program uses the project's aliases and browser types.
+Frontmatter uses the TSX conversion and module resolution from Astro's checker and reports
+diagnostics in the original component.
 
 The gate runs these rules without a file cache because imported types can change a file's verdict.
 `check-staged` runs the syntax rules of both tools. For Oxlint it checks out the staged sources and

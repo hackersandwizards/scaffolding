@@ -21,7 +21,7 @@ import {
   writeFileSync,
 } from "node:fs";
 import { availableParallelism, tmpdir } from "node:os";
-import { dirname, join } from "node:path";
+import { dirname, join, relative } from "node:path";
 import { pathToFileURL } from "node:url";
 import { brandFallbacks } from "../catalog/fallbacks.ts";
 import { catalogPath } from "../catalog/path.ts";
@@ -854,6 +854,20 @@ describe("scaffold and check-structure", () => {
       ]);
       write(other, { [eslint]: config + "export default base;\n" });
       expect(run(other, "check-structure")).toEqual({ code: 0, out: "" });
+
+      write(other, {
+        [eslint]:
+          config +
+          'export default [...base, { files: ["src/Probe.astro/*_frontmatter.tsx"], rules: { "no-debugger": "error" } }];\n',
+      });
+      const frontmatterOverlap = run(other, "check-structure");
+      expect(frontmatterOverlap.code).toBe(1);
+      expect(lines(frontmatterOverlap.out, "check-structure")).toEqual([
+        expect.stringMatching(
+          /src\/Probe\.astro\/\d+_frontmatter\.tsx: ESLint rule no-debugger overlaps Oxlint rule no-debugger.*\(Astro frontmatter\)/,
+        ),
+      ]);
+      write(other, { [eslint]: config + "export default base;\n" });
 
       write(other, {
         [oxlint]: JSON.stringify({
@@ -4224,6 +4238,91 @@ const Element = Fragment;
         expect(run.stdout).toMatch(/19:3 .*@typescript-eslint\/no-unsafe-call/);
         expect(run.stdout).not.toMatch(/^\s+(?:8|18|23):\d+ .*no-unsafe/m);
       }
+    }
+  });
+
+  test("Astro frontmatter uses nested project types and reports original positions", () => {
+    const dir = repo({
+      "eslint.config.js": `export { default } from "${join(import.meta.dirname, "../config/eslint-astro.js")}";\n`,
+      "tsconfig.json": '{"compilerOptions":{"strict":true,"paths":{"@props":["./wrong.ts"]}}}',
+      "wrong.ts": "export interface Props { load: () => string }\n",
+      "app/tsconfig.json":
+        '{"extends":"../tsconfig.json","compilerOptions":{"paths":{"@props":["./Props.astro"]}},"include":[".astro/types.d.ts","**/*"]}',
+      "app/.astro/types.d.ts":
+        "declare namespace App { interface Locals { load: () => Promise<string> } }\n",
+      "app/Props.astro": "---\nexport interface Props { load: () => Promise<string> }\n---\n",
+      "app/Explicit.astro": [
+        "\uFEFF---",
+        'import type { Props } from "@props";',
+        'const label = "🌱"; Astro.props.load();',
+        "  Astro.locals.load();",
+        "---",
+        "{label}",
+      ].join("\r\n"),
+      "app/[slug].astro": `---
+import type { ComponentProps } from "astro/types";
+import Card from "fixture-card/entry";
+export function getStaticPaths() {
+  const card: ComponentProps<typeof Card> = { load: () => Promise.resolve("entry") };
+  return [{ params: { slug: "start" }, props: { card } }];
+}
+Astro.props.card.load();
+const slug = Astro.params.slug.toUpperCase();
+---
+{(() => { Promise.resolve(0); return slug; })()}
+<script>
+  Promise.resolve(0);
+</script>
+`,
+      "node_modules/fixture-card/package.json":
+        '{"name":"fixture-card","exports":{"./entry":"./Card.astro"}}',
+      "node_modules/fixture-card/Card.astro":
+        "---\ninterface Props { load: () => Promise<string> }\n---\n",
+    });
+    symlinkSync(
+      join(import.meta.dirname, "../node_modules/astro"),
+      join(dir, "node_modules/astro"),
+    );
+    const eslint = join(import.meta.dirname, "../node_modules/eslint/bin/eslint.js");
+    for (const env of [{ ...process.env, SCAFFOLDING_LINT_UNTYPED: "" }, untyped]) {
+      const run = spawnSync(process.execPath, ["--bun", eslint, "app", "-f", "json"], {
+        cwd: dir,
+        encoding: "utf8",
+        env,
+      });
+      expect(run.stderr).toBe("");
+      const results = JSON.parse(run.stdout) as {
+        filePath: string;
+        messages: {
+          ruleId: string;
+          line: number;
+          column: number;
+          endLine: number;
+          endColumn: number;
+        }[];
+      }[];
+      const findings = results.flatMap(({ filePath, messages }) =>
+        messages.map(({ ruleId, line, column, endLine, endColumn }) => [
+          relative(realpathSync(dir), filePath),
+          ruleId,
+          line,
+          column,
+          endLine,
+          endColumn,
+        ]),
+      );
+      const floating = "@typescript-eslint/no-floating-promises";
+      expect(run.status).toBe(env.SCAFFOLDING_LINT_UNTYPED ? 0 : 1);
+      expect(findings).toEqual(
+        env.SCAFFOLDING_LINT_UNTYPED
+          ? []
+          : [
+              ["app/Explicit.astro", floating, 3, 21, 3, 40],
+              ["app/Explicit.astro", floating, 4, 3, 4, 23],
+              ["app/[slug].astro", floating, 13, 3, 13, 22],
+              ["app/[slug].astro", floating, 8, 1, 8, 25],
+            ],
+      );
     }
   });
 });

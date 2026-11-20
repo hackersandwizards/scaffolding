@@ -2,6 +2,11 @@ import { readFileSync } from "node:fs";
 import { basename, dirname, join, relative } from "node:path";
 import ts from "typescript";
 import tseslint from "typescript-eslint";
+import {
+  astroFrontmatter,
+  frontmatterBlock,
+  frontmatterMessages,
+} from "./eslint-astro-frontmatter.js";
 import { submodulePaths } from "./submodules.js";
 import { readTypeScriptProject } from "./typescript.js";
 
@@ -24,6 +29,7 @@ export function astroTypePrograms(processor, astroParser) {
   const active = new Map();
   const projects = new Map();
   const untyped = Boolean(process.env.SCAFFOLDING_LINT_UNTYPED);
+  const frontmatter = astroFrontmatter();
   const virtual = (file, index) => `${file}.${index}.ts`;
   function extractScripts(code, file) {
     const extracted = processor.preprocess(code, file);
@@ -72,12 +78,15 @@ export function astroTypePrograms(processor, astroParser) {
         unusedBindings.set(index, declarations);
       });
     }
+    const server = untyped ? undefined : frontmatter.convert(file, code);
     return {
       extracted,
       unusedBindings,
+      server,
       sources: new Map([
         ...extracted.slice(1).map(({ text }, index) => [virtual(file, index + 1), text]),
         ...bindings,
+        ...(server ? [[file, code]] : []),
       ]),
     };
   }
@@ -126,7 +135,7 @@ export function astroTypePrograms(processor, astroParser) {
         }
         for (const [name, text] of entry.sources) scripts.set(name, text);
       }
-      project = { parsed, options, scripts, program: undefined };
+      project = { parsed, options, scripts, folder, program: undefined };
       projects.set(key, project);
     }
     return project;
@@ -143,17 +152,26 @@ export function astroTypePrograms(processor, astroParser) {
       try {
         const component = dirname(options.filePath);
         // ESLint prefixes an extracted block's filename with its position in preprocess's array.
-        const index = Number(basename(options.filePath).split("_", 1)[0]);
-        const file = virtual(component, index);
+        const [index, block] = basename(options.filePath).split("_", 2);
+        const isFrontmatter = block === frontmatterBlock;
+        const file = isFrontmatter ? component : virtual(component, Number(index));
         const project = scriptProject(component, options.tsconfigRootDir ?? process.cwd());
         const { parsed, scripts } = project;
-        if (scripts.get(file) !== code) {
-          for (const [name, text] of active.get(component)?.sources ?? []) scripts.set(name, text);
-          scripts.set(file, code);
+        const entry = active.get(component);
+        if (
+          (!isFrontmatter && scripts.get(file) !== code) ||
+          (entry?.server && scripts.get(component) !== entry.server.source)
+        ) {
+          for (const [name, text] of entry.sources) scripts.set(name, text);
           project.program = undefined;
         }
         if (!project.program) {
-          const host = ts.createCompilerHost(project.options);
+          const compilerOptions = {
+            jsx: ts.JsxEmit.Preserve,
+            ...project.options,
+            allowNonTsExtensions: true,
+          };
+          const host = ts.createCompilerHost(compilerOptions);
           const { getSourceFile, fileExists, readFile } = host;
           host.fileExists = (name) => scripts.has(name) || fileExists(name);
           host.readFile = (name) => scripts.get(name) ?? readFile(name);
@@ -161,9 +179,11 @@ export function astroTypePrograms(processor, astroParser) {
             scripts.has(name)
               ? ts.createSourceFile(name, scripts.get(name), version)
               : getSourceFile(name, version, ...args);
+          const astroTypes = frontmatter.host(host, compilerOptions, project.folder);
+          const rootNames = [...(parsed?.fileNames ?? []), ...scripts.keys(), ...astroTypes];
           project.program = ts.createProgram({
-            rootNames: [...(parsed?.fileNames ?? []), ...scripts.keys()],
-            options: project.options,
+            rootNames,
+            options: compilerOptions,
             projectReferences: parsed?.projectReferences,
             host,
           });
@@ -186,7 +206,8 @@ export function astroTypePrograms(processor, astroParser) {
     preprocess(code, filename) {
       const entry = extractScripts(code, filename);
       active.set(filename, entry);
-      return entry.extracted;
+      if (!entry.server?.region) return entry.extracted;
+      return [...entry.extracted, { filename: frontmatterBlock, text: entry.server.code }];
     },
     postprocess(messages, filename) {
       const entry = active.get(filename);
@@ -198,7 +219,10 @@ export function astroTypePrograms(processor, astroParser) {
             Object.assign(message, { line, column: 1, endLine: line, endColumn: 1 });
         }
       }
-      return processor.postprocess(messages, filename);
+      const client = processor.postprocess(messages.slice(0, entry?.extracted.length), filename);
+      return entry?.server?.region
+        ? [...client, ...frontmatterMessages(entry.server, messages[entry.extracted.length] ?? [])]
+        : client;
     },
   };
 }

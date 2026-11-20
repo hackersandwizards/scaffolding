@@ -8,6 +8,7 @@ import { jsonObject, type Finding } from "./repo.ts";
 type Rules = Record<string, unknown>;
 
 type Processor = Linter.Processor & {
+  frontmatterBlock?: string;
   reportsInOxlintRegion?: (rule: string | null) => boolean;
   oxlintRegions?: (file: string) => { ranges: unknown[]; scripts: ReadonlySet<number> } | undefined;
 };
@@ -191,10 +192,12 @@ export async function lintOverlaps(root: string): Promise<Finding[]> {
         "Astro component in frontmatter or script",
       );
     for (const [index, block] of blocks.entries()) {
-      if (typeof block === "string" || (regions && !regions.scripts.has(index))) continue;
+      if (typeof block === "string") continue;
+      const frontmatter = block.filename === processor?.frontmatterBlock;
+      if (!frontmatter && regions && !regions.scripts.has(index)) continue;
       const path = join(file, `${index}_${block.filename}`);
-      const script = (await eslint.calculateConfigForFile(path)) as ESLintConfig | undefined;
-      if (script) compare(path, script, "Astro client script");
+      const config = (await eslint.calculateConfigForFile(path)) as ESLintConfig | undefined;
+      if (config) compare(path, config, frontmatter ? "Astro frontmatter" : "Astro client script");
     }
   }
   return overlaps;
