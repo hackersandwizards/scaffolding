@@ -1402,14 +1402,18 @@ describe("check-confidential", () => {
   const names = join(temp(), "names.txt");
   writeFileSync(names, "Acme Widgets GmbH\nJane Q Doe\nZYX\nEvery\n");
   const list = join(temp(), "list.json");
+  const buildStarted = Date.now();
   writeFileSync(list, run(temp(), "check-confidential", ["build", names]).out);
+  const buildFinished = Date.now();
   const env = { SCAFFOLDING_CONFIDENTIAL_TERMS: list, CI: "" };
 
   test("the list holds hashes, not names, drops dictionary words and carries its build time", () => {
     const text = readFileSync(list, "utf8");
     expect(text).not.toMatch(/acme|jane|zyx/i);
     expect(jsonObject(text).hashes).toHaveLength(4);
-    expect(Date.now() - Date.parse(String(jsonObject(text).built))).toBeLessThan(60_000);
+    const built = Date.parse(String(jsonObject(text).built));
+    expect(built).toBeGreaterThanOrEqual(buildStarted);
+    expect(built).toBeLessThanOrEqual(buildFinished);
   });
 
   test("a term the public text already carries is left out, its legal-form variant too", () => {
