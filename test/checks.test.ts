@@ -2154,6 +2154,10 @@ describe("check-confidential", () => {
     sh(dir, ["update-ref", "refs/remotes/origin/pr/1", purged]);
     expect(push(purged).status).toBe(1);
     expect(push(purged, "backup").status).toBe(1);
+    write(dir, { ".confidential-purged.json": '{"salt":"fixture"}' });
+    const malformed = push(clean);
+    expect(malformed.status).toBe(1);
+    expect(malformed.stderr).toContain("the list in this checkout does not parse");
     // The redirect of a `purged` that failed leaves the list empty.
     write(dir, { ".confidential-purged.json": "" });
     expect(push(clean).status).toBe(0);
@@ -2249,6 +2253,12 @@ describe("check-confidential", () => {
     sh(dir, ["add", ".confidential-purged.json"]);
     write(dir, { ".confidential-purged.json": "" });
     expect(purged(["b".repeat(40)])).toEqual(both);
+    write(dir, { ".confidential-purged.json": "{}" });
+    expect(purged(["b".repeat(40)])).toEqual(both);
+    sh(dir, ["add", ".confidential-purged.json"]);
+    const malformed = run(dir, "check-confidential", ["purged", "b".repeat(40)]);
+    expect(malformed.code).toBe(1);
+    expect(malformed.out).toContain(".confidential-purged.json does not parse");
   });
 
   test(
@@ -6012,41 +6022,51 @@ describe("check-staged", () => {
     expect(readFileSync(join(dir, "args.txt"), "utf8").endsWith("--\n--no-config.ts\n")).toBe(true);
   });
 
-  test("oxlint reads the staged source and layer policy after both change in the working tree", () => {
-    const config = {
-      ...oxlintTemplate,
-      overrides: [
-        {
-          files: ["src/**/*.ts"],
-          rules: { "no-restricted-imports": ["error", { patterns: [{ regex: "^blocked$" }] }] },
-        },
-      ],
-    };
-    const dir = repo({
-      "package.json": JSON.stringify({
-        scaffolding: { private: true, skip: { format: "fixture" } },
-      }),
-      "eslint.config.js": "export default [];\n",
-      ".oxlintrc.json": JSON.stringify(config),
-    });
-    install(dir);
-    mkdirSync(join(dir, "node_modules/.bin"));
-    symlinkSync(
-      join(import.meta.dirname, "../node_modules/.bin/eslint"),
-      join(dir, "node_modules/.bin/eslint"),
-    );
-    write(dir, { "src/a.ts": 'import "blocked";\n' });
-    sh(dir, ["add", "src/a.ts"]);
-    write(dir, {
-      "src/a.ts": "export {};\n",
-      ".oxlintrc.json": JSON.stringify({ ...config, overrides: [] }),
-    });
-    const red = run(dir, "check-staged");
-    expect(red.out).toContain("no-restricted-imports");
-    expect(red.code).toBe(1);
-    sh(dir, ["add", "src/a.ts"]);
-    expect(run(dir, "check-staged").code).toBe(0);
-  });
+  test.each(["new file", "symlink replacement"])(
+    "oxlint reads the staged source and layer policy after both change in the working tree (%s)",
+    (entry) => {
+      const config = {
+        ...oxlintTemplate,
+        overrides: [
+          {
+            files: ["src/**/*.ts"],
+            rules: { "no-restricted-imports": ["error", { patterns: [{ regex: "^blocked$" }] }] },
+          },
+        ],
+      };
+      const dir = repo({
+        "package.json": JSON.stringify({
+          scaffolding: { private: true, skip: { format: "fixture" } },
+        }),
+        "eslint.config.js": "export default [];\n",
+        ".oxlintrc.json": JSON.stringify(config),
+      });
+      install(dir);
+      mkdirSync(join(dir, "node_modules/.bin"));
+      symlinkSync(
+        join(import.meta.dirname, "../node_modules/.bin/eslint"),
+        join(dir, "node_modules/.bin/eslint"),
+      );
+      if (entry === "symlink replacement") {
+        mkdirSync(join(dir, "src"));
+        symlinkSync("../eslint.config.js", join(dir, "src/a.ts"));
+        expect(sh(dir, ["add", "src/a.ts"]).status).toBe(0);
+        expect(sh(dir, ["commit", "-qm", "add link", "--", "src/a.ts"]).status).toBe(0);
+      }
+      write(dir, { "src/replacement.ts": 'import "blocked";\n' });
+      renameSync(join(dir, "src/replacement.ts"), join(dir, "src/a.ts"));
+      sh(dir, ["add", "src/a.ts"]);
+      write(dir, {
+        "src/a.ts": "export {};\n",
+        ".oxlintrc.json": JSON.stringify({ ...config, overrides: [] }),
+      });
+      const red = run(dir, "check-staged");
+      expect(red.out).toContain("no-restricted-imports");
+      expect(red.code).toBe(1);
+      sh(dir, ["add", "src/a.ts"]);
+      expect(run(dir, "check-staged").code).toBe(0);
+    },
+  );
 
   test("a coupling or licence step the gate skips with a reason is skipped here too", () => {
     const staged = (skip: object) => {

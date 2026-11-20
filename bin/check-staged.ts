@@ -92,7 +92,7 @@ const names = (args: string[]) => {
   return listed.stdout.split("\0").filter(Boolean);
 };
 // ":<old mode> <new mode> <old sha> <new sha> <status>", then the path, two for a rename or copy.
-const listed = spawnSync("git", ["diff", "--cached", "--raw", "--diff-filter=ACMR", "-z"], {
+const listed = spawnSync("git", ["diff", "--cached", "--raw", "--diff-filter=ACMRT", "-z"], {
   encoding: "utf8",
   maxBuffer: Infinity,
 });
@@ -103,10 +103,11 @@ const fields = listed.stdout.split("\0");
 for (let i = 0; i + 1 < fields.length;) {
   const [, mode, , , status] = fields[i].split(" ");
   const paths = /^[RC]/.test(status) ? 2 : 1;
-  // A submodule's commit (mode 160000) is no file for the tools.
   const file = fields[i + paths];
-  if (mode !== "160000") staged.push(file);
-  if (mode?.startsWith("100") && oxlintSource.test(file)) oxlintPaths.push(file);
+  const regular = mode?.startsWith("100");
+  // A type change can introduce a regular file in place of a symlink or submodule.
+  if (mode !== "160000" && (status !== "T" || regular)) staged.push(file);
+  if (regular && oxlintSource.test(file)) oxlintPaths.push(file);
   i += paths + 1;
 }
 if (staged.length === 0 && !skills && !items) process.exit(0);

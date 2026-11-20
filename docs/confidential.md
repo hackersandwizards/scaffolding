@@ -75,5 +75,6 @@ in the pushing checkout and the one on the remote's default branch, which it fet
 too. A remote without a list, or out of reach, adds nothing; a fetch that runs out of time refuses
 the push and names `git fetch <remote>`, after which the next push fetches little; a list that does
 not parse, there or in the checkout, refuses the push and says where. A repository that
-already has the list keeps its salt and entries and gets the new ones added; with the file emptied
-by the redirect, the staged copy counts.
+already has the list keeps its salt and entries when adding new ones. If the working copy is empty
+or malformed, the staged copy counts. If neither copy is valid and one is malformed, the command
+exits with an error.

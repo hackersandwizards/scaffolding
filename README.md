@@ -51,6 +51,7 @@ For `eslint.config.js`, copy
 
 - `./prettier`, `./oxlint`, `./eslint`, `./eslint/astro`, `./stylelint`: the shared format and lint configs.
 - `./tsconfig/bun.json`, `./tsconfig/astro.json`: the base for `"extends"`.
+- `./vitest`, `./stryker`: the shared test and mutation configs.
 - `./catalog`: the catalog preset for an Astro config ([The catalog](docs/catalog.md)).
 - `./rejection`: the error a promise rejects with, as text, in a test.
 - `./serve`, `./chrome`: a gate server on a free port, and Chrome for Testing.

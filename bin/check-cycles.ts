@@ -1,8 +1,5 @@
 #!/bin/sh
 // 2>/dev/null; exec bun --no-env-file "$0" "$@"
-// Runtime import cycles: two modules that need each other load in an order neither names, and one
-// reads the other's exports before they exist. A cycle of type-only imports is erased before it
-// runs and passes.
 import { existsSync } from "node:fs";
 import { join } from "node:path";
 import { allExtensions, cruise } from "dependency-cruiser";

@@ -71,6 +71,14 @@ const hasher = (salt: string) => (s: string) =>
     .update(salt + s)
     .digest("hex")
     .slice(0, 32);
+
+function parsePurgedList(text: string) {
+  const { salt, hashes } = jsonObject(text);
+  if (typeof salt !== "string" || !isStrings(hashes))
+    throw new Error("expected a salt and a list of hashes");
+  return { salt, hashes };
+}
+
 // NFKC first: macOS file names and some pasted text arrive decomposed, which splits words at accents.
 const words = (s: string) => s.normalize("NFKC").match(/[\p{L}\p{N}]+/gu) ?? [];
 // A one-word term written in capitals is a name in capitals (an acronym, a brand) and matches only
@@ -174,14 +182,27 @@ if (argv[0] === "purged") {
   // Adds to the repository's list under its own salt. `> .confidential-purged.json` empties the
   // file before this runs, so then the index's copy counts.
   const top = repoRoot();
-  let old: { salt: string; hashes: string[] } | undefined;
-  for (const read of [reader(top, false), reader(top, true)])
+  let old: ReturnType<typeof parsePurgedList> | undefined;
+  let malformed = false;
+  for (const read of [reader(top, false), reader(top, true)]) {
+    let text: string;
     try {
-      const kept = jsonObject(read(".confidential-purged.json"));
-      if (typeof kept.salt === "string" && isStrings(kept.hashes))
-        old = { salt: kept.salt, hashes: kept.hashes };
+      text = read(".confidential-purged.json").toString();
+    } catch {
+      continue;
+    }
+    if (!text.trim()) continue;
+    try {
+      old = parsePurgedList(text);
       break;
-    } catch {}
+    } catch {
+      malformed = true;
+    }
+  }
+  if (!old && malformed) {
+    console.error("[check-confidential] .confidential-purged.json does not parse: repair it first");
+    process.exit(1);
+  }
   const salt = old?.salt ?? randomBytes(16).toString("hex");
   const hashes = new Set([...(old?.hashes ?? []), ...argv.slice(1).map(hasher(salt))]);
   console.log(JSON.stringify({ salt, hashes: [...hashes].sort() }));
@@ -227,7 +248,7 @@ if (argv[0] === "prepush") {
     // `purged <sha> > .confidential-purged.json` leaves the file empty where it fails.
     if (!list.trim()) return;
     try {
-      const { salt, hashes } = JSON.parse(list) as { salt: string; hashes: string[] };
+      const { salt, hashes } = parsePurgedList(list);
       purged.push({ bad: new Set(hashes), h: hasher(salt) });
     } catch {
       report("push", ".confidential-purged.json", `${where} does not parse: repair it, then push`);
