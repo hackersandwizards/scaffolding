@@ -11,6 +11,12 @@ test("rejection can describe a resolved BigInt", async () => {
   );
 });
 
+test("rejection can describe a resolved undefined", async () => {
+  expect(await rejection(rejection(Promise.resolve(undefined)))).toBe(
+    "Error: expected a rejection, resolved with undefined",
+  );
+});
+
 test("rejection names the call site in the trace", async () => {
   const failure = await rejection(Promise.resolve("x")).catch((error: unknown) => error);
   expect(failure).toBeInstanceOf(Error);

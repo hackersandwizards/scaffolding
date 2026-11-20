@@ -2,6 +2,7 @@
 // 2>/dev/null; exec bun --no-env-file "$0" "$@"
 import { randomBytes } from "node:crypto";
 import { help } from "../lib/help.ts";
+import { readPackage, withoutEnvFile } from "../lib/repo.ts";
 import { runTimed } from "../lib/run-timed.ts";
 
 help("scaffolding-explore");
@@ -31,32 +32,33 @@ if (
   process.exit(2);
 }
 
+withoutEnvFile("scaffolding-explore");
+const pkg = readPackage(process.cwd());
+const test = pkg.scaffolding?.test ?? (pkg.scripts?.test ? "test" : "vitest run");
+const command = Object.hasOwn(pkg.scripts ?? {}, test) ? 'bun run "$0" "$@"' : `${test} "$@"`;
+const marker = randomBytes(16).toString("hex");
+const argsForTest = [
+  "--exclude",
+  "**/!(*.prop.test).{js,jsx,ts,tsx,mjs,cjs,mts,cts}",
+  "--testNamePattern",
+  `\\[${marker}\\] `,
+  ".prop.test.",
+];
 const runs = 512;
 const limitMs = 120_000;
 const timeout = Number(process.env.SCAFFOLDING_TEST_TIMEOUT_MS || 5000);
 console.log(`[scaffolding-explore] seed ${seed}, ${runs} runs per property`);
-process.exitCode = await runTimed(
-  [
-    process.execPath,
-    "--no-env-file",
-    "--bun",
-    "vitest",
-    "run",
-    "--exclude",
-    "**/!(*.prop.test).{js,jsx,ts,tsx,mjs,cjs,mts,cts}",
-    ".prop.test.",
-  ],
-  {
-    name: "scaffolding-explore",
-    limitMs,
-    timeoutMessage: `[scaffolding-explore] reached the 2-minute wall limit (seed ${seed})`,
-    env: {
-      ...process.env,
-      STRYKER_MUTATOR_WORKER: undefined,
-      SCAFFOLDING_EXPLORING: "1",
-      SCAFFOLDING_EXPLORE_SEED: String(seed),
-      SCAFFOLDING_EXPLORE_RUNS: String(runs),
-      SCAFFOLDING_TEST_TIMEOUT_MS: String(Math.min(timeout * 8, limitMs)),
-    },
+process.exitCode = await runTimed(["sh", "-c", command, test, ...argsForTest], {
+  name: "scaffolding-explore",
+  limitMs,
+  timeoutMessage: `[scaffolding-explore] reached the 2-minute wall limit (seed ${seed})`,
+  env: {
+    ...process.env,
+    STRYKER_MUTATOR_WORKER: undefined,
+    SCAFFOLDING_EXPLORING: "1",
+    SCAFFOLDING_EXPLORE_MARKER: marker,
+    SCAFFOLDING_EXPLORE_SEED: String(seed),
+    SCAFFOLDING_EXPLORE_RUNS: String(runs),
+    SCAFFOLDING_TEST_TIMEOUT_MS: String(Math.min(timeout * 8, limitMs)),
   },
-);
+});

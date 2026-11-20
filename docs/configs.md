@@ -99,8 +99,9 @@ Remove any duplicate `defaultExclude` spread from the local exclusion list.
 
 ### `./property`
 
-Keep properties in `*.prop.test.ts` files. Put an assertion such as `expect` in each property
-callback so the shared ESLint config can check it.
+Keep properties in `*.prop.test.ts` files and examples in ordinary test files. Import
+`test` and `fc` from this package. You can alias either import. The shared ESLint config
+checks the file name, import and callback assertion.
 
 ```ts
 import { fc, test } from "@hackersandwizards/scaffolding/property";
@@ -118,14 +119,17 @@ the tests.
 
 Importing `./property` configures seed `17401` with 64 cases in the normal suite and 12 under
 Stryker. Vitest runs per-case hooks and reports the seed and shrunk counterexample on failure.
-Keep the shared defaults for `seed` and `numRuns`. Per-property overrides take precedence over
-the budgets and seed used by exploration and mutation testing.
+Put property options in an inline object. The shared ESLint config rejects per-property
+`seed` and `numRuns`. For string inputs that need Unicode and length, import
+`unicodeString`. It generates grapheme clusters with a maximum of 1,024 clusters. Use
+`examples` for exact boundaries that each run must exercise.
 
 Set `"explore": "scaffolding-explore"` in `package.json`. Run `bun run explore` for 512 cases per
 property with a fresh seed and a two-minute wall limit. The shared Vitest preset uses eight times
 the normal per-test timeout, capped at the wall limit. Run `bun run explore --seed <seed>` to replay
-the run. Exploration selects `*.prop.test.*` files from the Vitest suite and exits 2 in CI, a Git
-hook or the gate. Custom Git hooks can set `SCAFFOLDING_GIT_HOOK=1` before calling package scripts.
+the run. Exploration passes its Vitest filters to the command named by `scaffolding.test`.
+That command must forward arguments to Vitest. Without a configured test step, exploration uses
+the `test` script when present, then `vitest run`. It exits 2 in CI, a Git hook or the gate. Custom Git hooks can set `SCAFFOLDING_GIT_HOOK=1` before calling package scripts.
 
 ### `./stryker`
 

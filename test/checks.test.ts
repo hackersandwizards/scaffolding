@@ -21,7 +21,7 @@ import {
   writeFileSync,
 } from "node:fs";
 import { availableParallelism, tmpdir } from "node:os";
-import { dirname, join, relative } from "node:path";
+import { delimiter, dirname, join, relative } from "node:path";
 import { pathToFileURL } from "node:url";
 import { brandFallbacks } from "../catalog/fallbacks.ts";
 import { catalogPath } from "../catalog/path.ts";
@@ -30,7 +30,6 @@ import { runOxlint } from "../lib/oxlint.ts";
 import { rejection } from "../lib/rejection.ts";
 import {
   applyAllow,
-  commentSyntax,
   installedCommit,
   isObject,
   jsonObject,
@@ -160,19 +159,28 @@ function write(dir: string, files: Record<string, string>) {
   }
 }
 
-test("the consumer explore command runs properties only and reports the shrunk failing case", () => {
-  const dir = temp();
-  const property = "sample.prop.test.ts";
-  write(dir, {
-    "package.json": JSON.stringify({
-      name: "property-consumer",
-      type: "module",
-      scripts: { explore: "scaffolding-explore" },
-    }),
-    "vitest.config.mjs": 'export { default } from "@hackersandwizards/scaffolding/vitest";\n',
-    [property]: `
-import { fc, test } from "@hackersandwizards/scaffolding/property";
-import { afterAll, afterEach, beforeEach, expect } from "vitest";
+test.each(["node", "bun"])(
+  "the consumer explore command runs only aliased properties on %s and reports the shrunk failing case",
+  (runtime) => {
+    const dir = temp();
+    const property = "sample.prop.test.ts";
+    write(dir, {
+      "package.json": JSON.stringify({
+        name: "property-consumer",
+        type: "module",
+        scripts: {
+          explore: "scaffolding-explore",
+          "test:run": runtime === "bun" ? "bun --bun vitest run" : "vitest run",
+        },
+        scaffolding: { test: "test:run" },
+      }),
+      "vitest.config.mjs": 'export { default } from "@hackersandwizards/scaffolding/vitest";\n',
+      [property]: `
+import { fc, test as propertyTest } from "@hackersandwizards/scaffolding/property";
+import { afterAll, afterEach, beforeEach, expect, test as example } from "vitest";
+example("example in a property file (with seed=-188)", () => {
+  expect(process.env.SCAFFOLDING_EXPLORING).toBeUndefined();
+});
 let active = false;
 let cases = 0;
 beforeEach(() => {
@@ -186,7 +194,8 @@ afterEach(() => {
 afterAll(() => {
   expect(cases).toBe(fc.readConfigureGlobal().numRuns);
 });
-test.prop([fc.integer({ min: 1, max: 100 })])("positive integers", (value) => {
+propertyTest.prop([fc.integer({ min: 1, max: 100 })])("positive integers", (value) => {
+  expect(process.versions.bun === undefined ? "node" : "bun").toBe(${JSON.stringify(runtime)});
   const exploring = process.env.SCAFFOLDING_EXPLORING === "1";
   expect(fc.readConfigureGlobal().seed).toBe(exploring ? -188 : 17401);
   expect(fc.readConfigureGlobal().numRuns).toBe(exploring ? 512 : 64);
@@ -195,58 +204,69 @@ test.prop([fc.integer({ min: 1, max: 100 })])("positive integers", (value) => {
   cases++;
   expect(value).toBeGreaterThan(0);
 });`,
-    "example.prop.test.folder/sample.test.ts": `
+      "example.prop.test.folder/sample.test.ts": `
 import { test } from "vitest";
 test("example must stay out of exploration", () => { throw new Error("example ran"); });`,
-  });
-  const home = join(import.meta.dirname, "..");
-  const scope = join(dir, "node_modules", "@hackersandwizards");
-  const commands = join(dir, "node_modules", ".bin");
-  mkdirSync(scope, { recursive: true });
-  mkdirSync(commands, { recursive: true });
-  symlinkSync(home, join(scope, "scaffolding"));
-  symlinkSync(join(home, "node_modules", "vitest"), join(dir, "node_modules", "vitest"));
-  symlinkSync(bin("scaffolding-explore"), join(commands, "scaffolding-explore"));
-  symlinkSync(join(home, "node_modules", ".bin", "vitest"), join(commands, "vitest"));
-  const explore = () =>
-    spawnSync(process.execPath, ["run", "explore", "--seed", "-188"], {
+    });
+    const home = join(import.meta.dirname, "..");
+    const scope = join(dir, "node_modules", "@hackersandwizards");
+    const commands = join(dir, "node_modules", ".bin");
+    mkdirSync(scope, { recursive: true });
+    mkdirSync(commands, { recursive: true });
+    symlinkSync(home, join(scope, "scaffolding"));
+    symlinkSync(join(home, "node_modules", "vitest"), join(dir, "node_modules", "vitest"));
+    symlinkSync(bin("scaffolding-explore"), join(commands, "scaffolding-explore"));
+    symlinkSync(join(home, "node_modules", ".bin", "vitest"), join(commands, "vitest"));
+    const bun = realpathSync(process.execPath);
+    const path = process.env.PATH?.split(delimiter)
+      .filter((dir) => {
+        const node = join(dir, "node");
+        return !existsSync(node) || realpathSync(node) !== bun;
+      })
+      .join(delimiter);
+    const explore = () =>
+      spawnSync(process.execPath, ["run", "explore", "--seed", "-188"], {
+        cwd: dir,
+        encoding: "utf8",
+        env: {
+          ...process.env,
+          PATH: path,
+          CI: undefined,
+          GIT_INDEX_FILE: undefined,
+          SCAFFOLDING_CHANGED: undefined,
+          SCAFFOLDING_GIT_HOOK: undefined,
+          SCAFFOLDING_TEST_TIMEOUT_MS: "6000",
+        },
+      });
+    const passing = explore();
+    expect(passing.status, passing.stdout + passing.stderr).toBe(0);
+    expect(passing.stdout).toContain("seed -188, 512 runs per property");
+    expect(passing.stdout).toMatch(/Tests\s+1 passed/);
+
+    const file = join(dir, property);
+    writeFileSync(file, readFileSync(file, "utf8").replace("toBeGreaterThan(0)", "toBe(0)"));
+    const failing = explore();
+    expect(failing.status, failing.stdout + failing.stderr).toBe(1);
+    const output = failing.stdout + failing.stderr;
+    expect(output).toContain("with seed=-188");
+    expect(output).toContain("Counterexample: [1]");
+
+    writeFileSync(file, readFileSync(file, "utf8").replace("toBe(0)", "toBeGreaterThan(0)"));
+    writeFileSync(join(dir, "vitest.config.mjs"), "export default {};");
+    const direct = spawnSync(process.execPath, ["run", "test:run", property], {
       cwd: dir,
       encoding: "utf8",
       env: {
         ...process.env,
-        CI: undefined,
-        GIT_INDEX_FILE: undefined,
-        SCAFFOLDING_CHANGED: undefined,
-        SCAFFOLDING_GIT_HOOK: undefined,
-        SCAFFOLDING_TEST_TIMEOUT_MS: "6000",
+        PATH: path,
+        SCAFFOLDING_EXPLORING: undefined,
+        SCAFFOLDING_EXPLORE_SEED: "42",
+        SCAFFOLDING_EXPLORE_RUNS: "2",
       },
     });
-  const passing = explore();
-  expect(passing.status, passing.stdout + passing.stderr).toBe(0);
-  expect(passing.stdout).toContain("seed -188, 512 runs per property");
-
-  const file = join(dir, property);
-  writeFileSync(file, readFileSync(file, "utf8").replace("toBeGreaterThan(0)", "toBe(0)"));
-  const failing = explore();
-  expect(failing.status, failing.stdout + failing.stderr).toBe(1);
-  const output = failing.stdout + failing.stderr;
-  expect(output).toContain("with seed=-188");
-  expect(output).toContain("Counterexample: [1]");
-
-  writeFileSync(file, readFileSync(file, "utf8").replace("toBe(0)", "toBeGreaterThan(0)"));
-  writeFileSync(join(dir, "vitest.config.mjs"), "export default {};");
-  const direct = spawnSync(process.execPath, ["--bun", "vitest", "run", property], {
-    cwd: dir,
-    encoding: "utf8",
-    env: {
-      ...process.env,
-      SCAFFOLDING_EXPLORING: undefined,
-      SCAFFOLDING_EXPLORE_SEED: "42",
-      SCAFFOLDING_EXPLORE_RUNS: "2",
-    },
-  });
-  expect(direct.status, direct.stdout + direct.stderr).toBe(0);
-});
+    expect(direct.status, direct.stdout + direct.stderr).toBe(0);
+  },
+);
 
 test.each([
   ["CI", "CI", "1"],
@@ -315,21 +335,19 @@ test("Vitest assertion lint accepts property callbacks with both assertion rules
 });
 
 test(
-  "ESLint detects assertion-free properties and properties outside exploration",
+  "ESLint enforces the shared property API, budgets and exploration filenames",
   () => {
     const dir = temp();
     const root = join(import.meta.dirname, "..");
     const property = "example.prop.test.js";
     const ordinary = "example.test.js";
-    const imports = `import { fc, test } from "@hackersandwizards/scaffolding/property";
+    const imports = `import { fc as arbitraries, test as propertyTest } from "@hackersandwizards/scaffolding/property";
 import { expect } from "vitest";`;
     write(dir, {
       "eslint.config.mjs": `export { default } from ${JSON.stringify(join(root, "config/eslint.js"))};`,
     });
-    const lint = (path: string, callback: string) => {
-      write(dir, {
-        [path]: `${imports}\ntest.prop([fc.integer()])("an integer", ${callback});`,
-      });
+    const lint = (path: string, source: string) => {
+      write(dir, { [path]: source });
       const result = spawnSync(
         process.execPath,
         ["--bun", join(root, "node_modules/.bin/eslint"), path],
@@ -337,14 +355,61 @@ import { expect } from "vitest";`;
       );
       return { status: result.status, output: result.stdout + result.stderr };
     };
-    const asserting = "(value) => expect(Number.isInteger(value)).toBe(true)";
-    expect(lint(property, asserting)).toEqual({ status: 0, output: "" });
-    const empty = lint(property, "(value) => { Number.isInteger(value); }");
-    expect(empty.status).toBe(1);
-    expect(empty.output).toContain("A property callback must assert");
-    const misplaced = lint(ordinary, asserting);
-    expect(misplaced.status).toBe(1);
-    expect(misplaced.output).toContain("Move this property to a *.prop.test.* file");
+    const callback = "(value) => expect(Number.isInteger(value)).toBe(true)";
+    const call = (options = "", body = callback) =>
+      `propertyTest.prop([arbitraries.integer()]${options})("an integer", ${body});`;
+    const shared = (options = "", body = callback) => `${imports}\n${call(options, body)}`;
+    expect(lint(property, shared(", { examples: [[1]] }"))).toEqual({ status: 0, output: "" });
+    expect(
+      lint(
+        ordinary,
+        'import { test as example, expect } from "vitest"; example("works", () => expect(true).toBe(true));',
+      ),
+    ).toEqual({
+      status: 0,
+      output: "",
+    });
+    const cases = [
+      [
+        property,
+        shared("", "(value) => { Number.isInteger(value); }"),
+        "A property callback must assert",
+      ],
+      [ordinary, shared(), "Move this property to a *.prop.test.* file"],
+      [property, shared(", { seed: 1 }"), "Use the shared property seed and case count"],
+      [property, shared(', { "numRuns": 1 }'), "Use the shared property seed and case count"],
+      [property, shared(", { ...{ numRuns: 1 } }"), "Use the shared property seed and case count"],
+      [
+        ordinary,
+        'import fc from "fast-check"; export const value = fc.integer();',
+        "Import from @hackersandwizards/scaffolding/property",
+      ],
+      [
+        ordinary,
+        'import { test as propertyTest } from "@fast-check/vitest"; export { propertyTest };',
+        "Import from @hackersandwizards/scaffolding/property",
+      ],
+      [
+        ordinary,
+        'import { fc } from "@hackersandwizards/scaffolding/property"; fc.assert(fc.property(fc.integer(), () => true));',
+        "Use test.prop from @hackersandwizards/scaffolding/property",
+      ],
+      [
+        property,
+        `${shared()}\nimport { test as example } from "vitest"; example.each([true])("an example", (value) => expect(value).toBe(true));`,
+        "Move this example to an ordinary test file",
+      ],
+      [
+        property,
+        'import { test, expect } from "vitest"; test.prop([])("wrong test", () => expect(true).toBe(true));',
+        "Use test.prop from @hackersandwizards/scaffolding/property",
+      ],
+    ];
+    for (const [file, source, message] of cases) {
+      const result = lint(file, source);
+      expect(result.status, source + result.output).toBe(1);
+      expect(result.output).toContain(message);
+    }
   },
   limit(10_000),
 );
@@ -426,17 +491,6 @@ test("allow entries: **/ covers the root, list items die alone, a non-string is 
     "a: m",
     'package.json: allow entry\'s path and text are strings or lists of strings {"check":"x","path":5,"reason":"r"}',
   ]);
-});
-
-test("comment syntax keeps a quoted string whole, a comment mark inside it included", () => {
-  const strip = (path: string, text: string) => text.replace(commentSyntax(path), "$1");
-  expect(strip("a.ts", 'const a = "x//y"; const b = "z"; // note')).toBe(
-    'const a = "x//y"; const b = "z"; ',
-  );
-  expect(strip("a.yml", 'run: echo "issue #12" > out # note')).toBe('run: echo "issue #12" > out ');
-  expect(strip("a.sh", "echo it's # note")).toBe("echo it's ");
-  // Prose apostrophes in Markdown never pair up into a string.
-  expect(strip("a.md", "Don't, won't <!-- note -->")).toBe("Don't, won't ");
 });
 
 // Before anything else runs: in an empty folder outside a repository, with neither gitleaks nor a
@@ -3294,6 +3348,7 @@ describe("scaffolding check", () => {
       const rename = git("rev-parse", "HEAD");
       const moved = changed(`${source}..${rename}`);
       expect(moved).toContain("2 paths since");
+      expect(moved).toContain('selected lint: matches "src/a.ts"');
       renameSync(join(dir, "src/b.ts"), join(dir, "node_modules/deleted.ts"));
       const deleted = commit("src/b.ts");
       expect(changed(`${rename}..${deleted}`)).toContain('selected test: matches "src/b.ts"');

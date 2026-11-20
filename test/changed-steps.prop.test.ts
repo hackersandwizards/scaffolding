@@ -20,7 +20,7 @@ const mappings = [
   { glob: new Bun.Glob("docs/**"), steps: ["check:docs"] },
   { glob: new Bun.Glob("src/**"), steps: ["check:source"] },
 ];
-const local = ["check:docs", "check:source", "check:general"];
+const local = ["check:docs", "check:source", "check:general", "test"];
 const full = fc.subarray(["test", "check:docs", "check:source", "catalog"]);
 
 const select = (files: string[], fullOnly: string[]) =>
@@ -42,12 +42,32 @@ test.prop([paths, name, full])(
   },
 );
 
-test.prop([paths, paths, full])("adding paths only adds fast steps", (files, more, fullOnly) => {
-  const selected = select(files, fullOnly).steps;
-  const extended = select([...files, ...more], fullOnly).steps;
-  expect([...selected.keys()].every((step) => extended.has(step))).toBe(true);
-  expect(fullOnly.some((step) => extended.has(step))).toBe(false);
-});
+const mapped = fc.tuple(fc.constantFrom("docs", "src"), name);
+
+test.prop([fc.array(mapped), full], {
+  examples: [
+    [[["docs", "a"]], []],
+    [[["src", "a"]], []],
+  ],
+})(
+  "mapped paths select their steps, the always-on checks, and no unrelated steps",
+  (files, fullOnly) => {
+    const named = files.map(([dir, file]) =>
+      dir === "src" ? `src/${file}.ts` : `docs/${file}.md`,
+    );
+    const expected = new Map([
+      ["format", "runs on every changed check"],
+      ["check:general", "no path scope configured"],
+    ]);
+    for (const file of named) {
+      const steps = file.startsWith("docs/") ? ["check:docs"] : ["check:source", "lint", "test"];
+      for (const step of steps)
+        if (!expected.has(step)) expected.set(step, `matches ${JSON.stringify(file)}`);
+    }
+    for (const step of fullOnly) expected.delete(step);
+    expect(select(named, fullOnly)).toEqual({ steps: expected });
+  },
+);
 
 test.prop([fc.constantFrom("src/package.json", "docs/yarn.lock", ".githooks/pre-push"), full])(
   "shared configuration paths select exactly the fast steps",
@@ -69,6 +89,11 @@ test.prop([fc.array(name, { minLength: 1 }), name, name, fc.constantFrom("", "."
     expect(validGlob(`${base}/{${first},${second}`)).toBe(false);
     expect(validGlob(`${base}/${first},${second}}`)).toBe(false);
     expect(validGlob(`${base}/[ab`)).toBe(false);
+    expect(validGlob(`${base}/}{`)).toBe(false);
+    expect(validGlob(`${base}/a\0b`)).toBe(false);
+    expect(validGlob(" ")).toBe(false);
+    expect(validGlob(`${base}/[{]\\}`)).toBe(true);
+    expect(validGlob(`${base}/a\\`)).toBe(false);
     expect(validGlob(`${base}/${invalid}/${first}`)).toBe(false);
   },
 );

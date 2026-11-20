@@ -24,8 +24,8 @@ preset. The pre-commit hook runs `bun run check:staged`.
 Changed checks run the same test step with the browser, build and lock integration suites excluded.
 The full gate and direct `bun run test` run every suite.
 
-`bun run mutation` runs Stryker on the modules named in `stryker.config.mjs` and writes
-`.stryker-reports/mutation.json`. Mutation testing and `bun run explore` run on demand outside the
+`bun run mutation` runs Stryker on the whole modules listed in `stryker.config.mjs` and writes
+a fresh `.stryker-reports/mutation.json`. The wrapper caps the run at 15 minutes. Mutation testing and `bun run explore` run on demand outside the
 gate. [Test setup](docs/configs.md#property) describes the shared property configuration.
 
 ## Releases

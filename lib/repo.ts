@@ -1,3 +1,4 @@
+import { fetchWaitS } from "./repo-inputs.ts";
 import { jsonObject } from "./json.ts";
 import { spawn, spawnSync } from "node:child_process";
 import { existsSync, readFileSync, realpathSync } from "node:fs";
@@ -6,19 +7,6 @@ import { join } from "node:path";
 /** A company repository's remote; the tests point SCAFFOLDING_GIT_BASE at local stand-ins. */
 export const companyRemote = (repo: string) =>
   `${process.env.SCAFFOLDING_GIT_BASE || "https://github.com/hackersandwizards/"}${repo}.git`;
-
-/** Whether a Git dependency's URL names a repository hackersandwizards owns, on any host and in
- * https, ssh or scp form, its #ref aside: a package of ours need not carry our scope. */
-export const ourRepository = (url: string) =>
-  /[/:]hackersandwizards\/[^/#]+$/.test(url.replace(/#.*/, ""));
-
-/** SCAFFOLDING_FETCH_WAIT_S, the seconds a read from a remote may take: 20 unless it is a whole
- * number above 0, as in session-start, and at most the longest timer (2^31 - 1 ms), past which a
- * timeout fires at once. */
-export const fetchWaitS = (): number => {
-  const set = process.env.SCAFFOLDING_FETCH_WAIT_S ?? "";
-  return /^\d*[1-9]\d*$/.test(set) ? Math.min(Number(set), Math.floor((2 ** 31 - 1) / 1000)) : 20;
-};
 
 /** The highest v<major>.<minor>.<patch> tag `remote` holds, or undefined where none is read within
  * fetchWaitS() seconds: an SSH remote waits for a person to approve the key, and nothing in ssh or
@@ -126,38 +114,6 @@ export function tagCommit(version: string, installed: string | undefined): strin
   return sha;
 }
 
-/** A file's comments, by its kind: `#` lines for shell, Python, YAML, TOML, Git hooks and the
- * editor and Prettier ignore files, else block, HTML and `//` comments, a `//` in a URL or a
- * string's start excepted. A block comment opens only after a character that ends code or another
- * comment, or after a word when a space follows the mark: a glob such as "src/*.ts" would read on
- * to the next closing mark. Group 1 is what a replacement keeps: the character before a comment,
- * or, outside Markdown, HTML and templates, whose apostrophes are prose, a quoted string on one line, matched
- * as itself so that "x//y" or "issue #12" no longer dropped the code after it as a comment. */
-export const commentSyntax = (path: string) => {
-  const quoted = /\.(?:md|mdx|html?|astro|[jt]sx|vue|svelte)$/.test(path)
-    ? ""
-    : String.raw`"(?:[^"\\\n]|\\.)*"|'(?:[^'\\\n]|\\.)*'|`;
-  // After a string, the lookbehind ends the match at its closing quote.
-  return /\.(?:sh|py|ya?ml|toml)$|(?:^|\/)(?:\.githooks\/[^/.]+|\.editorconfig|\.prettierignore)$/.test(
-    path,
-  )
-    ? new RegExp(String.raw`(${quoted}^|\s)(?:(?<=["'])|#.*)`, "gm")
-    : new RegExp(
-        String.raw`(${quoted}^|[\s{};,)>]|\b(?=\/\*\s)|(?<=\*\/))(?:(?<=["'])|\/\*[\s\S]*?\*\/)|<!--[\s\S]*?-->|(?<![:"'` +
-          "`" +
-          String.raw`\\])\/\/.*`,
-        "gm",
-      );
-};
-
-/** Every file path an `exports` value names, a conditional export's included. */
-export const exportTargets = (value: unknown): string[] =>
-  typeof value === "string"
-    ? [value]
-    : value && typeof value === "object"
-      ? Object.values(value).flatMap(exportTargets)
-      : [];
-
 /** The files check-coupling counts as tests, as config/eslint.js globs them. */
 export const TEST = /(?:^|\/)(?:__tests__|tests?|e2e)\/|\.(?:test|spec)\.[cm]?[jt]sx?$/;
 
@@ -177,16 +133,6 @@ export function withoutEnvFile(name: string) {
 export const isReason = (value: unknown): value is string =>
   typeof value === "string" && value.trim() !== "";
 
-/** The files the styles step lints, and stylelint's arguments past them, shared by the gate and the
- * hook so both judge the same files. The repository's own config governs every file, so a nested
- * repository's config (a submodule's) never takes over its files and the root config's ignoreFiles
- * holds. One line per finding: the default formatter's table threw "Subject parameter value width"
- * in a run with findings, and a plain line format has no table. */
-export const styleFiles = "**/*.{css,astro}";
-const styleGlob = new Bun.Glob(styleFiles);
-// The gate's glob skips dot folders, dot files and node_modules; a staged path is named explicitly.
-export const styled = (path: string) =>
-  styleGlob.match(path) && !/(^|\/)(\.|node_modules\/)/.test(path);
 export { submodulePaths } from "../config/submodules.js";
 
 export const stylelintFlags = (root: string) => [
@@ -242,6 +188,14 @@ export const reader = (root: string, staged: boolean) => (path: string) =>
   staged ? git(["show", `:${path}`], root) : readFileSync(`${root}/${path}`);
 
 export { isObject, isStrings, jsonObject } from "./json.ts";
+export {
+  commentSyntax,
+  exportTargets,
+  fetchWaitS,
+  ourRepository,
+  styled,
+  styleFiles,
+} from "./repo-inputs.ts";
 
 export type Package = {
   name?: string;

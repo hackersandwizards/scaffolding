@@ -2,6 +2,7 @@
 import prettier from "eslint-config-prettier/flat";
 import globals from "globals";
 import tseslint from "typescript-eslint";
+import propertyRule from "./property-rule.js";
 import { submodulePaths } from "./submodules.js";
 
 // The files check-coupling counts as tests.
@@ -9,13 +10,6 @@ const code = "{js,jsx,ts,tsx,mjs,cjs,mts,cts}";
 const testFiles = [`**/{__tests__,test,tests,e2e}/**/*.${code}`, `**/*.{test,spec}.${code}`];
 const propertyFiles = [`**/*.prop.test.${code}`];
 const testCall = "/^(it|test|describe)$/";
-const propertyCall =
-  "CallExpression[callee.callee.property.name='prop']" +
-  ":matches([callee.callee.object.name=/^(it|test)$/], [callee.callee.object.object.name=/^(it|test)$/], [callee.callee.object.object.object.name=/^(it|test)$/])";
-const propertyLocation = {
-  selector: propertyCall,
-  message: "Move this property to a *.prop.test.* file so exploration can run it.",
-};
 const testRules = [
   {
     selector: `:matches(CallExpression[callee.name=${testCall}], CallExpression[callee.object.name=${testCall}], CallExpression[callee.object.object.name=${testCall}], CallExpression[callee.callee.object.name=${testCall}], CallExpression[callee.callee.object.object.name=${testCall}], CallExpression[callee.tag.object.name=${testCall}], CallExpression[callee.tag.object.object.name=${testCall}]) > :matches(ArrowFunctionExpression, FunctionExpression)[body.body.length=0]`,
@@ -61,31 +55,20 @@ export default [
   },
   {
     files: [`**/*.${code}`],
-    rules: {
-      "no-restricted-syntax": ["error", propertyLocation],
-    },
+    plugins: { scaffolding: { rules: { property: propertyRule } } },
+    rules: { "scaffolding/property": ["error", "source"] },
   },
   {
     // An `it("...", () => {})` passes, so a gutted test reads as a covered one.
     files: testFiles,
     rules: {
-      "no-restricted-syntax": ["error", ...testRules, propertyLocation],
+      "no-restricted-syntax": ["error", ...testRules],
+      "scaffolding/property": ["error", "test"],
     },
   },
   {
     files: propertyFiles,
-    rules: {
-      "no-restricted-syntax": [
-        "error",
-        ...testRules,
-        {
-          selector:
-            `${propertyCall} > :matches(ArrowFunctionExpression, FunctionExpression)` +
-            ":not(:has(CallExpression[callee.name=/^(expect|expectTypeOf|assertType|assert)$/], CallExpression[callee.object.name='assert']))",
-          message: "A property callback must assert its result.",
-        },
-      ],
-    },
+    rules: { "scaffolding/property": ["error", "property"] },
   },
   prettier,
 ];

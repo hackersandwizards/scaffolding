@@ -22,6 +22,9 @@ test.prop([fc.dictionary(name, fc.tuple(severity, fc.boolean())), name])(
         message: `ESLint rule ${rule} overlaps Oxlint rule ${rule}. Enable the rule in only one linter for this code`,
       }));
     expect(lintRuleOverlaps(path, native, { rules })).toEqual(shared);
+    expect(lintRuleOverlaps(path, native, { rules }, "frontmatter")).toEqual(
+      shared.map((finding) => ({ ...finding, text: "frontmatter" })),
+    );
     expect(
       lintRuleOverlaps(path, new Set([...native].map((rule) => `another/${rule}`)), { rules }),
     ).toEqual([]);

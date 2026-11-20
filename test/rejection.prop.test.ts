@@ -1,5 +1,5 @@
 import { fc, test } from "@hackersandwizards/scaffolding/property";
-import { expect } from "vitest";
+import { expect, expectTypeOf } from "vitest";
 import { rejection } from "../lib/rejection.ts";
 
 test.prop([
@@ -13,15 +13,17 @@ test.prop([
   );
 });
 
-test.prop([fc.integer({ min: 196, max: 204 }), fc.stringMatching(/^[a-z]$/)])(
-  "clipping starts after 200 serialized characters",
-  async (length, char) => {
-    const shown =
-      length <= 198
-        ? `"${char.repeat(length)}"`
-        : `"${char.repeat(199)}… (${length + 2} characters)`;
-    expect(await rejection(rejection(Promise.resolve(char.repeat(length))))).toBe(
-      `Error: expected a rejection, resolved with ${shown}`,
-    );
-  },
-);
+test.prop([fc.integer({ min: 196, max: 204 }), fc.stringMatching(/^[a-z]$/)], {
+  examples: [
+    [5000, "x"],
+    [198, "x"],
+    [199, "x"],
+  ],
+})("clipping starts after 200 serialized characters", async (length, char) => {
+  expectTypeOf(char).toEqualTypeOf<string>();
+  const shown =
+    length <= 198 ? `"${char.repeat(length)}"` : `"${char.repeat(199)}… (${length + 2} characters)`;
+  expect(await rejection(rejection(Promise.resolve(char.repeat(length))))).toBe(
+    `Error: expected a rejection, resolved with ${shown}`,
+  );
+});

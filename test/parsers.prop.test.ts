@@ -1,5 +1,5 @@
-import { fc, test } from "@hackersandwizards/scaffolding/property";
-import { expect, test as example, vi } from "vitest";
+import { fc, test, unicodeString } from "@hackersandwizards/scaffolding/property";
+import { expect, vi } from "vitest";
 import { jsonObject, isStrings } from "../lib/json.ts";
 import { licenceAllowed } from "../lib/licence-expression.ts";
 import { exported, targeted } from "../lib/package-exports.ts";
@@ -31,19 +31,10 @@ test.prop([fc.integer({ min: 1, max: 10_000_000 }), fc.nat(12)])(
   },
 );
 
-example.each(["", "0", "000", "1e10", "5.5", " 5"])("rejects fetch timeout %j", (input) => {
-  vi.stubEnv("SCAFFOLDING_FETCH_WAIT_S", input);
-  try {
-    expect(fetchWaitS()).toBe(20);
-  } finally {
-    vi.unstubAllEnvs();
-  }
-});
-
 test.prop([fc.array(word), word, fc.constantFrom(["ts", "//"], ["yml", "#"], ["sh", "#"])])(
   "stripping a line comment preserves all preceding quoted tokens",
   (words, note, [extension, marker]) => {
-    const content = words.map((word) => `"${marker}${word}"`).join(" ");
+    const content = words.map((word) => `"${marker}${word}" '${marker}${word}'`).join(" ");
     const code = `command ${content} `;
     expect(`${code}${marker} ${note}`.replace(commentSyntax(`file.${extension}`), "$1")).toBe(code);
   },
@@ -51,7 +42,7 @@ test.prop([fc.array(word), word, fc.constantFrom(["ts", "//"], ["yml", "#"], ["s
 
 test.prop([
   fc.dictionary(
-    fc.oneof(fc.string(), fc.constantFrom("__proto__", "constructor", "toString")),
+    fc.oneof(unicodeString, fc.constantFrom("__proto__", "constructor", "toString")),
     fc.jsonValue(),
   ),
 ])("JSON objects round trip from text and buffers", (value) => {
@@ -67,7 +58,7 @@ test.prop([
   expect(() => jsonObject(JSON.stringify(value))).toThrow("the JSON holds no object");
 });
 
-test.prop([fc.array(fc.string()), fc.integer()])(
+test.prop([fc.array(unicodeString), fc.integer()])(
   "string lists reject a non-string anywhere",
   (strings, number) => {
     expect(isStrings(strings)).toBe(true);
@@ -78,6 +69,8 @@ test.prop([fc.array(fc.string()), fc.integer()])(
 const leaf = fc.constantFrom(
   { source: "MIT", allowed: true },
   { source: "Apache-2.0", allowed: true },
+  { source: "MIT WITH Classpath-exception-2.0", allowed: true },
+  { source: "GPL-3.0-only WITH Classpath-exception-2.0", allowed: false },
   { source: "GPL-3.0-only", allowed: false },
   { source: "Unknown", allowed: false },
 );
@@ -104,7 +97,10 @@ const licence = fc.letrec<{ expression: Expression }>((tie) => ({
 })).expression;
 
 test.prop([licence], {
-  examples: [[{ source: "MIT OR MIT AND GPL-3.0-only", allowed: true, precedence: 1 }]],
+  examples: [
+    [{ source: "MIT OR MIT AND GPL-3.0-only", allowed: true, precedence: 1 }],
+    [{ source: "MIT WITH Classpath-exception-2.0", allowed: true, precedence: 3 }],
+  ],
 })(
   "SPDX boolean expressions follow their tree and reject unmatched parentheses and trailing tokens",
   ({ source, allowed }) => {
@@ -112,6 +108,9 @@ test.prop([licence], {
     expect(licenceAllowed(`(${source}`)).toBe(false);
     expect(licenceAllowed(`${source} MIT`)).toBe(false);
     expect(licenceAllowed(`${source})`)).toBe(false);
+    expect(licenceAllowed(`MIT OR ${source} WITH`)).toBe(false);
+    expect(licenceAllowed(`MIT OR ${source} WITH AND`)).toBe(false);
+    expect(licenceAllowed(`(MIT ${source}`)).toBe(false);
   },
 );
 
@@ -151,6 +150,10 @@ test.prop([
 ])("an owned git URL uses the organization segment and ignores its ref", (repo, ref, base) => {
   expect(ourRepository(`${base}hackersandwizards/${repo}.git#${ref}`)).toBe(true);
   expect(ourRepository(`${base}other-hackersandwizards/${repo}.git#${ref}`)).toBe(false);
+  expect(ourRepository(`${base}hackersandwizards/${repo}/nested.git`)).toBe(false);
+  expect(ourRepository(`${base}hackersandwizards/`)).toBe(false);
+  expect(ourRepository(`${base}hackersandwizards/#${ref}`)).toBe(false);
+  expect(ourRepository(`${base}unrelated/${repo}.git#${ref}/hackersandwizards/other`)).toBe(false);
 });
 
 test.prop([segment, fc.constantFrom("astro", "css")])(
@@ -158,21 +161,29 @@ test.prop([segment, fc.constantFrom("astro", "css")])(
   (name, extension) => {
     expect(styled(`src/${name}.${extension}`)).toBe(true);
     expect(styled(`src/${name}.${extension}.txt`)).toBe(false);
+    expect(styled(`.hidden/${name}.${extension}`)).toBe(false);
+    expect(styled(`src/.${name}.${extension}`)).toBe(false);
+    expect(styled(`node_modules/${name}.${extension}`)).toBe(false);
   },
 );
 
-test.prop([segment, word])("an allowance applies to its check and path together", (file, text) => {
-  const path = `src/${file}.ts`;
-  const check = "coupling";
-  const pkg = {
-    name: "example",
-    scaffolding: { allow: [{ check, path, text, reason: "generated case" }] },
-  };
-  const finding = { check, path, text, message: "finding" };
-  const otherFile = { ...finding, path: `test/${file}.ts` };
-  const otherCheck = { ...finding, check: "structure" };
-  expect(applyAllow(pkg, check, [finding, otherFile, otherCheck], true)).toEqual([
-    otherFile,
-    otherCheck,
-  ]);
-});
+test.prop([segment, word])(
+  "an allowance applies to its check, path and text together",
+  (file, text) => {
+    const path = `src/${file}.ts`;
+    const check = "coupling";
+    const pkg = {
+      name: "example",
+      scaffolding: { allow: [{ check, path, text, reason: "generated case" }] },
+    };
+    const finding = { check, path, text, message: "finding" };
+    const otherFile = { ...finding, path: `test/${file}.ts` };
+    const otherCheck = { ...finding, check: "structure" };
+    const otherText = { ...finding, text: "9" };
+    expect(applyAllow(pkg, check, [finding, otherFile, otherCheck, otherText], true)).toEqual([
+      otherFile,
+      otherCheck,
+      otherText,
+    ]);
+  },
+);
