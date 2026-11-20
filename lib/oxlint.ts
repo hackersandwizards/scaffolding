@@ -48,6 +48,26 @@ export function runOxlint(root: string, args: string[], capture = false) {
   );
 }
 
+export function oxlintOutput(root: string, args: string[]) {
+  const result = runOxlint(root, args, true);
+  if (result.status !== 0) throw new Error(result.stderr || result.stdout || String(result.error));
+  return result.stdout;
+}
+
+export function oxlintTargets(root: string) {
+  const ignored = submodulePaths(root).flatMap((path) => ["--ignore-pattern", `/${path}/**`]);
+  return [...ignored, "--no-error-on-unmatched-pattern", "."];
+}
+
+export function oxlintFiles(root: string, args = oxlintTargets(root)) {
+  const files = oxlintOutput(root, ["--debug=files", ...args])
+    .split("\n")
+    .filter(Boolean);
+  if (files.some((file) => !existsSync(join(root, file)) || !statSync(join(root, file)).isFile()))
+    throw new Error("could not read the files selected by oxlint");
+  return files;
+}
+
 async function requireTypeScriptProjects(root: string, files: string[]) {
   const sources = files.filter((file) => /\.(?:[cm]?ts|tsx)$/.test(file));
   if (!sources.length) return;
@@ -91,14 +111,8 @@ if (import.meta.main) {
   const root = process.cwd();
   try {
     oxlintConfiguration(root);
-    const ignored = submodulePaths(root).flatMap((path) => ["--ignore-pattern", `/${path}/**`]);
-    const args = [...ignored, "--no-error-on-unmatched-pattern", "."];
-    const list = runOxlint(root, ["--debug=files", ...args], true);
-    if (list.status !== 0) throw new Error(list.stderr || list.stdout || String(list.error));
-    const files = list.stdout.split("\n").filter(Boolean);
-    if (files.some((file) => !existsSync(join(root, file)) || !statSync(join(root, file)).isFile()))
-      throw new Error("could not read the files selected by oxlint");
-    await requireTypeScriptProjects(root, files);
+    const args = oxlintTargets(root);
+    await requireTypeScriptProjects(root, oxlintFiles(root, args));
     process.exitCode = runOxlint(root, [...process.argv.slice(2), ...args]).status ?? 1;
   } catch (error) {
     console.error(`[oxlint] ${(error as Error).message}`);

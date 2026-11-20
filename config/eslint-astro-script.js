@@ -5,6 +5,21 @@ import tseslint from "typescript-eslint";
 import { submodulePaths } from "./submodules.js";
 import { readTypeScriptProject } from "./typescript.js";
 
+export function astroClientScript(node) {
+  return (
+    node.type === "JSXElement" &&
+    node.openingElement.name.name === "script" &&
+    node.children.length > 0 &&
+    !node.openingElement.selfClosing &&
+    !node.openingElement.attributes.some(
+      (attr) =>
+        attr.name?.name === "type" &&
+        attr.value?.type === "Literal" &&
+        /json$|importmap/i.test(String(attr.value.value)),
+    )
+  );
+}
+
 export function astroTypePrograms(processor, astroParser) {
   const active = new Map();
   const projects = new Map();
@@ -20,25 +35,11 @@ export function astroTypePrograms(processor, astroParser) {
       const content = frontmatter ? code.slice(frontmatter.start, frontmatter.end) : "";
       let index = 0;
       template.walk(template.result.ast, (node) => {
-        if (
-          node.type !== "JSXElement" ||
-          node.openingElement.name.name !== "script" ||
-          !node.children.length ||
-          node.openingElement.selfClosing
-        )
-          return;
-        const attrs = node.openingElement.attributes;
-        if (
-          attrs.some(
-            (attr) =>
-              attr.name?.name === "type" &&
-              attr.value?.type === "Literal" &&
-              /json$|importmap/i.test(String(attr.value.value)),
-          )
-        )
-          return;
+        if (!astroClientScript(node)) return;
         const block = extracted[++index];
-        const expression = attrs.find((attr) => attr.name?.name === "define:vars")?.value;
+        const expression = node.openingElement.attributes.find(
+          (attr) => attr.name?.name === "define:vars",
+        )?.value;
         const variables = expression?.expression;
         if (variables?.type !== "ObjectExpression") return;
         const name = `${virtual(file, index)}.vars.ts`;

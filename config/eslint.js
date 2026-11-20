@@ -21,7 +21,16 @@ export default [
     ],
   },
   tseslint.configs.recommended[0],
-  tseslint.configs.recommended[1],
+  {
+    ...tseslint.configs.recommended[1],
+    rules: {
+      ...tseslint.configs.recommended[1].rules,
+      "no-var": "off",
+      "prefer-const": "off",
+      "prefer-rest-params": "off",
+      "prefer-spread": "off",
+    },
+  },
   {
     languageOptions: { globals: { ...globals.browser, ...globals.node, ...globals.bunBuiltin } },
     rules: {

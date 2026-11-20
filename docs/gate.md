@@ -23,8 +23,11 @@ non-blank string in `skip`:
 client scripts. ESLint checks Astro templates, the Astro plugin rules, the test rules, and rules
 Oxlint cannot run with the same coverage. Both steps run unless the repository already has a
 `skip.lint` reason. `check-structure` requires the shared Oxlint base and its settings in
-`.oxlintrc.json`. It checks for legacy ESLint config filenames and leaves the contents of
-`eslint.config.js` to the repository. See [Configs](configs.md).
+`.oxlintrc.json`. It checks for legacy ESLint config filenames and compares the effective
+rules on files both linters select, including Astro's extracted scripts. A rule enabled as a
+warning or an error in both linters for the same code fails structure. The finding names the
+file and both rule IDs. Adjust the local config so one linter owns the rule there. See
+[Configs](configs.md).
 
 The typed rules flag unhandled promises, promises used where a value or a void callback is
 expected, `await` on a non-promise, incomplete switches over unions, and unsafe assignments, member

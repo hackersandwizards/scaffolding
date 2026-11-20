@@ -806,6 +806,77 @@ describe("scaffold and check-structure", () => {
     }
   });
 
+  test(
+    "the effective lint presets are disjoint and check-structure rejects local overlaps",
+    () => {
+      const config = 'import base from "@hackersandwizards/scaffolding/eslint/astro";\n';
+      const eslint = "eslint.config.js";
+      const oxlint = ".oxlintrc.json";
+      const other = fixture(
+        "lint-ownership",
+        {},
+        {
+          [eslint]: config + "export default base;\n",
+          "src/probe.js": "export const js = true;\n",
+          "src/probe.ts": "export const ts = true;\n",
+          "src/probe.test.ts": "export const test = true;\n",
+          "src/Data.astro": '<script type="text/plain">text</script>\n',
+          "src/Probe.astro":
+            "---\nconst value = 1;\n---\n{value}\n<script>console.log(1);</script>\n",
+        },
+      );
+      expect(run(other, "check-structure")).toEqual({ code: 0, out: "" });
+
+      write(other, {
+        [eslint]:
+          config +
+          `export default [...base,
+        { files: ["src/probe.js", "src/*.astro/*.ts"], rules: { "no-debugger": "warn" } },
+        { files: ["src/probe.ts"], rules: { "@typescript-eslint/no-floating-promises": "error" } },
+        { files: ["src/probe.test.ts"], rules: { "@typescript-eslint/no-unused-vars": "error" } },
+      ];\n`,
+      });
+      const localEslint = run(other, "check-structure");
+      expect(localEslint.code).toBe(1);
+      expect(lines(localEslint.out, "check-structure")).toEqual([
+        expect.stringMatching(
+          /src\/Probe\.astro\/\S+\.ts: ESLint rule no-debugger overlaps Oxlint rule no-debugger.*\(Astro client script\)/,
+        ),
+        expect.stringContaining(
+          "src/probe.js: ESLint rule no-debugger overlaps Oxlint rule no-debugger",
+        ),
+        expect.stringContaining(
+          "src/probe.test.ts: ESLint rule @typescript-eslint/no-unused-vars overlaps Oxlint rule no-unused-vars",
+        ),
+        expect.stringContaining(
+          "src/probe.ts: ESLint rule @typescript-eslint/no-floating-promises overlaps Oxlint rule typescript/no-floating-promises",
+        ),
+      ]);
+      write(other, { [eslint]: config + "export default base;\n" });
+      expect(run(other, "check-structure")).toEqual({ code: 0, out: "" });
+
+      write(other, {
+        [oxlint]: JSON.stringify({
+          ...oxlintTemplate,
+          overrides: [{ files: ["src/*.astro"], rules: { "eslint/no-undef": "warn" } }],
+        }),
+      });
+      const localOxlint = run(other, "check-structure");
+      expect(localOxlint.code).toBe(1);
+      expect(lines(localOxlint.out, "check-structure")).toEqual([
+        expect.stringContaining(
+          "src/Probe.astro: ESLint rule no-undef overlaps Oxlint rule no-undef",
+        ),
+        expect.stringMatching(
+          /src\/Probe\.astro\/\S+\.ts: ESLint rule no-undef overlaps Oxlint rule no-undef/,
+        ),
+      ]);
+      write(other, { [oxlint]: JSON.stringify(oxlintTemplate) });
+      expect(run(other, "check-structure")).toEqual({ code: 0, out: "" });
+    },
+    limit(10_000),
+  );
+
   test("a full repository has its catalog, brand and admin on their newest tags", () => {
     const pkg = scaffolded(dir);
     expect(pkg.devDependencies["@hackersandwizards/brand"]).toBe(
@@ -1175,6 +1246,7 @@ describe("scaffold and check-structure", () => {
     write(other, { "bun.lock": "" });
     sh(other, ["config", "core.hooksPath", ".githooks"]);
     const pkg = scaffolded(other);
+    pkg.scaffolding.skip.lint = "fixture checks the test runner timeout";
     const structure = (
       scaffolding: object,
       scripts: object,
@@ -3941,7 +4013,7 @@ describe("shared eslint config", () => {
       "tsconfig.json":
         '{"compilerOptions":{"strict":true,"module":"ESNext","moduleResolution":"bundler","lib":["ESNext"],"paths":{"@fixture/*":["./src/*"]}}}\n',
       "src/later.ts": "export const later = async () => 1;\n",
-      "src/probe.astro": `---
+      "src/probe.astro": `---\u00a0
 const label = "one";
 debugger;
 const Element = Fragment;
@@ -3956,6 +4028,7 @@ const Element = Fragment;
   debugger;
   later();
   aliasedLater();
+  console.log(1,\u00a02);
   const dialog = document.querySelector("dialog");
   dialog?.showModal();
   dialog?.nonexistent();
@@ -3965,6 +4038,8 @@ const Element = Fragment;
   dialog?.showModal();
   const _mode: ScrollRestoration = "manual";
 </script>
+<script>console.log(1,\u00a02);</script><p>\u00a0</p>
+<script type="application/json">{\u00a0"x":1}</script>
 `,
     });
     install(dir);
@@ -3994,7 +4069,10 @@ const Element = Fragment;
         )
         .sort(),
     ).toEqual([
+      [1, "eslint(no-irregular-whitespace)"],
       [13, "eslint(no-debugger)"],
+      [16, "eslint(no-irregular-whitespace)"],
+      [26, "eslint(no-irregular-whitespace)"],
       [3, "eslint(no-debugger)"],
     ]);
     for (const env of [{ ...process.env, SCAFFOLDING_LINT_UNTYPED: "" }, untyped]) {
@@ -4007,13 +4085,17 @@ const Element = Fragment;
       expect(run.status).toBe(1);
       expect(run.stdout).toMatch(/6:\d+ .*no-debugger/);
       expect(run.stdout).not.toMatch(/(?:3:1|13:3) .*no-debugger/);
+      expect(run.stdout.match(/\d+:\d+ .*no-irregular-whitespace/g)).toEqual([
+        expect.stringMatching(/^26:39 /),
+        expect.stringMatching(/^27:34 /),
+      ]);
       expect(run.stdout).not.toContain("no-undef");
       if (env.SCAFFOLDING_LINT_UNTYPED) expect(run.stdout).not.toContain("no-floating-promises");
       else {
         expect(run.stdout).toMatch(/14:3 .*@typescript-eslint\/no-floating-promises/);
         expect(run.stdout).toMatch(/15:3 .*@typescript-eslint\/no-floating-promises/);
-        expect(run.stdout).toMatch(/18:3 .*@typescript-eslint\/no-unsafe-call/);
-        expect(run.stdout).not.toMatch(/^\s+(?:8|17|22):\d+ .*no-unsafe/m);
+        expect(run.stdout).toMatch(/19:3 .*@typescript-eslint\/no-unsafe-call/);
+        expect(run.stdout).not.toMatch(/^\s+(?:8|18|23):\d+ .*no-unsafe/m);
       }
     }
   });

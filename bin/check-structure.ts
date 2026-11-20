@@ -19,6 +19,7 @@ import { basename, dirname, join, posix } from "node:path";
 import own from "../package.json";
 import skeleton from "../skeleton.json";
 import { help } from "../lib/help.ts";
+import { lintOverlaps } from "../lib/lint-disjoint.ts";
 import { oxlintConfig, oxlintConfiguration } from "../lib/oxlint.ts";
 import {
   applyAllow,
@@ -133,7 +134,8 @@ for (const path of skeleton.present)
   if (!exists(path) && !exempt.optional.includes(path)) add(path, "missing");
 for (const path of skeleton.absent) if (exists(path)) add(path, "not allowed by the skeleton");
 
-if (!isReason(pkg.scaffolding?.skip?.lint)) {
+const lintEnabled = !isReason(pkg.scaffolding?.skip?.lint);
+if (lintEnabled) {
   if (!exists(oxlintConfig))
     add(oxlintConfig, "missing (check-structure --fix)", "", () =>
       copyFileSync(join(home, "template", oxlintConfig), at(oxlintConfig)),
@@ -345,4 +347,17 @@ if (fix)
       f.message = `${f.message}: ${(e as Error).message}`;
       repairs.delete(f);
     }
-finish("check-structure", fix ? left.filter((f) => !repairs.has(f)) : left, started);
+const remaining = fix ? left.filter((f) => !repairs.has(f)) : left;
+if (lintEnabled && exists(oxlintConfig) && !remaining.some(({ path }) => path === oxlintConfig)) {
+  try {
+    remaining.push(...(await lintOverlaps(root)));
+  } catch (error) {
+    remaining.push({
+      check: "structure",
+      path: oxlintConfig,
+      text: "",
+      message: `could not check lint rule ownership: ${(error as Error).message}`,
+    });
+  }
+}
+finish("check-structure", remaining, started);
