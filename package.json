@@ -15,6 +15,7 @@
     "check-lock": "template/.githooks/check-lock.ts",
     "chrome-mcp": "bin/chrome-mcp.ts",
     "scaffolding": "bin/scaffolding.ts",
+    "scaffolding-mutation": "bin/scaffolding-mutation.ts",
     "raise-pins": "bin/raise-pins.ts"
   },
   "exports": {
@@ -89,7 +90,7 @@
     "prepare": "[ \"$(git rev-parse --show-toplevel 2>/dev/null)\" = \"$(pwd -P)\" ] && git config core.hooksPath .githooks || true",
     "check": "bun --no-env-file bin/scaffolding.ts check",
     "test": "bun --bun vitest run",
-    "mutation": "stryker run",
+    "mutation": "bun --no-env-file bin/scaffolding-mutation.ts",
     "check:staged": "bun --no-env-file bin/check-staged.ts",
     "fix": "bun --bun eslint --cache --concurrency=auto . --fix && bun --bun prettier --write .",
     "check-confidential": "bun --no-env-file bin/check-confidential.ts",

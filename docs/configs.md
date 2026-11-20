@@ -121,5 +121,9 @@ pool, test selection or additional ignores. When `related` was omitted from the 
 concurrency after `...base`. The base sets `vitest.related` to `false`, uses per-test coverage and
 two workers, ignores dotfiles and static mutants, and cleans `.stryker-tmp` after each run.
 It writes the clear-text report to the terminal and the JSON and incremental reports to
-`.stryker-reports/mutation.json` and `.stryker-reports/incremental.json`. Run mutation testing
-with `bun run mutation` on demand.
+`.stryker-reports/mutation.json` and `.stryker-reports/incremental.json`.
+
+Set `"mutation": "scaffolding-mutation"` in `package.json` and run `bun run mutation` on demand.
+The command stops Stryker and its workers at the 15-minute wall limit and exits with status 124.
+To narrow a run, use `bun run mutation --mutate <files>`. Mutation testing stays outside the gate,
+hooks and CI.
