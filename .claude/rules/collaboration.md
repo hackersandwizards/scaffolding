@@ -19,8 +19,8 @@ choice to please: agreement carries its reason.
   and is gone once the choice is made. A pick confirms the option's label, never the clauses you wrote under it.
 - Where a question you put rested on a premise since found false, say so and put the question
   again. The answer to the false version does not carry over.
-- An idea the person raises as a possibility gets research, a prototype and a blind review before
-  it is decided.
+- An idea the person raises as a possibility gets research, then the real integration, built in
+  full where it makes sense, scored in a blind review and improved from its findings.
 - Settle a question at a reachable source or with the colleague who owns it. Escalate only a
   decision: direction, money, a relationship, or anything leaving the company.
 
