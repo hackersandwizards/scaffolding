@@ -201,7 +201,9 @@ const runs = active.flatMap(([tool, flags]) => {
 });
 async function runStagedSkills(): Promise<ToolRun> {
   // An inherited scope could narrow validation to none. Deletions can break links too.
-  const all = spawnSync("git", ["diff", "--cached", "--name-only"], { encoding: "utf8" });
+  const all = spawnSync("git", ["diff", "--cached", "--no-renames", "--name-only"], {
+    encoding: "utf8",
+  });
   if (all.status !== 0) refuseCommit("git diff --cached failed");
   const scoped = { ...process.env, VALIDATE_SKILLS_PATHS: all.stdout.trim() };
   if (!differs.has("package.json"))
