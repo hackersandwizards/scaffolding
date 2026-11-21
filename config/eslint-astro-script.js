@@ -206,7 +206,7 @@ export function astroTypePrograms(processor, astroParser) {
     preprocess(code, filename) {
       const entry = extractScripts(code, filename);
       active.set(filename, entry);
-      if (!entry.server?.region) return entry.extracted;
+      if (!entry.server) return entry.extracted;
       return [...entry.extracted, { filename: frontmatterBlock, text: entry.server.code }];
     },
     postprocess(messages, filename) {
@@ -220,7 +220,7 @@ export function astroTypePrograms(processor, astroParser) {
         }
       }
       const client = processor.postprocess(messages.slice(0, entry?.extracted.length), filename);
-      return entry?.server?.region
+      return entry?.server
         ? [...client, ...frontmatterMessages(entry.server, messages[entry.extracted.length] ?? [])]
         : client;
     },

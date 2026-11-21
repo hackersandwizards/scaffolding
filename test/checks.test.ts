@@ -7092,19 +7092,22 @@ describe("check-cycles", () => {
 
 describe("check-licenses", () => {
   function installed(licences: Record<string, unknown>, scaffolding: object = {}) {
-    const files: Record<string, string> = {};
+    const files = new Map<string, string>();
     const dependencies = new Map<string, string>();
     for (const [name, licence] of Object.entries(licences)) {
       const folder = name.replace("/", "+");
-      files[`pkgs/${folder}/package.json`] = JSON.stringify({
-        name,
-        version: "1.0.0",
-        ...(licence === undefined ? {} : (licence as object)),
-      });
+      files.set(
+        `pkgs/${folder}/package.json`,
+        JSON.stringify({
+          name,
+          version: "1.0.0",
+          ...(licence === undefined ? {} : (licence as object)),
+        }),
+      );
       dependencies.set(name, `file:./pkgs/${folder}`);
     }
     const dir = repo({
-      ...files,
+      ...Object.fromEntries(files),
       "package.json": JSON.stringify({
         name: "fx",
         dependencies: Object.fromEntries(dependencies),

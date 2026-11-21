@@ -1,8 +1,9 @@
 import ts from "typescript";
 
-const inheritedNames = Object.getOwnPropertyNames(Object.prototype);
+const inheritedNames = new Set(Object.getOwnPropertyNames(Object.prototype));
+const keyCallbacks = new Set(["every", "filter", "find", "flatMap", "forEach", "map", "some"]);
 
-function unwrap(node) {
+function unwrapLookup(node) {
   while (
     ts.isParenthesizedExpression(node) ||
     ts.isAsExpression(node) ||
@@ -14,22 +15,112 @@ function unwrap(node) {
   return node;
 }
 
-function declaringConst(symbol) {
-  const declaration = symbol?.valueDeclaration;
-  return declaration &&
-    ts.isVariableDeclaration(declaration) &&
-    declaration.parent.flags & ts.NodeFlags.Const
-    ? declaration
-    : undefined;
+function exitsLookupBranch(statement, use) {
+  if (ts.isReturnStatement(statement) || ts.isThrowStatement(statement)) return true;
+  if (ts.isContinueStatement(statement)) {
+    for (let parent = statement.parent; parent; parent = parent.parent) {
+      if (
+        statement.label &&
+        ts.isLabeledStatement(parent) &&
+        parent.label.text === statement.label.text
+      )
+        return use.end <= parent.end;
+      if (!statement.label && ts.isIterationStatement(parent, false)) return use.end <= parent.end;
+    }
+  }
+  return (
+    ts.isBlock(statement) &&
+    statement.statements.length > 0 &&
+    exitsLookupBranch(statement.statements.at(-1), use)
+  );
 }
 
-function exits(statement) {
-  return (
-    ts.isReturnStatement(statement) ||
-    ts.isThrowStatement(statement) ||
-    (ts.isContinueStatement(statement) && !statement.label) ||
-    (ts.isBlock(statement) && statement.statements.length > 0 && exits(statement.statements.at(-1)))
-  );
+function lookupReturns(factory) {
+  if (!factory?.body) return [];
+  if (!ts.isBlock(factory.body)) return [factory.body];
+  const values = [];
+  const visit = (child) => {
+    if (ts.isReturnStatement(child)) values.push(child.expression);
+    else if (!ts.isFunctionLike(child)) ts.forEachChild(child, visit);
+  };
+  visit(factory.body);
+  return values;
+}
+
+function lookupWrite(node) {
+  let target = node;
+  while (ts.isParenthesizedExpression(target.parent) || ts.isNonNullExpression(target.parent))
+    target = target.parent;
+  const parent = target.parent;
+  if (
+    ts.isBinaryExpression(parent) &&
+    parent.left === target &&
+    parent.operatorToken.kind === ts.SyntaxKind.EqualsToken
+  )
+    return "write";
+  return ts.isWriteAccess(target) ? "update" : undefined;
+}
+
+function lookupTest(node) {
+  let expression = node;
+  let parent = expression.parent;
+  while (
+    ts.isParenthesizedExpression(parent) ||
+    ts.isAsExpression(parent) ||
+    ts.isNonNullExpression(parent) ||
+    ts.isSatisfiesExpression(parent) ||
+    (ts.isBinaryExpression(parent) &&
+      parent.right === expression &&
+      (parent.operatorToken.kind === ts.SyntaxKind.AmpersandAmpersandToken ||
+        parent.operatorToken.kind === ts.SyntaxKind.BarBarToken))
+  ) {
+    expression = parent;
+    parent = expression.parent;
+  }
+  if (
+    ((ts.isIfStatement(parent) ||
+      ts.isWhileStatement(parent) ||
+      ts.isDoStatement(parent) ||
+      ts.isForStatement(parent)) &&
+      parent.expression === expression) ||
+    (ts.isConditionalExpression(parent) && parent.condition === expression) ||
+    (ts.isPrefixUnaryExpression(parent) && parent.operator === ts.SyntaxKind.ExclamationToken)
+  )
+    return "truthy";
+  const typeQuery = ts.isTypeOfExpression(parent);
+  if (typeQuery) {
+    expression = parent;
+    parent = parent.parent;
+  }
+  if (!ts.isBinaryExpression(parent)) return "read";
+  const operator = parent.operatorToken.kind;
+  if (parent.left === expression) {
+    if (
+      operator === ts.SyntaxKind.AmpersandAmpersandToken ||
+      operator === ts.SyntaxKind.BarBarToken
+    )
+      return "truthy";
+    if (operator === ts.SyntaxKind.QuestionQuestionToken) return "definedness";
+  }
+  if (
+    [
+      ts.SyntaxKind.EqualsEqualsToken,
+      ts.SyntaxKind.ExclamationEqualsToken,
+      ts.SyntaxKind.EqualsEqualsEqualsToken,
+      ts.SyntaxKind.ExclamationEqualsEqualsToken,
+    ].includes(operator)
+  ) {
+    const other = unwrapLookup(parent.left === expression ? parent.right : parent.left);
+    if (typeQuery)
+      return ts.isStringLiteralLike(other) && other.text === "undefined" ? "definedness" : "read";
+    if (
+      other.kind === ts.SyntaxKind.NullKeyword ||
+      ts.isVoidExpression(other) ||
+      (ts.isIdentifier(other) && other.text === "undefined")
+    )
+      return "definedness";
+  }
+  return "read";
 }
 
 export default {
@@ -37,11 +128,19 @@ export default {
     type: "problem",
     schema: [],
     messages: {
-      read: "A data key can read an inherited Object member. Check Object.hasOwn or use a Map or a null-prototype table.",
+      read: "Computed read can return an inherited Object member. Use ownEntry(table, key), an Object.hasOwn guard, a Map, or a null-prototype table.",
+      truthy:
+        "Truthy test can pass on an inherited Object member. For membership use Object.hasOwn(table, key); for a truthy own value use ownEntry(table, key).",
+      definedness:
+        "Definedness test can see an inherited Object member. Test ownEntry(table, key) for definedness or use Object.hasOwn(table, key) for membership.",
+      destructure:
+        "Computed destructuring can bind an inherited Object member. Bind the value with ownEntry(table, key).",
       membership:
-        "Use Object.hasOwn to test table membership. The in operator includes inherited members.",
+        "The in test includes inherited Object members. Use Object.hasOwn(table, key) or Map.has(key).",
       write:
-        "A data key can invoke the inherited __proto__ setter. Build the table with Object.fromEntries, a Map, or a null prototype.",
+        "Computed write can reach an inherited Object member. For construction use Object.fromEntries, a Map, or a null-prototype table. For an existing table define an own data property with Object.defineProperty.",
+      update:
+        "Computed update can read or write an inherited Object member. Use a Map or a null-prototype table, or read with ownEntry and define an own data property with Object.defineProperty after handling absence.",
     },
   },
   create(context) {
@@ -52,59 +151,220 @@ export default {
     const symbol = (node) => checker.getSymbolAtLocation(node);
     const typeOf = (node) => checker.getTypeAtLocation(node);
     const parts = (type) => (type.isUnion() ? type.types : [type]);
+    const writesByFile = new Map();
 
-    function sameValue(left, right) {
-      left = unwrap(left);
-      right = unwrap(right);
-      if (ts.isIdentifier(left) && ts.isIdentifier(right))
-        return left.text === right.text && symbol(left) === symbol(right);
-      if (ts.isPropertyAccessExpression(left) && ts.isPropertyAccessExpression(right))
-        return left.name.text === right.name.text && sameValue(left.expression, right.expression);
-      return ts.isLiteralExpression(left) && left.kind === right.kind && left.text === right.text;
+    function namedMember(node) {
+      if (ts.isPropertyAccessExpression(node)) return node.name.text;
+      if (ts.isElementAccessExpression(node) && ts.isStringLiteralLike(node.argumentExpression))
+        return node.argumentExpression.text;
+      return undefined;
     }
 
-    function objectCall(node, name) {
+    function sameValue(left, right) {
+      left = unwrapLookup(left);
+      right = unwrapLookup(right);
+      if (left === right) return true;
+      const name = namedMember(left);
+      if (name !== undefined && name === namedMember(right))
+        return sameValue(left.expression, right.expression);
+      if (left.kind !== right.kind) return false;
+      if (ts.isIdentifier(left))
+        return left.text === right.text && Boolean(symbol(left)) && symbol(left) === symbol(right);
+      if (left.kind === ts.SyntaxKind.ThisKeyword) return true;
+      if (ts.isElementAccessExpression(left))
+        return (
+          sameValue(left.expression, right.expression) &&
+          sameValue(left.argumentExpression, right.argumentExpression)
+        );
+      return ts.isLiteralExpression(left) && left.text === right.text;
+    }
+
+    function defaultLibrarySymbol(node, name) {
+      return (
+        ts.isIdentifier(node) &&
+        node.text === name &&
+        symbol(node)?.declarations?.some((declaration) =>
+          program.isSourceFileDefaultLibrary(declaration.getSourceFile()),
+        )
+      );
+    }
+
+    function objectMethod(node, name) {
       return (
         ts.isCallExpression(node) &&
         !node.questionDotToken &&
         ts.isPropertyAccessExpression(node.expression) &&
         !node.expression.questionDotToken &&
         node.expression.name.text === name &&
-        ts.isIdentifier(node.expression.expression) &&
-        node.expression.expression.text === "Object" &&
-        symbol(node.expression.expression)?.declarations?.some((declaration) =>
-          program.isSourceFileDefaultLibrary(declaration.getSourceFile()),
+        defaultLibrarySymbol(node.expression.expression, "Object")
+      );
+    }
+
+    function hasOwnCall(node) {
+      if (objectMethod(node, "hasOwn")) return true;
+      if (!ts.isCallExpression(node) || node.questionDotToken) return false;
+      const method = node.expression;
+      if (
+        !ts.isPropertyAccessExpression(method) ||
+        method.questionDotToken ||
+        method.name.text !== "call"
+      )
+        return false;
+      const own = method.expression;
+      if (
+        !ts.isPropertyAccessExpression(own) ||
+        own.questionDotToken ||
+        own.name.text !== "hasOwnProperty"
+      )
+        return false;
+      const prototype = own.expression;
+      return (
+        ts.isPropertyAccessExpression(prototype) &&
+        !prototype.questionDotToken &&
+        prototype.name.text === "prototype" &&
+        defaultLibrarySymbol(prototype.expression, "Object")
+      );
+    }
+
+    function mutationSites(file) {
+      if (writesByFile.has(file)) return writesByFile.get(file);
+      const writes = [];
+      const visit = (node) => {
+        if (
+          (ts.isIdentifier(node) ||
+            ts.isPropertyAccessExpression(node) ||
+            ts.isElementAccessExpression(node)) &&
+          (ts.isWriteAccess(node) || ts.isDeleteExpression(node.parent))
+        )
+          writes.push({ target: node, effect: node.parent });
+        if (objectMethod(node, "setPrototypeOf") && node.arguments.length === 2)
+          writes.push({ target: node.arguments[0], effect: node });
+        if (
+          ts.isCallExpression(node) &&
+          ts.isPropertyAccessExpression(node.expression) &&
+          ["add", "push", "unshift", "splice", "fill", "copyWithin"].includes(
+            node.expression.name.text,
+          )
+        )
+          writes.push({ target: node.expression.expression, effect: node, enumerationOnly: true });
+        ts.forEachChild(node, visit);
+      };
+      visit(file);
+      writesByFile.set(file, writes);
+      return writes;
+    }
+
+    function affects(target, expression, key) {
+      expression = unwrapLookup(expression);
+      if (sameValue(target, expression)) return true;
+      if (ts.isPropertyAccessExpression(expression) || ts.isElementAccessExpression(expression)) {
+        if (affects(target, expression.expression)) return true;
+        if (
+          ts.isElementAccessExpression(expression) &&
+          affects(target, expression.argumentExpression)
+        )
+          return true;
+      }
+      target = unwrapLookup(target);
+      return (
+        ((ts.isElementAccessExpression(target) &&
+          sameValue(target.expression, expression) &&
+          (!key || sameValue(target.argumentExpression, key))) ||
+          (ts.isPropertyAccessExpression(target) &&
+            sameValue(target.expression, expression) &&
+            (!key ||
+              parts(typeOf(key)).some((part) =>
+                checker.isTypeAssignableTo(checker.getStringLiteralType(target.name.text), part),
+              )))) &&
+        ts.isDeleteExpression(target.parent)
+      );
+    }
+
+    function rejectedBranch(start, use) {
+      for (let child = start; child.parent; child = child.parent) {
+        const parent = child.parent;
+        if (ts.isFunctionLike(parent)) break;
+        if (ts.isConditionalExpression(parent) || ts.isIfStatement(parent)) {
+          const condition = parent.condition ?? parent.expression;
+          if (child !== condition) continue;
+          const yes = parent.whenTrue ?? parent.thenStatement;
+          const no = parent.whenFalse ?? parent.elseStatement;
+          if (use.pos >= yes.pos && use.end <= yes.end) return no;
+          if (no && use.pos >= no.pos && use.end <= no.end) return yes;
+          if (ts.isIfStatement(parent) && parent.end <= use.getStart()) {
+            if (exitsLookupBranch(yes, use)) return yes;
+            if (no && exitsLookupBranch(no, use)) return no;
+          }
+        }
+      }
+      return undefined;
+    }
+
+    function stable(start, use, table, key, enumerated = false) {
+      if (start.getSourceFile() !== use.getSourceFile()) return false;
+      let last = use.end;
+      for (let parent = use.parent; parent && !ts.isFunctionLike(parent); parent = parent.parent) {
+        if (ts.isIterationStatement(parent, false) && start.end <= parent.getStart())
+          last = parent.end + 1;
+      }
+      const rejected = last === use.end ? rejectedBranch(start, use) : undefined;
+      return !mutationSites(use.getSourceFile()).some(
+        ({ target, effect, enumerationOnly }) =>
+          (!enumerationOnly || enumerated) &&
+          effect !== start &&
+          target.pos >= start.end &&
+          effect.end < last &&
+          (!rejected || target.pos < rejected.pos || target.end > rejected.end) &&
+          (affects(target, table, key) ||
+            (key && affects(target, key)) ||
+            (enumerated &&
+              ts.isElementAccessExpression(target) &&
+              sameValue(target.expression, table))),
+      );
+    }
+
+    function stableDeclaration(declaration, use, expression) {
+      const file = declaration.getSourceFile();
+      if (file === use.getSourceFile()) return stable(declaration, use, expression);
+      const binding = symbol(declaration.name);
+      return (
+        !mutationSites(file).some(({ target }) => symbol(target) === binding) &&
+        !mutationSites(use.getSourceFile()).some(
+          ({ target, effect }) => effect.end < use.end && affects(target, expression),
         )
       );
     }
 
     function proves(condition, truthy, accept) {
-      condition = unwrap(condition);
+      condition = unwrapLookup(condition);
       if (
         ts.isPrefixUnaryExpression(condition) &&
         condition.operator === ts.SyntaxKind.ExclamationToken
       )
         return proves(condition.operand, !truthy, accept);
       if (ts.isBinaryExpression(condition)) {
-        const sufficient = truthy
-          ? ts.SyntaxKind.AmpersandAmpersandToken
-          : ts.SyntaxKind.BarBarToken;
-        if (condition.operatorToken.kind === sufficient)
-          return proves(condition.left, truthy, accept) || proves(condition.right, truthy, accept);
+        const operator = condition.operatorToken.kind;
+        const and = operator === ts.SyntaxKind.AmpersandAmpersandToken;
+        if (and || operator === ts.SyntaxKind.BarBarToken) {
+          const left = proves(condition.left, truthy, accept);
+          return and === truthy
+            ? left || proves(condition.right, truthy, accept)
+            : left && proves(condition.right, truthy, accept);
+        }
       }
-      return truthy && accept(condition);
+      return accept(condition, truthy);
     }
 
-    function protectedBy(node, accept) {
-      for (let child = node; child.parent; child = child.parent) {
+    function protectedLookup(use, accept) {
+      for (let child = use; child.parent; child = child.parent) {
         const parent = child.parent;
         if (ts.isFunctionLike(parent)) break;
         if (ts.isIfStatement(parent) || ts.isConditionalExpression(parent)) {
-          const then = ts.isIfStatement(parent) ? parent.thenStatement : parent.whenTrue;
-          const otherwise = ts.isIfStatement(parent) ? parent.elseStatement : parent.whenFalse;
+          const yes = ts.isIfStatement(parent) ? parent.thenStatement : parent.whenTrue;
+          const no = ts.isIfStatement(parent) ? parent.elseStatement : parent.whenFalse;
           if (
-            (child === then || child === otherwise) &&
-            proves(parent.expression ?? parent.condition, child === then, accept)
+            (child === yes || child === no) &&
+            proves(parent.expression ?? parent.condition, child === yes, accept)
           )
             return true;
         }
@@ -119,791 +379,384 @@ export default {
             return true;
         }
         if (ts.isBlock(parent) || ts.isSourceFile(parent)) {
-          const previous = parent.statements[parent.statements.indexOf(child) - 1];
-          if (
-            previous &&
-            ts.isIfStatement(previous) &&
-            !previous.elseStatement &&
-            exits(previous.thenStatement) &&
-            proves(previous.expression, false, accept)
-          )
-            return true;
+          for (const statement of parent.statements) {
+            if (statement === child) break;
+            if (ts.isIfStatement(statement)) {
+              if (
+                exitsLookupBranch(statement.thenStatement, use) &&
+                proves(statement.expression, false, accept)
+              )
+                return true;
+              if (
+                statement.elseStatement &&
+                exitsLookupBranch(statement.elseStatement, use) &&
+                proves(statement.expression, true, accept)
+              )
+                return true;
+            } else if (ts.isExpressionStatement(statement) && accept(statement.expression, true)) {
+              return true;
+            }
+          }
         }
       }
       return false;
     }
 
-    function returnValues(factory) {
-      if (!factory?.body) return [];
-      if (!ts.isBlock(factory.body)) return [factory.body];
-      const values = [];
-      const visit = (child) => {
-        if (ts.isReturnStatement(child)) values.push(child.expression);
-        else if (!ts.isFunctionLike(child)) ts.forEachChild(child, visit);
-      };
-      visit(factory.body);
-      return values;
+    function valueDeclaration(expression) {
+      let binding = symbol(expression);
+      if (binding?.flags & ts.SymbolFlags.Alias) binding = checker.getAliasedSymbol(binding);
+      return binding?.valueDeclaration;
     }
 
-    function nullTable(node, expression, factories = new Set()) {
-      expression = unwrap(expression);
-      const declaration = ts.isIdentifier(expression)
-        ? declaringConst(symbol(expression))
-        : undefined;
-      const source = declaration?.initializer ? unwrap(declaration.initializer) : expression;
-      if (objectCall(source, "create") && source.arguments[0]?.kind === ts.SyntaxKind.NullKeyword)
-        return true;
+    function functionScope(node) {
+      while (node.parent && !ts.isFunctionLike(node)) node = node.parent;
+      return node;
+    }
+
+    function ownGuard(candidate) {
+      if (hasOwnCall(candidate)) return candidate;
+      if (!ts.isIdentifier(candidate)) return undefined;
+      const declaration = valueDeclaration(candidate);
       if (
-        ts.isObjectLiteralExpression(source) &&
-        source.properties.some(
+        !declaration ||
+        !ts.isVariableDeclaration(declaration) ||
+        !(declaration.parent.flags & ts.NodeFlags.Const) ||
+        !declaration.initializer ||
+        declaration.end > candidate.getStart() ||
+        functionScope(declaration) !== functionScope(candidate)
+      )
+        return undefined;
+      const call = unwrapLookup(declaration.initializer);
+      return hasOwnCall(call) ? call : undefined;
+    }
+
+    function nullTable(use, expression, seen = new Set()) {
+      expression = unwrapLookup(expression);
+      if (seen.has(expression)) return false;
+      seen.add(expression);
+      if (
+        (objectMethod(expression, "create") &&
+          expression.arguments[0]?.kind === ts.SyntaxKind.NullKeyword) ||
+        objectMethod(expression, "groupBy")
+      )
+        return true;
+      if (ts.isObjectLiteralExpression(expression))
+        return expression.properties.some(
           (property) =>
             ts.isPropertyAssignment(property) &&
-            (ts.isIdentifier(property.name) || ts.isStringLiteral(property.name)) &&
+            (ts.isIdentifier(property.name) || ts.isStringLiteralLike(property.name)) &&
             property.name.text === "__proto__" &&
-            unwrap(property.initializer).kind === ts.SyntaxKind.NullKeyword,
-        )
-      )
-        return true;
-      if (ts.isCallExpression(source)) {
-        const factory = checker.getResolvedSignature(source)?.declaration;
-        if (!factory?.body || factories.has(factory)) return false;
-        factories.add(factory);
-        const values = returnValues(factory);
+            unwrapLookup(property.initializer).kind === ts.SyntaxKind.NullKeyword,
+        );
+      if (ts.isCallExpression(expression)) {
+        const values = lookupReturns(checker.getResolvedSignature(expression)?.declaration);
         return (
           values.length > 0 &&
-          values.every((value) => value && nullTable(value, value, new Set(factories)))
+          values.every((value) => value && nullTable(value, value, new Set(seen)))
         );
       }
-      if (!declaration) return false;
+      if (!ts.isIdentifier(expression) && !ts.isPropertyAccessExpression(expression)) return false;
+      const declaration = valueDeclaration(expression);
+      if (!declaration?.initializer || ts.isParameter(declaration)) return false;
+      if (nullTable(declaration, declaration.initializer, seen))
+        return stableDeclaration(declaration, use, expression);
+      if (!ts.isVariableDeclaration(declaration)) return false;
       const statement = declaration.parent.parent;
-      if (!ts.isVariableStatement(statement)) return false;
       const block = statement.parent;
-      if (!ts.isBlock(block) && !ts.isSourceFile(block)) return false;
+      if (!ts.isVariableStatement(statement) || (!ts.isBlock(block) && !ts.isSourceFile(block)))
+        return false;
       const next = block.statements[block.statements.indexOf(statement) + 1];
+      if (!next || !ts.isExpressionStatement(next)) return false;
+      const call = next.expression;
       return (
-        next &&
-        ts.isExpressionStatement(next) &&
-        next.end <= node.getStart() &&
-        objectCall(next.expression, "setPrototypeOf") &&
-        next.expression.arguments.length === 2 &&
-        sameValue(next.expression.arguments[0], expression) &&
-        next.expression.arguments[1].kind === ts.SyntaxKind.NullKeyword
+        next.end <= use.getStart() &&
+        objectMethod(call, "setPrototypeOf") &&
+        call.arguments.length === 2 &&
+        sameValue(call.arguments[0], declaration.name) &&
+        call.arguments[1].kind === ts.SyntaxKind.NullKeyword &&
+        stable(next, use, expression)
       );
     }
 
-    function declaredKey(type, target) {
-      return parts(type).every(
-        (part) =>
-          (part.isStringLiteral() || part.isNumberLiteral()) &&
-          checker.getPropertyOfType(target, String(part.value)),
-      );
-    }
-
-    function couldName(type, names) {
-      type = checker.getBaseConstraintOfType(type) ?? type;
-      if (type.flags & (ts.TypeFlags.Any | ts.TypeFlags.Unknown)) return false;
-      return names.some((name) =>
-        checker.isTypeAssignableTo(checker.getStringLiteralType(name), type),
-      );
-    }
-
-    function literalProperty(object, name) {
-      if (!ts.isObjectLiteralExpression(object)) return undefined;
-      const property = object.properties.find(
-        (entry) =>
-          ts.isPropertyAssignment(entry) &&
-          (ts.isIdentifier(entry.name) || ts.isStringLiteralLike(entry.name)) &&
-          entry.name.text === name,
-      );
-      return property && unwrap(property.initializer);
-    }
-
-    function initializer(node) {
-      if (!ts.isIdentifier(node) && !ts.isPropertyAccessExpression(node)) return undefined;
-      let target = symbol(node);
-      if (target?.flags & ts.SymbolFlags.Alias) target = checker.getAliasedSymbol(target);
-      const property = target?.valueDeclaration;
-      const declaration =
-        property && ts.isPropertyAssignment(property) ? property : declaringConst(target);
-      if (declaration?.initializer) return unwrap(declaration.initializer);
-      if (ts.isPropertyAccessExpression(node)) {
-        const base = unwrap(node.expression);
-        return literalProperty(initializer(base) ?? base, node.name.text);
+    function enumeration(source, method, table, use, seen = new Set()) {
+      source = unwrapLookup(source);
+      if (seen.has(source)) return false;
+      seen.add(source);
+      if (objectMethod(source, method))
+        return (
+          source.arguments.length === 1 &&
+          sameValue(source.arguments[0], table) &&
+          stable(source, use, table)
+        );
+      if (ts.isIdentifier(source)) {
+        const declaration = valueDeclaration(source);
+        return (
+          declaration &&
+          ts.isVariableDeclaration(declaration) &&
+          declaration.initializer &&
+          declaration.parent.flags & ts.NodeFlags.Const &&
+          stable(declaration, use, source, undefined, true) &&
+          enumeration(declaration.initializer, method, table, use, seen)
+        );
       }
-      return undefined;
-    }
-
-    const referencesByFile = new Map();
-    function referenceSites(node) {
-      const file = node.getSourceFile();
-      let usages = referencesByFile.get(file);
-      if (!usages) {
-        usages = new Map();
-        referencesByFile.set(file, usages);
-        const visit = (child) => {
-          if (ts.isIdentifier(child)) {
-            const reference = ts.isExportSpecifier(child.parent)
-              ? checker.getExportSpecifierLocalTargetSymbol(child.parent)
-              : symbol(child);
-            if (reference) {
-              if (!usages.has(reference)) usages.set(reference, []);
-              usages.get(reference).push(child);
-            }
-          }
-          ts.forEachChild(child, visit);
-        };
-        visit(file);
-      }
-      return usages.get(symbol(node)) ?? [];
-    }
-
-    function regexPattern(node) {
-      if (!node) return undefined;
-      node = unwrap(node);
-      node = initializer(node) ?? node;
-      if (ts.isRegularExpressionLiteral(node)) return /^\/(.*)\/([a-z]*)$/s.exec(node.text);
       if (
-        !ts.isNewExpression(node) ||
-        !ts.isIdentifier(node.expression) ||
-        node.expression.text !== "RegExp" ||
-        !symbol(node.expression)?.declarations?.some((declaration) =>
-          program.isSourceFileDefaultLibrary(declaration.getSourceFile()),
-        )
+        ts.isArrayLiteralExpression(source) &&
+        source.elements.length === 1 &&
+        ts.isSpreadElement(source.elements[0])
       )
-        return undefined;
-      const [source, flags] = node.arguments ?? [];
-      if (!source || (flags && !ts.isStringLiteralLike(flags))) return undefined;
-      if (ts.isStringLiteralLike(source)) return ["", source.text, flags?.text ?? ""];
-      if (!ts.isTemplateExpression(source)) return undefined;
-      let pattern = source.head.text;
-      for (const span of source.templateSpans) {
-        const joined = unwrap(span.expression);
-        if (
-          !ts.isCallExpression(joined) ||
-          !ts.isPropertyAccessExpression(joined.expression) ||
-          joined.expression.name.text !== "join" ||
-          joined.arguments.length !== 1 ||
-          !ts.isStringLiteralLike(joined.arguments[0])
-        )
-          return undefined;
-        const names = enumeratedNames(joined.expression.expression, "keys");
-        if (!names) return undefined;
-        pattern += names.join(joined.arguments[0].text) + span.literal.text;
-      }
-      return ["", pattern, flags?.text ?? ""];
-    }
-
-    function matchesName(regex, names, group = 0) {
-      const [, pattern, flags] = regex;
-      // Assertions can match a spelling inside a larger string. Keep that possibility.
-      if (/\(\?[<!=]|\\[bB1-9]/.test(pattern)) return true;
-      const simple = String.raw`(?:\\.|\[(?:\\.|[^\]\\])+\]|[^()\[\\])`;
-      const capture = String.raw`\((?!\?)(${simple}*)\)`;
-      const prefix = `(?:${simple}*${capture})`;
-      const body =
-        group === 0
-          ? pattern
-          : group <= 4
-            ? new RegExp(`^${prefix}{${group}}`).exec(pattern)?.[1]
-            : undefined;
-      if (body === undefined) return true;
-      try {
-        const whole = new RegExp(`^(?:${body})$`, flags.replace(/[gy]/g, ""));
-        return names.some((name) => whole.test(name));
-      } catch {
-        return true;
-      }
-    }
-
-    function capturesFrom(node, names, group) {
-      node = unwrap(node);
-      node = initializer(node) ?? node;
-      if (!ts.isCallExpression(node) || !ts.isPropertyAccessExpression(node.expression))
-        return true;
-      const { expression, name } = node.expression;
-      if (name.text === "exec" && regexPattern(expression))
-        return matchesName(regexPattern(expression), names, group);
+        return enumeration(source.elements[0].expression, method, table, use, seen);
       if (
-        ["match", "matchAll"].includes(name.text) &&
-        typeOf(expression).flags & ts.TypeFlags.StringLike
-      ) {
-        const regex = regexPattern(node.arguments[0]);
-        if (regex && (name.text === "matchAll" || !regex[2].includes("g")))
-          return matchesName(regex, names, group);
-      }
-      return true;
-    }
-
-    function iteration(node) {
-      const declaration = symbol(node)?.valueDeclaration;
-      if (!declaration) return undefined;
-      if (ts.isVariableDeclaration(declaration) && ts.isForOfStatement(declaration.parent.parent))
-        return [declaration.parent.parent.expression, declaration];
-      if (!ts.isParameter(declaration) || declaration.parent.parameters[0] !== declaration)
-        return undefined;
-      const callback = declaration.parent;
-      const call = callback.parent;
-      if (
-        ts.isCallExpression(call) &&
-        call.arguments[0] === callback &&
-        ts.isPropertyAccessExpression(call.expression) &&
-        ["every", "filter", "find", "flatMap", "forEach", "map", "some"].includes(
-          call.expression.name.text,
-        )
+        ts.isNewExpression(source) &&
+        defaultLibrarySymbol(source.expression, "Set") &&
+        source.arguments?.length === 1
       )
-        return [call.expression.expression, declaration];
-      return undefined;
-    }
-
-    function enumeratedNames(source, method) {
-      source = unwrap(source);
-      source = initializer(source) ?? source;
-      if (objectCall(source, method) && source.arguments.length === 1) {
-        const target = unwrap(source.arguments[0]);
-        const table = initializer(target) ?? target;
-        if (!ts.isObjectLiteralExpression(table)) return undefined;
-        if (ts.isIdentifier(target)) {
-          const variable = symbol(target);
-          const definition =
-            variable?.flags & ts.SymbolFlags.Alias
-              ? checker.getAliasedSymbol(variable).valueDeclaration
-              : variable?.valueDeclaration;
-          const writes = (binding) =>
-            referenceSites(binding).some((site) => {
-              const parent = site.parent;
-              if (ts.isPropertyAccessExpression(parent) && parent.expression === site)
-                return ts.isWriteAccess(parent) || ts.isDeleteExpression(parent.parent);
-              return (
-                ts.isElementAccessExpression(parent) &&
-                parent.expression === site &&
-                (ts.isWriteAccess(parent) || ts.isDeleteExpression(parent.parent))
-              );
-            });
-          if (
-            writes(target) ||
-            (definition &&
-              ts.isVariableDeclaration(definition) &&
-              ts.isIdentifier(definition.name) &&
-              writes(definition.name))
-          )
-            return undefined;
-        }
-        const names = [];
-        for (const property of table.properties) {
-          const key = property.name;
-          if (
-            !key ||
-            !(ts.isIdentifier(key) || ts.isStringLiteralLike(key) || ts.isNumericLiteral(key))
-          )
-            return undefined;
-          names.push(key.text);
-        }
-        return names;
-      }
+        return enumeration(source.arguments[0], method, table, use, seen);
       if (
         ts.isCallExpression(source) &&
         ts.isPropertyAccessExpression(source.expression) &&
         ["filter", "slice", "sort", "toSorted"].includes(source.expression.name.text)
       )
-        return enumeratedNames(source.expression.expression, method);
-      return undefined;
+        return enumeration(source.expression.expression, method, table, use, seen);
+      return false;
     }
 
-    function projectedValue(value, property) {
-      if (typeof property === "number")
-        return ts.isArrayLiteralExpression(value) && value.elements[property];
-      return literalProperty(value, property);
-    }
-
-    function sequenceCouldName(source, names, seen, property) {
-      source = unwrap(source);
-      if (seen.has(source)) return true;
-      seen.add(source);
-      if (ts.isArrayLiteralExpression(source))
-        return source.elements.some((item) => {
-          if (ts.isSpreadElement(item))
-            return sequenceCouldName(item.expression, names, new Set(seen), property);
-          item = unwrap(item);
-          if (property === undefined) return keyCouldName(item, names, new Set(seen));
-          const value = projectedValue(initializer(item) ?? item, property);
-          return !value || keyCouldName(value, names, new Set(seen));
-        });
-      if (ts.isIdentifier(source)) {
-        const initial = initializer(source);
-        // Array elements can be written even through a const. Track only direct reads.
-        if (
-          !initial ||
-          referenceSites(source).some((site) => {
-            const parent = site.parent;
-            if (
-              (ts.isVariableDeclaration(parent) && parent.name === site) ||
-              ts.isImportSpecifier(parent) ||
-              ts.isImportClause(parent)
-            )
-              return false;
-            if (ts.isForOfStatement(parent) && parent.expression === site) return false;
-            if (ts.isSpreadElement(parent) && ts.isArrayLiteralExpression(parent.parent))
-              return false;
-            if (
-              ts.isCallExpression(parent) &&
-              parent.arguments[0] === site &&
-              ts.isPropertyAccessExpression(parent.expression) &&
-              parent.expression.name.text === "each"
-            )
-              return false;
-            return (
-              !ts.isPropertyAccessExpression(parent) ||
-              ![
-                "every",
-                "filter",
-                "find",
-                "flatMap",
-                "forEach",
-                "includes",
-                "length",
-                "map",
-                "some",
-                "toSorted",
-                "slice",
-              ].includes(parent.name.text)
-            );
-          })
-        )
-          return true;
-        return sequenceCouldName(initial, names, seen, property);
-      }
-      if (!ts.isCallExpression(source)) return true;
-      const keys = enumeratedNames(source, "keys");
-      if (keys) return property !== undefined || keys.some((key) => names.includes(key));
-      if (ts.isPropertyAccessExpression(source.expression)) {
-        const { expression, name } = source.expression;
-        if (["filter", "slice", "toSorted"].includes(name.text))
-          return sequenceCouldName(expression, names, seen, property);
-        if (name.text === "map" || name.text === "flatMap") {
-          const mapper = source.arguments[0];
-          if (!mapper || !ts.isArrowFunction(mapper) || ts.isBlock(mapper.body)) return true;
-          const result = unwrap(mapper.body);
-          if (name.text === "flatMap")
-            return sequenceCouldName(result, names, new Set(seen), property);
-          if (property !== undefined) {
-            const value = projectedValue(result, property);
-            return !value || keyCouldName(value, names, new Set(seen));
-          }
-          if (
-            ts.isPropertyAccessExpression(result) &&
-            mapper.parameters.length > 0 &&
-            sameValue(mapper.parameters[0].name, result.expression)
-          )
-            return sequenceCouldName(expression, names, seen, result.name.text);
-          const array = unwrap(expression);
-          if (
-            ts.isElementAccessExpression(result) &&
-            mapper.parameters.length > 0 &&
-            sameValue(mapper.parameters[0].name, result.expression) &&
-            ts.isNumericLiteral(result.argumentExpression) &&
-            ts.isArrayLiteralExpression(array) &&
-            array.elements.length === 1 &&
-            ts.isSpreadElement(array.elements[0])
-          )
-            return capturesFrom(
-              array.elements[0].expression,
-              names,
-              Number(result.argumentExpression.text),
-            );
-          return keyCouldName(result, names, new Set(seen));
-        }
-      }
-      const factory = checker.getResolvedSignature(source)?.declaration;
-      const values = returnValues(factory);
-      return (
-        !values.length ||
-        values.some((value) => !value || sequenceCouldName(value, names, new Set(seen)))
-      );
-    }
-
-    function keyCouldName(key, names, seen = new Set()) {
-      key = unwrap(key);
-      if (seen.has(key)) return true;
+    function enumeratedKey(key, table, use, seen = new Set()) {
+      key = unwrapLookup(key);
+      if (seen.has(key)) return false;
       seen.add(key);
-      if (!couldName(typeOf(key), names)) return false;
-      const source = initializer(key) ?? key;
-      if (ts.isTemplateExpression(source))
-        return names.some(
-          (name) =>
-            name.startsWith(source.head.text) &&
-            name.endsWith(source.templateSpans.at(-1).literal.text),
-        );
-      if (source !== key && !keyCouldName(source, names, seen)) return false;
-      if (
-        ts.isBinaryExpression(source) &&
-        source.operatorToken.kind === ts.SyntaxKind.QuestionQuestionToken
-      )
-        return (
-          keyCouldName(source.left, names, new Set(seen)) ||
-          keyCouldName(source.right, names, new Set(seen))
-        );
-      if (ts.isElementAccessExpression(source)) {
-        if (typeOf(source.expression).flags & ts.TypeFlags.StringLike) return false;
-        const index = source.argumentExpression;
-        if (ts.isNumericLiteral(index))
-          return capturesFrom(source.expression, names, Number(index.text));
-      }
-      if (ts.isPropertyAccessExpression(key)) {
-        const source = iteration(key.expression);
-        if (source) return sequenceCouldName(source[0], names, seen, key.name.text);
-      }
-      if (!ts.isIdentifier(key)) return true;
-      const loop = iteration(key);
-      if (loop) return sequenceCouldName(loop[0], names, seen);
-      const binding = symbol(key)?.valueDeclaration;
-      if (
-        binding &&
-        ts.isBindingElement(binding) &&
-        ts.isArrayBindingPattern(binding.parent) &&
-        !binding.dotDotDotToken
-      ) {
-        const declaration = binding.parent.parent;
-        const group = binding.parent.elements.indexOf(binding);
-        if (
-          group === 0 &&
-          ts.isVariableDeclaration(declaration) &&
-          ts.isForOfStatement(declaration.parent.parent)
-        ) {
-          const source = unwrap(declaration.parent.parent.expression);
-          const entries = enumeratedNames(source, "entries");
-          if (entries) return entries.some((entry) => names.includes(entry));
-          const ordered = initializer(source) ?? source;
-          const unmodified =
-            !ts.isIdentifier(source) ||
-            referenceSites(source).every((site) => {
-              const parent = site.parent;
-              return (
-                (ts.isVariableDeclaration(parent) && parent.name === site) ||
-                (ts.isForOfStatement(parent) && parent.expression === site) ||
-                (ts.isPropertyAccessExpression(parent) &&
-                  parent.expression === site &&
-                  ["entries", "get", "has", "keys", "size", "values"].includes(parent.name.text))
-              );
-            });
-          if (
-            unmodified &&
-            ts.isNewExpression(ordered) &&
-            ts.isIdentifier(ordered.expression) &&
-            ordered.expression.text === "Map" &&
-            ordered.arguments?.length &&
-            symbol(ordered.expression)?.declarations?.some((record) =>
-              program.isSourceFileDefaultLibrary(record.getSourceFile()),
-            )
-          )
-            return sequenceCouldName(ordered.arguments[0], names, new Set(seen), 0);
-        }
-        if (ts.isParameter(declaration) && ts.isArrowFunction(declaration.parent)) {
-          const call = declaration.parent.parent;
-          if (
-            ts.isCallExpression(call) &&
-            ts.isPropertyAccessExpression(call.expression) &&
-            call.expression.name.text === "map" &&
-            call.arguments[0] === declaration.parent
-          ) {
-            const array = unwrap(call.expression.expression);
-            if (
-              ts.isArrayLiteralExpression(array) &&
-              array.elements.length === 1 &&
-              ts.isSpreadElement(array.elements[0])
-            )
-              return capturesFrom(array.elements[0].expression, names, group);
-          }
-        }
-      }
-      const parameter = symbol(key)?.valueDeclaration;
-      if (!parameter || !ts.isParameter(parameter)) return true;
-      const callback = parameter.parent;
-      if (ts.isCallExpression(callback.parent) && ts.isCallExpression(callback.parent.expression)) {
-        const each = callback.parent.expression;
-        if (
-          ts.isPropertyAccessExpression(each.expression) &&
-          each.expression.name.text === "each" &&
-          ts.isIdentifier(each.expression.expression) &&
-          symbol(each.expression.expression)?.declarations?.some(
-            (declaration) =>
-              ts.isImportSpecifier(declaration) &&
-              /^(?:vitest|bun:test)$/.test(declaration.parent.parent.parent.moduleSpecifier.text),
-          ) &&
-          each.arguments.length === 1 &&
-          callback.parent.arguments[1] === callback &&
-          callback.parameters[0] === parameter
-        )
-          return sequenceCouldName(each.arguments[0], names, seen);
-      }
-      const argumentIndex = callback.parameters.indexOf(parameter);
-      const owner = ts.isFunctionDeclaration(callback) ? callback : callback.parent;
-      if (
-        (ts.isFunctionDeclaration(owner) || ts.isVariableDeclaration(owner)) &&
-        owner.name &&
-        ts.isIdentifier(owner.name)
-      ) {
-        const statement = ts.isFunctionDeclaration(owner) ? owner : owner.parent.parent;
-        if (
-          !ts.canHaveModifiers(statement) ||
-          ts
-            .getModifiers(statement)
-            ?.some((modifier) => modifier.kind === ts.SyntaxKind.ExportKeyword) ||
-          (ts.isSourceFile(statement.parent) && !ts.isExternalModule(statement.parent))
-        )
-          return true;
-        const uses = referenceSites(owner.name).filter((site) => site !== owner.name);
-        return (
-          !uses.length ||
-          uses.some(
-            (site) =>
-              !ts.isCallExpression(site.parent) ||
-              site.parent.expression !== site ||
-              site.parent.arguments.some(ts.isSpreadElement) ||
-              !site.parent.arguments[argumentIndex] ||
-              keyCouldName(site.parent.arguments[argumentIndex], names, new Set(seen)),
-          )
-        );
-      }
-      const call = callback.parent;
-      if (
-        !ts.isCallExpression(call) ||
-        call.arguments[1] !== callback ||
-        !ts.isPropertyAccessExpression(call.expression) ||
-        !["replace", "replaceAll"].includes(call.expression.name.text) ||
-        !(typeOf(call.expression.expression).flags & ts.TypeFlags.StringLike)
-      )
-        return true;
-      const search = call.arguments[0];
-      if (search && ts.isStringLiteral(search))
-        return argumentIndex === 0 ? names.includes(search.text) : true;
-      const regex = regexPattern(search);
-      return !regex || matchesName(regex, names, argumentIndex);
-    }
-
-    function enumerates(node, method, table, seen = new Set()) {
-      node = unwrap(node);
-      if (seen.has(node)) return false;
-      seen.add(node);
-      const source = initializer(node);
-      if (source) return enumerates(source, method, table, seen);
-      if (objectCall(node, method))
-        return node.arguments.length > 0 && sameValue(node.arguments[0], table);
-      if (
-        ts.isCallExpression(node) &&
-        ts.isPropertyAccessExpression(node.expression) &&
-        ["filter", "sort", "slice", "toSorted"].includes(node.expression.name.text)
-      )
-        return enumerates(node.expression.expression, method, table, seen);
-      if (!ts.isCallExpression(node)) return false;
-      const factory = checker.getResolvedSignature(node)?.declaration;
-      if (!factory?.parameters) return false;
-      const index = node.arguments.findIndex((argument) => sameValue(argument, table));
-      const input = factory.parameters[index];
-      const values = returnValues(factory);
-      return (
-        input &&
-        values.length > 0 &&
-        values.every((value) => value && enumerates(value, method, input.name, new Set(seen)))
-      );
-    }
-
-    function forwardsOwnKey(call, callback, binding, table) {
-      const factory = checker.getResolvedSignature(call)?.declaration;
-      const parameter = factory?.parameters[call.arguments.indexOf(callback)];
-      const tableIndex = call.arguments.findIndex((argument) => sameValue(argument, table));
-      const input = factory?.parameters[tableIndex]?.name;
-      if (!parameter || !input || !ts.isIdentifier(parameter.name)) return false;
-      const uses = referenceSites(parameter.name).filter((site) => site !== parameter.name);
-      const index = callback.parameters.indexOf(binding);
-      return (
-        uses.length > 0 &&
-        uses.every((site) => {
-          const invocation = site.parent;
-          if (!ts.isCallExpression(invocation) || invocation.expression !== site) return false;
-          const item = invocation.arguments[index];
-          const iter = item && iteration(item);
-          return iter && enumerates(iter[0], "keys", input);
-        })
-      );
-    }
-
-    function enumeratedKey(key, table) {
-      key = unwrap(key);
-      if (!ts.isIdentifier(key)) return false;
-      const declaration = symbol(key)?.valueDeclaration;
-      if (!declaration) return false;
-      let binding = declaration;
       let method = "keys";
+      let entry = key;
+      if (ts.isElementAccessExpression(key)) {
+        if (enumeration(key.expression, method, table, use)) return true;
+        const index = unwrapLookup(key.argumentExpression);
+        if (!ts.isNumericLiteral(index) || index.text !== "0") return false;
+        method = "entries";
+        entry = unwrapLookup(key.expression);
+        if (ts.isElementAccessExpression(entry))
+          return enumeration(entry.expression, method, table, use);
+      }
+      let binding = valueDeclaration(entry);
+      if (!binding) return false;
       if (ts.isBindingElement(binding)) {
         const pattern = binding.parent;
         if (
+          method === "entries" ||
           !ts.isArrayBindingPattern(pattern) ||
           pattern.elements[0] !== binding ||
-          binding.dotDotDotToken
+          binding.dotDotDotToken ||
+          binding.initializer
         )
           return false;
         binding = pattern.parent;
         method = "entries";
       }
       if (ts.isVariableDeclaration(binding)) {
+        if (
+          method === "keys" &&
+          binding.initializer &&
+          binding.parent.flags & ts.NodeFlags.Const &&
+          stable(binding, use, key)
+        ) {
+          return enumeratedKey(binding.initializer, table, use, seen);
+        }
         const loop = binding.parent.parent;
-        return ts.isForOfStatement(loop) && enumerates(loop.expression, method, table);
+        return (
+          ts.isForOfStatement(loop) &&
+          use.pos >= loop.statement.pos &&
+          use.end <= loop.statement.end &&
+          stable(binding, use, key) &&
+          enumeration(loop.expression, method, table, use)
+        );
       }
       if (!ts.isParameter(binding)) return false;
       const callback = binding.parent;
       const call = callback.parent;
       if (
-        method === "keys" &&
-        ts.isCallExpression(call) &&
-        forwardsOwnKey(call, callback, binding, table)
+        !ts.isCallExpression(call) ||
+        call.arguments[0] !== callback ||
+        !ts.isPropertyAccessExpression(call.expression)
       )
-        return true;
+        return false;
+      const name = call.expression.name.text;
+      const index = name === "reduce" || name === "reduceRight" ? 1 : 0;
       return (
-        binding === callback.parameters[0] &&
-        ts.isCallExpression(call) &&
-        call.arguments[0] === callback &&
-        ts.isPropertyAccessExpression(call.expression) &&
-        ["every", "filter", "find", "flatMap", "forEach", "map", "some"].includes(
-          call.expression.name.text,
-        ) &&
-        enumerates(call.expression.expression, method, table)
+        (index === 1 || keyCallbacks.has(name)) &&
+        callback.parameters[index] === binding &&
+        stable(binding, use, key) &&
+        enumeration(call.expression.expression, method, table, use)
       );
     }
 
-    function hasReadEvidence(key, table) {
-      const source = initializer(key) ?? key;
-      if (ts.isCallExpression(source) && ts.isPropertyAccessExpression(source.expression)) {
-        const input = unwrap(source.expression.expression);
-        if (ts.isElementAccessExpression(input) && initializer(unwrap(input.expression)))
-          return false;
-      }
-      if (!ts.isIdentifier(key)) return true;
-      const declaration = symbol(key)?.valueDeclaration;
-      if (!declaration || !ts.isBindingElement(declaration)) {
-        const iter = iteration(key);
-        if (!iter) return true;
-        const source = initializer(unwrap(iter[0])) ?? unwrap(iter[0]);
-        const collection =
-          ts.isCallExpression(source) &&
-          ts.isPropertyAccessExpression(source.expression) &&
-          source.expression.name.text === "filter"
-            ? unwrap(source.expression.expression)
-            : source;
-        if (objectCall(collection, "keys") && collection.arguments.length === 1) {
-          const receiver = unwrap(collection.arguments[0]);
-          const initial = initializer(receiver);
-          if (initial && ts.isCallExpression(initial) && !nullTable(initial, receiver))
-            return false;
-        }
-        return true;
-      }
-      const binding = declaration.parent.parent;
-      if (ts.isVariableDeclaration(binding)) {
-        const loop = binding.parent.parent;
-        const literal = initializer(unwrap(table));
-        if (
-          literal &&
-          ts.isObjectLiteralExpression(literal) &&
-          literal.getSourceFile() === key.getSourceFile() &&
-          ts.isForOfStatement(loop) &&
-          objectCall(loop.expression, "entries") &&
-          loop.expression.arguments.length === 1
-        ) {
-          const source = initializer(unwrap(loop.expression.arguments[0]));
-          if (source && ts.isObjectLiteralExpression(source) && source.properties.length === 0)
-            return false;
-        }
-      }
-      if (!ts.isParameter(binding)) return true;
-      const callback = binding.parent;
-      const statement = ts.isFunctionDeclaration(callback)
-        ? callback
-        : ts.isVariableDeclaration(callback.parent)
-          ? callback.parent.parent.parent
+    function keyCandidates(key) {
+      key = unwrapLookup(key);
+      const declaration =
+        ts.isIdentifier(key) || ts.isPropertyAccessExpression(key)
+          ? valueDeclaration(key)
           : undefined;
-      return (
-        !statement ||
-        ts
-          .getModifiers(statement)
-          ?.some((modifier) => modifier.kind === ts.SyntaxKind.ExportKeyword)
-      );
-    }
-
-    function tableType(table, keyType, membership) {
-      const target = checker.getNonNullableType(typeOf(table));
-      const plain = parts(target).every((part) => {
-        const declaration = part.getSymbol()?.declarations?.[0];
-        return (
-          !checker.isArrayType(part) &&
-          !checker.isTupleType(part) &&
-          !part.isClass() &&
-          !declaration?.getSourceFile().hasNoDefaultLib
-        );
-      });
-      if (!plain) return false;
-      if (checker.getIndexInfoOfType(target, ts.IndexKind.String)) return true;
-      if (membership) return declaredKey(keyType, target);
-      const expression = unwrap(table);
-      const declaration = ts.isIdentifier(expression)
-        ? declaringConst(symbol(expression))
-        : undefined;
-      return (
-        ts.isObjectLiteralExpression(expression) ||
-        (declaration?.initializer && ts.isObjectLiteralExpression(unwrap(declaration.initializer)))
-      );
-    }
-
-    function check(node, expression, table, key, membership) {
-      const bareKey = unwrap(key);
-      if (ts.isLiteralExpression(bareKey) || ts.isStringLiteralLike(bareKey)) return;
-      const keyType = typeOf(bareKey);
-      const parent = expression.parent;
-      if (ts.isDeleteExpression(parent)) return;
-      const write =
-        !membership &&
-        ts.isBinaryExpression(parent) &&
-        parent.left === expression &&
-        parent.operatorToken.kind === ts.SyntaxKind.EqualsToken;
-      if (write && !ts.isIdentifier(unwrap(table)) && !ts.isObjectLiteralExpression(unwrap(table)))
-        return;
-      const target = checker.getNonNullableType(typeOf(table));
-      const closedKey = declaredKey(keyType, target);
-      if (!membership && closedKey) return;
-      const names = write ? ["__proto__"] : inheritedNames;
-      if (!keyCouldName(bareKey, names) && !(membership && closedKey)) return;
-      if (!tableType(table, keyType, membership) || nullTable(expression, table)) return;
-      if (!write && !membership && !hasReadEvidence(bareKey, table)) return;
-      if (!membership && enumeratedKey(key, table)) return;
+      const declared = declaration?.type
+        ? checker.getTypeFromTypeNode(declaration.type)
+        : declaration?.name
+          ? checker.getTypeOfSymbolAtLocation(symbol(declaration.name) ?? symbol(key), declaration)
+          : typeOf(key);
+      const type = checker.getBaseConstraintOfType(declared) ?? declared;
       if (
-        protectedBy(expression, (condition) => {
-          if (!membership && objectCall(condition, "hasOwn") && condition.arguments.length === 2)
-            return (
-              sameValue(condition.arguments[0], table) && sameValue(condition.arguments[1], key)
-            );
-          if (
-            !ts.isCallExpression(condition) ||
-            !ts.isPropertyAccessExpression(condition.expression)
-          )
-            return false;
-          const { expression: value, name } = condition.expression;
-          const [affix] = condition.arguments;
-          if (
-            !affix ||
-            !ts.isStringLiteralLike(affix) ||
-            !sameValue(value, key) ||
-            !(typeOf(value).flags & ts.TypeFlags.StringLike) ||
-            condition.arguments.length !== 1
-          )
-            return false;
+        parts(type).some(
+          (part) =>
+            part.flags &
+            (ts.TypeFlags.String |
+              ts.TypeFlags.Any |
+              ts.TypeFlags.Unknown |
+              ts.TypeFlags.TemplateLiteral |
+              ts.TypeFlags.StringMapping),
+        )
+      )
+        return inheritedNames;
+      return new Set(
+        parts(type)
+          .filter((part) => part.isStringLiteral() && inheritedNames.has(part.value))
+          .map((part) => part.value),
+      );
+    }
+
+    function plainTable(type) {
+      if (type.isIntersection()) return type.types.every(plainTable);
+      if (
+        !(type.flags & ts.TypeFlags.Object) ||
+        checker.isArrayType(type) ||
+        checker.isTupleType(type) ||
+        type.isClass() ||
+        type.getCallSignatures().length ||
+        type.getConstructSignatures().length
+      )
+        return false;
+      const target = type.target ?? type;
+      if (target.isClass() || checker.getIndexInfoOfType(type, ts.IndexKind.Number)) return false;
+      return !target
+        .getSymbol()
+        ?.declarations?.some(
+          (declaration) =>
+            (ts.isInterfaceDeclaration(declaration) || ts.isClassLike(declaration)) &&
+            program.isSourceFileDefaultLibrary(declaration.getSourceFile()),
+        );
+    }
+
+    function ownLiteralName(table, name, use) {
+      const expression = unwrapLookup(table);
+      const declaration = valueDeclaration(expression);
+      const source = declaration?.initializer ? unwrapLookup(declaration.initializer) : expression;
+      return (
+        ts.isObjectLiteralExpression(source) &&
+        (source === expression || stableDeclaration(declaration, use, expression)) &&
+        source.properties.some((property) => {
+          const key = property.name;
+          return (
+            key &&
+            (ts.isIdentifier(key) || ts.isStringLiteralLike(key)
+              ? key.text === name
+              : ts.isComputedPropertyName(key) &&
+                ts.isStringLiteralLike(key.expression) &&
+                key.expression.text === name) &&
+            (name !== "__proto__" ||
+              !ts.isPropertyAssignment(property) ||
+              ts.isComputedPropertyName(key))
+          );
+        })
+      );
+    }
+
+    function keyGuard(guard, truthy, use, table, key, form, candidates) {
+      if (
+        truthy &&
+        ts.isCallExpression(guard) &&
+        ts.isPropertyAccessExpression(guard.expression) &&
+        !guard.questionDotToken &&
+        !guard.expression.questionDotToken &&
+        guard.arguments.length === 1
+      ) {
+        const { expression: receiver, name } = guard.expression;
+        const [argument] = guard.arguments;
+        if (
+          name.text === "includes" &&
+          sameValue(argument, key) &&
+          enumeration(receiver, "keys", table, use)
+        )
+          return true;
+        if (
+          sameValue(receiver, key) &&
+          ts.isStringLiteralLike(argument) &&
+          checker.isTypeAssignableTo(typeOf(receiver), checker.getStringType())
+        ) {
           if (name.text === "startsWith")
-            return names.every((candidate) => !candidate.startsWith(affix.text));
+            return [...candidates].every((candidate) => !candidate.startsWith(argument.text));
           if (name.text === "endsWith")
-            return names.every((candidate) => !candidate.endsWith(affix.text));
-          return false;
+            return [...candidates].every((candidate) => !candidate.endsWith(argument.text));
+        }
+      }
+      if (!ts.isBinaryExpression(guard)) return false;
+      const other = sameValue(guard.left, key)
+        ? guard.right
+        : sameValue(guard.right, key)
+          ? guard.left
+          : undefined;
+      if (!other || !ts.isStringLiteralLike(other)) return false;
+      const comparison = guard.operatorToken.kind;
+      if (
+        comparison ===
+        (truthy
+          ? ts.SyntaxKind.EqualsEqualsEqualsToken
+          : ts.SyntaxKind.ExclamationEqualsEqualsToken)
+      )
+        return !candidates.has(other.text);
+      return (
+        form === "write" &&
+        other.text === "__proto__" &&
+        comparison ===
+          (truthy
+            ? ts.SyntaxKind.ExclamationEqualsEqualsToken
+            : ts.SyntaxKind.EqualsEqualsEqualsToken)
+      );
+    }
+
+    function checkLookup(node, use, table, key, form) {
+      const candidates = keyCandidates(key);
+      if (!candidates.size) return;
+      const target = checker.getNonNullableType(typeOf(table));
+      if (
+        !parts(target).every(plainTable) ||
+        [...candidates].every((name) => ownLiteralName(table, name, use)) ||
+        nullTable(use, table) ||
+        enumeratedKey(key, table, use)
+      )
+        return;
+      if (
+        protectedLookup(use, (guard, truthy) => {
+          const own =
+            truthy && !ts.isExpressionStatement(guard.parent) ? ownGuard(guard) : undefined;
+          if (
+            own?.arguments.length === 2 &&
+            sameValue(own.arguments[0], table) &&
+            sameValue(own.arguments[1], key) &&
+            stable(own, use, table, key)
+          )
+            return true;
+          if (
+            truthy &&
+            objectMethod(guard, "setPrototypeOf") &&
+            ts.isExpressionStatement(guard.parent) &&
+            guard.arguments.length === 2 &&
+            sameValue(guard.arguments[0], table) &&
+            guard.arguments[1].kind === ts.SyntaxKind.NullKeyword &&
+            stable(guard, use, table, key)
+          )
+            return true;
+          return (
+            keyGuard(guard, truthy, use, table, key, form, candidates) &&
+            stable(guard, use, table, key)
+          );
         })
       )
         return;
-      context.report({ node, messageId: membership ? "membership" : write ? "write" : "read" });
+      context.report({ node, messageId: form });
     }
 
     const tsNode = (node) => services.esTreeNodeToTSNodeMap.get(node);
@@ -911,12 +764,41 @@ export default {
       MemberExpression(node) {
         if (!node.computed) return;
         const expression = tsNode(node);
-        check(node, expression, expression.expression, expression.argumentExpression, false);
+        let target = expression;
+        while (ts.isParenthesizedExpression(target.parent)) target = target.parent;
+        if (ts.isDeleteExpression(target.parent)) return;
+        checkLookup(
+          node,
+          expression,
+          expression.expression,
+          expression.argumentExpression,
+          lookupWrite(expression) ?? lookupTest(expression),
+        );
       },
       BinaryExpression(node) {
         if (node.operator !== "in") return;
         const expression = tsNode(node);
-        check(node, expression, expression.right, expression.left, true);
+        if (!ts.isPrivateIdentifier(expression.left))
+          checkLookup(node, expression, expression.right, expression.left, "membership");
+      },
+      Property(node) {
+        if (!node.computed || node.parent.type !== "ObjectPattern") return;
+        const property = tsNode(node);
+        const pattern = property.parent;
+        const declaration = pattern.parent;
+        let table = ts.isVariableDeclaration(declaration)
+          ? (declaration.initializer ?? pattern)
+          : pattern;
+        if (
+          ts.isObjectLiteralExpression(pattern) &&
+          ts.isBinaryExpression(declaration) &&
+          declaration.left === pattern &&
+          declaration.operatorToken.kind === ts.SyntaxKind.EqualsToken
+        )
+          table = declaration.right;
+        const key = property.propertyName ?? property.name;
+        if (table && key && ts.isComputedPropertyName(key))
+          checkLookup(node, property, table, key.expression, "destructure");
       },
     };
   },

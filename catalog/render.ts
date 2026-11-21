@@ -1,3 +1,5 @@
+import { ownEntry } from "../lib/own-entry.ts";
+
 // Markup as a string and free of Node and Astro imports, so an Astro page, a page bundle and a
 // generated static page all carry the same shape.
 
@@ -47,7 +49,8 @@ export type CatalogData = {
 const escapeCatalog = (s: string) =>
   s.replace(
     /[&<>"']/g,
-    (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[c]!,
+    (c) =>
+      ownEntry({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }, c) ?? c,
   );
 // Each part one box with the separator after it, so a line breaks between parts.
 const provenanceParts = (line: string) =>

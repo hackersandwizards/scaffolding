@@ -61,23 +61,50 @@ Remove `baseUrl` from a TypeScript project that uses it and write each path targ
 
 ### Own keys in object tables
 
-Both ESLint presets enable `scaffolding/no-inherited-lookup` in the full gate. It uses TypeScript
-types to check dynamic reads, direct assignments into object tables, and `in` membership. A missing key such as
-`constructor` or `toString` can resolve to an inherited member, and assignment to `__proto__` can
-invoke a setter instead of creating a field.
+Both ESLint presets enable `scaffolding/no-inherited-lookup` in the full gate, including test
+files and Astro frontmatter, template expressions and client scripts. The rule checks computed
+reads, destructuring, truthy and definedness tests, `in` tests, and assignments. A missing key
+such as `constructor` or `toString` can return an inherited value. A write to `__proto__`
+can invoke the inherited setter.
 
-- Use `Object.hasOwn(table, key)` to test membership or guard `table[key]`. A truthy read also
-  misses own values such as `false` and `0`.
-- Use `Map` with `.get()`, `.has()`, and `.set()` for a mutable table, or create an object table
-  with `Object.create(null)`.
-- Use `Object.fromEntries(pairs)` to build a plain object from data keys. A later dynamic read on it
-  still needs an own-key check.
+The receiver must be identifiable as a plain object literal or have a finite known set of keys
+or a string index signature. Arrays, tuples, Map, Set, class instances and objects with a visible
+null-prototype initializer are outside the check. The rule uses the key's declared type, including
+open strings, template literal types, unknown and implicit JavaScript keys. A finite literal
+union can report only if it includes an Object prototype name with no proven own property.
+Give a key its finite type at the API boundary when that is the input contract. A type assertion
+at the lookup does not change the key's declaration.
 
-Literal indexes, indexes whose types name only declared keys, arrays, tuples, Map, and Set are
-outside the rule's lookup checks. A dynamic `in` on a closed object still checks its prototype.
-Read diagnostics focus on keys with a visible path from data to the lookup. Some keys derived
-from private helper outputs need manual review. The staged hook runs the existing untyped lint
-checks. The full gate also runs this rule.
+Use `Object.hasOwn(table, key)` for membership. For a value, use
+`ownEntry(table, key)` from `@hackersandwizards/scaffolding/own-entry`. It returns `undefined`
+for a missing entry and preserves falsy own values. A guard also works in the same function
+when it encloses the lookup, short-circuits into it, or rejects the other path with an earlier
+return or throw. The rule also recognizes `Object.prototype.hasOwnProperty.call(table, key)`.
+Reassigning the table, a member in its receiver chain, or the key invalidates the proof. Keys
+from `Object.keys` or `Object.entries` prove ownership on the object enumerated. A `for…in` loop
+needs an own-key guard because it enumerates inherited keys.
+
+Use `Object.fromEntries(pairs)` to construct a plain object from data keys, or use a Map or a
+null-prototype table for ongoing writes. Later arbitrary reads on the object from
+`Object.fromEntries` still need an own-key check. When a function needs to write an own entry
+into a received data table, keep the object identity and define a data property.
+
+```ts
+Object.defineProperty(table, key, {
+  value,
+  writable: true,
+  enumerable: true,
+  configurable: true,
+});
+```
+
+Use this descriptor for ordinary, configurable data entries. For a compound update, obtain the
+current own value, choose what to do when it is absent, then write the new value. Descriptors
+with accessors or non-configurable fields need their own update policy.
+
+The analysis follows local syntax and TypeScript types. It does not reconstruct keys from regex
+captures, string transformations or private callers, or prove what happens through arbitrary
+aliases and calls. The staged hook runs the existing untyped lint checks.
 
 ## Vitest and Stryker
 

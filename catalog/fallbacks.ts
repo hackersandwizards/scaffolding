@@ -26,7 +26,6 @@ export function brandFallbacks(
   for (const m of css.matchAll(/var\(\s*(--[\w-]+)\s*([,)])/g)) {
     const name = m[1]!;
     if (m.index < at || !Object.hasOwn(tokens, name) || seen.includes(name)) continue;
-    const value = tokens[name]!;
     let end = m.index + m[0].length;
     if (m[2] === ",") {
       let depth = 1;
@@ -39,7 +38,7 @@ export function brandFallbacks(
         continue;
       }
     }
-    out += `${css.slice(at, m.index)}var(${name}, ${brandFallbacks(value, tokens, [...seen, name])})`;
+    out += `${css.slice(at, m.index)}var(${name}, ${brandFallbacks(tokens[name]!, tokens, [...seen, name])})`;
     at = end;
   }
   return out + css.slice(at);

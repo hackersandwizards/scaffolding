@@ -17,6 +17,7 @@ const scripts = astroTypePrograms(originalProcessor, astroParser);
 const untyped = Boolean(process.env.SCAFFOLDING_LINT_UNTYPED);
 const componentRegions = new Map();
 const retained = new Set(["no-dupe-args", "no-octal", "no-undef", "no-useless-assignment"]);
+/** @type {import("eslint").Linter.RulesRecord} */
 const componentRules = {
   ...js.configs.recommended.rules,
   ...tseslint.configs.recommended.find((config) => config.name === "typescript-eslint/recommended")
@@ -113,7 +114,8 @@ const processor = {
   },
 };
 
-export default [
+/** @type {import("eslint").Linter.Config[]} */
+const config = [
   ...[...base, ...astroPreset].map((config) =>
     config.rules
       ? { ...config, ignores: [...(config.ignores ?? []), ...frontmatterFiles] }
@@ -150,3 +152,5 @@ export default [
       ]),
   prettier,
 ];
+
+export default config;
