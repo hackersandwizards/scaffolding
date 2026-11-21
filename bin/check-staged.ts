@@ -16,7 +16,7 @@ import {
   writeFileSync,
 } from "node:fs";
 import { availableParallelism } from "node:os";
-import { join } from "node:path";
+import { delimiter, join, resolve } from "node:path";
 import { help } from "../lib/help.ts";
 import { oxlintConfig, oxlintExtends, runOxlint } from "../lib/oxlint.ts";
 import {
@@ -281,15 +281,38 @@ const runs = active.flatMap(([tool, args]) => {
     }),
   ];
 });
-// Scoped to this commit, deletions included, over whatever the shell exported: unscoped, another
-// session's half-written skill refused this commit, and an inherited scope could narrow it to none.
-if (skills)
-  runs.push(
-    runStagedTool(process.execPath, ["run", "check:skills"], undefined, {
-      VALIDATE_SKILLS_PATHS: names(["diff", "--cached"]).join("\n"),
-    }),
-  );
+if (skills) runs.push(checkStagedSkills());
 if (items) runs.push(checkStagedItems());
+
+async function checkStagedSkills(): Promise<ToolRun> {
+  // An inherited scope could narrow validation to none. Deletions can break links too.
+  const scope = { VALIDATE_SKILLS_PATHS: names(["diff", "--cached"]).join("\n") };
+  if (!differs.has("package.json"))
+    return runStagedTool(process.execPath, ["run", "check:skills"], undefined, scope);
+
+  // Bun reads scripts from disk, which may hold another session's validator or lifecycle hooks.
+  if (typeof pkg.scripts?.["check:skills"] !== "string")
+    refuseCommit("check:skills must be a script command");
+  const env = {
+    ...scope,
+    PATH: [resolve("node_modules/.bin"), process.env.PATH].filter(Boolean).join(delimiter),
+    INIT_CWD: process.cwd(),
+    npm_package_json: resolve("package.json"),
+  };
+  let result: ToolRun = { out: "", code: 0, stdout: Buffer.alloc(0) };
+  for (const event of ["precheck:skills", "check:skills", "postcheck:skills"]) {
+    const command = pkg.scripts[event];
+    if (!command) continue;
+    const run = await runStagedTool("/bin/sh", ["-c", command], undefined, {
+      ...env,
+      npm_lifecycle_event: event,
+      npm_lifecycle_script: command,
+    });
+    result = { ...run, out: result.out + run.out };
+    if (result.code) break;
+  }
+  return result;
+}
 
 // admin-check over the index, not the working tree: docs/agent-work as staged, written to a temporary
 // folder, so another session's unstaged item edit neither blocks nor passes this commit.

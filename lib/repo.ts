@@ -135,6 +135,7 @@ export const isReason = (value: unknown): value is string =>
 
 export { submodulePaths } from "../config/submodules.js";
 
+// Use the root config for nested files and compact output to avoid the default formatter's width error.
 export const stylelintFlags = (root: string) => [
   ...(existsSync(join(root, "stylelint.config.js")) ? ["--config", "stylelint.config.js"] : []),
   "--allow-empty-input",

@@ -392,6 +392,12 @@ import { expect } from "vitest";`;
       status: 0,
       output: "",
     });
+    expect(
+      lint(
+        ordinary,
+        'import { test, expect } from "vitest"; const fc = { assert: () => true }; test("local helper", () => expect(fc.assert()).toBe(true));',
+      ),
+    ).toEqual({ status: 0, output: "" });
     const cases = [
       [
         property,
@@ -6381,6 +6387,30 @@ describe("check-staged", () => {
       ".claude/old.md",
       ".claude/renamed.md",
     ]);
+  });
+
+  test("check:skills runs the indexed validator lifecycle when the working manifest differs", () => {
+    const pkg = {
+      scaffolding: {
+        private: true,
+        skip: { format: "fixture", lint: "fixture", licenses: "fixture" },
+      },
+      scripts: {
+        "precheck:skills": "printf 'pre\\n' > validator.txt",
+        "check:skills": 'printf "%s\\n" "$VALIDATE_SKILLS_PATHS" >> validator.txt; exit 1',
+        "postcheck:skills": "printf 'post\\n' >> validator.txt",
+      },
+    };
+    const dir = repo({ "package.json": JSON.stringify(pkg) });
+    write(dir, { ".claude/changed.md": "staged\n" });
+    expect(sh(dir, ["add", ".claude/changed.md"]).status).toBe(0);
+    write(dir, {
+      "package.json": JSON.stringify({ ...pkg, scripts: { "check:skills": "true" } }),
+    });
+
+    const result = run(dir, "check-staged");
+    expect(result.code, result.out).toBe(1);
+    expect(readFileSync(join(dir, "validator.txt"), "utf8")).toBe("pre\n.claude/changed.md\n");
   });
 
   test.each([

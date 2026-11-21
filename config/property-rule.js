@@ -99,7 +99,8 @@ export default {
         if (
           mode !== "source" &&
           key === "assert" &&
-          ((binding?.from === shared && binding.name === "fc") || node.object.name === "fc")
+          binding?.from === shared &&
+          binding.name === "fc"
         )
           useShared(node);
         if (

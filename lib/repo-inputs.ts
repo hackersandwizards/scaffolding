@@ -43,11 +43,6 @@ export const exportTargets = (value: unknown): string[] =>
       ? Object.values(value).flatMap(exportTargets)
       : [];
 
-/** The files the styles step lints, and stylelint's arguments past them, shared by the gate and the
- * hook so both judge the same files. The repository's own config governs every file, so a nested
- * repository's config (a submodule's) never takes over its files and the root config's ignoreFiles
- * holds. One line per finding: the default formatter's table threw "Subject parameter value width"
- * in a run with findings, and a plain line format has no table. */
 export const styleFiles = "**/*.{css,astro}";
 const styleGlob = new Bun.Glob(styleFiles);
 // The gate's glob skips dot folders, dot files and node_modules; a staged path is named explicitly.
