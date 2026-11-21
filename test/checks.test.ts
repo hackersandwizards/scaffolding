@@ -6379,14 +6379,18 @@ describe("check-staged", () => {
     sh(dir, ["add", ".claude/new.md"]);
     expect(sh(dir, ["config", "diff.renames", "true"]).status).toBe(0);
     expect(sh(dir, ["mv", ".claude/old.md", ".claude/renamed.md"]).status).toBe(0);
+    const scope = [".claude/gone.md", ".claude/new.md", ".claude/old.md", ".claude/renamed.md"];
     const r = run(dir, "check-staged", [], { VALIDATE_SKILLS_PATHS: "elsewhere/x.md" });
     expect(r.code).toBe(0);
-    expect(readFileSync(join(dir, "scope.txt"), "utf8").split("\n").sort()).toEqual([
-      ".claude/gone.md",
-      ".claude/new.md",
-      ".claude/old.md",
-      ".claude/renamed.md",
-    ]);
+    expect(readFileSync(join(dir, "scope.txt"), "utf8").split("\n").sort()).toEqual(scope);
+    rmSync(join(dir, "scope.txt"));
+    const standalone = join(import.meta.dirname, "../.claude/skills/engineering/check-staged.ts");
+    const hook = spawnSync(process.execPath, ["--no-env-file", standalone], {
+      cwd: dir,
+      env: { ...process.env, VALIDATE_SKILLS_PATHS: "elsewhere/x.md" },
+    });
+    expect(hook.status).toBe(0);
+    expect(readFileSync(join(dir, "scope.txt"), "utf8").split("\n").sort()).toEqual(scope);
   });
 
   test("check:skills runs the indexed validator lifecycle when the working manifest differs", () => {
