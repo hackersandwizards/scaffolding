@@ -200,13 +200,18 @@ const runs = active.flatMap(([tool, flags]) => {
   ];
 });
 async function runStagedSkills(): Promise<ToolRun> {
-  if (!differs.has("package.json")) return runStagedTool(process.execPath, ["run", "check:skills"]);
+  // An inherited scope could narrow validation to none. Deletions can break links too.
+  const all = spawnSync("git", ["diff", "--cached", "--name-only"], { encoding: "utf8" });
+  if (all.status !== 0) refuseCommit("git diff --cached failed");
+  const scoped = { ...process.env, VALIDATE_SKILLS_PATHS: all.stdout.trim() };
+  if (!differs.has("package.json"))
+    return runStagedTool(process.execPath, ["run", "check:skills"], undefined, scoped);
 
   // Bun resolves script bodies from disk. If the manifest differs, execute the indexed lifecycle
   // commands from the project root, where the validator expects to find its inputs.
   if (typeof skills !== "string") refuseCommit("check:skills must be a script command");
   const env = {
-    ...process.env,
+    ...scoped,
     PATH: [resolve("node_modules/.bin"), process.env.PATH].filter(Boolean).join(delimiter),
     INIT_CWD: process.cwd(),
     npm_package_json: resolve("package.json"),
