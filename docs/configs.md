@@ -155,11 +155,17 @@ Keep the `vitest` and `ignorePatterns` overrides only where the repository needs
 pool, test selection or additional ignores. When `related` was omitted from the JSON, add
 `related: true` to retain Stryker's original test selection. Keep custom plugins and measured
 concurrency after `...base`. The base sets `vitest.related` to `false`, uses per-test coverage and
-two workers, ignores dotfiles and static mutants, and cleans `.stryker-tmp` after each run.
+two workers, ignores dotfiles, sets `ignoreStatic: true`, and cleans `.stryker-tmp` after each run.
 It writes the clear-text report to the terminal and the JSON and incremental reports to
 `.stryker-reports/mutation.json` and `.stryker-reports/incremental.json`.
 
 Set `"mutation": "scaffolding-mutation"` in `package.json` and run `bun run mutation` on demand.
+With `ignoreStatic: true`, Stryker skips mutants that have only module-load coverage. It runs
+mutants that also have per-test coverage against their covering tests. After Stryker's output,
+the wrapper reads the fresh `.stryker-reports/mutation.json` and lists each `static: true`
+survivor by file, line and mutator. It prints the count and a score that excludes those survivors
+alongside Stryker's score. The adjusted score is `n/a` when no scored mutants remain.
+
 The command stops Stryker and its workers at the 15-minute wall limit and exits with status 124.
 To narrow a run, use `bun run mutation --mutate <files>`. Mutation testing stays outside the gate,
 hooks and CI.

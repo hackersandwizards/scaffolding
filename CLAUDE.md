@@ -25,8 +25,10 @@ Changed checks run the same test step with the browser, build and lock integrati
 The full gate and direct `bun run test` run every suite.
 
 `bun run mutation` runs Stryker on the whole modules listed in `stryker.config.mjs` and writes
-a fresh `.stryker-reports/mutation.json`. The wrapper caps the run at 15 minutes. Mutation testing and `bun run explore` run on demand outside the
-gate. [Test setup](docs/configs.md#property) describes the shared property configuration.
+a fresh `.stryker-reports/mutation.json`. The wrapper caps the run at 15 minutes and lists
+module-level survivors separately with an adjusted score. [Mutation testing](docs/configs.md#stryker)
+describes the report. Mutation testing and `bun run explore` run on demand outside the gate.
+[Test setup](docs/configs.md#property) describes the shared property configuration.
 
 ## Releases
 
