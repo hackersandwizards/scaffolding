@@ -1,6 +1,8 @@
 #!/bin/sh
 // 2>/dev/null; exec bun --no-env-file "$0" "$@"
 import { randomBytes } from "node:crypto";
+import { fileURLToPath } from "node:url";
+import vitest from "vitest/package.json";
 import { help } from "../lib/help.ts";
 import { readPackage, withoutEnvFile } from "../lib/repo.ts";
 import { runTimed } from "../lib/run-timed.ts";
@@ -34,10 +36,15 @@ if (
 
 withoutEnvFile("scaffolding-explore");
 const pkg = readPackage(process.cwd());
-const test = pkg.scaffolding?.test ?? (pkg.scripts?.test ? "test" : "vitest run");
-const command = Object.hasOwn(pkg.scripts ?? {}, test) ? 'bun run "$0" "$@"' : `${test} "$@"`;
+const test = pkg.scaffolding?.test ?? "test";
+const command = pkg.scripts?.[test] ?? test;
+const runtime = /^\s*bun\s+--bun\s+(?:run\s+)?vitest(?:\s|$)/.test(command)
+  ? process.execPath
+  : "node";
+const cli = fileURLToPath(new URL(vitest.bin.vitest, import.meta.resolve("vitest/package.json")));
 const marker = randomBytes(16).toString("hex");
 const argsForTest = [
+  "--coverage.enabled=false",
   "--exclude",
   "**/!(*.prop.test).{js,jsx,ts,tsx,mjs,cjs,mts,cts}",
   "--testNamePattern",
@@ -48,7 +55,7 @@ const runs = 512;
 const limitMs = 120_000;
 const timeout = Number(process.env.SCAFFOLDING_TEST_TIMEOUT_MS || 5000);
 console.log(`[scaffolding-explore] seed ${seed}, ${runs} runs per property`);
-process.exitCode = await runTimed(["sh", "-c", command, test, ...argsForTest], {
+process.exitCode = await runTimed([runtime, cli, "run", ...argsForTest], {
   name: "scaffolding-explore",
   limitMs,
   timeoutMessage: `[scaffolding-explore] reached the 2-minute wall limit (seed ${seed})`,

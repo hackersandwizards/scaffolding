@@ -92,7 +92,8 @@ and load, Environment and the exceptions a repository keeps are in [docs/gate.md
 - `bun run check`: the gate on the package itself.
 - `bun run test` runs the Vitest suite on Bun.
 - `bun run mutation` runs Stryker on demand with a 15-minute wall limit.
-- `bun run explore` runs the property files on demand with a fresh seed and a two-minute wall limit.
+- `bun run explore` runs the property files on demand with a fresh seed, coverage disabled and a
+  two-minute wall limit.
 
 A release bumps `version` and pushes the tag `v<version>`; [CLAUDE.md](CLAUDE.md) has the rules.
 

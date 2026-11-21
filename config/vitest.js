@@ -6,7 +6,16 @@ const underStryker = process.env.STRYKER_MUTATOR_WORKER !== undefined;
 export default defineConfig({
   resolve: { preserveSymlinks: underStryker },
   test: {
-    server: underStryker ? { deps: { inline: ["@fast-check/vitest"] } } : undefined,
+    server: underStryker
+      ? {
+          deps: {
+            inline: [
+              "@fast-check/vitest",
+              /\/@hackersandwizards\/scaffolding\/config\/property\.js$/,
+            ],
+          },
+        }
+      : undefined,
     exclude: [...defaultExclude, "**/.stryker-tmp/**"],
     testTimeout: timeout,
     hookTimeout: timeout,

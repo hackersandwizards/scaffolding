@@ -16,6 +16,7 @@ import {
   writeFileSync,
 } from "node:fs";
 import { basename, dirname, join, posix } from "node:path";
+import type { Node } from "typescript";
 import own from "../package.json";
 import skeleton from "../skeleton.json";
 import { help } from "../lib/help.ts";
@@ -265,6 +266,27 @@ function runsMutationWrapper(script: unknown): boolean {
   );
 }
 
+async function checkMutationRanges(path: string) {
+  const ts = await import("typescript");
+  const text = readFileSync(at(path), "utf8");
+  const config = path.endsWith(".json")
+    ? ts.parseJsonText(path, text)
+    : ts.createSourceFile(path, text, ts.ScriptTarget.Latest);
+  const visit = (node: Node) => {
+    if (
+      ts.isPropertyAssignment(node) &&
+      (ts.isIdentifier(node.name) || ts.isStringLiteral(node.name)) &&
+      node.name.text === "mutate" &&
+      ts.isArrayLiteralExpression(node.initializer)
+    )
+      for (const entry of node.initializer.elements)
+        if (ts.isStringLiteralLike(entry) && /:\d+(?::\d+)?-\d+(?::\d+)?$/.test(entry.text))
+          add(path, "mutate must select whole files, without line ranges", entry.text);
+    ts.forEachChild(node, visit);
+  };
+  visit(config);
+}
+
 if (existsSync(at("package.json"))) {
   if (pkg.type !== skeleton.package.type)
     add("package.json", `type must be ${skeleton.package.type}`);
@@ -276,13 +298,17 @@ if (existsSync(at("package.json"))) {
   const scripts = [...skeleton.package.scripts, ...(surface ? skeleton.catalog.scripts : [])];
   for (const script of scripts)
     if (!pkg.scripts?.[script]) add("package.json", `script ${script} missing`, script);
+  const strykerConfigs = listFiles(root, false).filter((path) =>
+    /^(?:stryker\.config\..+|\.?stryker\.(?:conf|config)\.(?:[cm]?js|json))$/.test(basename(path)),
+  );
   const hasStryker =
     [pkg.dependencies, pkg.devDependencies, pkg.optionalDependencies, pkg.peerDependencies].some(
       (deps) =>
         isObject(deps) && Object.keys(deps).some((name) => name.startsWith("@stryker-mutator/")),
-    ) || listFiles(root, false).some((path) => /^stryker\.config\..+/.test(basename(path)));
+    ) || strykerConfigs.length > 0;
   if (hasStryker && !runsMutationWrapper(pkg.scripts?.mutation))
     add("package.json", 'set scripts.mutation to "mutation": "scaffolding-mutation"');
+  for (const path of strykerConfigs) await checkMutationRanges(path);
   // The gate stretches a test's limit under load only through this variable, and no runner reads it
   // unasked: bun takes it as a flag, vitest from its config.
   const test = pkg.scaffolding?.test;

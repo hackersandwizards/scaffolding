@@ -127,15 +127,18 @@ Put property options in an inline object. The shared ESLint config rejects per-p
 Set `"explore": "scaffolding-explore"` in `package.json`. Run `bun run explore` for 512 cases per
 property with a fresh seed and a two-minute wall limit. The shared Vitest preset uses eight times
 the normal per-test timeout, capped at the wall limit. Run `bun run explore --seed <seed>` to replay
-the run. Exploration passes its Vitest filters to the command named by `scaffolding.test`.
-That command must forward arguments to Vitest. Without a configured test step, exploration uses
-the `test` script when present, then `vitest run`. It exits 2 in CI, a Git hook or the gate. Custom Git hooks can set `SCAFFOLDING_GIT_HOOK=1` before calling package scripts.
+the run. Exploration runs Vitest directly from the repository root with coverage disabled and
+loads the repository's standard Vitest config. It uses Node by default and Bun when
+`scaffolding.test` (or the `test` script by default) starts with `bun --bun vitest` or
+`bun --bun run vitest`. It exits 2 in CI, a Git hook or the gate. Custom Git hooks can set
+`SCAFFOLDING_GIT_HOOK=1` before calling package scripts.
 
 ### `./stryker`
 
 Replace `stryker.config.json` with `stryker.config.mjs`. Stryker loads a JavaScript default export
 and has no config inheritance field in JSON. Drop the JSON `$schema` line and use this shape with
-the repository's existing mutation globs.
+the repository's existing whole-file mutation globs. `check-structure` reports line and column
+ranges in literal `mutate` arrays.
 
 ```js
 import base from "@hackersandwizards/scaffolding/stryker";
@@ -162,5 +165,6 @@ To narrow a run, use `bun run mutation --mutate <files>`. Mutation testing stays
 hooks and CI.
 
 `SCAFFOLDING_MUTATION_BUN=1` runs Stryker on Bun. For suites that use Bun APIs, set
-`"mutation": "SCAFFOLDING_MUTATION_BUN=1 scaffolding-mutation"` and `pool: "forks"` in the Stryker
-config's `vitest` options.
+`"mutation": "SCAFFOLDING_MUTATION_BUN=1 scaffolding-mutation"`. The shared Stryker config uses
+the forks pool on Bun. The shared Vitest config inlines the property wrapper and its adapter
+inside Stryker workers.

@@ -1,6 +1,6 @@
 export default {
   testRunner: "vitest",
-  vitest: { related: false },
+  vitest: { related: false, ...(process.versions.bun ? { pool: "forks" } : {}) },
   coverageAnalysis: "perTest",
   reporters: ["clear-text", "json"],
   jsonReporter: { fileName: ".stryker-reports/mutation.json" },

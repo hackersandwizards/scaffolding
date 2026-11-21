@@ -1,6 +1,6 @@
 {
   "name": "@hackersandwizards/scaffolding",
-  "version": "5.35.0",
+  "version": "5.35.1",
   "description": "Repository skeleton, gate commands, shared configs and the catalog shell: scaffold, scaffolding check, check-structure, check-confidential, check-staged, check-lock, chrome-mcp, raise-pins, and the catalog preset.",
   "keywords": [
     "astro-component"
@@ -103,6 +103,7 @@
   "devDependencies": {
     "@types/bun": "1.4.4",
     "@typescript/native": "npm:typescript@7.0.2",
+    "@vitest/coverage-v8": "5.1.0",
     "astro": "7.4.11",
     "astrobook": "0.13.3",
     "eslint": "10.14.0",

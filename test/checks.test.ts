@@ -171,10 +171,19 @@ test.each(["node", "bun"])(
         scripts: {
           explore: "scaffolding-explore",
           "test:run": runtime === "bun" ? "bun --bun vitest run" : "vitest run",
+          ...(runtime === "node" ? { "test:coverage": "vitest run --coverage" } : {}),
         },
-        scaffolding: { test: "test:run" },
+        scaffolding: { test: runtime === "node" ? "test:coverage" : "test:run" },
       }),
-      "vitest.config.mjs": 'export { default } from "@hackersandwizards/scaffolding/vitest";\n',
+      "vitest.config.mjs":
+        runtime === "node"
+          ? `import base from "@hackersandwizards/scaffolding/vitest";
+import { mergeConfig } from "vitest/config";
+export default mergeConfig(base, {
+  test: { coverage: { enabled: true, include: ["uncovered.ts"], thresholds: { lines: 100 } } },
+});`
+          : 'export { default } from "@hackersandwizards/scaffolding/vitest";\n',
+      "uncovered.ts": "export const uncovered = 1;\n",
       [property]: `
 import { fc, test as propertyTest } from "@hackersandwizards/scaffolding/property";
 import { afterAll, afterEach, beforeEach, expect, test as example } from "vitest";
@@ -215,6 +224,8 @@ test("example must stay out of exploration", () => { throw new Error("example ra
     mkdirSync(commands, { recursive: true });
     symlinkSync(home, join(scope, "scaffolding"));
     symlinkSync(join(home, "node_modules", "vitest"), join(dir, "node_modules", "vitest"));
+    if (runtime === "node")
+      symlinkSync(join(home, "node_modules", "@vitest"), join(dir, "node_modules", "@vitest"));
     symlinkSync(bin("scaffolding-explore"), join(commands, "scaffolding-explore"));
     symlinkSync(join(home, "node_modules", ".bin", "vitest"), join(commands, "vitest"));
     const bun = realpathSync(process.execPath);
@@ -224,6 +235,17 @@ test("example must stay out of exploration", () => { throw new Error("example ra
         return !existsSync(node) || realpathSync(node) !== bun;
       })
       .join(delimiter);
+    if (runtime === "node") {
+      const control = spawnSync(process.execPath, ["run", "test:coverage", property], {
+        cwd: dir,
+        encoding: "utf8",
+        env: { ...process.env, PATH: path },
+      });
+      const output = control.stdout + control.stderr;
+      expect(control.status, output).toBe(1);
+      expect(output).toMatch(/Tests\s+2 passed/);
+      expect(output).toMatch(/Coverage for lines .* does not meet global threshold/);
+    }
     const explore = () =>
       spawnSync(process.execPath, ["run", "explore", "--seed", "-188"], {
         cwd: dir,
@@ -242,6 +264,7 @@ test("example must stay out of exploration", () => { throw new Error("example ra
     expect(passing.status, passing.stdout + passing.stderr).toBe(0);
     expect(passing.stdout).toContain("seed -188, 512 runs per property");
     expect(passing.stdout).toMatch(/Tests\s+1 passed/);
+    expect(passing.stdout).not.toContain("Coverage enabled");
 
     const file = join(dir, property);
     writeFileSync(file, readFileSync(file, "utf8").replace("toBeGreaterThan(0)", "toBe(0)"));
@@ -1530,6 +1553,38 @@ describe("scaffold and check-structure", () => {
     expect(check("BUN_OPTIONS='--preload vitest/node' bun --bun scaffolding-mutation")).toEqual(
       green,
     );
+  });
+
+  test("Stryker mutate entries cover whole files instead of line ranges", () => {
+    const path = "stryker.config.mjs";
+    const other = fixture(
+      "mutation-scope",
+      {},
+      {
+        [path]: `import base from "@hackersandwizards/scaffolding/stryker";
+export default {
+  ...base,
+  mutate: ["src/{first,second}.ts", "lib/deck-edit.ts"],
+  ignorePatterns: ["example.ts:15-217"],
+};
+// mutate: ["commented.ts:15-217"]`,
+      },
+    );
+    const pkg = scaffolded(other);
+    write(other, {
+      "package.json": JSON.stringify({
+        ...pkg,
+        scripts: { ...pkg.scripts, mutation: "scaffolding-mutation" },
+      }),
+    });
+    expect(run(other, "check-structure")).toEqual({ code: 0, out: "" });
+    const config = readFileSync(join(other, path), "utf8");
+    write(other, { [path]: config.replace("lib/deck-edit.ts", "lib/deck-edit.ts:15-217") });
+    const result = run(other, "check-structure");
+    expect(result.code).toBe(1);
+    expect(lines(result.out, "check-structure")).toEqual([
+      "[check-structure] stryker.config.mjs: mutate must select whole files, without line ranges (lib/deck-edit.ts:15-217)",
+    ]);
   });
 
   test("the tests pass the gate's SCAFFOLDING_TEST_TIMEOUT_MS on, in the command, its script or a vitest config", () => {
