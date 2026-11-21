@@ -38,8 +38,7 @@ function neededMissing(root: string): string[] | undefined {
       existsSync(join(root, ...names(key).flatMap((n) => ["node_modules", n])));
     const resolve = (from: string, name: string) => {
       for (let at = names(from); at.length; at = at.slice(0, -1))
-        if (Object.hasOwn(lock.packages, `${at.join("/")}/${name}`))
-          return `${at.join("/")}/${name}`;
+        if (`${at.join("/")}/${name}` in lock.packages) return `${at.join("/")}/${name}`;
       return name;
     };
     const needs = (meta: Meta | undefined) => [

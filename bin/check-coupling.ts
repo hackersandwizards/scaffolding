@@ -1,6 +1,5 @@
 #!/bin/sh
 // 2>/dev/null; exec bun --no-env-file "$0" "$@"
-import { ownEntry } from "../lib/json.ts";
 import { existsSync, readFileSync, realpathSync } from "node:fs";
 import { homedir } from "node:os";
 import { basename, dirname, join, posix, relative, resolve } from "node:path";
@@ -101,7 +100,7 @@ const FIELDS = ["dependencies", "devDependencies", "optionalDependencies", "peer
 // Ours: our scope, or a Git pin on a repository we own, whatever the package's name.
 const pinnedOurs = new Set(
   FIELDS.flatMap((field) =>
-    Object.entries((ownEntry(pkg, field) ?? {}) as Record<string, string>)
+    Object.entries((pkg[field] ?? {}) as Record<string, string>)
       .filter(([, spec]) => ourRepository(spec))
       .map(([name]) => name),
   ),
@@ -214,9 +213,7 @@ const GIT =
 const TAG = /#(?:semver:)?v?\d+\.\d+\.\d+(?:[-+][\w.-]+)?$/;
 if (!staged || listFiles(root, true).includes("package.json")) {
   for (const field of FIELDS)
-    for (const [name, spec] of Object.entries(
-      (ownEntry(pkg, field) ?? {}) as Record<string, string>,
-    )) {
+    for (const [name, spec] of Object.entries((pkg[field] ?? {}) as Record<string, string>)) {
       if (/^(?:file|link|portal):/.test(spec))
         flag("package.json", `${name}@${spec}`, "local path dependency");
       else if (GIT.test(spec) && !TAG.test(spec))

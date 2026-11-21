@@ -1,6 +1,5 @@
 #!/bin/sh
 // 2>/dev/null; exec bun --no-env-file "$0" "$@"
-import { ownEntry } from "../lib/json.ts";
 import { spawnSync } from "node:child_process";
 import {
   cpSync,
@@ -134,7 +133,7 @@ pkg.engines = { bun: own.engines.bun, ...pkg.engines };
 pkg.scripts = { prepare: own.scripts.prepare, fix: own.scripts.fix, ...pkg.scripts };
 pkg.devDependencies = Object.fromEntries(
   [
-    ...tools.map((t): [string, string] => [t, ownEntry(ownPins, t)!]),
+    ...tools.map((t): [string, string] => [t, ownPins[t]!]),
     company("scaffolding", `v${own.version}`),
     ...Object.entries(pins).map(([repo, tag]) => company(repo, tag)),
   ].sort(([a], [b]) => a.localeCompare(b)),

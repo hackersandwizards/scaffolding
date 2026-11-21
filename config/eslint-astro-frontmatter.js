@@ -115,30 +115,27 @@ export function frontmatterMessages(entry, messages) {
   const generated = ts.computeLineStarts(code);
   const originalLines = ts.computeLineStarts(source);
   const originalLocation = (offset) => ts.computeLineAndCharacterOfPosition(originalLines, offset);
-  const position = (line, column, end, template) => {
+  const position = (line, column, end) => {
     const offset = generated[line - 1] + column - 1;
-    if (!template && (!region || offset < frontmatter.start || offset > frontmatter.end))
-      return undefined;
+    if (offset < frontmatter.start || offset > frontmatter.end) return undefined;
     for (const [start, length, source, sourceLength] of mappings) {
       const delta = offset - start;
       if (delta < 0 || (end ? delta > length : delta >= length)) continue;
       const original = source + Math.min(delta, sourceLength);
-      if (template || (original >= region.start && original <= region.end))
-        return originalLocation(original);
+      if (original >= region.start && original <= region.end) return originalLocation(original);
     }
     return undefined;
   };
   return messages.flatMap(({ fix: _fix, suggestions: _suggestions, ...message }) => {
-    const template = message.ruleId === "scaffolding/no-inherited-lookup";
-    const start = position(message.line, message.column, false, template);
+    const start = position(message.line, message.column, false);
     if (!start) {
-      if (message.fatal && region) {
+      if (message.fatal) {
         const { line, character } = originalLocation(region.start);
         return [{ ...message, line: line + 1, column: character + 1 }];
       }
       return [];
     }
-    const end = message.endLine && position(message.endLine, message.endColumn, true, template);
+    const end = message.endLine && position(message.endLine, message.endColumn, true);
     return [
       {
         ...message,

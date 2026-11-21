@@ -1,4 +1,3 @@
-import { ownEntry } from "../lib/json.ts";
 import { afterAll, beforeAll, describe, expect, test } from "vitest";
 import { spawn, spawnSync } from "node:child_process";
 import { createHash } from "node:crypto";
@@ -46,7 +45,7 @@ import templateSettings from "../template/.claude/settings.json";
 /** The member of parsed JSON at `path`, undefined where a step meets no object or list. */
 const member = (value: unknown, ...path: (string | number)[]): unknown =>
   path.reduce<unknown>((v, key) => {
-    if (isObject(v)) return ownEntry(v, String(key));
+    if (isObject(v)) return v[key];
     const list: unknown[] = Array.isArray(v) ? v : [];
     return list[Number(key)];
   }, value);
@@ -3754,6 +3753,22 @@ describe("scaffolding check", () => {
     expect(result.out).toContain("scaffolding.skip names no shared step: constructor");
   });
 
+  test("a test command named like an Object member runs directly", () => {
+    const { test: _, ...noTest } = skip;
+    const dir = gate({ skip: noTest, test: "constructor" });
+    write(dir, {
+      "tools/constructor": "#!/bin/sh\necho ran-constructor\n",
+      constructor: "#!/bin/sh\necho ran-local-file\nexit 1\n",
+    });
+    for (const file of ["tools/constructor", "constructor"]) chmodSync(join(dir, file), 0o755);
+    const result = run(dir, "scaffolding", ["check"], {
+      CHECK_LOCK: join(dir, ".lock"),
+      PATH: `${join(dir, "tools")}${delimiter}${process.env.PATH}`,
+    });
+    expect(result.code, result.out).toBe(0);
+    expect(result.out).toContain("ran-constructor");
+  });
+
   test("a gate without tests goes red unless the skip gives a reason", () => {
     const { test: _, ...noTest } = skip;
     const dir = gate({ skip: noTest });
@@ -5678,6 +5693,17 @@ describe("catalog", () => {
       const src = join(fixture, "catalog", "src");
       mkdirSync(join(src, "pages", "catalog"), { recursive: true });
       writeFileSync(join(src, "pages", "catalog", "index.astro"), "<p>site catalog page</p>\n");
+      write(join(fixture, "catalog"), {
+        "virtual.config.mjs": `import config from "./astro.config.mjs";
+export default { ...config, vite: { plugins: [{
+  name: "fixture-virtual",
+  enforce: "post",
+  resolveId: (id) => id === "virtual:fixture" ? "\\0constructor" : undefined,
+  load: (id) => id === "\\0constructor" ? 'export default "from the fixture plugin";' : undefined,
+}] } };`,
+        "src/pages/virtual.astro":
+          '---\nimport value from "virtual:fixture";\n---\n<p>{value}</p>\n',
+      });
       // ASTRO_DEV_BACKGROUND=1, as the dev script in docs/catalog.md: under an agent astro dev otherwise moves
       // into the background and resolves --root from inside the folder.
       // Astro disables its dev server middleware when the child inherits VITEST from the worker.
@@ -5685,7 +5711,7 @@ describe("catalog", () => {
         [
           "sh",
           "-c",
-          `unset VITEST && cd '${fixture}' && exec '${astro}' dev --root catalog --base /fx --host $HOST --port $PORT`,
+          `unset VITEST && cd '${fixture}' && exec '${astro}' dev --root catalog --config virtual.config.mjs --base /fx --host $HOST --port $PORT`,
         ],
         { env: { ASTRO_DEV_BACKGROUND: "1" }, timeoutMs: 30_000 },
       );
@@ -5702,8 +5728,11 @@ describe("catalog", () => {
         expect(await css.text()).toBe("a {\n  color: red;\n}\n");
         writeFileSync(join(fixture, "assets/nested/data.constructor"), "own file");
         const data = await fetch(`${server.url}/assets/nested/data.constructor`);
-        expect(data.headers.get("content-type")).toBe("application/octet-stream");
-        expect(await data.text()).toBe("own file");
+        expect.soft(data.headers.get("content-type")).toBe("application/octet-stream");
+        expect.soft(await data.text()).toBe("own file");
+        const virtual = await fetch(`${server.url}/virtual/`);
+        expect.soft(virtual.status).toBe(200);
+        expect.soft(await virtual.text()).toContain("from the fixture plugin");
         expect((await fetch(`${server.url}/assets/skip.txt`)).status).toBe(404);
         // Each pattern is globbed once; a file added since is found by a second glob.
         writeFileSync(join(fixture, "assets", "late.svg"), "<svg/>");
@@ -7092,27 +7121,20 @@ describe("check-cycles", () => {
 
 describe("check-licenses", () => {
   function installed(licences: Record<string, unknown>, scaffolding: object = {}) {
-    const files = new Map<string, string>();
-    const dependencies = new Map<string, string>();
+    const files: Record<string, string> = {};
+    const dependencies: Record<string, string> = {};
     for (const [name, licence] of Object.entries(licences)) {
       const folder = name.replace("/", "+");
-      files.set(
-        `pkgs/${folder}/package.json`,
-        JSON.stringify({
-          name,
-          version: "1.0.0",
-          ...(licence === undefined ? {} : (licence as object)),
-        }),
-      );
-      dependencies.set(name, `file:./pkgs/${folder}`);
+      files[`pkgs/${folder}/package.json`] = JSON.stringify({
+        name,
+        version: "1.0.0",
+        ...(licence === undefined ? {} : (licence as object)),
+      });
+      dependencies[name] = `file:./pkgs/${folder}`;
     }
     const dir = repo({
-      ...Object.fromEntries(files),
-      "package.json": JSON.stringify({
-        name: "fx",
-        dependencies: Object.fromEntries(dependencies),
-        scaffolding,
-      }),
+      ...files,
+      "package.json": JSON.stringify({ name: "fx", dependencies, scaffolding }),
     });
     const install = spawnSync(process.execPath, ["install"], { cwd: dir, encoding: "utf8" });
     expect(install.status).toBe(0);
@@ -7248,6 +7270,14 @@ describe("check-licenses", () => {
     bun(["install", "--frozen-lockfile"]);
     expect(existsSync(join(dir, "node_modules/b"))).toBe(false);
     expect(run(dir, "check-licenses")).toEqual({ code: 0, out: "" });
+    const lockWithPeer = pinned.replace(
+      '"name": "fx",',
+      `"name": "fx", "peerDependencies": { "constructor": "*" },`,
+    );
+    expect(lockWithPeer).not.toBe(pinned);
+    writeFileSync(lock, lockWithPeer);
+    expect(run(dir, "check-licenses")).toEqual({ code: 0, out: "" });
+    writeFileSync(lock, pinned);
     rmSync(join(dir, "node_modules/a/node_modules/b"), { recursive: true });
     const unbundled = run(dir, "check-licenses");
     expect(unbundled.code).toBe(1);

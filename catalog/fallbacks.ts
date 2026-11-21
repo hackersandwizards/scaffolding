@@ -1,4 +1,3 @@
-import { ownEntry } from "../lib/json.ts";
 /** The shell's CSS with brand's value as the fallback of each var() that names a token in brand's
  * tokens.json, in place of any fallback the shell writes, the bare var()s inside that value filled
  * the same way. Inside brand's own values a fallback stays: it is brand's to write. Each
@@ -11,8 +10,8 @@ export function brandFallbacks(
 ): string {
   if (!seen.length) {
     css = css.replace(/brand-value\(\s*(--[\w-]+)\s*\)/g, (_, name: string) => {
-      const value = ownEntry(tokens, name);
-      if (value === undefined) return `var(${name})`;
+      const value = tokens[name];
+      if (!Object.hasOwn(tokens, name) || value === undefined) return `var(${name})`;
       if (value.includes("var("))
         throw new Error(`catalog: brand-value(${name}) is ${value}, no fixed value`);
       return value;

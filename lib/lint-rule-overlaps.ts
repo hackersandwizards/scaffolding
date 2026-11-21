@@ -1,4 +1,3 @@
-import { ownEntry } from "./json.ts";
 import type { Linter } from "eslint";
 import type { Finding } from "./repo.ts";
 
@@ -37,7 +36,7 @@ function eslintRuleIds(rule: string, plugins: ESLintConfig["plugins"]) {
   if (separator === -1) return [rule];
   const alias = rule.slice(0, separator);
   const name = rule.slice(separator + 1);
-  const meta = ownEntry(plugins, alias)?.meta;
+  const meta = plugins?.[alias]?.meta;
   const scope = ruleNamespace(
     meta?.namespace ??
       meta?.name

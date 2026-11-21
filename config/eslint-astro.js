@@ -4,7 +4,7 @@ import prettier from "eslint-config-prettier/flat";
 import tseslint from "typescript-eslint";
 import { frontmatterBlock, frontmatterFiles } from "./eslint-astro-frontmatter.js";
 import { astroClientScript, astroTypePrograms } from "./eslint-astro-script.js";
-import base, { inheritedLookup } from "./eslint.js";
+import base from "./eslint.js";
 import oxlint from "./oxlint.json" with { type: "json" };
 
 const astroFiles = ["**/*.astro"];
@@ -17,7 +17,6 @@ const scripts = astroTypePrograms(originalProcessor, astroParser);
 const untyped = Boolean(process.env.SCAFFOLDING_LINT_UNTYPED);
 const componentRegions = new Map();
 const retained = new Set(["no-dupe-args", "no-octal", "no-undef", "no-useless-assignment"]);
-/** @type {import("eslint").Linter.RulesRecord} */
 const componentRules = {
   ...js.configs.recommended.rules,
   ...tseslint.configs.recommended.find((config) => config.name === "typescript-eslint/recommended")
@@ -114,8 +113,7 @@ const processor = {
   },
 };
 
-/** @type {import("eslint").Linter.Config[]} */
-const config = [
+export default [
   ...[...base, ...astroPreset].map((config) =>
     config.rules
       ? { ...config, ignores: [...(config.ignores ?? []), ...frontmatterFiles] }
@@ -128,7 +126,6 @@ const config = [
     rules: componentRules,
   },
   {
-    ...(untyped ? {} : inheritedLookup),
     files: scriptFiles,
     languageOptions: { parser: scripts.parser },
     rules: {
@@ -137,20 +134,17 @@ const config = [
         { argsIgnorePattern: "^_", varsIgnorePattern: "^_", caughtErrorsIgnorePattern: "^_" },
       ],
       "no-undef": "error",
-      ...(untyped ? {} : { ...typedRules, ...inheritedLookup.rules }),
+      ...(untyped ? {} : typedRules),
     },
   },
   ...(untyped
     ? []
     : [
         {
-          ...inheritedLookup,
           files: frontmatterFiles,
           languageOptions: { parser: scripts.parser },
-          rules: { ...typedRules, ...inheritedLookup.rules },
+          rules: typedRules,
         },
       ]),
   prettier,
 ];
-
-export default config;

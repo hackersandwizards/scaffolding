@@ -1,6 +1,5 @@
 #!/bin/sh
 // 2>/dev/null; exec bun --no-env-file "$0" "$@"
-import { ownEntry } from "../lib/json.ts";
 import { spawnSync } from "node:child_process";
 import {
   chmodSync,
@@ -182,11 +181,11 @@ if (!prettier) add("prettier config", "prettier not installed: bun install");
 else {
   const rc: Record<string, unknown> = (await prettier.resolveConfig(at("package.json"))) ?? {};
   for (const [key, value] of Object.entries(skeleton.prettier))
-    if (ownEntry(rc, key) !== value)
+    if (rc[key] !== value)
       add(
         "prettier config",
         `${key} must be ${JSON.stringify(value)}`,
-        `${key}: ${JSON.stringify(ownEntry(rc, key))}`,
+        `${key}: ${JSON.stringify(rc[key])}`,
       );
 }
 
@@ -194,13 +193,6 @@ else {
 // at each key path; where that value is a list, each of its items, beside the repository's own,
 // an item with the same `matcher` as one of the skeleton's being an older copy of it. --fix writes
 // them in, formatted as the repository's prettier would.
-const writeField = (holder: Record<string, unknown>, key: string, value: unknown) =>
-  Object.defineProperty(holder, key, {
-    value,
-    writable: true,
-    enumerable: true,
-    configurable: true,
-  });
 const same = (a: unknown, b: unknown) => JSON.stringify(a) === JSON.stringify(b);
 for (const [path, keys] of Object.entries(skeleton.entries)) {
   if (!exists(path)) continue;
@@ -216,23 +208,13 @@ for (const [path, keys] of Object.entries(skeleton.entries)) {
     // The object holding the key, created on the way where missing; none where a value in the way
     // is no object, which no repair can mend.
     let holder: unknown = file;
-    for (const k of key.slice(0, -1)) {
-      if (!isObject(holder)) break;
-      const child = ownEntry(holder, k);
-      if (child != null) holder = child;
-      else {
-        const created = {};
-        writeField(holder, k, created);
-        holder = created;
-      }
-    }
-    const want = key.reduce<unknown>((v, k) => ownEntry(v as Record<string, unknown>, k), template);
+    for (const k of key.slice(0, -1)) holder = isObject(holder) ? (holder[k] ??= {}) : undefined;
+    const want = key.reduce<unknown>((v, k) => (v as Record<string, unknown>)[k], template);
     if (!isObject(holder)) {
       add(path, `${key.join(".")} sits in no JSON object`);
       continue;
     }
-    const last = key.at(-1)!;
-    const has = ownEntry(holder, last);
+    const has = holder[key.at(-1)!];
     if (Array.isArray(want)) {
       const wanted: unknown[] = want;
       const ours = (o: unknown) =>
@@ -242,9 +224,9 @@ for (const [path, keys] of Object.entries(skeleton.entries)) {
       const kept: unknown[] = Array.isArray(has) ? has : [];
       const merged = [...wanted, ...kept.filter((o) => !ours(o))];
       if (same(has, merged)) continue;
-      writeField(holder, last, merged);
+      holder[key.at(-1)!] = merged;
     } else if (same(has, want)) continue;
-    else writeField(holder, last, want);
+    else holder[key.at(-1)!] = want;
     differ.push(key.join("."));
   }
   if (differ.length)
@@ -315,7 +297,7 @@ if (existsSync(at("package.json"))) {
   const surface = !isReason(pkg.scaffolding?.skip?.catalog);
   const scripts = [...skeleton.package.scripts, ...(surface ? skeleton.catalog.scripts : [])];
   for (const script of scripts)
-    if (!ownEntry(pkg.scripts, script)) add("package.json", `script ${script} missing`, script);
+    if (!pkg.scripts?.[script]) add("package.json", `script ${script} missing`, script);
   const strykerConfigs = listFiles(root, false).filter((path) =>
     /^(?:stryker\.config\..+|\.?stryker\.(?:conf|config)\.(?:[cm]?js|json))$/.test(basename(path)),
   );
@@ -353,7 +335,7 @@ if (existsSync(at("package.json"))) {
       );
   }
   for (const step of (pkg.scaffolding?.check ?? []).flat())
-    if (!/^check:[a-z0-9][\w:-]*$/.test(step) || !ownEntry(pkg.scripts, step))
+    if (!/^check:[a-z0-9][\w:-]*$/.test(step) || !pkg.scripts?.[step])
       add("package.json", "a step of scaffolding.check is a script named check:<what>", step);
   // bun marks a `bin` file executable only as it installs the package, so one stored 100644 is not
   // executable in the checkout, in a copy or behind a link.

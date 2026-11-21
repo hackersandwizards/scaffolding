@@ -2,8 +2,6 @@
 import prettier from "eslint-config-prettier/flat";
 import globals from "globals";
 import tseslint from "typescript-eslint";
-import typeParser from "./eslint-type-parser.js";
-import prototypeLookup from "./prototype-lookup-rule.js";
 import propertyRule from "./property-rule.js";
 import { submodulePaths } from "./submodules.js";
 
@@ -24,15 +22,7 @@ const testRules = [
       "Under bun, expect().rejects and .resolves wait in a nested event loop, where a shared puppeteer connection broke; await rejection() from @hackersandwizards/scaffolding/rejection, or await the promise, then expect what it settled to.",
   },
 ];
-const scaffolding = { rules: { property: propertyRule, "no-inherited-lookup": prototypeLookup } };
-export const inheritedLookup = {
-  plugins: { scaffolding },
-  rules: { "scaffolding/no-inherited-lookup": "error" },
-};
-const untyped = Boolean(process.env.SCAFFOLDING_LINT_UNTYPED);
-
-/** @type {import("eslint").Linter.Config[]} */
-const config = [
+export default [
   {
     ignores: [
       "node_modules/**",
@@ -65,7 +55,7 @@ const config = [
   },
   {
     files: [`**/*.${code}`],
-    plugins: { scaffolding },
+    plugins: { scaffolding: { rules: { property: propertyRule } } },
     rules: { "scaffolding/property": ["error", "source"] },
   },
   {
@@ -80,16 +70,5 @@ const config = [
     files: propertyFiles,
     rules: { "scaffolding/property": ["error", "property"] },
   },
-  ...(untyped
-    ? []
-    : [
-        {
-          ...inheritedLookup,
-          files: [`**/*.${code}`],
-          languageOptions: { parser: typeParser },
-        },
-      ]),
   prettier,
 ];
-
-export default config;

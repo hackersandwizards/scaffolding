@@ -1,11 +1,11 @@
 #!/bin/sh
 // 2>/dev/null; exec bun --no-env-file "$0" "$@"
-import { ownEntry } from "../lib/json.ts";
 import { spawn, spawnSync } from "node:child_process";
 import { existsSync } from "node:fs";
 import { join } from "node:path";
 import { allChangedSteps, fastSteps, selectChangedSteps, validGlob } from "../lib/changed-steps.ts";
 import { help } from "../lib/help.ts";
+import { ownEntry } from "../lib/own-entry.ts";
 import {
   isReason,
   isObject,
@@ -274,7 +274,7 @@ async function group(
 ): Promise<boolean> {
   const runs = new Map<string, Promise<Result>>();
   const start = (n: string, c: string, buffered: boolean) => {
-    const first = runs.get(ownEntry(after, n) ?? "");
+    const first = runs.get(after[n] ?? "");
     runs.set(n, first ? first.then(() => run(n, c, buffered)) : run(n, c, buffered));
   };
   const queue = loaded ? steps.filter(([n]) => !quick.has(n)) : [];
@@ -301,7 +301,7 @@ async function group(
 // `bun --bun <name>` runs a package script of that name before a binary.
 const typecheck = config.typecheck ?? "";
 const sync = /\bastro\b/.test(
-  [typecheck, ...typecheck.split(/\s+/).map((word) => ownEntry(pkg.scripts, word))].join(" "),
+  [typecheck, ...typecheck.split(/\s+/).map((word) => pkg.scripts?.[word])].join(" "),
 );
 const selected = changed ? changedSteps() : undefined;
 if (

@@ -1,6 +1,5 @@
 #!/bin/sh
 // 2>/dev/null; exec bun --no-env-file "$0" "$@"
-import { ownEntry } from "../lib/json.ts";
 import { randomBytes } from "node:crypto";
 import { fileURLToPath } from "node:url";
 import vitest from "vitest/package.json";
@@ -38,7 +37,7 @@ if (
 withoutEnvFile("scaffolding-explore");
 const pkg = readPackage(process.cwd());
 const test = pkg.scaffolding?.test ?? "test";
-const command = ownEntry(pkg.scripts, test) ?? test;
+const command = pkg.scripts?.[test] ?? test;
 const runtime = /^\s*bun\s+--bun\s+(?:run\s+)?vitest(?:\s|$)/.test(command)
   ? process.execPath
   : "node";

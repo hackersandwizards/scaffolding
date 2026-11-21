@@ -1,6 +1,5 @@
 // The shell depends on no brand package: brand's header and CSS are named as strings the
 // repository resolves.
-import { ownEntry } from "../lib/json.ts";
 import astrobook from "astrobook";
 import type { AstroIntegration } from "astro";
 import {
@@ -19,6 +18,7 @@ import { createRequire } from "node:module";
 import { basename, dirname, join, matchesGlob, posix, relative } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { isObject, jsonObject } from "../lib/json.ts";
+import { ownEntry } from "../lib/own-entry.ts";
 import { brandFallbacks } from "./fallbacks.ts";
 import { catalogPath, storiesDir } from "./path.ts";
 import { CSS, loadRoute, retitleLayout } from "./route.ts";
