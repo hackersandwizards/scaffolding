@@ -4,6 +4,7 @@
 // newest v<version> tag of its remote, in dependency order, installing after each; then runs the
 // gate once and reports per package. With --commit, a green gate commits package.json, bun.lock
 // and what check-structure --fix wrote.
+import { ownEntry } from "../lib/json.ts";
 import { spawnSync } from "node:child_process";
 import { existsSync, readFileSync, statSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
@@ -59,7 +60,7 @@ const PIN = /^(git\+[^#]+)#v(\d+\.\d+\.\d+)$/;
 const FIELDS = ["dependencies", "devDependencies", "optionalDependencies"];
 const pkg = readPackage(root);
 const pins = FIELDS.flatMap((field) =>
-  Object.entries((pkg[field] ?? {}) as Record<string, string>).flatMap(([name, spec]) => {
+  Object.entries((ownEntry(pkg, field) ?? {}) as Record<string, string>).flatMap(([name, spec]) => {
     const pin = PIN.exec(spec);
     return pin && ourRepository(pin[1]!) ? [{ name, spec, url: pin[1]!, from: `v${pin[2]}` }] : [];
   }),

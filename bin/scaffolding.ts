@@ -1,5 +1,6 @@
 #!/bin/sh
 // 2>/dev/null; exec bun --no-env-file "$0" "$@"
+import { ownEntry } from "../lib/json.ts";
 import { spawn, spawnSync } from "node:child_process";
 import { existsSync } from "node:fs";
 import { join } from "node:path";
@@ -67,7 +68,7 @@ for (const entry of config.allow ?? [])
   if (!ALLOWS.has(entry.check ?? ""))
     fail(`scaffolding.allow names no check that reads it: ${entry.check}`);
 
-const script = (s: string) => (pkg.scripts?.[s] ? `bun run --silent ${s}` : s);
+const script = (s: string) => (ownEntry(pkg.scripts, s) ? `bun run --silent ${s}` : s);
 // Quoted for `sh -c`: a package path holding a space failed every bin step.
 const quote = (s: string) => `'${s.replaceAll("'", `'\\''`)}'`;
 const bin = (name: string) => `bun ${quote(join(home, "bin", `${name}.ts`))}`;
@@ -116,7 +117,7 @@ const skip = { ...config.skip };
 const local = (config.check ?? []).flat();
 const named = new Set([...Object.keys(shared), ...local]);
 for (const [step, reason] of Object.entries(skip)) {
-  if (step === "oxlint" || (!(step in shared) && !(step === "retired" && branded)))
+  if (step === "oxlint" || (!Object.hasOwn(shared, step) && !(step === "retired" && branded)))
     fail(`scaffolding.skip names no shared step: ${step}`);
   if (!isReason(reason)) fail(`scaffolding.skip.${step} has no reason`);
   named.add(step);
@@ -273,7 +274,7 @@ async function group(
 ): Promise<boolean> {
   const runs = new Map<string, Promise<Result>>();
   const start = (n: string, c: string, buffered: boolean) => {
-    const first = runs.get(after[n] ?? "");
+    const first = runs.get(ownEntry(after, n) ?? "");
     runs.set(n, first ? first.then(() => run(n, c, buffered)) : run(n, c, buffered));
   };
   const queue = loaded ? steps.filter(([n]) => !quick.has(n)) : [];
@@ -300,7 +301,7 @@ async function group(
 // `bun --bun <name>` runs a package script of that name before a binary.
 const typecheck = config.typecheck ?? "";
 const sync = /\bastro\b/.test(
-  [typecheck, ...typecheck.split(/\s+/).map((word) => pkg.scripts?.[word])].join(" "),
+  [typecheck, ...typecheck.split(/\s+/).map((word) => ownEntry(pkg.scripts, word))].join(" "),
 );
 const selected = changed ? changedSteps() : undefined;
 if (

@@ -1,3 +1,4 @@
+import { ownEntry } from "./json.ts";
 import { spawnSync } from "node:child_process";
 import { existsSync, lstatSync, readFileSync, statSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
@@ -25,7 +26,7 @@ export function oxlintConfiguration(root: string) {
   if (!isStrings(config.plugins) || !config.plugins.includes("typescript"))
     throw new Error('plugins must include "typescript"');
   const env = config.env;
-  if (!isObject(env) || Object.keys(template.env).some((name) => env[name] !== true))
+  if (!isObject(env) || Object.keys(template.env).some((name) => ownEntry(env, name) !== true))
     throw new Error("env must include the shared browser, Node and Bun globals");
   const expected = oxlintExtends(root);
   if (!isStrings(config.extends) || config.extends.length !== 1 || config.extends[0] !== expected)

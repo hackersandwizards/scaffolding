@@ -1,5 +1,6 @@
 // The shell depends on no brand package: brand's header and CSS are named as strings the
 // repository resolves.
+import { ownEntry } from "../lib/json.ts";
 import astrobook from "astrobook";
 import type { AstroIntegration } from "astro";
 import {
@@ -219,20 +220,22 @@ const isPointer = (file: string) => {
 };
 
 // A stylesheet or font served without its type is refused by the browser.
-const TYPES: Record<string, string> = {
-  css: "text/css",
-  js: "text/javascript",
-  json: "application/json",
-  svg: "image/svg+xml",
-  png: "image/png",
-  jpg: "image/jpeg",
-  webp: "image/webp",
-  ico: "image/x-icon",
-  woff2: "font/woff2",
-  pdf: "application/pdf",
-};
+const TYPES = new Map(
+  Object.entries({
+    css: "text/css",
+    js: "text/javascript",
+    json: "application/json",
+    svg: "image/svg+xml",
+    png: "image/png",
+    jpg: "image/jpeg",
+    webp: "image/webp",
+    ico: "image/x-icon",
+    woff2: "font/woff2",
+    pdf: "application/pdf",
+  }),
+);
 const mime = (file: string) =>
-  TYPES[file.split(".").pop()!.toLowerCase()] ?? "application/octet-stream";
+  TYPES.get(file.split(".").pop()!.toLowerCase()) ?? "application/octet-stream";
 
 const decoded = (s: string) => {
   try {
@@ -526,7 +529,8 @@ export function catalog(options: CatalogOptions): AstroIntegration {
               {
                 name: "scaffolding-catalog",
                 resolveId: (id: string) => (Object.hasOwn(modules, id) ? `\0${id}` : undefined),
-                load: (id: string) => (id.startsWith("\0") ? modules[id.slice(1)] : undefined),
+                load: (id: string) =>
+                  id.startsWith("\0") ? ownEntry(modules, id.slice(1)) : undefined,
               },
             ],
           },

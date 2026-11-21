@@ -1,3 +1,4 @@
+import { ownEntry } from "../lib/json.ts";
 import { afterAll, beforeAll, describe, expect, test } from "vitest";
 import { spawn, spawnSync } from "node:child_process";
 import { createHash } from "node:crypto";
@@ -45,7 +46,7 @@ import templateSettings from "../template/.claude/settings.json";
 /** The member of parsed JSON at `path`, undefined where a step meets no object or list. */
 const member = (value: unknown, ...path: (string | number)[]): unknown =>
   path.reduce<unknown>((v, key) => {
-    if (isObject(v)) return v[key];
+    if (isObject(v)) return ownEntry(v, String(key));
     const list: unknown[] = Array.isArray(v) ? v : [];
     return list[Number(key)];
   }, value);
@@ -3746,6 +3747,13 @@ describe("scaffolding check", () => {
     );
   });
 
+  test("a skipped step must name an own entry in the shared step table", () => {
+    const dir = gate({ skip: { ...skip, constructor: "not a step" } });
+    const result = run(dir, "scaffolding", ["check"], { CHECK_LOCK: join(dir, ".lock") });
+    expect(result.code).toBe(1);
+    expect(result.out).toContain("scaffolding.skip names no shared step: constructor");
+  });
+
   test("a gate without tests goes red unless the skip gives a reason", () => {
     const { test: _, ...noTest } = skip;
     const dir = gate({ skip: noTest });
@@ -5692,6 +5700,10 @@ describe("catalog", () => {
         const css = await fetch(`${server.url}/assets/nested/page.css`);
         expect(css.headers.get("content-type")).toBe("text/css");
         expect(await css.text()).toBe("a {\n  color: red;\n}\n");
+        writeFileSync(join(fixture, "assets/nested/data.constructor"), "own file");
+        const data = await fetch(`${server.url}/assets/nested/data.constructor`);
+        expect(data.headers.get("content-type")).toBe("application/octet-stream");
+        expect(await data.text()).toBe("own file");
         expect((await fetch(`${server.url}/assets/skip.txt`)).status).toBe(404);
         // Each pattern is globbed once; a file added since is found by a second glob.
         writeFileSync(join(fixture, "assets", "late.svg"), "<svg/>");
@@ -7081,7 +7093,7 @@ describe("check-cycles", () => {
 describe("check-licenses", () => {
   function installed(licences: Record<string, unknown>, scaffolding: object = {}) {
     const files: Record<string, string> = {};
-    const dependencies: Record<string, string> = {};
+    const dependencies = new Map<string, string>();
     for (const [name, licence] of Object.entries(licences)) {
       const folder = name.replace("/", "+");
       files[`pkgs/${folder}/package.json`] = JSON.stringify({
@@ -7089,11 +7101,15 @@ describe("check-licenses", () => {
         version: "1.0.0",
         ...(licence === undefined ? {} : (licence as object)),
       });
-      dependencies[name] = `file:./pkgs/${folder}`;
+      dependencies.set(name, `file:./pkgs/${folder}`);
     }
     const dir = repo({
       ...files,
-      "package.json": JSON.stringify({ name: "fx", dependencies, scaffolding }),
+      "package.json": JSON.stringify({
+        name: "fx",
+        dependencies: Object.fromEntries(dependencies),
+        scaffolding,
+      }),
     });
     const install = spawnSync(process.execPath, ["install"], { cwd: dir, encoding: "utf8" });
     expect(install.status).toBe(0);

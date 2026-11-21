@@ -3,6 +3,7 @@
 // Check, never write: re-staging a rewritten file would sweep another session's unstaged lines in
 // that file into this commit. Tools read a partly staged file from the index, so its unstaged
 // lines neither pass nor block this commit.
+import { ownEntry } from "../lib/json.ts";
 import { pathChunks, stagedPaths } from "../lib/staged-paths.ts";
 import { spawn, spawnSync } from "node:child_process";
 import {
@@ -57,7 +58,7 @@ for (const [step, check] of [
   ["coupling", "check-coupling.ts"],
   ["", "check-confidential.ts"],
 ]) {
-  if (isReason(skip[step])) continue;
+  if (isReason(ownEntry(skip, step))) continue;
   const run = spawnSync(process.execPath, [`${import.meta.dir}/${check}`, "--staged"], {
     stdio: "inherit",
   });
@@ -118,21 +119,21 @@ const whole = staged.filter((path) => !differs.has(path));
 const mine = (tool: string, paths: string[]) =>
   tool === "stylelint" ? paths.filter(styled) : paths;
 // One list per tool for a staged file read whole and one read from stdin, so both judge alike.
-const flags: Record<string, string[]> = {
+const flags = {
   prettier: ["--ignore-unknown", "--log-level", "warn"],
   eslint: ["--cache", "--no-warn-ignored"],
   stylelint: stylelintFlags("."),
 };
-const tools: Record<string, string[]> = {
+const tools = {
   prettier: ["--check", ...flags.prettier, "--no-error-on-unmatched-pattern"],
   eslint: [...flags.eslint, "--no-error-on-unmatched-pattern"],
   stylelint: flags.stylelint,
 };
-const stdinFlags: Record<string, (path: string) => string[]> = {
+const stdinFlags = {
   // No --check: prettier --check on stdin exits 0 on a syntax error. The output is compared instead.
-  prettier: (path) => [...flags.prettier, "--stdin-filepath", path],
-  eslint: (path) => [...flags.eslint, "--stdin", "--stdin-filename", path],
-  stylelint: (path) => [...flags.stylelint, "--stdin", "--stdin-filename", path],
+  prettier: (path: string) => [...flags.prettier, "--stdin-filepath", path],
+  eslint: (path: string) => [...flags.eslint, "--stdin", "--stdin-filename", path],
+  stylelint: (path: string) => [...flags.stylelint, "--stdin", "--stdin-filename", path],
 };
 
 const chunks = pathChunks(whole);
@@ -196,15 +197,15 @@ async function prettierPasses(bin: string, path: string, input: Buffer, r: ToolR
 
 // Run what the gate runs: each tool unless scaffolding.skip gives its gate step a reason, declared
 // or not. Every install is checked before any run starts, so a refusal leaves no tool running.
-const gateStep: Record<string, string> = {
+const gateStep = {
   prettier: "format",
   eslint: "lint",
   stylelint: "styles",
 };
-const active = Object.entries(tools).filter(
-  ([tool]) => mine(tool, staged).length && !isReason(skip[gateStep[tool]]),
+const active = (["prettier", "eslint", "stylelint"] as const).filter(
+  (tool) => mine(tool, staged).length && !isReason(ownEntry(skip, gateStep[tool])),
 );
-for (const [tool] of active)
+for (const tool of active)
   // Fail closed: a checkout without `bun install`, such as a fresh worktree, or a package that
   // does not pin the tool, would pass every file.
   if (!existsSync(`node_modules/.bin/${tool}`))
@@ -260,7 +261,8 @@ if (oxlintPaths.length && !isReason(skip.lint)) {
   if (code) refuseCommit("oxlint refused the staged files");
 }
 
-const runs = active.flatMap(([tool, args]) => {
+const runs = active.flatMap((tool) => {
+  const args = tools[tool];
   const bin = `node_modules/.bin/${tool}`;
   return [
     ...chunks

@@ -4,7 +4,7 @@ import prettier from "eslint-config-prettier/flat";
 import tseslint from "typescript-eslint";
 import { frontmatterBlock, frontmatterFiles } from "./eslint-astro-frontmatter.js";
 import { astroClientScript, astroTypePrograms } from "./eslint-astro-script.js";
-import base from "./eslint.js";
+import base, { inheritedLookup } from "./eslint.js";
 import oxlint from "./oxlint.json" with { type: "json" };
 
 const astroFiles = ["**/*.astro"];
@@ -126,6 +126,7 @@ export default [
     rules: componentRules,
   },
   {
+    ...(untyped ? {} : inheritedLookup),
     files: scriptFiles,
     languageOptions: { parser: scripts.parser },
     rules: {
@@ -134,16 +135,17 @@ export default [
         { argsIgnorePattern: "^_", varsIgnorePattern: "^_", caughtErrorsIgnorePattern: "^_" },
       ],
       "no-undef": "error",
-      ...(untyped ? {} : typedRules),
+      ...(untyped ? {} : { ...typedRules, ...inheritedLookup.rules }),
     },
   },
   ...(untyped
     ? []
     : [
         {
+          ...inheritedLookup,
           files: frontmatterFiles,
           languageOptions: { parser: scripts.parser },
-          rules: typedRules,
+          rules: { ...typedRules, ...inheritedLookup.rules },
         },
       ]),
   prettier,

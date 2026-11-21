@@ -12,18 +12,18 @@ function matches(pattern: string, path: string): boolean {
 export function exported(exports: unknown, subpath: string): boolean {
   if (typeof exports === "string" || Array.isArray(exports)) return false;
   if (!isObject(exports)) return true;
-  const keys = Object.keys(exports).filter((k) => k.startsWith("."));
-  if (keys.length === 0) return false;
+  const entries = Object.entries(exports).filter(([key]) => key.startsWith("."));
+  if (entries.length === 0) return false;
   const want = `./${subpath}`;
   if (!want.includes("*") && Object.hasOwn(exports, want)) return exports[want] !== null;
-  const pattern = keys
-    .filter((key) => key.indexOf("*") >= 0 && key.indexOf("*") === key.lastIndexOf("*"))
-    .filter((key) => want.length >= key.length && matches(key, want))
-    .sort((a, b) => b.indexOf("*") - a.indexOf("*") || b.length - a.length)[0];
-  if (pattern !== undefined) return exports[pattern] !== null;
-  return keys.some(
-    (key) =>
-      exports[key] !== null && !key.includes("*") && key.endsWith("/") && want.startsWith(key),
+  const pattern = entries
+    .filter(([key]) => key.indexOf("*") >= 0 && key.indexOf("*") === key.lastIndexOf("*"))
+    .filter(([key]) => want.length >= key.length && matches(key, want))
+    .sort(([a], [b]) => b.indexOf("*") - a.indexOf("*") || b.length - a.length)[0];
+  if (pattern !== undefined) return pattern[1] !== null;
+  return entries.some(
+    ([key, target]) =>
+      target !== null && !key.includes("*") && key.endsWith("/") && want.startsWith(key),
   );
 }
 

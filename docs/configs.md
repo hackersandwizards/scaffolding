@@ -59,6 +59,26 @@ to Astro client scripts, use `**/*.astro/*.ts`.
 Remove `baseUrl` from a TypeScript project that uses it and write each path target relative to
 `tsconfig.json`, for example `"@/*": ["./src/*"]`. Oxlint's TypeScript companion rejects `baseUrl`.
 
+### Own keys in object tables
+
+Both ESLint presets enable `scaffolding/no-inherited-lookup` in the full gate. It uses TypeScript
+types to check dynamic reads, direct assignments into object tables, and `in` membership. A missing key such as
+`constructor` or `toString` can resolve to an inherited member, and assignment to `__proto__` can
+invoke a setter instead of creating a field.
+
+- Use `Object.hasOwn(table, key)` to test membership or guard `table[key]`. A truthy read also
+  misses own values such as `false` and `0`.
+- Use `Map` with `.get()`, `.has()`, and `.set()` for a mutable table, or create an object table
+  with `Object.create(null)`.
+- Use `Object.fromEntries(pairs)` to build a plain object from data keys. A later dynamic read on it
+  still needs an own-key check.
+
+Literal indexes, indexes whose types name only declared keys, arrays, tuples, Map, and Set are
+outside the rule's lookup checks. A dynamic `in` on a closed object still checks its prototype.
+Read diagnostics focus on keys with a visible path from data to the lookup. Some keys derived
+from private helper outputs need manual review. The staged hook runs the existing untyped lint
+checks. The full gate also runs this rule.
+
 ## Vitest and Stryker
 
 Scaffolding supplies Vitest 5.1.0 and Stryker core and its Vitest runner at 10.1.1.

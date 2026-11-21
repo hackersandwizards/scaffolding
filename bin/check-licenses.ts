@@ -38,7 +38,8 @@ function neededMissing(root: string): string[] | undefined {
       existsSync(join(root, ...names(key).flatMap((n) => ["node_modules", n])));
     const resolve = (from: string, name: string) => {
       for (let at = names(from); at.length; at = at.slice(0, -1))
-        if (`${at.join("/")}/${name}` in lock.packages) return `${at.join("/")}/${name}`;
+        if (Object.hasOwn(lock.packages, `${at.join("/")}/${name}`))
+          return `${at.join("/")}/${name}`;
       return name;
     };
     const needs = (meta: Meta | undefined) => [
@@ -60,7 +61,7 @@ function neededMissing(root: string): string[] | undefined {
         }
     // No dependency read off any installed entry means the lock did not read as expected.
     if (!read) return undefined;
-    return [...needed].filter((key) => key in lock.packages && !installed(key)).sort();
+    return [...needed].filter((key) => Object.hasOwn(lock.packages, key) && !installed(key)).sort();
   } catch {
     return undefined;
   }

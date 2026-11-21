@@ -1,3 +1,4 @@
+import { ownEntry } from "./json.ts";
 import { readFileSync } from "node:fs";
 import { createRequire } from "node:module";
 import { join } from "node:path";
@@ -63,7 +64,7 @@ function oxlintRules(root: string) {
       if (override === categoryOverride && allPlugins.size !== plugins.length) {
         for (const rule of catalog) {
           const scope = ruleNamespace(rule.scope);
-          const severity = categories[rule.category];
+          const severity = ownEntry(categories, rule.category);
           const id = nativeRuleId(rule);
           if (allPlugins.has(scope) && !plugins.includes(scope) && !rules.has(id))
             rules.set(id, severity);
