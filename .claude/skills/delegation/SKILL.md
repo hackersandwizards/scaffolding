@@ -49,6 +49,9 @@ description: >-
 - After a stall, timeout or resume, reconcile the delegate's commits and working tree against its
   report and hand back any contradiction. Before relaying a defect as fixed, sweep the repository
   for its class.
+- A brief for code work asks the report to list every assertion, threshold, fixture or pinned
+  expectation the run changed, each with its old and new value and the reason. One a review finds
+  unlisted is a finding, whatever the suite reports.
 - Verify a claim before retracting it to a running delegate. Before asking the principal, re-read
   the delegate's instruction: decide it there, or hold the work and ask, never both.
 

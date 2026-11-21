@@ -111,4 +111,6 @@ with `defining function based on alias`, and one named `G`, a global alias for `
 `path`, `fpath`, `cdpath` and `manpath` are tied to their uppercase variables, so a loop variable
 named `path` empties the search path and every later command fails with `command not found`. An
 unquoted `$list` stays one word: `for x in $list` runs once and `git commit -- $files` passes one
-long pathspec. Split with `${=list}`.
+long pathspec. Split with `${=list}`. A heredoc with an unquoted delimiter expands `$var` as the
+file is written, and an unset one writes an empty string with no error: write a file that holds
+paths through a quoted delimiter (`<<'EOF'`) and pass each value in as an argument.
