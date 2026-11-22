@@ -13,7 +13,9 @@ finished, never re-argued on a fresh objection.
 ## Comments
 
 - Deletion is the default. Keep only a non-obvious why or a constraint the code cannot express and
-  no documentation file already states: one sentence, in the file's prevailing style.
+  no documentation file already states: one sentence, in the file's prevailing style. Before
+  deleting a comment that states a fact the code does not show, grep for the fact and keep the
+  comment where no other file holds it.
 - Sweep `#`, `<!-- -->` and `/* */` as well as `//`, and the banner blocks that label the section
   below them.
 - Keep public API docstrings, license headers and directive comments, and any comment a check
