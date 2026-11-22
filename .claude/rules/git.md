@@ -88,4 +88,7 @@ Other sessions share this working tree and its index.
   fork, never push a branch and never open a pull request. A release (version bump and tag) while
   another session works in the same checkout goes from a detached worktree on `origin/main`
   holding only your commits: read the version there, gate there, push, and tag once the push has
-  landed; after a rejected push fetch and bump again from the new `origin/main`.
+  landed; after a rejected push fetch and bump again from the new `origin/main`. Never remove a
+  worktree with `--force`, another session's included: where `git worktree remove` refuses, it
+  holds uncommitted or untracked files, and each is committed, copied out or read against
+  `origin/main` first.
