@@ -10,7 +10,9 @@ description: >-
 
 # Dependency updates
 
-Work through each repository you are given, one at a time. Any session may start it without asking
+Work through each repository you are given, one at a time. With the argument `all`, the
+repositories are every checkout on this machine whose `origin` is an unarchived repository of our
+own organisation. Any session may start it without asking
 anyone; a run's own approval still bounds what it fixes, as step 4 of "Pins only" says.
 
 1. Raise every external dependency to its newest release, majors included, with the means the
@@ -23,6 +25,9 @@ anyone; a run's own approval still bounds what it fixes, as step 4 of "Pins only
 2. Fix what the updates break until the checks the repository's `CLAUDE.md` names are green. Roll
    back only an update you cannot make green.
 3. Commit everything as one commit and push it. Nothing changed means no commit.
+4. After the commit in a repository whose package our other repositories pin, release it as its
+   `CLAUDE.md` says where the run's approval covers a release, then run the `pins` mode in its
+   consumers.
 
 Keep one version per tool on the machine, the newest; an older one only for a named regression.
 
