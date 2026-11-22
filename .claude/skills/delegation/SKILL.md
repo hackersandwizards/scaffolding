@@ -52,6 +52,9 @@ description: >-
 - A brief for code work asks the report to list every assertion, threshold, fixture or pinned
   expectation the run changed, each with its old and new value and the reason. One a review finds
   unlisted is a finding, whatever the suite reports.
+- Before launching on a brief built from a template or a script, search the written file for
+  unfilled placeholders (`{name}`, `$VAR`) and empty paths: the delegate improvises a value for
+  each, and parallel delegates improvise the same one.
 - Verify a claim before retracting it to a running delegate. Before asking the principal, re-read
   the delegate's instruction: decide it there, or hold the work and ask, never both.
 
