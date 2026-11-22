@@ -58,6 +58,38 @@ description: >-
 - Verify a claim before retracting it to a running delegate. Before asking the principal, re-read
   the delegate's instruction: decide it there, or hold the work and ask, never both.
 
+## A scheduled task's delegate
+
+A scheduled task that names this section hands its run over, waits and cleans up this way.
+
+Add these two paragraphs to the instruction, `<scratchpad>` replaced by this session's scratchpad
+path and `<task>` by the task's name:
+
+> Your scratch folder is `<scratchpad>/<task>/`: create it first, write every scratch file there,
+> never in `/tmp`, run no `rm`, and list in your report every scratch path your run created outside
+> it.
+>
+> Wait in the foreground for every command you start in the background, and end your turn only with
+> your report: the session that launched you reads the end of your turn as the end of the run.
+
+The Agent call returns a launch result at once, and the report arrives later as a task
+notification. Do not end your turn before it arrives: while your turn is open the app skips the
+task's next run, and once it ends the app starts the next run beside the delegate. Take the
+`output_file` path from the launch result and run this foreground Bash command with
+`timeout: 600000`:
+
+    m=$(readlink "<output_file>"); m=${m%.jsonl}.meta.json; n=0; if [ ! -f "$m" ]; then echo ERROR; else until jq -e '.finished == true' "$m" >/dev/null 2>&1 || [ $n -ge 48 ]; do sleep 10; n=$((n+1)); done; jq -e '.finished == true' "$m" >/dev/null 2>&1 && echo finished || echo running; fi
+
+Repeat it while it prints `running`, at most six times; a result saying the command was moved to
+the background counts as `running`, and you run it again in the foreground. On `finished`, the
+report follows as the notification. After the sixth `running`, report that the delegate is still
+running and end with outcome deferred. On `ERROR`, the wait cannot be read: end the turn and relay
+the report when the notification arrives after it.
+
+Once the report is in and no delegate of this session still runs, delete the scratch folder and
+each scratch path the report lists outside it by its literal path. Where the delegate fails or is
+stopped before reporting, your report says so and names the last step its transcript reached.
+
 ## Codex model tiers
 
 Default: whatever `.codex/config.toml` sets, a repository's own before `~/.codex/config.toml`. Each

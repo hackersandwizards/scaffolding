@@ -39,7 +39,8 @@ description: Create, change, rename or review a scheduled task (the desktop app'
    desktop app runs. Catch a missed run up with the scheduled-tasks tool `run_scheduled_task` where
    the session offers it, else by working the task's `SKILL.md` in the session or an Agent-tool
    subagent of it, never in a separate `claude` process. The app logs no run worked by hand, so
-   `last-run.ts` does not see it. Check: the task names its window rule or the no-catch-up line.
+   `last-run.ts` does not see it. Check: the skill the task runs, or else the task, names the window
+   rule or the no-catch-up line.
 6. Every run ends its report with its outcome, done, deferred or blocked, and the reason for
    anything but done. Check: the task text demands that line.
 7. The model and permission mode live on the registration in the app's `scheduled-tasks.json`, the
