@@ -60,7 +60,8 @@ description: >-
 
 ## A scheduled task's delegate
 
-A scheduled task that names this section hands its run over, waits and cleans up this way.
+A scheduled task that names this section hands its run over and cleans up this way. A task that
+also says to wait follows the last three paragraphs too.
 
 Add these two paragraphs to the instruction, `<scratchpad>` replaced by this session's scratchpad
 path and `<task>` by the task's name:
@@ -72,7 +73,11 @@ path and `<task>` by the task's name:
 > Wait in the foreground for every command you start in the background, and end your turn only with
 > your report: the session that launched you reads the end of your turn as the end of the run.
 
-The Agent call returns a launch result at once, and the report arrives later as a task
+Once the report is in and no delegate of this session still runs, delete the scratch folder and
+each scratch path the report lists outside it by its literal path. Where the delegate fails or is
+stopped before reporting, your report says so and names the last step its transcript reached.
+
+To wait: the Agent call returns a launch result at once, and the report arrives later as a task
 notification. Do not end your turn before it arrives: while your turn is open the app skips the
 task's next run, and once it ends the app starts the next run beside the delegate. Take the
 `output_file` path from the launch result and run this foreground Bash command with
@@ -85,10 +90,6 @@ the background counts as `running`, and you run it again in the foreground. On `
 report follows as the notification. After the sixth `running`, report that the delegate is still
 running and end with outcome deferred. On `ERROR`, the wait cannot be read: end the turn and relay
 the report when the notification arrives after it.
-
-Once the report is in and no delegate of this session still runs, delete the scratch folder and
-each scratch path the report lists outside it by its literal path. Where the delegate fails or is
-stopped before reporting, your report says so and names the last step its transcript reached.
 
 ## Codex model tiers
 
