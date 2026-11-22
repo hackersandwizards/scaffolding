@@ -24,7 +24,8 @@ anyone; a run's own approval still bounds what it fixes, as step 4 of "Pins only
    the tag's commit from `ls-remote` (its `^{}` line where annotated) and update the comment. Clear every open security advisory, replacing a dependency no release fixes.
 2. Fix what the updates break until the checks the repository's `CLAUDE.md` names are green. Roll
    back only an update you cannot make green.
-3. Commit everything as one commit and push it. Nothing changed means no commit.
+3. Commit the paths the update changed as one commit and push it. Nothing changed means no commit.
+   Skip and name a repository where another session has modified one of those paths.
 4. After the commit in a repository whose package our other repositories pin, release it as its
    `CLAUDE.md` says where the run's approval covers a release, then run the `pins` mode in its
    consumers.
