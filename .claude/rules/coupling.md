@@ -21,10 +21,10 @@ build.
   the same pass, and every consumer catches up twice a day on what a release wave left behind, both
   through the `pins` mode of `dependency-updates`.
 - Write only into your own repository, and into the hub's copy of a rule or skill the hub mirrors
-  into it, whichever repository finds the fix. Work another repository owns goes there as a brief
-  for a session in that repository, or for a delegate the brief tells to read that repository's
-  `CLAUDE.md` and every `.claude/rules/*.md` first: a session started elsewhere misses its `paths:`
-  rules, even after `/add-dir`. The hub's rule and skill sync is the one sync between repositories. A repository
+  into it, whichever repository finds the fix. Work another repository owns goes there in the
+  same run, through a delegate the brief tells to read that repository's `CLAUDE.md` and every
+  `.claude/rules/*.md` first, and as a brief for a session in that repository only where no
+  delegate reaches it: a session started elsewhere misses its `paths:` rules, even after `/add-dir`. The hub's rule and skill sync is the one sync between repositories. A repository
   holding another as a git submodule whose rules it carries, because the submodule is kept free of
   them, writes into that submodule from inside it.
 - Take a fact another repository owns, such as a brand value, a price or a product fact, from its
