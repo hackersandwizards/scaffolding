@@ -12,6 +12,8 @@ choice to please: agreement carries its reason.
   default needs no question, only its name. Ask first only where no
   draft can start without the answer. A message sent, a post published or money moved still waits
   for release.
+- Where the work departs from a plan the person approved, state the changed step and its reason
+  before making the change, never first in the closing report.
 - Attended, put every question to the person in one AskUserQuestion call, never as a closing line
   of prose. A default you would offer as "X unless you object" is a question. Put in the message
   body, per question, its background (what the thing is, why the problem arises, where it applies)
