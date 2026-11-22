@@ -203,9 +203,11 @@ everything else the message keeps whichever posture above it is otherwise in.
 
 ### Cold ask to a peer
 
-It opens on their work where a verified piece of it bears on the ask, `your <specific thing> <what it
-does>.`, then one sentence on what it did on our side. He greets,
-honours, then says what he wants. A draft opening with `I` or with the offer is the most common miss.
+It opens on the connection between the two, stated as a plain fact in his first person: a shared
+contact, where they met, or something of theirs he read and what ties it to him. A sentence that
+describes their own work back to them (`your <specific thing> <what it does>`) reads as generated,
+in his words "das schreibt doch kein normaler Mensch so". Where nothing connects them, the message
+opens on the ask.
 
 Then: the thing he is doing, in one or two plain sentences. The ask, tied to why them. The interest
 question. `Would that be interesting to you?` is his measured close. In German, `Hättest du Lust
