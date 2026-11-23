@@ -67,14 +67,18 @@ own repositories.
 an sh, bash, dash or ksh shebang. Other scripting extensions, including TypeScript, JavaScript
 and Python, take precedence over the shebang. The step skips symlinked scripts and unmerged index
 entries. It uses the root `.shellcheckrc` when present and reports when there are no scripts.
-Run `bun run scaffolding shell` to check shell scripts on demand.
+Run `bun run scaffolding shell` to check shell scripts on demand. When there are findings, both the
+gate and pre-commit output end the ShellCheck report with a reminder to repair each finding in the
+script.
 
 **Markdown.** `bun run scaffolding markdown` checks all tracked `.md` files with
 markdownlint-cli2. It skips symlinks, submodules and `node_modules`. The package supplies the rules,
 including for repositories with local markdownlint configuration. Use
 `bun run scaffolding markdown --fix` to apply markdownlint's fixes to the working tree. Findings
-that require manual edits still fail the command. The gate accepts `scaffolding.skip.markdown`
-with a reason to skip the whole step.
+that require manual edits still fail the command. When there are findings, both the gate and
+pre-commit output end the Markdown report with the fix command and a reminder to repair remaining
+findings by changing only Markdown structure and preserving every word. The gate accepts
+`scaffolding.skip.markdown` with a reason to skip the whole step.
 
 | Rule            | Setting and reason                                                                                    |
 | --------------- | ----------------------------------------------------------------------------------------------------- |

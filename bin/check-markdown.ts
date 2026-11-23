@@ -22,6 +22,10 @@ try {
     ? Object.fromEntries(paths.map((path) => [path, read(path).toString()]))
     : undefined;
   const code = await checkMarkdown(root, paths, mode === "--fix", contents);
+  if (code === 1)
+    console.error(
+      "Run bun run scaffolding markdown --fix to apply markdownlint's fixes. Repair remaining findings in the file by changing only Markdown structure and preserving every word.",
+    );
   process.exit(code);
 } catch (error) {
   console.error(`[markdown] ${(error as Error).message}`);

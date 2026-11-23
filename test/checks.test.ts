@@ -3150,6 +3150,10 @@ describe("check-confidential list source", () => {
   });
 });
 
+const markdownRepair =
+  "Run bun run scaffolding markdown --fix to apply markdownlint's fixes. Repair remaining findings in the file by changing only Markdown structure and preserving every word.";
+const shellRepair = "Repair each ShellCheck finding in the script.";
+
 describe("scaffolding check", () => {
   const gate = (scaffolding: object, scripts: Record<string, string> = {}, extra: object = {}) =>
     repo({
@@ -3211,10 +3215,16 @@ describe("scaffolding check", () => {
     const dir = gate({ skip: rest });
     write(dir, { "record.md": "Body without a title.\n" });
     expect(sh(dir, ["add", "--", "record.md"]).status).toBe(0);
-    const r = run(dir, "scaffolding", ["check"], { CHECK_LOCK: join(dir, ".lock") });
+    const env = { CHECK_LOCK: join(dir, ".lock") };
+    const r = run(dir, "scaffolding", ["check"], env);
     expect(r.code).toBe(1);
     expect(r.out).toContain("record.md:1 error MD041");
     expect(r.out).toMatch(/failed in [\d.]+ s: markdown/);
+    expect(r.out.split("\n").filter((line) => line === markdownRepair)).toEqual([markdownRepair]);
+    write(dir, { "record.md": "# Body without a title.\n" });
+    const green = run(dir, "scaffolding", ["check"], env);
+    expect(green.code).toBe(0);
+    expect(green.out).not.toContain(markdownRepair);
   });
 
   test("a tracked shell finding fails the gate under the step's name", () => {
@@ -3222,13 +3232,19 @@ describe("scaffolding check", () => {
     const dir = gate({ skip: rest });
     write(dir, { "script.sh": shellScript });
     expect(sh(dir, ["add", "--", "script.sh"]).status).toBe(0);
-    const r = run(dir, "scaffolding", ["check"], {
+    const env = {
       CHECK_LOCK: join(dir, ".lock"),
       ...shellcheckFixture(dir),
-    });
+    };
+    const r = run(dir, "scaffolding", ["check"], env);
     expect(r.code).toBe(1);
     expect(r.out).toContain("SC2034");
     expect(r.out).toMatch(/failed in [\d.]+ s: shell/);
+    expect(r.out.split("\n").filter((line) => line === shellRepair)).toEqual([shellRepair]);
+    write(dir, { "script.sh": "#!/bin/sh\necho ready\n" });
+    const green = run(dir, "scaffolding", ["check"], env);
+    expect(green.code).toBe(0);
+    expect(green.out).not.toContain(shellRepair);
   });
 
   test("lint waits for a typecheck that runs Astro, whose content types it reads", () => {
@@ -6470,10 +6486,13 @@ describe("check-staged", () => {
     const red = run(dir, "check-staged");
     expect(red.code).toBe(1);
     expect(red.out).toContain("new.md:1 error MD041");
+    expect(red.out.trimEnd().split("\n").at(-1)).toBe(markdownRepair);
     expect(red.out).not.toContain("unrelated.md");
     expect(sh(dir, ["add", "--", "new.md"]).status).toBe(0);
     write(dir, { "new.md": "An unstaged edit.\n" });
-    expect(run(dir, "check-staged")).toMatchObject({ code: 0 });
+    const green = run(dir, "check-staged");
+    expect(green.code).toBe(0);
+    expect(green.out).not.toContain(markdownRepair);
     expect(readFileSync(join(dir, "new.md"), "utf8")).toBe("An unstaged edit.\n");
   });
 
@@ -6491,10 +6510,13 @@ describe("check-staged", () => {
     expect(red.code).toBe(1);
     expect(red.out).toContain("In bin/helper line 2");
     expect(red.out).toContain("SC2034");
+    expect(red.out.trimEnd().split("\n").at(-1)).toBe(shellRepair);
     expect(red.out).not.toMatch(/unchanged\.sh|check-lock\.ts/);
     expect(sh(dir, ["add", "--", ".shellcheckrc"]).status).toBe(0);
     write(dir, { ".shellcheckrc": "# Defaults.\n", "bin/helper": shellScript });
-    expect(run(dir, "check-staged", [], env)).toMatchObject({ code: 0 });
+    const green = run(dir, "check-staged", [], env);
+    expect(green.code).toBe(0);
+    expect(green.out).not.toContain(shellRepair);
     expect(readFileSync(join(dir, "bin/helper"), "utf8")).toBe(shellScript);
   });
 
@@ -8339,9 +8361,10 @@ describe("scaffolding markdown", () => {
     });
     const r = check(dir);
     expect(r.code).toBe(1);
-    expect(r.out.trim().split("\n").sort()).toEqual([
+    expect(r.out.trim().split("\n")).toEqual([
       expect.stringMatching(/^double\.md:7 error MD025\b/),
       expect.stringMatching(/^nested\.md:7 error MD041\b/),
+      markdownRepair,
     ]);
   });
 
@@ -8369,6 +8392,7 @@ describe("scaffolding markdown", () => {
     expect(r.out.trim().split("\n")).toEqual([
       expect.stringContaining("[tracked].md:1 error MD041"),
       expect.stringContaining("src/inline.md:3 error MD041"),
+      markdownRepair,
     ]);
   });
 

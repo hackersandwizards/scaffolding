@@ -19,6 +19,7 @@ withoutEnvFile("shell");
 function lintShell(binary: string, root: string, files: string[]) {
   const rc = regularInput(root, ".shellcheckrc") ? ["--rcfile=.shellcheckrc"] : ["--norc"];
   let status = 0;
+  let findings = false;
   for (const chunk of pathChunks(files)) {
     const run = spawnSync(
       binary,
@@ -32,8 +33,10 @@ function lintShell(binary: string, root: string, files: string[]) {
     if (run.error) throw run.error;
     if (run.status === null)
       throw new Error(`ShellCheck terminated${run.signal ? ` by ${run.signal}` : ""}`);
+    findings ||= run.status === 1;
     status ||= run.status;
   }
+  if (findings) console.log("Repair each ShellCheck finding in the script.");
   return status;
 }
 
