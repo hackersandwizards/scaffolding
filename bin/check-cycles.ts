@@ -9,17 +9,21 @@ import {
   readFileSync,
   realpathSync,
   rmSync,
+  statSync,
   writeFileSync,
 } from "node:fs";
-import { dirname, join } from "node:path";
-import { allExtensions, cruise } from "dependency-cruiser";
+import { dirname, isAbsolute, join, relative, resolve, sep } from "node:path";
+import { allExtensions, cruise, type IDependency } from "dependency-cruiser";
 import extractTSConfig from "dependency-cruiser/config-utl/extract-ts-config";
 import { finish, git, listFiles, repoRoot, submodulePaths, type Finding } from "../lib/repo.ts";
 
 const started = performance.now();
-const root = repoRoot();
+const root = realpathSync(repoRoot());
 const check = "cycles";
 const sourceExtension = /\.[cm]?[jt]sx?$/;
+const relativeImport = /^\.\.?\//;
+const installedPackage = /(^|\/)node_modules\//;
+const outside = (path: string) => isAbsolute(path) || path === ".." || path.startsWith(`..${sep}`);
 const finding = (message: string, path = "package.json"): Finding => ({
   check,
   path,
@@ -27,25 +31,78 @@ const finding = (message: string, path = "package.json"): Finding => ({
   message,
 });
 
-async function findCycles(baseDir: string, files: string[], astroPaths?: Map<string, string>) {
+function resolveRelativeImport(specifier: string, source: string) {
+  const file = specifier.split(/[?#]/, 1)[0];
+  const directory = dirname(join(root, source));
+  const exactPath = resolve(directory, file);
+  if (statSync(exactPath, { throwIfNoEntry: false })?.isFile()) return exactPath;
+  try {
+    return Bun.resolveSync(file, directory);
+  } catch {
+    return undefined;
+  }
+}
+
+function inspectImport(
+  dependency: IDependency,
+  source: string,
+  baseDir: string,
+  originalPath: (path: string) => string,
+): Finding | undefined {
+  if (dependency.coreModule || dependency.protocol) return;
+  const { module: specifier, resolved, couldNotResolve } = dependency;
+  const isRelative = relativeImport.test(specifier);
+  const inMirror = baseDir !== root && !outside(resolved);
+  // A relative path may leave the mirror without leaving the checkout, and files omitted
+  // from the mirror (such as assets) can still exist beside the original source.
+  const needsOriginalResolution = couldNotResolve || (isRelative && baseDir !== root && !inMirror);
+  const target = needsOriginalResolution
+    ? isRelative && resolveRelativeImport(specifier, source)
+    : resolve(inMirror ? root : baseDir, originalPath(resolved));
+
+  if (!target)
+    return isRelative
+      ? { ...finding("relative import does not resolve to a file", source), text: specifier }
+      : undefined;
+  if (installedPackage.test(relative(root, target).split(sep).join("/"))) return;
+
+  const path = relative(root, realpathSync(target));
+  if (outside(path))
+    return {
+      ...finding(
+        "import leaves the checkout: take another repository's code from its published package, never from a sibling path",
+        source,
+      ),
+      text: `${specifier} -> ${path}`,
+    };
+}
+
+async function checkImports(baseDir: string, files: string[], astroPaths?: Map<string, string>) {
   // The tsconfig carries the path aliases; without it an aliased import resolves to nothing and a
   // cycle through it passes.
   const tsconfig = join(baseDir, "tsconfig.json");
   const aliases = existsSync(tsconfig);
+  const originalConfig = join(root, "tsconfig.json");
   const { output } = await cruise(
     files,
     {
       baseDir,
       validate: true,
       tsPreCompilationDeps: false,
-      doNotFollow: { path: "node_modules" },
-      ...(astroPaths ? { exclude: { path: "(^|/)node_modules/|^\\.\\./" } } : {}),
+      doNotFollow: { path: astroPaths ? "node_modules|^\\.\\./" : "node_modules" },
       ...(aliases ? { tsConfig: { fileName: tsconfig } } : {}),
       ruleSet: {
         forbidden: [{ name: check, severity: "error", from: {}, to: { circular: true } }],
       },
     },
-    astroPaths ? { extensionAlias: { ".astro": [".astro.ts"] } } : undefined,
+    astroPaths
+      ? {
+          extensionAlias: { ".astro": [".astro.ts", ".astro"] },
+          // The mirrored aliases resolve first. Retry against the real config so a mapping
+          // that points out of the checkout resolves from the config's original location.
+          ...(aliases ? { tsconfig: originalConfig } : {}),
+        }
+      : undefined,
     aliases ? { tsConfig: extractTSConfig(tsconfig) } : undefined,
   );
   if (typeof output === "string") return [finding("dependency-cruiser returned no result")];
@@ -68,14 +125,22 @@ async function findCycles(baseDir: string, files: string[], astroPaths?: Map<str
         "runtime import cycle: move what both sides need into a module neither imports back from, or import the type with `import type`",
     });
   }
+  for (const { source, dependencies } of output.modules) {
+    if (outside(source) || installedPackage.test(source)) continue;
+    const path = originalPath(source);
+    for (const dependency of dependencies) {
+      const issue = inspectImport(dependency, path, baseDir, originalPath);
+      if (issue) findings.push(issue);
+    }
+  }
   return findings;
 }
 
-async function findAstroCycles(files: string[], sources: string[], astro: string[]) {
+async function checkAstroImports(files: string[], sources: string[], astro: string[]) {
   const compiler = await import("@astrojs/compiler-rs").catch(() => undefined);
   if (!compiler) return [finding("cannot load @astrojs/compiler-rs: run bun install")];
 
-  let cache = realpathSync(root);
+  let cache = root;
   for (const directory of ["node_modules", ".cache", "scaffolding"]) {
     cache = join(cache, directory);
     mkdirSync(cache, { recursive: true });
@@ -116,7 +181,7 @@ async function findAstroCycles(files: string[], sources: string[], astro: string
       }
     }
     if (findings.length) return findings;
-    return await findCycles(mirror, [...sources, ...astroPaths.keys()], astroPaths);
+    return await checkImports(mirror, [...sources, ...astroPaths.keys()], astroPaths);
   } finally {
     rmSync(mirror, { recursive: true, force: true });
   }
@@ -149,6 +214,6 @@ if (
   );
 
 const findings = astro.length
-  ? await findAstroCycles(files, sources, astro)
-  : await findCycles(root, sources);
+  ? await checkAstroImports(files, sources, astro)
+  : await checkImports(root, sources);
 finish(check, findings, started);

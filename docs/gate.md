@@ -44,7 +44,12 @@ The gate runs these rules without a file cache because imported types can change
 `.oxlintrc.json` into a temporary directory and links the checkout's installed dependencies.
 The gate and pre-push hook run the typed rules.
 
-**Cycles.** The `cycles` step fails on a runtime import cycle and names the original source paths.
+**Cycles.** The `cycles` step fails on a runtime import cycle, a local import that resolves outside
+the checkout, or a relative import (`./` or `../`) that does not resolve to a file. Findings name
+the original source paths. Take another repository's code from its published package. Installed
+packages under `node_modules` pass the checkout-boundary check. Relative asset imports resolve
+against the checkout, including assets omitted from the Astro mirror and suffixes such as `?raw`.
+Unresolved package and alias specifiers pass.
 The step compiles tracked `.astro` files and passes them to dependency-cruiser alongside JavaScript
 and TypeScript. Imports resolve using the root `tsconfig.json`'s path aliases. Each compiled client
 script is a separate module from its component's server code. The check ignores imports TypeScript

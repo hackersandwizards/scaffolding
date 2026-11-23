@@ -7246,6 +7246,68 @@ describe("check-cycles", () => {
     expect(lines(r.out, "cycles")).toHaveLength(1);
   });
 
+  describe.each(["src/pages/index.ts", page])("import checks in %s", (source) => {
+    const astro = source.endsWith(".astro");
+    const sourceWithImports = (imports: string) =>
+      astro ? `---\n${imports}\n---\n<p>Page</p>\n` : `${imports}\n`;
+
+    test("reports a sibling import by relative path and by alias", () => {
+      const parent = temp();
+      const dir = repo({
+        "tsconfig.json": '{"compilerOptions":{"paths":{"@sibling/*":["../sibling/*"]}}}',
+        [source]: sourceWithImports('import "./inside.ts";\nimport "installed-package";'),
+        "src/pages/inside.ts": "export const value = 1;\n",
+      });
+      write(parent, {
+        "sibling/value.ts": "export const value = 2;\n",
+        "node_modules/installed-package/index.js": 'import "./missing.js";\n',
+      });
+      const checkout = join(parent, "checkout");
+      renameSync(dir, checkout);
+      expect(run(checkout, "check-cycles")).toEqual({ code: 0, out: "" });
+
+      for (const specifier of ["../../../sibling/value.ts", "@sibling/value"]) {
+        write(checkout, { [source]: sourceWithImports(`import "${specifier}";`) });
+        const r = run(checkout, "check-cycles");
+        expect(r.code).toBe(1);
+        expect(lines(r.out, "cycles")).toEqual([
+          `[cycles] ${source}: import leaves the checkout: take another repository's code from its published package, never from a sibling path (${specifier} -> ../sibling/value.ts)`,
+        ]);
+      }
+    });
+
+    test("checks relative files on disk and lets unresolved packages and aliases pass", () => {
+      const imports = [
+        'import "./style.css";',
+        'import "./icon.svg?raw";',
+        'import "./data.json";',
+        'import "unresolvable-package/entry";',
+        'import "@/unresolvable-alias";',
+        ...(astro ? ['import "./component.astro";'] : []),
+      ].join("\n");
+      const dir = repo({
+        ".gitignore": "node_modules\n/src/pages/*.css\n/src/pages/*.svg\n/src/pages/*.json\n",
+        [source]: sourceWithImports(imports),
+        ...(astro ? { "src/pages/component.astro": "<p>Component</p>\n" } : {}),
+      });
+      write(dir, {
+        "src/pages/style.css": "p { color: red; }\n",
+        "src/pages/icon.svg": "<svg/>\n",
+        "src/pages/data.json": "{}\n",
+      });
+      expect(run(dir, "check-cycles")).toEqual({ code: 0, out: "" });
+
+      rmSync(join(dir, "src/pages/icon.svg"));
+      write(dir, { [source]: sourceWithImports(`${imports}\nimport "../missing.ts";`) });
+      const r = run(dir, "check-cycles");
+      expect(r.code).toBe(1);
+      expect(lines(r.out, "cycles")).toEqual([
+        `[cycles] ${source}: relative import does not resolve to a file (../missing.ts)`,
+        `[cycles] ${source}: relative import does not resolve to a file (./icon.svg?raw)`,
+      ]);
+    });
+  });
+
   test("a submodule's cycle is its own repository's, and a repository without code passes", () => {
     const loop = {
       "a.ts": 'import { b } from "./b.ts";\nexport const a = (): number => b();\n',
