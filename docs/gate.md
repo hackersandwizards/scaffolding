@@ -2,7 +2,7 @@
 
 `scaffolding check` runs `bun install --frozen-lockfile`, then the shared steps side by side, the
 catalog build and lint once a typecheck that runs Astro has finished (it writes the content types the typed rules read):
-format, lint (ESLint), oxlint, styles (stylelint), typecheck, structure, coupling, cycles, spaces, confidential, licenses, the tests, the catalog build (`bun run build`) and admin (the item files, with the pinned
+format, lint (ESLint), oxlint, styles (stylelint), typecheck, structure, coupling, cycles, shell, spaces, confidential, licenses, the tests, the catalog build (`bun run build`) and admin (the item files, with the pinned
 `@hackersandwizards/admin`'s `admin-check`; a repository without admin pinned needs `skip.admin`). Once those pass, the repository's own steps from
 `scaffolding.check`, in order, an inner array side by side; a red one stops those after it. Format, lint and styles walk past every
 submodule `.gitmodules` names, which its own repository checks. A shared step drops only with a reason, a
@@ -62,6 +62,11 @@ script is a separate module from its component's server code. The check ignores 
 erases, including `import type`. To fix a runtime cycle, move shared code into a module that
 neither side imports back from. The step reads no allow list. Submodule cycles belong to their
 own repositories.
+
+**Shell.** ShellCheck runs at warning severity over tracked `.sh` and `.bash` files and files with
+an sh, bash, dash or ksh shebang. Other scripting extensions, including TypeScript, JavaScript
+and Python, take precedence over the shebang. The step uses the root `.shellcheckrc` when present
+and reports when there are no scripts. Run `bun run scaffolding shell` to check shell scripts on demand.
 
 ## Changed paths
 
@@ -229,6 +234,11 @@ an item of its list, that no longer matches anything. `check` names one of the c
 list: `coupling`, `confidential`, `never-shown`, `structure` or `spaces`; any other fails the gate.
 
 ## Licences
+
+The `shellcheck` 4.1.0 npm wrapper is MIT. It downloads the upstream GPL-3.0 ShellCheck
+binary pinned to v0.11.0 into `node_modules/.cache/scaffolding/shellcheck/v0.11.0/` in the
+checkout. The package invokes the binary as a separate process. The binary is downloaded on
+first use and stays out of the shipped package. A failed download fails the step.
 
 `check-licenses` reads bun's own `bun pm licenses --json`: every package of `bun.lock` installed in
 `node_modules`, Git tags included, offline. Each licence must be on the allow list: MIT, MIT-0, ISC,

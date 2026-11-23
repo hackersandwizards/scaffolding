@@ -3158,6 +3158,7 @@ describe("scaffolding check", () => {
     structure: "t",
     coupling: "t",
     cycles: "t",
+    shell: "t",
   };
   const skip = {
     ...all,
@@ -7992,4 +7993,94 @@ await serve([process.execPath, "-e", "console.error('boot failed: stack'); proce
       },
       limit(15_000),
     );
+});
+
+const shellScript = '#!/bin/sh\nunused=1\nprintf "%s\\n" ok\n';
+const checkedShell = (dir: string) => run(dir, "scaffolding", ["shell"]);
+
+function seedShellcheck(dir: string) {
+  const project = join(import.meta.dirname, "..");
+  const source = checkedShell(project);
+  expect(source, source.out).toMatchObject({ code: 0 });
+  const binary = "shellcheck" + (process.platform === "win32" ? ".exe" : "");
+  const storage = "node_modules/.cache/scaffolding/shellcheck/v0.11.0";
+  mkdirSync(join(dir, storage), { recursive: true });
+  copyFileSync(join(project, storage, binary), join(dir, storage, binary));
+}
+
+describe("scaffolding shell", () => {
+  test("checks shell extensions and shebangs, honors .shellcheckrc and ignores other scripts", () => {
+    const dir = repo({
+      "with space.sh": shellScript,
+      "with env": shellScript.replace("/bin/sh", "/usr/bin/env -S bash"),
+      "check-lock.ts": shellScript,
+      "helper.py": shellScript,
+      other: "#!/usr/bin/env python\n",
+    });
+    write(dir, { "untracked.sh": shellScript });
+    seedShellcheck(dir);
+    const red = checkedShell(dir);
+    expect(red.code).toBe(1);
+    expect(red.out).toContain("In with space.sh line 2");
+    expect(red.out).toContain("In with env line 2");
+    expect(red.out).toContain("SC2034");
+    expect(red.out).not.toMatch(/check-lock\.ts|helper\.py|untracked\.sh/);
+
+    write(dir, { ".shellcheckrc": "disable=SC2034\n" });
+    expect(checkedShell(dir)).toEqual({ code: 0, out: "" });
+  });
+
+  test("passes with no tracked shell scripts without creating a cache", () => {
+    const dir = repo({ "check-lock.ts": shellScript });
+    const run = checkedShell(dir);
+    expect(run.code).toBe(0);
+    expect(run.out).toContain("no tracked shell scripts");
+    expect(existsSync(join(dir, "node_modules"))).toBe(false);
+  });
+
+  test("reports a failed download in one line and exits red", () => {
+    const dir = repo({ "script.sh": shellScript });
+    const r = run(dir, "scaffolding", ["shell"], {
+      HTTPS_PROXY: "http://127.0.0.1:1",
+      NO_PROXY: "",
+    });
+    expect(r.code).toBe(1);
+    expect(r.out.trim().split("\n")).toEqual([
+      expect.stringContaining("[shell] could not download ShellCheck v0.11.0:"),
+    ]);
+  });
+});
+
+test("the skeleton pre-push clears Git-local variables and passes each branch range to the gate", () => {
+  const dir = repo({});
+  const fake = join(dir, "node_modules", ".bin");
+  mkdirSync(fake, { recursive: true });
+  writeFileSync(
+    join(fake, "bun"),
+    '#!/bin/sh\n[ "$3" = check ] || exit 0\nprintf "%s\\n" "${GIT_DIR-unset}" "${GIT_INDEX_FILE-unset}" "$@"\n',
+    { mode: 0o755 },
+  );
+  const hook = join(import.meta.dirname, "..", "template/.githooks/pre-push");
+  const r = spawnSync(hook, ["origin", "remote"], {
+    cwd: dir,
+    env: {
+      ...process.env,
+      PATH: `${fake}:${process.env.PATH}`,
+      GIT_DIR: ".git",
+      GIT_INDEX_FILE: "custom",
+    },
+    input: "refs/heads/a a1 refs/heads/a a0\nrefs/heads/b b1 refs/heads/b b0\n",
+    encoding: "utf8",
+  });
+  expect(r.status).toBe(0);
+  expect(r.stdout.trim().split("\n")).toEqual([
+    "unset",
+    "unset",
+    "run",
+    "--silent",
+    "check",
+    "--changed",
+    "a0..a1",
+    "b0..b1",
+  ]);
 });

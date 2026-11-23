@@ -12,5 +12,10 @@ ranges=$(printf '%s\n' "$refs" | awk '$3 ~ /^refs\/heads\// && $2 !~ /^0+$/ { pr
 [ -n "$ranges" ] || exit 0
 # git hands a hook in a linked worktree GIT_DIR, which every git the gate's tests run in a repository
 # of their own would then write into: the gate finds the checkout from its directory instead.
-unset $(git rev-parse --local-env-vars)
+local_env_vars=$(git rev-parse --local-env-vars)
+while IFS= read -r var; do
+  [ -z "$var" ] || unset "$var"
+done <<EOF
+$local_env_vars
+EOF
 exec bun run --silent check --changed $ranges

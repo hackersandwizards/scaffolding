@@ -21,7 +21,7 @@ import {
 } from "../lib/repo.ts";
 import { machineLoad } from "../lib/serve.ts";
 
-help("scaffolding");
+help("scaffolding", "usage: scaffolding check [--changed [<from>..<to>...]] | scaffolding shell");
 withoutEnvFile("scaffolding");
 
 // Every key of the Package type's scaffolding and no other, or typecheck fails.
@@ -44,12 +44,23 @@ const args = process.argv.slice(2).filter((a) => a !== "--locked");
 const changed = args[1] === "--changed";
 const ranges = args.slice(2);
 if (
-  args[0] !== "check" ||
+  !["check", "shell"].includes(args[0]) ||
+  (args[0] === "shell" && args.length !== 1) ||
   (!changed && args.length > 1) ||
   ranges.some((r) => !/^(?:(?!\.\.)\S)+\.\.(?!\.)(?:(?!\.\.)\S)+$/.test(r))
 ) {
-  console.error("usage: scaffolding check [--changed [<from>..<to>...]]");
+  console.error("usage: scaffolding check [--changed [<from>..<to>...]] | scaffolding shell");
   process.exit(2);
+}
+if (args[0] === "shell") {
+  const run = spawnSync(
+    process.execPath,
+    ["--no-env-file", join(import.meta.dir, "check-shell.ts")],
+    {
+      stdio: "inherit",
+    },
+  );
+  process.exit(run.status ?? 1);
 }
 const root = repoRoot();
 const home = join(import.meta.dir, "..");
@@ -88,6 +99,7 @@ const shared: Record<string, string> = {
   structure: bin("check-structure"),
   coupling: bin("check-coupling"),
   cycles: bin("check-cycles"),
+  shell: bin("check-shell"),
   spaces: bin("check-spaces"),
   // The index: what the next commit holds, judged by its own allow list.
   confidential: `${bin("check-confidential")} --index`,
