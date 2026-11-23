@@ -185,23 +185,33 @@ test("check-links reports broken targets with the pages carrying their links, in
       case "/sub/page":
         return html(`<a href='dead'>dead</a><a href=/redirect>redirect</a>`);
       case "/redirect":
-        return new Response(null, { status: 302, headers: { location: "/lost" } });
+        return new Response(null, {
+          status: 302,
+          headers: { location: "/lost?source=redirect#top" },
+        });
       default:
         return new Response(null, { status: pathname === "/lost" ? 500 : 400 });
     }
   });
   expect(result.status).toBe(1);
+  expect(result.requests).toContain("/lost");
   expect(result.stderr).toContain("/sub/dead (400) <- / /sub/page");
   expect(result.stderr).toContain("/lost (500) <- /redirect /sub/page");
 });
 
-test("check-links passes a clean site and checks query strings", async () => {
-  const result = await crawlFixture(({ origin, pathname, search }) => {
-    if (pathname === "/") return html(`<A HREF="${origin}/item?x=1&amp;y=2">item</A>`);
-    return new Response(null, { status: search === "?x=1&y=2" ? 204 : 404 });
+test("check-links fetches and counts a path once across query strings and fragments", async () => {
+  const result = await crawlFixture(({ origin, pathname }) => {
+    if (pathname === "/") {
+      return html(`
+        <A HREF="${origin}/item?x=1&amp;y=2#details">item</A>
+        <a href="/item?x=2#top">item</a>
+      `);
+    }
+    return new Response(null, { status: pathname === "/item" ? 204 : 404 });
   });
   expect(result.status, result.stderr).toBe(0);
-  expect(result.requests).toEqual(["/", "/item?x=1&y=2"]);
+  expect(result.requests).toEqual(["/", "/item"]);
+  expect(result.stdout).toBe("[check-links] 2 paths crawled, 0 broken\n");
 });
 
 test("check-links reports a rejected fetch with its referrer and continues crawling", async () => {
@@ -238,7 +248,7 @@ test("check-links reports a rejected fetch with its referrer and continues crawl
     const reset = stderr.split("\n").find((line) => line.startsWith(`  ${url}/reset (`));
     expect(reset).toMatch(/\) <- \/page$/);
     expect(stderr).toContain("/next (404) <- /page");
-    expect(stdout).toContain("4 URLs crawled, 2 broken");
+    expect(stdout).toContain("4 paths crawled, 2 broken");
   } finally {
     server.close();
   }
@@ -302,7 +312,7 @@ test("check-links fails a site with zero internal links", async () => {
 test("check-links fails when it cannot fetch the start page", async () => {
   const [status, stdout, stderr] = await runSiteCommand("check-links", ["http://127.0.0.1:0"]);
   expect(status).toBe(1);
-  expect(stdout).toContain("1 URLs crawled, 1 broken");
+  expect(stdout).toContain("1 paths crawled, 1 broken");
   expect(stderr).toMatch(/http:\/\/127\.0\.0\.1:0\/ .* <- start URL/);
 });
 

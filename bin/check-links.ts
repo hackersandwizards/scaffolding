@@ -51,7 +51,7 @@ async function crawlSite({ origin, protocol }: URL): Promise<number> {
       skips.some((prefix) => url.pathname.startsWith(prefix))
     )
       return;
-    const target = url.pathname + url.search;
+    const target = url.pathname;
     const sources = referrers.get(target) ?? new Set<string>();
     sources.add(from);
     referrers.set(target, sources);
@@ -116,7 +116,7 @@ async function crawlSite({ origin, protocol }: URL): Promise<number> {
       `  ${target} (${result}) <- ${sources.size ? [...sources].join(" ") : "start URL"}`,
     );
   }
-  console.log(`[check-links] ${status.size} URLs crawled, ${broken} broken`);
+  console.log(`[check-links] ${status.size} paths crawled, ${broken} broken`);
   if (status.size === 0 || links === 0) {
     console.error("[check-links] crawl fetched zero pages or found zero internal links");
     return 1;
