@@ -1040,12 +1040,10 @@ describe("scaffold and check-structure", () => {
     expect(made.code).toBe(0);
     const pkg = scaffolded(dir);
     expect(pkg.name).toBe("demo");
-    // The bun floor and the shared scripts are this package's own.
+    // The bun floor and prepare script come from this package.
     expect(pkg.engines?.bun).toBe(ownPackage.engines.bun);
-    expect([pkg.scripts?.prepare, pkg.scripts?.fix]).toEqual([
-      ownPackage.scripts.prepare,
-      ownPackage.scripts.fix,
-    ]);
+    expect(pkg.scripts?.prepare).toBe(ownPackage.scripts.prepare);
+    expect(pkg.scripts?.fix).toBeUndefined();
     // Every placeholder filled and every .tmpl renamed, in whichever template file it sits.
     const files = sh(dir, ["ls-files", "-co", "--exclude-standard"]).stdout.toString().split("\n");
     expect(files.filter((f) => f.endsWith(".tmpl"))).toEqual([]);
@@ -1175,7 +1173,10 @@ describe("scaffold and check-structure", () => {
     expect(pkg.devDependencies["@hackersandwizards/admin"]).toBe(
       "git+https://github.com/hackersandwizards/admin.git#v0.10.0",
     );
-    expect(pkg.scaffolding.skip).toEqual({ test: "new repository: no tests yet" });
+    expect(pkg.scaffolding.skip).toEqual({
+      test: "new repository: no tests yet",
+      elements: "the starter catalog declares no brand element pages",
+    });
     expect(pkg.scripts.build).toBe("check-lock bun --bun astro build --root catalog");
     expect(pkg.scripts["check:retired"]).toBeUndefined();
     expect(pkg.scaffolding.brand).toEqual({ retired: ["dist"] });
@@ -1693,53 +1694,57 @@ export default {
     expect(structure({ skip: pkg.scaffolding.skip }, {})).toEqual([]);
   });
 
-  test("a repository with a surface carries the catalog; every gate step is a check:<what> script", () => {
-    const other = join(parent, "surface");
-    run(parent, "scaffold", ["surface", "--catalog-in", "x", "--admin-in", "x"]);
-    install(other);
-    write(other, { "bun.lock": "" });
-    sh(other, ["config", "core.hooksPath", ".githooks"]);
-    const pkg = scaffolded(other);
-    // false gives no reason, as a missing skip.catalog does.
-    pkg.scaffolding.skip.catalog = false;
-    pkg.scaffolding.check = ["brand-colours", ["check:markers", "lint"]];
-    pkg.scripts["check:markers"] = "true";
-    write(other, { "package.json": JSON.stringify(pkg) });
-    const found = lines(run(other, "check-structure").out, "check-structure");
-    expect(found.sort()).toEqual([
-      "[check-structure] catalog/astro.config.ts: the Astro config must use the catalog preset from @hackersandwizards/scaffolding/catalog",
-      "[check-structure] package.json: a step of scaffolding.check is a script named check:<what> (brand-colours)",
-      "[check-structure] package.json: a step of scaffolding.check is a script named check:<what> (lint)",
-      "[check-structure] package.json: script build missing (build)",
-      "[check-structure] package.json: script catalog missing (catalog)",
-      "[check-structure] package.json: script dev missing (dev)",
-    ]);
-    pkg.scaffolding.check = [["check:markers"]];
-    Object.assign(pkg.scripts, { dev: "x", catalog: "x", build: "x" });
-    write(other, {
-      "package.json": JSON.stringify(pkg),
-      // A comment naming the preset is not a use of it.
-      "catalog/astro.config.ts": "// @hackersandwizards/scaffolding/catalog\n",
-    });
-    expect(lines(run(other, "check-structure").out, "check-structure")).toEqual([
-      "[check-structure] catalog/astro.config.ts: the Astro config must use the catalog preset from @hackersandwizards/scaffolding/catalog",
-    ]);
-    write(other, {
-      "catalog/astro.config.ts":
-        'import { catalog } from "@hackersandwizards/scaffolding/catalog";\nexport default { integrations: [catalog] };\n',
-    });
-    expect(run(other, "check-structure").code).toBe(0);
-    // A catalog with no stories yet needs no folder for them, which git cannot keep empty.
-    mkdirSync(join(other, "talks"));
-    renameSync(join(other, "catalog/astro.config.ts"), join(other, "talks/astro.config.ts"));
-    expect(run(other, "check-structure").code).toBe(0);
-    // Under every name Astro reads.
-    for (const ext of ["js", "mts"]) {
-      const to = join(other, `talks/astro.config.${ext}`);
-      renameSync(join(other, "talks", readdirSync(join(other, "talks"))[0]!), to);
-      expect(run(other, "check-structure").out).toBe("");
-    }
-  });
+  test(
+    "a repository with a surface carries the catalog and validates its local steps",
+    () => {
+      const other = join(parent, "surface");
+      run(parent, "scaffold", ["surface", "--catalog-in", "x", "--admin-in", "x"]);
+      install(other);
+      write(other, { "bun.lock": "" });
+      sh(other, ["config", "core.hooksPath", ".githooks"]);
+      const pkg = scaffolded(other);
+      // false gives no reason, as a missing skip.catalog does.
+      pkg.scaffolding.skip.catalog = false;
+      pkg.scaffolding.check = ["brand-colours", ["check:markers", "lint"]];
+      pkg.scripts["check:markers"] = "true";
+      write(other, { "package.json": JSON.stringify(pkg) });
+      const found = lines(run(other, "check-structure").out, "check-structure");
+      expect(found.sort()).toEqual([
+        "[check-structure] catalog/astro.config.ts: the Astro config must use the catalog preset from @hackersandwizards/scaffolding/catalog",
+        "[check-structure] package.json: a step of scaffolding.check is a script named check:<what> (brand-colours)",
+        "[check-structure] package.json: a step of scaffolding.check is a script named check:<what> (lint)",
+        "[check-structure] package.json: script build missing (build)",
+        "[check-structure] package.json: script catalog missing (catalog)",
+        "[check-structure] package.json: script dev missing (dev)",
+      ]);
+      pkg.scaffolding.check = [["check:markers"]];
+      Object.assign(pkg.scripts, { dev: "x", catalog: "x", build: "x" });
+      write(other, {
+        "package.json": JSON.stringify(pkg),
+        // A comment naming the preset is not a use of it.
+        "catalog/astro.config.ts": "// @hackersandwizards/scaffolding/catalog\n",
+      });
+      expect(lines(run(other, "check-structure").out, "check-structure")).toEqual([
+        "[check-structure] catalog/astro.config.ts: the Astro config must use the catalog preset from @hackersandwizards/scaffolding/catalog",
+      ]);
+      write(other, {
+        "catalog/astro.config.ts":
+          'import { catalog } from "@hackersandwizards/scaffolding/catalog";\nexport default { integrations: [catalog] };\n',
+      });
+      expect(run(other, "check-structure").code).toBe(0);
+      // A catalog with no stories yet needs no folder for them, which git cannot keep empty.
+      mkdirSync(join(other, "talks"));
+      renameSync(join(other, "catalog/astro.config.ts"), join(other, "talks/astro.config.ts"));
+      expect(run(other, "check-structure").code).toBe(0);
+      // Under every name Astro reads.
+      for (const ext of ["js", "mts"]) {
+        const to = join(other, `talks/astro.config.${ext}`);
+        renameSync(join(other, "talks", readdirSync(join(other, "talks"))[0]!), to);
+        expect(run(other, "check-structure").out).toBe("");
+      }
+    },
+    limit(10_000),
+  );
 
   test("a private repository keeps no commit-msg hook", () => {
     const other = fixture("private", { private: true });
@@ -4144,6 +4149,48 @@ describe("scaffolding check", () => {
       expect(green.code, green.out).toBe(0);
       expect(green.out).toContain(`ok   ${step}`);
     }
+  });
+
+  test("server-backed elements sees the built site through the declared base URL", () => {
+    const { catalog: _, ...previewSkips } = skip;
+    const dir = gate(
+      {
+        skip: {
+          ...previewSkips,
+          colours: "fixture",
+          copies: "fixture",
+          retired: "fixture",
+          links: "fixture",
+        },
+        brand: { elements: "server" },
+        server: { command: 'exec bun server.ts "$PORT"', timeout: 5, stderr: true },
+      },
+      { build: "printf 'element fixture' > built.html" },
+      { devDependencies: { "@hackersandwizards/brand": "file:brand" } },
+    );
+    write(dir, {
+      "brand/package.json": JSON.stringify({
+        name: "@hackersandwizards/brand",
+        bin: { "brand-elements": "elements.ts" },
+      }),
+      "brand/elements.ts": `#!/usr/bin/env bun
+        const [flag, address, ...extra] = process.argv.slice(2);
+        const response = await fetch(address);
+        if (flag !== "--base" || extra.length || await response.text() !== "element fixture") process.exit(1);
+        console.log("elements fetched the built page");
+      `,
+      "server.ts": `Bun.serve({ port: Number(process.argv[2]), hostname: "127.0.0.1",
+        fetch: () => new Response(Bun.file("built.html"))
+      }); console.error("elements server started");`,
+    });
+    chmodSync(join(dir, "brand/elements.ts"), 0o755);
+    const result = run(dir, "scaffolding", ["check"], { CHECK_LOCK: join(temp(), "lock") });
+    expect(result.code, result.out).toBe(0);
+    expect(result.out).toContain("ok   catalog");
+    expect(result.out).toContain("elements server started");
+    expect(result.out).toContain("elements fetched the built page");
+    expect(result.out).toContain("ok   elements");
+    expect(result.out).not.toContain("ok   links");
   });
 
   test("a test command named like an Object member runs directly", () => {

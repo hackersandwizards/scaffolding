@@ -1,3 +1,4 @@
+import { posix } from "node:path";
 import { isObject, isReason, type Package } from "./repo.ts";
 
 export const brandSteps = ["colours", "copies", "retired", "elements"] as const;
@@ -109,7 +110,7 @@ const colourInput =
 
 export function changedBrandSteps(path: string, directory = "."): string[] {
   if (/(?:^|\/)\.gitignore$/.test(path)) return ["copies", "colours"];
-  const scope = directory.replace(/^(?:\.\/)+|\/+$/g, "");
-  if (scope !== "." && scope && !path.startsWith(`${scope}/`)) return ["copies"];
+  const scope = posix.normalize(directory).replace(/\/+$/g, "");
+  if (scope !== "." && !path.startsWith(`${scope}/`)) return ["copies"];
   return colourInput.test(path) ? ["copies", "colours"] : ["copies"];
 }

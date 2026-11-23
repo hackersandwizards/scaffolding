@@ -333,9 +333,10 @@ function changedSteps(): Map<string, string> {
     mappings,
     shellShebangs,
   );
-  for (const path of paths)
-    for (const step of changedBrandSteps(path, config.brand?.directory))
-      if (fast.has(step) && !steps.has(step)) steps.set(step, `matches ${JSON.stringify(path)}`);
+  if (!why && (fast.has("colours") || fast.has("copies")))
+    for (const path of paths)
+      for (const step of changedBrandSteps(path, config.brand?.directory))
+        if (fast.has(step) && !steps.has(step)) steps.set(step, `matches ${JSON.stringify(path)}`);
   if (why !== undefined) console.error(`[scaffolding] --changed: ${why}: all fast steps run`);
   else console.error(`[scaffolding] --changed: ${paths.size} paths since ${since}`);
   return steps;

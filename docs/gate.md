@@ -280,6 +280,42 @@ The folder supplies the default Vitest command for both steps. Omit `scaffolding
 and uses the same exclusion. Brand's integration and catalog suites stay project-based because
 their Vitest projects select different files and its integration command clears Git variables.
 
+### Migrating consumer manifests
+
+Raise the scaffolding pin before using the new manifest keys. The old local scripts can run on
+the new pin during the transition. Remove the listed `scripts.check:*` entries with their
+`fullOnly` reasons. In `scaffolding.check`, drop the fast entries and replace each listed
+full-gate entry with the shared name in the same position. Replace `check:pages` and
+`check:modes` with `browser-test`. Keep each other entry in its current group.
+
+A server command goes in `server.command`. Declare retired paths in `brand.retired`, and set
+`brand.elements` to `"server"` only in the rows that pass the server URL to elements.
+
+| Consumer             | Remove local check scripts                                                                      | Add declarations and preserve ordering                                                                                                                                                                         | Replace on-demand aliases                   |
+| -------------------- | ----------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------- |
+| Brand                | None                                                                                            | Keep `check:integration`, `check:catalog` and `check:tokens`.                                                                                                                                                  | `fix`, `explore`                            |
+| Admin                | `check:colours`, `check:copies`, `check:retired`, `check:elements`, `check:pages`               | Retired `["dist"]`, browser `test/pages`. Keep `check:fixture` before browser tests.                                                                                                                           | `fix`, `explore`                            |
+| Slides               | `check:colours`, `check:copies`, `check:retired`, `check:elements`, `check:pages`               | Retired `["dist"]`, browser `test/pages`. Keep local `check:pins`.                                                                                                                                             | `fix`, `explore`                            |
+| Documents            | `check:colours`, `check:copies`, `check:retired`, `check:elements`, `check:pages`               | Retired `["dist"]`, browser `test/pages`. Keep `check:privacy` after browser tests.                                                                                                                            | `fix`, `explore`                            |
+| Mail                 | `check:colours`, `check:copies`, `check:retired`, `check:elements`, `check:modes`               | Retired `["dist"]`, browser `test/browser`. Keep `check:frames` between elements and retired.                                                                                                                  | `fix`, `explore`                            |
+| Internal app         | `check:colours`, `check:copies`, `check:elements`, `check:links`                                | Elements via server `bun dist/server/entry.mjs` with `timeout: 120`, `stderr: true` and `linkSkips: ["/catalog"]`. Keep local retired. Drop `check:colours` and `check:copies` from the three `changed` lists. | `fix`, `explore`                            |
+| Talks site           | `check:colours`, `check:copies`, `check:retired`, `check:links`, `check:pins`                   | Retired `["dist"]`. Server `exec bun --bun astro preview --host 127.0.0.1 --port "$PORT" --ignore-lock` and `linkSkips: ["/catalog"]`. Keep the local elements rebuild.                                        | `fix`, `explore`                            |
+| Private slide site   | `check:colours`, `check:copies`, `check:retired`, `check:elements`, `check:links`, `check:pins` | Retired `["dist"]`. Server `cd talks && exec bun --bun run astro preview --ignore-lock --port "$PORT"`. Keep elements and density together.                                                                    | `fix`, `explore`                            |
+| Website              | `check:colours`, `check:copies`, `check:retired`, `check:elements`                              | Retired `["dist"]`, elements via server `exec bun scripts/serve-dist-webkit.mjs`. Keep the local Linkinator crawl in its original group.                                                                       | `explore`. Keep the Oxlint-based `fix`.     |
+| Practitioners        | `check:colours`, `check:copies`, `check:retired`, `check:elements`, `check:links`               | Retired `[".preview"]`. Server `exec astro preview --ignore-lock --outDir .preview --port "$PORT"`. Run `elements`, `retired` and `links` together after `check:preview`.                                      | `explore`                                   |
+| Testimonials         | `check:colours`, `check:copies`, `check:retired`, `check:elements`, `check:links`               | `brand.directory: "site"`, retired `["site/dist"]`. Server `cd site && bun run astro preview --ignore-lock --host 127.0.0.1 --port "$PORT"`. Copies and retired still run at the root.                         | `fix`, `explore`                            |
+| Certificate verifier | `check:colours`, `check:copies`                                                                 | Keep both local rendering checks. Retired reads `.site` and `node_modules/.cache/brand-pages`.                                                                                                                 | `fix`, `explore`                            |
+| Trainer hub          | `check:colours`, `check:copies`, `check:elements`, `check:links`                                | Elements via server `bun dist/server/entry.mjs` and `linkSkips: ["/catalog"]`. Keep the local retired render. The slides pin enables `pins`.                                                                   | `fix`, `explore`                            |
+| Training environment | None                                                                                            | No gate declaration.                                                                                                                                                                                           | `fix`                                       |
+| Client app           | None                                                                                            | No gate declaration.                                                                                                                                                                                           | `explore`. Keep the project-specific `fix`. |
+
+For each browser row, add `scaffolding.browserTest` and drop `scaffolding.test: "test"`.
+Set `scripts.test` to `scaffolding test` to keep the direct fast suite. In docs and callers,
+replace the deleted browser script with `bun --bun vitest run <folder>`.
+The common `fix` alias becomes `bun run scaffolding fix` and the bare `explore` alias becomes
+`bun run scaffolding-explore`. Leave `mutation` scripts in place. Some set
+`SCAFFOLDING_MUTATION_BUN=1`, which changes the mutation runner.
+
 **CSS origin.** In a repository's sources, a stylesheet from a company package comes only from
 brand's `exports`; the shell's styles load only under `catalog/`; an engine's stylesheet loads where
 the engine's `package.json` lists it in `scaffolding.styles`, the stylesheets its components render
