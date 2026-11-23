@@ -35,7 +35,7 @@ import { gitShellShebangs, needsShellShebang, shellInput } from "../lib/shell-in
 import { inNodeModules, regularInput } from "../lib/tracked-inputs.ts";
 
 const usage =
-  "usage: scaffolding check [--changed [<from>..<to>...]] | scaffolding shell | scaffolding markdown [--fix] | scaffolding test [<vitest args>...]";
+  "usage: scaffolding check [--changed [<from>..<to>...]] | scaffolding shell | scaffolding markdown [--fix] | scaffolding test [<vitest args>...] | scaffolding fix";
 help("scaffolding", usage);
 withoutEnvFile("scaffolding");
 
@@ -63,6 +63,16 @@ const args = process.argv.slice(2).filter((a) => a !== "--locked");
 const changed = args[1] === "--changed";
 const ranges = args.slice(2);
 const [command, ...commandArgs] = args;
+if (command === "fix" && commandArgs.length === 0) {
+  for (const flags of [
+    ["eslint", "--cache", "--concurrency=auto", ".", "--fix"],
+    ["prettier", "--write", "."],
+  ]) {
+    const run = spawnSync(process.execPath, ["--bun", ...flags], { stdio: "inherit" });
+    if (run.status !== 0) process.exit(run.status ?? 1);
+  }
+  process.exit(0);
+}
 if (command === "test") {
   const config = readPackage(repoRoot()).scaffolding ?? {};
   const problem = browserTestProblem(config);

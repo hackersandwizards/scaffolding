@@ -4018,6 +4018,41 @@ describe("scaffolding check", () => {
     },
   );
 
+  test("fix and explore resolve as bins without scripts, and fix stops when ESLint fails", () => {
+    const dir = gate({ skip });
+    const bins = join(dir, "node_modules/.bin");
+    write(dir, {
+      "node_modules/.bin/eslint": `#!/usr/bin/env bun
+        console.log("eslint", JSON.stringify(process.argv.slice(2)));
+        if (await Bun.file("broken").exists()) process.exit(7);
+      `,
+      "node_modules/.bin/prettier": `#!/usr/bin/env bun
+        console.log("prettier", JSON.stringify(process.argv.slice(2)));
+      `,
+    });
+    for (const command of ["eslint", "prettier"]) chmodSync(join(bins, command), 0o755);
+    for (const command of ["scaffolding", "scaffolding-explore"])
+      symlinkSync(bin(command), join(bins, command));
+    const bun = (...args: string[]) =>
+      spawnSync(process.execPath, ["run", ...args], {
+        cwd: dir,
+        encoding: "utf8",
+      });
+    const explore = bun("scaffolding-explore", "--help");
+    expect(explore.status, explore.stderr).toBe(0);
+    expect(explore.stdout).toContain("usage: scaffolding-explore");
+    const green = bun("scaffolding", "fix");
+    expect(green.status, green.stderr).toBe(0);
+    expect(green.stdout.trim().split("\n")).toEqual([
+      'eslint ["--cache","--concurrency=auto",".","--fix"]',
+      'prettier ["--write","."]',
+    ]);
+    write(dir, { broken: "" });
+    const red = bun("scaffolding", "fix");
+    expect(red.status, red.stderr).toBe(7);
+    expect(red.stdout).not.toContain("prettier");
+  });
+
   test("a skipped step must name an own entry in the shared step table", () => {
     const dir = gate({ skip: { ...skip, constructor: "not a step" } });
     const result = run(dir, "scaffolding", ["check"], { CHECK_LOCK: join(dir, ".lock") });

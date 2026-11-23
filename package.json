@@ -97,7 +97,7 @@
     "mutation": "SCAFFOLDING_MUTATION_BUN=1 bun --no-env-file bin/scaffolding-mutation.ts",
     "explore": "bun --no-env-file bin/scaffolding-explore.ts",
     "check:staged": "bun --no-env-file bin/check-staged.ts",
-    "fix": "bun --bun eslint --cache --concurrency=auto . --fix && bun --bun prettier --write .",
+    "fix": "bun --no-env-file bin/scaffolding.ts fix",
     "check-confidential": "bun --no-env-file bin/check-confidential.ts",
     "check-lock": "bun --no-env-file template/.githooks/check-lock.ts",
     "chrome-mcp": "bun --no-env-file bin/chrome-mcp.ts"

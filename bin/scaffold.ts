@@ -130,7 +130,7 @@ if (!catalogIn) tools.push("astro", "astrobook", "eslint-plugin-astro", "styleli
 pkg.prettier = "@hackersandwizards/scaffolding/prettier";
 // The bun floor and the scripts every repository shares, as this package states them for itself.
 pkg.engines = { bun: own.engines.bun, ...pkg.engines };
-pkg.scripts = { prepare: own.scripts.prepare, fix: own.scripts.fix, ...pkg.scripts };
+pkg.scripts = { prepare: own.scripts.prepare, ...pkg.scripts };
 pkg.devDependencies = Object.fromEntries(
   [
     ...tools.map((t): [string, string] => [t, ownPins[t]!]),
