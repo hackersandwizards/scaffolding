@@ -3205,6 +3205,20 @@ describe("scaffolding check", () => {
     expect(r.out).toMatch(/failed in [\d.]+ s: markdown/);
   });
 
+  test("a tracked shell finding fails the gate under the step's name", () => {
+    const { shell: _s, ...rest } = skip;
+    const dir = gate({ skip: rest });
+    write(dir, { "script.sh": shellScript });
+    expect(sh(dir, ["add", "--", "script.sh"]).status).toBe(0);
+    const r = run(dir, "scaffolding", ["check"], {
+      CHECK_LOCK: join(dir, ".lock"),
+      ...shellcheckFixture(dir),
+    });
+    expect(r.code).toBe(1);
+    expect(r.out).toContain("SC2034");
+    expect(r.out).toMatch(/failed in [\d.]+ s: shell/);
+  });
+
   test("lint waits for a typecheck that runs Astro, whose content types it reads", () => {
     const { lint: _l, typecheck: _t, ...rest } = skip;
     // `bun --bun <name>` runs a script of that name: the stand-ins for astro check and eslint.
@@ -6429,18 +6443,18 @@ describe("check-staged", () => {
       ".shellcheckrc": "# Defaults.\n",
       "unchanged.sh": shellScript,
     });
-    seedShellcheck(dir);
+    const env = shellcheckFixture(dir);
     write(dir, { "bin/helper": shellScript, "check-lock.ts": shellScript });
     expect(sh(dir, ["add", "--", "bin/helper", "check-lock.ts"]).status).toBe(0);
     write(dir, { "bin/helper": "#!/usr/bin/env python\n", ".shellcheckrc": "disable=SC2034\n" });
-    const red = run(dir, "check-staged");
+    const red = run(dir, "check-staged", [], env);
     expect(red.code).toBe(1);
     expect(red.out).toContain("In bin/helper line 2");
     expect(red.out).toContain("SC2034");
     expect(red.out).not.toMatch(/unchanged\.sh|check-lock\.ts/);
     expect(sh(dir, ["add", "--", ".shellcheckrc"]).status).toBe(0);
     write(dir, { ".shellcheckrc": "# Defaults.\n", "bin/helper": shellScript });
-    expect(run(dir, "check-staged")).toMatchObject({ code: 0 });
+    expect(run(dir, "check-staged", [], env)).toMatchObject({ code: 0 });
     expect(readFileSync(join(dir, "bin/helper"), "utf8")).toBe(shellScript);
   });
 
@@ -8088,16 +8102,38 @@ await serve([process.execPath, "-e", "console.error('boot failed: stack'); proce
 });
 
 const shellScript = '#!/bin/sh\nunused=1\nprintf "%s\\n" ok\n';
-const checkedShell = (dir: string) => run(dir, "scaffolding", ["shell"]);
+const checkedShell = (dir: string, env?: Record<string, string>) =>
+  run(dir, "scaffolding", ["shell"], env);
 
-function seedShellcheck(dir: string) {
-  const project = join(import.meta.dirname, "..");
-  const source = checkedShell(project);
-  expect(source, source.out).toMatchObject({ code: 0 });
-  const binary = "shellcheck" + (process.platform === "win32" ? ".exe" : "");
-  const storage = "node_modules/.cache/scaffolding/shellcheck/v0.11.0";
-  mkdirSync(join(dir, storage), { recursive: true });
-  copyFileSync(join(project, storage, binary), join(dir, storage, binary));
+const shellcheckPreload = {
+  BUN_OPTIONS: `--preload=${join(import.meta.dirname, "shellcheck-preload.ts")}`,
+};
+
+function shellcheckFixture(
+  dir: string,
+  body = `#!/bin/sh
+while [ "$1" != -- ]; do shift; done
+shift
+status=0
+for file do
+  if grep -q '^unused=1$' "$file" && ! grep -qs '^disable=SC2034$' .shellcheckrc; then
+    printf 'In %s line 2: SC2034\n' "$file"
+    status=1
+  fi
+  if [ "$file" = a.sh ] && grep -qs '^external-sources=true$' .shellcheckrc &&
+    ! grep -qs '^foo=' lib.sh; then
+    echo SC2154
+    status=1
+  fi
+done
+exit "$status"
+`,
+) {
+  const file = "node_modules/.cache/scaffolding/shellcheck-fixture";
+  write(dir, { [file]: body });
+  const path = join(dir, file);
+  chmodSync(path, 0o755);
+  return { ...shellcheckPreload, SCAFFOLDING_TEST_SHELLCHECK: path };
 }
 
 describe("scaffolding shell", () => {
@@ -8110,8 +8146,8 @@ describe("scaffolding shell", () => {
       other: "#!/usr/bin/env python\n",
     });
     write(dir, { "untracked.sh": shellScript });
-    seedShellcheck(dir);
-    const red = checkedShell(dir);
+    const env = shellcheckFixture(dir);
+    const red = checkedShell(dir, env);
     expect(red.code).toBe(1);
     expect(red.out).toContain("In with space.sh line 2");
     expect(red.out).toContain("In with env line 2");
@@ -8119,7 +8155,7 @@ describe("scaffolding shell", () => {
     expect(red.out).not.toMatch(/check-lock\.ts|helper\.py|untracked\.sh/);
 
     write(dir, { ".shellcheckrc": "disable=SC2034\n" });
-    expect(checkedShell(dir)).toEqual({ code: 0, out: "" });
+    expect(checkedShell(dir, env)).toEqual({ code: 0, out: "" });
   });
 
   test("passes with no tracked shell scripts without creating a cache", () => {
@@ -8130,16 +8166,35 @@ describe("scaffolding shell", () => {
     expect(existsSync(join(dir, "node_modules"))).toBe(false);
   });
 
-  test("reports a failed download in one line and exits red", () => {
+  test.each([
+    ["unavailable", "HTTP 503"],
+    ["corrupt", "archive checksum mismatch"],
+  ])("reports a %s download in one line and exits red", (response, reason) => {
     const dir = repo({ "script.sh": shellScript });
-    const r = run(dir, "scaffolding", ["shell"], {
-      HTTPS_PROXY: "http://127.0.0.1:1",
-      NO_PROXY: "",
+    const cache = join(dir, "node_modules/.cache/scaffolding/shellcheck/v0.11.0");
+    const staleDownload = join(cache, "download-2147483647-ABCdef");
+    const staleSnapshot = join(cache, "staged-2147483647-ABCdef");
+    const live = join(cache, `staged-${process.pid}-ABCdef`);
+    for (const path of [staleDownload, staleSnapshot, live]) mkdirSync(path, { recursive: true });
+    const r = checkedShell(dir, {
+      ...shellcheckPreload,
+      SCAFFOLDING_TEST_SHELLCHECK_RESPONSE: response,
     });
     expect(r.code).toBe(1);
     expect(r.out.trim().split("\n")).toEqual([
-      expect.stringContaining("[shell] could not download ShellCheck v0.11.0:"),
+      expect.stringMatching(
+        new RegExp(`^\\[shell\\] could not download ShellCheck v0\\.11\\.0 for .*: ${reason}$`),
+      ),
     ]);
+    expect(readdirSync(cache)).toEqual([relative(cache, live)]);
+  });
+
+  test("reports a signaled ShellCheck even when it has no exit status", () => {
+    const dir = repo({ "script.sh": shellScript });
+    expect(checkedShell(dir, shellcheckFixture(dir, '#!/bin/sh\nkill -TERM "$$"\n'))).toEqual({
+      code: 1,
+      out: "[shell] ShellCheck terminated by SIGTERM\n",
+    });
   });
 });
 

@@ -161,7 +161,6 @@
     "oxlint-tsgolint": "7.0.2008",
     "postcss-html": "2.0.1",
     "prettier-plugin-astro": "1.1.2",
-    "shellcheck": "4.1.0",
     "stylelint-value-no-unknown-custom-properties": "6.1.1",
     "typescript-eslint": "8.73.0",
     "vitest": "5.1.0"

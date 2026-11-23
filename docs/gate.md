@@ -266,10 +266,11 @@ list: `coupling`, `confidential`, `never-shown`, `structure` or `spaces`; any ot
 
 The pinned `markdownlint-cli2` 0.24.2 package uses the MIT licence.
 
-The `shellcheck` 4.1.0 npm wrapper is MIT. It downloads the upstream GPL-3.0 ShellCheck
-binary pinned to v0.11.0 into `node_modules/.cache/scaffolding/shellcheck/v0.11.0/` in the
-checkout. The package invokes the binary as a separate process. The binary is downloaded on
-first use and stays out of the shipped package. A failed download fails the step.
+The shell step fetches the upstream GPL-3.0 ShellCheck v0.11.0 release for macOS and Linux on
+arm64 and x86-64. It verifies the pinned SHA-256 before extracting the binary into
+`node_modules/.cache/scaffolding/shellcheck/v0.11.0/` and runs it as a separate process.
+The shipped package excludes the binary. An unsupported platform, failed download or
+checksum mismatch fails the step.
 
 `check-licenses` reads bun's own `bun pm licenses --json`: every package of `bun.lock` installed in
 `node_modules`, Git tags included, offline. Each licence must be on the allow list: MIT, MIT-0, ISC,
