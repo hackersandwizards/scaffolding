@@ -19,7 +19,7 @@ import { basename, dirname, join, posix } from "node:path";
 import type { Node } from "typescript";
 import own from "../package.json";
 import skeleton from "../skeleton.json";
-import { brandProblem, fullBrandSteps } from "../lib/gate-brand.ts";
+import { brandProblem, placedSteps } from "../lib/gate-config.ts";
 import { help } from "../lib/help.ts";
 import { lintOverlaps } from "../lib/lint-disjoint.ts";
 import { oxlintConfig, oxlintConfiguration } from "../lib/oxlint.ts";
@@ -338,10 +338,7 @@ if (existsSync(at("package.json"))) {
   const brand = brandProblem(pkg);
   if (brand) add("package.json", brand);
   for (const step of (pkg.scaffolding?.check ?? []).flat())
-    if (
-      !fullBrandSteps.has(step) &&
-      (!/^check:[a-z0-9][\w:-]*$/.test(step) || !pkg.scripts?.[step])
-    )
+    if (!placedSteps.has(step) && (!/^check:[a-z0-9][\w:-]*$/.test(step) || !pkg.scripts?.[step]))
       add("package.json", "a step of scaffolding.check is a script named check:<what>", step);
   // bun marks a `bin` file executable only as it installs the package, so one stored 100644 is not
   // executable in the checkout, in a copy or behind a link.

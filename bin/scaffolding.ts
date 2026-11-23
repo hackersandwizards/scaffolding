@@ -8,10 +8,11 @@ import {
   brandProblem,
   brandSteps,
   changedBrandSteps,
-  fullBrandSteps,
+  linksProblem,
+  placedSteps,
   pinsBrand,
   serverProblem,
-} from "../lib/gate-brand.ts";
+} from "../lib/gate-config.ts";
 import { help } from "../lib/help.ts";
 import { ownEntry } from "../lib/own-entry.ts";
 import {
@@ -45,6 +46,7 @@ const KEYS = new Set(
     test: 0,
     brand: 0,
     server: 0,
+    linkSkips: 0,
     skip: 0,
     check: 0,
     styles: 0,
@@ -132,12 +134,21 @@ if (!config.test && !isReason(config.skip?.test))
 const declared = { ...pkg.dependencies, ...pkg.devDependencies };
 if (!("@hackersandwizards/admin" in declared) && !isReason(config.skip?.admin))
   fail("@hackersandwizards/admin is not pinned: pin it, or skip.admin with a reason");
-for (const problem of [brandProblem(pkg), serverProblem(config.server)]) if (problem) fail(problem);
+for (const problem of [brandProblem(pkg), serverProblem(config.server), linksProblem(config)])
+  if (problem) fail(problem);
 const skip = { ...config.skip };
 const entries = (config.check ?? []).flat();
-const local = entries.filter((step) => !fullBrandSteps.has(step));
+const local = entries.filter((step) => !placedSteps.has(step));
 const full = new Map<string, string>();
 const replacements = new Map<string, string>();
+const replaced = (step: string) => {
+  const replacement = `check:${step}`;
+  if (!local.includes(replacement)) return false;
+  if (!isReason(ownEntry(pkg.scripts, replacement)))
+    fail(`scaffolding.check requires a script named ${replacement}`);
+  replacements.set(step, replacement);
+  return true;
+};
 const withServer = (command: string) => {
   const server = config.server;
   if (!server) fail("scaffolding.server is required for a server-backed check");
@@ -151,13 +162,7 @@ if (pinsBrand(pkg)) {
   const brand = config.brand;
   const directory = brand?.directory ? `cd ${quote(brand.directory)} && ` : "";
   for (const step of brandSteps) {
-    const replacement = `check:${step}`;
-    if (local.includes(replacement)) {
-      if (!isReason(ownEntry(pkg.scripts, replacement)))
-        fail(`scaffolding.check requires a script named ${replacement}`);
-      replacements.set(step, replacement);
-      continue;
-    }
+    if (replaced(step)) continue;
     if (step === "colours") shared[step] = `${directory}brand-colours`;
     if (step === "copies") shared[step] = "brand-copies";
     if (step === "retired")
@@ -169,6 +174,17 @@ if (pinsBrand(pkg)) {
       );
   }
 }
+if (config.server && !replaced("links"))
+  full.set(
+    "links",
+    withServer(
+      [
+        bin("check-links"),
+        "{url}",
+        ...(config.linkSkips ?? []).map((prefix) => `--skip ${quote(prefix)}`),
+      ].join(" "),
+    ),
+  );
 const named = new Set([...Object.keys(shared), ...full.keys(), ...local]);
 for (const [step, reason] of Object.entries(skip)) {
   if (step === "oxlint" || !(Object.hasOwn(shared, step) || full.has(step)))
@@ -181,16 +197,16 @@ for (const [step, reason] of Object.entries(skip)) {
 }
 
 for (const step of new Set(entries))
-  if (fullBrandSteps.has(step) || [...replacements.values()].includes(step)) {
+  if (placedSteps.has(step) || [...replacements.values()].includes(step)) {
     if (entries.filter((entry) => entry === step).length > 1)
       fail(`scaffolding.check lists ${step} more than once`);
-    if (fullBrandSteps.has(step) && !named.has(step))
+    if (placedSteps.has(step) && !named.has(step))
       fail(`scaffolding.check names no enabled shared step: ${step}`);
   }
 for (const [step, replacement] of replacements)
   console.error(`[scaffolding] ${step} uses local ${replacement}`);
 
-const fullOnly = new Map([["catalog", "builds the catalog"], ...fullBrandSteps]);
+const fullOnly = new Map([["catalog", "builds the catalog"], ...placedSteps]);
 if (config.fullOnly !== undefined && !isObject(config.fullOnly))
   fail("scaffolding.fullOnly must be a map of steps to reasons");
 for (const [step, reason] of Object.entries(config.fullOnly ?? {})) {
@@ -427,7 +443,7 @@ if (selected) {
 const sharedSteps = Object.entries(shared).filter(([name]) => runs(name));
 const localGroups = (config.check ?? []).map((entry) =>
   (Array.isArray(entry) ? entry : [entry])
-    .filter((name) => !fullBrandSteps.has(name) || full.has(name))
+    .filter((name) => !placedSteps.has(name) || full.has(name))
     .filter(runs)
     .map((s): [string, string] => [s, full.get(s) ?? script(s)]),
 );

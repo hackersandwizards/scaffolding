@@ -1,9 +1,10 @@
 import { isObject, isReason, type Package } from "./repo.ts";
 
 export const brandSteps = ["colours", "copies", "retired", "elements"] as const;
-export const fullBrandSteps = new Map([
+export const placedSteps = new Map([
   ["retired", "scans generated output"],
   ["elements", "checks rendered elements"],
+  ["links", "crawls the built site"],
 ]);
 
 export function pinsBrand(pkg: Package): boolean {
@@ -70,6 +71,17 @@ export function serverProblem(
     return "scaffolding.server.timeout must be a positive number of seconds within the timer range";
   if (server.stderr !== undefined && typeof server.stderr !== "boolean")
     return "scaffolding.server.stderr must be a boolean";
+}
+
+export function linksProblem(config: NonNullable<Package["scaffolding"]>): string | undefined {
+  const skips = config.linkSkips;
+  if (skips === undefined) return;
+  if (
+    !Array.isArray(skips) ||
+    !skips.every((prefix) => typeof prefix === "string" && prefix.startsWith("/"))
+  )
+    return "scaffolding.linkSkips must be a list of path prefixes starting with /";
+  if (!config.server) return "scaffolding.linkSkips requires scaffolding.server";
 }
 
 const colourInput =

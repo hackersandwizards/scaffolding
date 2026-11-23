@@ -234,6 +234,7 @@ export type Package = {
       elements?: "server";
     };
     server?: { command: string; timeout?: number; stderr?: boolean };
+    linkSkips?: string[];
     skip?: Record<string, unknown>;
     check?: (string | string[])[];
     styles?: string[];

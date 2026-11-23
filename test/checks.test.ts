@@ -3977,6 +3977,61 @@ describe("scaffolding check", () => {
     expect(inside.code).toBe(0);
   });
 
+  test("links crawls the preview build with the local skip prefixes and fails on the same broken page", () => {
+    for (const step of ["check:links", "links"]) {
+      const server = 'exec bun server.ts "$PORT"';
+      const dir = gate(
+        {
+          skip,
+          server: { command: server, timeout: 5, stderr: true },
+          linkSkips: ["/catalog"],
+          fullOnly: {
+            "check:preview": "builds the preview",
+            ...(step === "check:links" ? { [step]: "crawls the built site" } : {}),
+          },
+          check: ["check:preview", step],
+        },
+        {
+          "check:preview": "mkdir -p .preview && cp page.html .preview/index.html",
+          "check:links": `with-server --timeout 5 --stderr '${server}' -- check-links {url} --skip /catalog`,
+        },
+      );
+      write(dir, {
+        "page.html": '<a href="/missing">missing</a><a href="/catalog/missing">skipped</a>',
+        "server.ts": `Bun.serve({ port: Number(process.argv[2]), hostname: "127.0.0.1", fetch(req) {
+          const path = new URL(req.url).pathname;
+          if (path === "/") return new Response(Bun.file(".preview/index.html"));
+          return new Response(null, { status: path === "/found" ? 200 : 404 });
+        } }); console.error("fixture server started");`,
+      });
+      mkdirSync(join(dir, "node_modules/.bin"), { recursive: true });
+      for (const command of ["with-server", "check-links"])
+        symlinkSync(bin(command), join(dir, "node_modules/.bin", command));
+      const env = { CHECK_LOCK: join(temp(), "lock") };
+      const changed = run(dir, "scaffolding", ["check", "--changed"], env);
+      expect(changed.code, changed.out).toBe(0);
+      expect(changed.out).toContain(`deferred ${step}`);
+      expect(changed.out).not.toContain("fixture server started");
+      const red = run(dir, "scaffolding", ["check"], env);
+      expect(red.code).toBe(1);
+      expect(red.out).toContain("ok   check:preview");
+      expect(red.out).toContain("fixture server started");
+      expect(red.out).toContain("/missing (404) <- /");
+      expect(red.out).not.toContain("/catalog/missing");
+      expect(red.out).toContain(`FAIL ${step}`);
+      if (step === "check:links") {
+        expect(red.out).toContain("links uses local check:links");
+        expect(red.out).not.toContain("FAIL links");
+      }
+      write(dir, {
+        "page.html": '<a href="/found">found</a><a href="/catalog/missing">skipped</a>',
+      });
+      const green = run(dir, "scaffolding", ["check"], env);
+      expect(green.code, green.out).toBe(0);
+      expect(green.out).toContain(`ok   ${step}`);
+    }
+  });
+
   test("a test command named like an Object member runs directly", () => {
     const { test: _, ...noTest } = skip;
     const dir = gate({ skip: noTest, test: "constructor" });

@@ -247,6 +247,18 @@ declares pages for the check.
 Other entries in `scaffolding.check` are scripts named `check:<what>`. `scaffolding.private` in
 the index skips the confidential scan.
 
+### Internal links
+
+`scaffolding.server` enables the full-gate `links` crawl. Each check starts its own server with
+`PORT` and `HOST` set by `with-server`. Server-backed `elements` uses the same declaration.
+`scaffolding.linkSkips` lists optional path prefixes, such as `["/catalog"]`. The shared crawl
+passes each as a separate `--skip` argument to `check-links`.
+
+Put `links` in `scaffolding.check` where the crawl needs a specific position, such as after
+`check:preview`. A listed `check:links` replaces the shared crawl and keeps its existing group.
+The gate prints `links uses local check:links` when a server is declared and the local script
+owns the crawl.
+
 **CSS origin.** In a repository's sources, a stylesheet from a company package comes only from
 brand's `exports`; the shell's styles load only under `catalog/`; an engine's stylesheet loads where
 the engine's `package.json` lists it in `scaffolding.styles`, the stylesheets its components render
