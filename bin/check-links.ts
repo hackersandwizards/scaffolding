@@ -36,12 +36,12 @@ if (!Number.isSafeInteger(concurrency) || concurrency < 1) {
   linksUsageError("--concurrency must be a positive integer");
 }
 
-async function crawlSite({ origin, protocol }: URL): Promise<number> {
+async function crawlSite({ origin, protocol, search }: URL): Promise<number> {
   const status = new Map<string, number | string>();
   const referrers = new Map<string, Set<string>>();
   const redirects = new Map<string, string>();
-  const queue = new Set(["/"]);
-  const discovered = new Set(queue);
+  const queue = new Map([["/", origin + "/" + search]]);
+  const discovered = new Set(queue.keys());
   let links = 0;
 
   function queueInternalLink(href: string, from: string, base: string | URL): string | undefined {
@@ -58,13 +58,12 @@ async function crawlSite({ origin, protocol }: URL): Promise<number> {
     referrers.set(target, sources);
     if (!discovered.has(target)) {
       discovered.add(target);
-      queue.add(target);
+      queue.set(target, origin + target + url.search);
     }
     return target;
   }
 
-  async function visitLink(path: string) {
-    const pageUrl = origin + path;
+  async function visitLink(path: string, pageUrl: string) {
     const res = await fetch(pageUrl, { redirect: "manual" });
     status.set(path, res.status);
     const location = res.headers.get("location");
@@ -97,10 +96,10 @@ async function crawlSite({ origin, protocol }: URL): Promise<number> {
 
   const inFlight = new Set<Promise<void>>();
   while (queue.size || inFlight.size) {
-    for (const path of queue) {
+    for (const [path, pageUrl] of queue) {
       if (inFlight.size >= concurrency) break;
       queue.delete(path);
-      const visit = visitLink(path)
+      const visit = visitLink(path, pageUrl)
         .catch((error: unknown) => {
           status.set(path, error instanceof Error ? error.message : String(error));
         })

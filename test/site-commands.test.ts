@@ -234,9 +234,21 @@ test("check-links reports broken targets with the pages carrying their links, in
     }
   });
   expect(result.status).toBe(1);
-  expect(result.requests).toContain("/lost");
+  expect(result.requests).toContain("/lost?source=redirect");
   expect(result.stderr).toContain("/sub/dead (400) <- / /sub/page");
   expect(result.stderr).toContain("/lost (500) <- /redirect /sub/page");
+});
+
+test("check-links preserves the query required by a preloaded server island", async () => {
+  const result = await crawlFixture(({ pathname, search }) =>
+    pathname === "/"
+      ? html('<link rel="preload" as="fetch" href="/_server-islands/Widget?props=value">')
+      : new Response(null, {
+          status: pathname === "/_server-islands/Widget" && search === "?props=value" ? 200 : 400,
+        }),
+  );
+  expect(result.status, result.stderr).toBe(0);
+  expect(result.requests).toEqual(["/", "/_server-islands/Widget?props=value"]);
 });
 
 test("check-links fetches and counts a path once across query strings and fragments", async () => {
@@ -250,7 +262,7 @@ test("check-links fetches and counts a path once across query strings and fragme
     return new Response(null, { status: pathname === "/item" ? 204 : 404 });
   });
   expect(result.status, result.stderr).toBe(0);
-  expect(result.requests).toEqual(["/", "/item"]);
+  expect(result.requests).toEqual(["/", "/item?x=1&y=2"]);
   expect(result.stdout).toBe("[check-links] 2 paths crawled, 0 broken\n");
 });
 

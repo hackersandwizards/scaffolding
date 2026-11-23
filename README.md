@@ -72,7 +72,7 @@ Each runs through `bun run`, and [Commands](docs/commands.md) has the detail of 
 - `chrome-mcp`: the chrome-devtools MCP server on Chrome for Testing, for `.mcp.json`.
 - `raise-pins [--commit]`: raises every Git pin on a `hackersandwizards` repository to its newest tag, then gates.
 - `with-server [--timeout <seconds>] [--limit <seconds>] [--stderr] "<server command>" -- <check> [args...]` runs a check against a server it starts on a free port. `--limit` sets the check’s wall limit on an idle machine (120 seconds by default). The limit increases with machine load.
-- `check-links` checks the internal links and redirects of a running site by pathname, dropping query strings and fragments.
+- `check-links` checks the internal links and redirects of a running site by pathname using the first URL seen for each path, including its query string.
 
 ## The gate
 
