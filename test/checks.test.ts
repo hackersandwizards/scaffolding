@@ -3308,6 +3308,46 @@ describe("scaffolding check", () => {
   });
 
   test.each([
+    ["docs/guide.md", "# Guide\n", "markdown", 'matches "docs/guide.md"'],
+    [".shellcheckrc", "# Defaults.\n", "shell", 'matches ".shellcheckrc"'],
+    ["script.bash", "#!/bin/bash\ntrue\n", "shell", 'matches "script.bash"'],
+    [
+      "tool",
+      "#!/usr/bin/env --split-string dash\ntrue\n",
+      "shell",
+      'matches shell shebang in "tool"',
+    ],
+  ])("--changed selects the matching linter for %s", (path, text, step, why) => {
+    const { shell: _s, markdown: _m, ...rest } = skip;
+    const dir = gate({ skip: rest });
+    write(dir, { [path]: text });
+    const r = run(dir, "scaffolding", ["check", "--changed"], { CHECK_LOCK: join(temp(), "lock") });
+    expect(r.code, r.out).toBe(0);
+    expect(r.out).toContain(`selected ${step}: ${why}`);
+    expect(r.out).toContain(
+      `skipped ${step === "shell" ? "markdown" : "shell"}: no changed path maps to it`,
+    );
+  });
+
+  test("--changed reads the removed shell shebang from the base of a pushed range", () => {
+    const { shell: _s, markdown: _m, ...rest } = skip;
+    const dir = gate({ skip: rest });
+    write(dir, { "bin/tool": "#!/bin/ksh\ntrue\n" });
+    expect(sh(dir, ["add", "--", "bin/tool"]).status).toBe(0);
+    expect(sh(dir, ["commit", "-qm", "add script", "--", "bin/tool"]).status).toBe(0);
+    const old = sh(dir, ["rev-parse", "HEAD"]).stdout.toString().trim();
+    expect(sh(dir, ["rm", "-q", "--", "bin/tool"]).status).toBe(0);
+    expect(sh(dir, ["commit", "-qm", "remove script", "--", "bin/tool"]).status).toBe(0);
+    const tip = sh(dir, ["rev-parse", "HEAD"]).stdout.toString().trim();
+    const r = run(dir, "scaffolding", ["check", "--changed", `${old}..${tip}`], {
+      CHECK_LOCK: join(temp(), "lock"),
+    });
+    expect(r.code, r.out).toBe(0);
+    expect(r.out).toContain('selected shell: matches shell shebang in "bin/tool"');
+    expect(r.out).toContain("skipped markdown: no changed path maps to it");
+  });
+
+  test.each([
     [{ changed: { "docs/**": "check:docs" } }, "is no list of steps"],
     [{ changed: { "docs/**": [] } }, "is an empty list of steps"],
     [{ changed: { "docs/**": ["check:dosc"] } }, "names no step: check:dosc"],

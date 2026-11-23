@@ -7,7 +7,8 @@ import {
   parsePurgedList,
   parseTermList,
 } from "../lib/confidential-input.ts";
-import { stagedPaths, pathChunks } from "../lib/staged-paths.ts";
+import { pathChunks } from "../lib/repo.ts";
+import { stagedPaths } from "../lib/staged-paths.ts";
 
 const word = fc.stringMatching(/^[a-z]{1,12}$/);
 const line = fc.oneof(

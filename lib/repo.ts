@@ -168,6 +168,22 @@ export function git(args: string[], cwd = process.cwd(), input?: string): Buffer
   return r.stdout;
 }
 
+// Chunked: a commit touching most of a repository passes more path bytes than ARG_MAX holds.
+export function pathChunks(paths: string[]) {
+  const chunks: string[][] = [[]];
+  let bytes = 0;
+  for (const path of paths) {
+    const size = Buffer.byteLength(path) + 1;
+    if (bytes + size > 100_000) {
+      chunks.push([]);
+      bytes = 0;
+    }
+    chunks[chunks.length - 1].push(path);
+    bytes += size;
+  }
+  return chunks;
+}
+
 export const repoRoot = (cwd = process.cwd()) =>
   git(["rev-parse", "--show-toplevel"], cwd).toString().trim();
 

@@ -20,6 +20,8 @@ import {
   type Package,
 } from "../lib/repo.ts";
 import { machineLoad } from "../lib/serve.ts";
+import { gitShellShebangs, needsShellShebang, shellInput } from "../lib/shell-inputs.ts";
+import { inNodeModules, regularInput } from "../lib/tracked-inputs.ts";
 
 const usage =
   "usage: scaffolding check [--changed [<from>..<to>...]] | scaffolding shell | scaffolding markdown [--fix]";
@@ -173,7 +175,13 @@ function changedSteps(): Map<string, string> {
   const git = (...a: string[]) => spawnSync("git", a, { cwd: root, encoding: "utf8" });
   const diffPaths = (...revs: string[]) =>
     git("diff", "--name-only", "--no-renames", "--ignore-submodules=none", "-z", ...revs, "--");
-  const lists: string[] = [];
+  const pathsFrom = (names: string) => names.split("\0").filter(Boolean);
+  const paths = new Set<string>();
+  const shellShebangs = new Set<string>();
+  const shellCandidates = (paths: string[]) =>
+    fast.has("shell")
+      ? paths.filter((path) => !inNodeModules(path) && needsShellShebang(path))
+      : [];
   let since = "HEAD";
   if (ranges.length) {
     for (const range of ranges) {
@@ -191,7 +199,15 @@ function changedSteps(): Map<string, string> {
       if (ancestor.status !== 0) return fallback(`${range} is not a verifiable fast-forward`);
       const diff = diffPaths(base, head);
       if (diff.status !== 0) return fallback("git could not list the changes");
-      lists.push(diff.stdout);
+      const touched = pathsFrom(diff.stdout);
+      for (const path of touched) paths.add(path);
+      const candidates = shellCandidates(touched);
+      try {
+        for (const ref of [base, head])
+          for (const path of gitShellShebangs(root, candidates, ref)) shellShebangs.add(path);
+      } catch {
+        return fallback("git could not read shell shebangs in the pushed ranges");
+      }
     }
     since = ranges.map((r) => r.split("..")[0]!.slice(0, 9)).join(", ");
   } else {
@@ -201,13 +217,27 @@ function changedSteps(): Map<string, string> {
     const untracked = git("ls-files", "--others", "--exclude-standard", "-z");
     if (!base || diff.status !== 0 || untracked.status !== 0)
       return fallback("git could not list the changes");
-    lists.push(diff.stdout, untracked.stdout);
+    const touched = pathsFrom(diff.stdout);
+    for (const path of [...touched, ...pathsFrom(untracked.stdout)]) paths.add(path);
+    try {
+      for (const path of gitShellShebangs(root, shellCandidates(touched), base))
+        shellShebangs.add(path);
+      for (const path of shellCandidates([...paths]))
+        if (regularInput(root, path) && shellInput(path, join(root, path))) shellShebangs.add(path);
+    } catch {
+      return fallback("could not read shell shebangs in the base commit or working tree");
+    }
     if (upstream) since = upstream.slice(0, 9);
   }
-  const paths = [...new Set(lists.join("").split("\0").filter(Boolean))];
-  const { steps, fallback: why } = selectChangedSteps(paths, fast, local, mappings);
+  const { steps, fallback: why } = selectChangedSteps(
+    [...paths],
+    fast,
+    local,
+    mappings,
+    shellShebangs,
+  );
   if (why !== undefined) console.error(`[scaffolding] --changed: ${why}: all fast steps run`);
-  else console.error(`[scaffolding] --changed: ${paths.length} paths since ${since}`);
+  else console.error(`[scaffolding] --changed: ${paths.size} paths since ${since}`);
   return steps;
 }
 

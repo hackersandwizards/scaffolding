@@ -102,13 +102,15 @@ Paths are repository-relative, case-sensitive Bun globs. Every match adds its st
 The gate sets `SCAFFOLDING_CHANGED` for each step. A value of `1` marks a changed check and `0`
 marks a full check.
 
-| Default paths                                                                                                                         | Additional steps                              |
-| ------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------- |
-| `**/*.{js,jsx,cjs,mjs,ts,tsx,cts,mts,astro,mdx}`                                                                                      | typecheck, lint, oxlint, cycles, test         |
-| `**/*.{astro,mdx}`                                                                                                                    | styles                                        |
-| `**/*.{css,scss,sass,less}`                                                                                                           | styles, test                                  |
-| `{src,app,lib,bin,components,pages,catalog,site,talks,scripts,test,tests,fixtures,data,content,public,assets,e2e}/**`                 | typecheck, lint, oxlint, styles, cycles, test |
-| `docs/**/*.{md,txt}`, `{README,CONTRIBUTING,SECURITY,CLAUDE,AGENTS}.md`, `.claude/rules/**/*.md`, `.claude/skills/**/*.{md,yaml,yml}` | Always-run steps only                         |
+| Default paths                                                                                                         | Additional steps                              |
+| --------------------------------------------------------------------------------------------------------------------- | --------------------------------------------- |
+| `**/*.{js,jsx,cjs,mjs,ts,tsx,cts,mts,astro,mdx}`                                                                      | typecheck, lint, oxlint, cycles, test         |
+| `**/*.{astro,mdx}`                                                                                                    | styles                                        |
+| `**/*.{css,scss,sass,less}`                                                                                           | styles, test                                  |
+| `{src,app,lib,bin,components,pages,catalog,site,talks,scripts,test,tests,fixtures,data,content,public,assets,e2e}/**` | typecheck, lint, oxlint, styles, cycles, test |
+| `**/*.md`                                                                                                             | markdown                                      |
+| `**/*.{sh,bash}`, `**/.shellcheckrc`, shell shebangs                                                                  | shell                                         |
+| `docs/**/*.txt`, `.claude/skills/**/*.{yaml,yml}`                                                                     | Always-run steps only                         |
 
 An unmatched path or a path below selects all enabled fast steps.
 
@@ -119,6 +121,8 @@ An unmatched path or a path below selects all enabled fast steps.
 
 The pre-push hook passes every pushed branch's range as `--changed <from>..<to>...`. The gate
 unions the paths across ranges, including both paths of a rename and the old path of a deletion.
+It reads shell shebangs at both ends of a pushed range. A local changed check reads them in the
+base commit and the working tree.
 A new branch, unreadable range, non-fast-forward update or failed Git enumeration selects all fast
 steps and prints the reason. Without explicit ranges, the gate compares the working tree to the
 upstream merge base, or to `HEAD` without an upstream, and includes untracked files. Each selected

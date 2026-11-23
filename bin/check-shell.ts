@@ -11,9 +11,14 @@ import {
   writeFileSync,
 } from "node:fs";
 import { dirname, join } from "node:path";
-import { reader, repoRoot, withoutEnvFile } from "../lib/repo.ts";
-import { indexedShellInputs, shellInput } from "../lib/shell-inputs.ts";
-import { pathChunks, stagedDiff, stagedPaths } from "../lib/staged-paths.ts";
+import { pathChunks, reader, repoRoot, withoutEnvFile } from "../lib/repo.ts";
+import {
+  gitShellShebangs,
+  needsShellShebang,
+  shellExtension,
+  shellInput,
+} from "../lib/shell-inputs.ts";
+import { stagedDiff, stagedPaths } from "../lib/staged-paths.ts";
 import { indexInputs, inNodeModules, regularInput, trackedInputs } from "../lib/tracked-inputs.ts";
 
 withoutEnvFile("shell");
@@ -99,12 +104,16 @@ function lintStagedShell(binary: string, root: string, files: string[]) {
 try {
   const root = realpathSync(repoRoot());
   const staged = process.argv[2] === "--staged";
-  const files = staged
-    ? indexedShellInputs(
-        root,
-        stagedPaths(stagedDiff(root)).regularPaths.filter((path) => !inNodeModules(path)),
-      )
-    : trackedInputs(root).filter((path) => shellInput(path, join(root, path)));
+  let files: string[];
+  if (staged) {
+    const paths = stagedPaths(stagedDiff(root)).regularPaths.filter((path) => !inNodeModules(path));
+    files = [
+      ...paths.filter((path) => shellExtension.test(path)),
+      ...gitShellShebangs(root, paths.filter(needsShellShebang)),
+    ];
+  } else {
+    files = trackedInputs(root).filter((path) => shellInput(path, join(root, path)));
+  }
   if (!files.length) {
     if (!staged) console.log("[shell] no tracked shell scripts");
     process.exit(0);

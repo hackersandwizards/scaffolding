@@ -1,12 +1,12 @@
 import { spawnSync } from "node:child_process";
 import { closeSync, openSync, readFileSync, readSync } from "node:fs";
 
-import { pathChunks } from "./staged-paths.ts";
+import { pathChunks } from "./repo.ts";
 
 export const shellExtension = /\.(?:sh|bash)$/;
 export const otherScript = /\.(?:[cm]?[jt]sx?|py[wz]?|rb|pl|php|lua|fish|zsh|ps1)$/;
 const shebang =
-  /^#![ \t]*(?:\S*\/)?(?:env[ \t]+(?:-S[ \t]+)?(?:\S*\/)?|)(?:sh|bash|dash|ksh)(?=\s|$)/;
+  /^#![ \t]*(?:\S*\/)?(?:env[ \t]+(?:(?:-S|--split-string|[A-Za-z_][A-Za-z0-9_]*=\S*)[ \t]+)*(?:\S*\/)?)?(?:sh|bash|dash|ksh)(?=\s|$)/;
 
 export function shellShebang(text: string): boolean {
   return shebang.test(text.split("\n", 1)[0]);
@@ -29,9 +29,12 @@ export function shellInput(path: string, file: string): boolean {
   }
 }
 
-export function indexedShellInputs(root: string, paths: string[]): string[] {
-  const scripts = paths.filter((path) => shellExtension.test(path));
-  const candidates = paths.filter((path) => !shellExtension.test(path) && !otherScript.test(path));
+export const needsShellShebang = (path: string) =>
+  !shellExtension.test(path) && !otherScript.test(path);
+
+export function gitShellShebangs(root: string, candidates: string[], ref?: string): string[] {
+  const scripts: string[] = [];
+  const wanted = new Set(candidates);
   for (const chunk of pathChunks(candidates)) {
     if (!chunk.length) continue;
     const r = spawnSync(
@@ -47,7 +50,7 @@ export function indexedShellInputs(root: string, paths: string[]): string[] {
         "1",
         "-e",
         "^#!",
-        "--cached",
+        ref ?? "--cached",
         "--",
         ...chunk,
       ],
@@ -55,8 +58,10 @@ export function indexedShellInputs(root: string, paths: string[]): string[] {
     );
     if (r.status === 1) continue;
     if (r.status !== 0) throw new Error("git grep could not read shell shebangs");
-    for (const [, path, line, text] of r.stdout.matchAll(/([^\0]+)\0(\d+)\0([^\n]*)\n/g))
-      if (line === "1" && shellShebang(text)) scripts.push(path);
+    for (const [, name, line, text] of r.stdout.matchAll(/([^\0]+)\0(\d+)\0([^\n]*)\n/g)) {
+      const path = ref ? name.slice(ref.length + 1) : name;
+      if (line === "1" && wanted.has(path) && shellShebang(text)) scripts.push(path);
+    }
   }
   return scripts;
 }

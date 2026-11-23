@@ -4,7 +4,7 @@
 // that file into this commit. Tools read a partly staged file from the index, so its unstaged
 // lines neither pass nor block this commit. The skill validator reads skill files from the working
 // tree.
-import { pathChunks, stagedDiff, stagedPaths } from "../lib/staged-paths.ts";
+import { stagedDiff, stagedPaths } from "../lib/staged-paths.ts";
 import { spawn, spawnSync } from "node:child_process";
 import {
   existsSync,
@@ -26,6 +26,7 @@ import {
   isReason,
   isObject,
   jsonObject,
+  pathChunks,
   readPackage,
   repoRoot,
   styled,
