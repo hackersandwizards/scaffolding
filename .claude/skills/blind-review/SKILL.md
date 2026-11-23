@@ -98,7 +98,7 @@ none, because receipt".
 ## Reviewer commands
 
 Run each reviewer read-only, the prompt naming each artifact by absolute path. A Claude reviewer is
-a fresh Agent-tool subagent with `model: fable`, told to change no file, never a fork, which carries
+a fresh Agent-tool subagent, told to change no file, never a fork, which carries
 the conversation. Codex takes images with `-i <file>`, placed after the prompt: `-i` is variadic, and a prompt after it is
 read as an image and Codex answers "No prompt provided via stdin". Check: every Codex output file
 is non-empty.
