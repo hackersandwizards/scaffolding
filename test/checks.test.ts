@@ -6394,28 +6394,46 @@ describe("check-staged", () => {
     expect(readFileSync(join(dir, "scope.txt"), "utf8").split("\n").sort()).toEqual(scope);
   });
 
-  test("check:skills runs the indexed validator lifecycle when the working manifest differs", () => {
+  test.each([
+    { scenario: "scripts match", claude: true, change: "none", validated: "fixture" },
+    { scenario: "scripts differ", claude: true, change: "script", refused: true },
+    { scenario: "scripts differ outside a skill commit", claude: false, change: "script" },
+    {
+      scenario: "only package metadata differs",
+      claude: true,
+      change: "name",
+      validated: "edited",
+    },
+  ])("check:skills when $scenario", ({ claude, change, refused, validated }) => {
+    const scripts = {
+      "check:skills": 'printf "%s" "$npm_package_name" > validator.txt',
+      other: "true",
+    };
     const pkg = {
-      scaffolding: {
-        private: true,
-        skip: { format: "fixture", lint: "fixture", licenses: "fixture" },
-      },
-      scripts: {
-        "precheck:skills": "printf 'pre\\n' > validator.txt",
-        "check:skills": 'printf "%s\\n" "$VALIDATE_SKILLS_PATHS" >> validator.txt; exit 1',
-        "postcheck:skills": "printf 'post\\n' >> validator.txt",
-      },
+      name: "fixture",
+      scaffolding: { private: true, skip: { format: "fixture", lint: "fixture" } },
+      scripts,
     };
     const dir = repo({ "package.json": JSON.stringify(pkg) });
-    write(dir, { ".claude/changed.md": "staged\n" });
-    expect(sh(dir, ["add", ".claude/changed.md"]).status).toBe(0);
-    write(dir, {
-      "package.json": JSON.stringify({ ...pkg, scripts: { "check:skills": "true" } }),
-    });
+    const staged = claude ? ".claude/changed.md" : "notes.md";
+    write(dir, { [staged]: "staged\n" });
+    expect(sh(dir, ["add", staged]).status).toBe(0);
+    if (change === "script")
+      write(dir, {
+        "package.json": JSON.stringify({ ...pkg, scripts: { ...scripts, other: "false" } }),
+      });
+    if (change === "name")
+      write(dir, { "package.json": JSON.stringify({ ...pkg, name: "edited" }) });
 
-    const result = run(dir, "check-staged");
-    expect(result.code, result.out).toBe(1);
-    expect(readFileSync(join(dir, "validator.txt"), "utf8")).toBe("pre\n.claude/changed.md\n");
+    const result = run(dir, "check-staged", [], { npm_package_name: "" });
+    expect(result.code, result.out).toBe(refused ? 1 : 0);
+    if (refused)
+      expect(result.out.trim()).toBe(
+        '[check:staged] package.json script differs between index and working tree: "other"',
+      );
+    const log = join(dir, "validator.txt");
+    if (validated) expect(readFileSync(log, "utf8")).toBe(validated);
+    else expect(existsSync(log)).toBe(false);
   });
 
   test.each([

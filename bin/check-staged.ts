@@ -2,7 +2,8 @@
 // 2>/dev/null; exec bun --no-env-file "$0" "$@"
 // Check, never write: re-staging a rewritten file would sweep another session's unstaged lines in
 // that file into this commit. Tools read a partly staged file from the index, so its unstaged
-// lines neither pass nor block this commit.
+// lines neither pass nor block this commit. The skill validator reads skill files from the working
+// tree.
 import { pathChunks, stagedPaths } from "../lib/staged-paths.ts";
 import { spawn, spawnSync } from "node:child_process";
 import {
@@ -16,7 +17,7 @@ import {
   writeFileSync,
 } from "node:fs";
 import { availableParallelism } from "node:os";
-import { delimiter, join, resolve } from "node:path";
+import { join } from "node:path";
 import { help } from "../lib/help.ts";
 import { oxlintConfig, oxlintExtends, runOxlint } from "../lib/oxlint.ts";
 import {
@@ -49,7 +50,8 @@ if (scan.error) refuseCommit("gitleaks not found: brew install gitleaks");
 if (scan.status !== 0) process.exit(1);
 
 // The skips, scripts and pins as this commit holds them.
-const pkg = readPackage(repoRoot(), ":");
+const root = repoRoot();
+const pkg = readPackage(root, ":");
 const skip = pkg.scaffolding?.skip ?? {};
 // A step the gate skips with a reason is skipped here too; the term scan never is, since this hook
 // is its gate.
@@ -68,6 +70,16 @@ for (const [step, check] of [
 // (no change) runs it, so a failing git diff fails closed.
 const claudeStaged =
   spawnSync("git", ["diff", "--cached", "--quiet", "--", ".claude"]).status !== 0;
+if (claudeStaged) {
+  const workingScripts = readPackage(root).scripts;
+  const changed = Object.keys({ ...pkg.scripts, ...workingScripts }).find(
+    (name) => pkg.scripts?.[name] !== workingScripts?.[name],
+  );
+  if (changed !== undefined)
+    refuseCommit(
+      `package.json script differs between index and working tree: ${JSON.stringify(changed)}`,
+    );
+}
 // The script's former name would otherwise turn the validation off without a word.
 if (claudeStaged && pkg.scripts?.["validate:skills"] && !pkg.scripts["check:skills"])
   refuseCommit("rename the script validate:skills to check:skills: check-staged runs check:skills");
@@ -212,7 +224,6 @@ for (const [tool] of active)
       `${tool} not installed: pin it and bun install, or skip.${gateStep[tool]} with a reason`,
     );
 if (oxlintPaths.length && !isReason(skip.lint)) {
-  const root = repoRoot();
   const inputs = [oxlintConfig, ...oxlintPaths];
   const base = oxlintExtends(root);
   if (!base.startsWith("./node_modules/")) inputs.push(base.slice(2));
@@ -281,38 +292,14 @@ const runs = active.flatMap(([tool, args]) => {
     }),
   ];
 });
-if (skills) runs.push(checkStagedSkills());
+// An inherited scope could narrow validation to none. Deletions can break links too.
+if (skills)
+  runs.push(
+    runStagedTool(process.execPath, ["run", "check:skills"], undefined, {
+      VALIDATE_SKILLS_PATHS: names(["diff", "--cached"]).join("\n"),
+    }),
+  );
 if (items) runs.push(checkStagedItems());
-
-async function checkStagedSkills(): Promise<ToolRun> {
-  // An inherited scope could narrow validation to none. Deletions can break links too.
-  const scope = { VALIDATE_SKILLS_PATHS: names(["diff", "--cached"]).join("\n") };
-  if (!differs.has("package.json"))
-    return runStagedTool(process.execPath, ["run", "check:skills"], undefined, scope);
-
-  // Bun reads scripts from disk, which may hold another session's validator or lifecycle hooks.
-  if (typeof pkg.scripts?.["check:skills"] !== "string")
-    refuseCommit("check:skills must be a script command");
-  const env = {
-    ...scope,
-    PATH: [resolve("node_modules/.bin"), process.env.PATH].filter(Boolean).join(delimiter),
-    INIT_CWD: process.cwd(),
-    npm_package_json: resolve("package.json"),
-  };
-  let result: ToolRun = { out: "", code: 0, stdout: Buffer.alloc(0) };
-  for (const event of ["precheck:skills", "check:skills", "postcheck:skills"]) {
-    const command = pkg.scripts[event];
-    if (!command) continue;
-    const run = await runStagedTool("/bin/sh", ["-c", command], undefined, {
-      ...env,
-      npm_lifecycle_event: event,
-      npm_lifecycle_script: command,
-    });
-    result = { ...run, out: result.out + run.out };
-    if (result.code) break;
-  }
-  return result;
-}
 
 // admin-check over the index, not the working tree: docs/agent-work as staged, written to a temporary
 // folder, so another session's unstaged item edit neither blocks nor passes this commit.

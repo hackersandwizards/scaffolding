@@ -44,6 +44,12 @@ The gate runs these rules without a file cache because imported types can change
 `.oxlintrc.json` into a temporary directory and links the checkout's installed dependencies.
 The gate and pre-push hook run the typed rules.
 
+When a commit touches `.claude/`, `check-staged` compares the `package.json` scripts in the index
+with those in the working tree. It refuses the commit and names a differing script if any script
+changed. If the scripts match and define `check:skills`, the hook runs `bun run check:skills` with
+`VALIDATE_SKILLS_PATHS` set to the staged paths, including deletions. The validator reads skill
+files from the working tree.
+
 **Cycles.** The `cycles` step fails on a runtime import cycle, a local import that resolves outside
 the checkout, or a relative import (`./` or `../`) that does not resolve to a file. Findings name
 the original source paths. Take another repository's code from its published package. Installed
