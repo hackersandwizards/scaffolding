@@ -7175,6 +7175,14 @@ describe("check-cycles", () => {
     expect(readdirSync(join(dir, "node_modules", ".cache", "scaffolding"))).toEqual([]);
   });
 
+  test("a tracked file colliding with an Astro module is reported against the component", () => {
+    const r = cycle({ [page]: "<p>Page</p>\n", [`${page}.ts`]: "export {};\n" });
+    expect(r.code).toBe(1);
+    expect(lines(r.out, "cycles")).toEqual([
+      `[cycles] ${page}: a tracked file collides with the compiled module name`,
+    ]);
+  });
+
   test("a missing Astro compiler fails only when Astro files need it", () => {
     const installation = temp();
     const entry = join(installation, "bin", "check-cycles.ts");
@@ -7259,7 +7267,8 @@ describe("check-cycles", () => {
         "src/pages/inside.ts": "export const value = 1;\n",
       });
       write(parent, {
-        "sibling/value.ts": "export const value = 2;\n",
+        "sibling/value.ts": 'import "./loop.ts";\nexport const value = 2;\n',
+        "sibling/loop.ts": 'import "./value.ts";\n',
         "node_modules/installed-package/index.js": 'import "./missing.js";\n',
       });
       const checkout = join(parent, "checkout");

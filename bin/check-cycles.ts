@@ -89,7 +89,7 @@ async function checkImports(baseDir: string, files: string[], astroPaths?: Map<s
       baseDir,
       validate: true,
       tsPreCompilationDeps: false,
-      doNotFollow: { path: astroPaths ? "node_modules|^\\.\\./" : "node_modules" },
+      doNotFollow: { path: "node_modules|^\\.\\./" },
       ...(aliases ? { tsConfig: { fileName: tsconfig } } : {}),
       ruleSet: {
         forbidden: [{ name: check, severity: "error", from: {}, to: { circular: true } }],
@@ -161,7 +161,24 @@ async function checkAstroImports(files: string[], sources: string[], astro: stri
     const writeModule = (module: string, path: string, code: string) => {
       const target = join(mirror, module);
       mkdirSync(dirname(target), { recursive: true });
-      writeFileSync(target, code, { flag: "wx" });
+      try {
+        writeFileSync(target, code, { flag: "wx" });
+      } catch (error) {
+        if (!(error instanceof Error && "code" in error && error.code === "EEXIST")) throw error;
+        const tracked = git(["ls-files", "-z", "--cached", "--", `:(literal)${module}`], root)
+          .toString()
+          .split("\0")
+          .includes(module);
+        findings.push(
+          finding(
+            tracked
+              ? "a tracked file collides with the compiled module name"
+              : "the compiled module name is already in use",
+            path,
+          ),
+        );
+        return;
+      }
       astroPaths.set(module, path);
     };
     for (const path of astro) {

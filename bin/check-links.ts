@@ -26,6 +26,7 @@ const site = base && URL.parse(base);
 if (positionals.length !== 1 || !site || !["http:", "https:"].includes(site.protocol)) {
   linksUsageError("expected an HTTP or HTTPS base URL");
 }
+if (site.pathname !== "/") linksUsageError("the base URL must point to /");
 const skips = values.skip ?? [];
 if (skips.some((prefix) => !prefix.startsWith("/"))) {
   linksUsageError("--skip requires a path prefix starting with /");
@@ -43,8 +44,8 @@ async function crawlSite({ origin, protocol }: URL): Promise<number> {
   const discovered = new Set(queue);
   let links = 0;
 
-  function queueInternalLink(href: string, from: string): string | undefined {
-    const url = URL.parse(href, origin + from);
+  function queueInternalLink(href: string, from: string, base: string | URL): string | undefined {
+    const url = URL.parse(href, base);
     if (
       url?.origin !== origin ||
       url.protocol !== protocol ||
@@ -63,18 +64,29 @@ async function crawlSite({ origin, protocol }: URL): Promise<number> {
   }
 
   async function visitLink(path: string) {
-    const res = await fetch(origin + path, { redirect: "manual" });
+    const pageUrl = origin + path;
+    const res = await fetch(pageUrl, { redirect: "manual" });
     status.set(path, res.status);
     const location = res.headers.get("location");
     if (res.status >= 300 && res.status < 400 && location) {
-      const target = queueInternalLink(location, path);
+      const target = queueInternalLink(location, path, pageUrl);
       if (target !== undefined) redirects.set(path, target);
     } else if (res.ok && res.headers.get("content-type")?.toLowerCase().includes("html")) {
+      let base: string | URL | undefined;
       const parser = new HTMLRewriter().on("[href]", {
         element(element) {
-          const href = element.getAttribute("href")?.trim();
-          if (!href || href.startsWith("#") || element.tagName === "script") return;
-          if (queueInternalLink(href.replaceAll("&amp;", "&"), path) !== undefined) links++;
+          const href = element.getAttribute("href")?.trim().replaceAll("&amp;", "&");
+          if (href === undefined) return;
+          if (element.tagName === "base") {
+            base ??= URL.parse(href, pageUrl) ?? pageUrl;
+            return;
+          }
+          if (
+            href &&
+            !href.startsWith("#") &&
+            queueInternalLink(href, path, base ?? pageUrl) !== undefined
+          )
+            links++;
         },
       });
       await parser.transform(res).arrayBuffer();
@@ -117,8 +129,8 @@ async function crawlSite({ origin, protocol }: URL): Promise<number> {
     );
   }
   console.log(`[check-links] ${status.size} paths crawled, ${broken} broken`);
-  if (status.size === 0 || links === 0) {
-    console.error("[check-links] crawl fetched zero pages or found zero internal links");
+  if (links === 0) {
+    console.error("[check-links] crawl found zero internal links");
     return 1;
   }
   return broken ? 1 : 0;

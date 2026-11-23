@@ -62,11 +62,32 @@ export async function serve(
   let exited = "";
   server.on("exit", (code, signal) => (exited = `, it exited with ${signal ?? `code ${code}`}`));
   server.on("error", (error) => (exited = `, it exited: ${error.message}`));
-  const stop = () => {
+  const signalGroup = (signal: NodeJS.Signals | 0) => {
+    const pid = server.pid;
     try {
-      if (server.pid) process.kill(-server.pid);
-    } catch {}
-    watcher?.kill("SIGKILL");
+      return pid !== undefined && process.kill(-pid, signal);
+    } catch {
+      return false;
+    }
+  };
+  let stopping = false;
+  const stop = () => {
+    if (stopping) return;
+    stopping = true;
+    if (!signalGroup("SIGTERM")) {
+      watcher?.kill("SIGKILL");
+      return;
+    }
+    const timer = setTimeout(() => {
+      signalGroup("SIGKILL");
+      watcher?.kill("SIGKILL");
+    }, 2000).unref();
+    // Keep the watcher alive if the wrapper exits and a descendant closes stderr.
+    server.once("close", () => {
+      if (signalGroup(0)) return;
+      clearTimeout(timer);
+      watcher?.kill("SIGKILL");
+    });
   };
   for (const end = Date.now() + timeoutMs; Date.now() < end && !exited;) {
     const answered = await fetch(url, {

@@ -87,6 +87,40 @@ test("with-server fails when the server never answers within the readiness timeo
   expect(stdout).toBe("");
 });
 
+test.each(["inherited", "redirected"])(
+  "with-server kills a server that ignores SIGTERM with %s stderr",
+  async (stderrMode) => {
+    const command = bunServer(`
+      process.on("SIGTERM", () => {});
+      setTimeout(() => process.exit(0), 4500);
+      Bun.serve({ hostname: process.env.HOST, port: Number(process.env.PORT), fetch: () => new Response(String(process.pid)) });
+    `);
+    const started = performance.now();
+    const [status, stdout, stderr] = await runSiteCommand("with-server", [
+      stderrMode === "inherited" ? command : `{ ${command}; } 2>/dev/null`,
+      "--",
+      process.execPath,
+      "-e",
+      "console.log(await (await fetch(process.argv[1])).text());",
+      "--",
+      "{url}",
+    ]);
+    expect(status, stderr).toBe(0);
+    expect(performance.now() - started).toBeLessThan(3200);
+    const pid = Number(stdout.trim());
+    expect(pid).toBeGreaterThan(0);
+    await expect
+      .poll(() => {
+        try {
+          return process.kill(pid, 0);
+        } catch {
+          return false;
+        }
+      })
+      .toBe(false);
+  },
+);
+
 test("with-server returns 1 when the check dies on a signal", async () => {
   const [status, stdout, stderr] = await runSiteCommand("with-server", [
     serverCommand,
@@ -140,6 +174,7 @@ test.each([
   ["with-server", ["--timeout", "0", "echo server", "--", "echo"]],
   ["with-server", ["--limit", "0", "echo server", "--", "echo"]],
   ["check-links", ["file:///index.html"]],
+  ["check-links", ["http://127.0.0.1:0/sub/"]],
   ["check-links", ["http://127.0.0.1", "--concurrency", "0"]],
 ] as const)("%s rejects invalid usage with status 2", async (name, args) => {
   const [status, , stderr] = await runSiteCommand(name, [...args]);
@@ -214,6 +249,31 @@ test("check-links fetches and counts a path once across query strings and fragme
   expect(result.stdout).toBe("[check-links] 2 paths crawled, 0 broken\n");
 });
 
+test("check-links resolves hrefs against the page base and skips the base href itself", async () => {
+  const result = await crawlFixture(({ pathname }) => {
+    switch (pathname) {
+      case "/":
+        return html('<a href="/docs/a">page</a>');
+      case "/docs/a":
+        return html('<base href="/assets/"><a href="b">target</a>');
+      default:
+        return new Response(null, { status: pathname === "/assets/b" ? 204 : 404 });
+    }
+  });
+  expect(result.status, result.stderr).toBe(0);
+  expect(result.requests).toEqual(["/", "/docs/a", "/assets/b"]);
+});
+
+test("check-links decodes ampersands in href paths", async () => {
+  const result = await crawlFixture(({ pathname }) =>
+    pathname === "/"
+      ? html('<a href="/a&amp;b">target</a>')
+      : new Response(null, { status: pathname === "/a&b" ? 204 : 404 }),
+  );
+  expect(result.status, result.stderr).toBe(0);
+  expect(result.requests).toEqual(["/", "/a&b"]);
+});
+
 test("check-links reports a rejected fetch with its referrer and continues crawling", async () => {
   const server = createServer((request, response) => {
     switch (request.url) {
@@ -285,7 +345,7 @@ test("check-links ignores external hrefs and redirects and hrefs inside scripts"
         return html(`
           <a href="${external.url}">external</a>
           <a href="blob:${origin}/from-blob">blob URL</a>
-          <script href="/script-attribute">const template = '<a href="/from-script">fake</a>';</script>
+          <script>const template = '<a href="/from-script">fake</a>';</script>
           <a href="/exit">external redirect</a>
         `);
       }
@@ -306,7 +366,7 @@ test("check-links fails a site with zero internal links", async () => {
   const result = await crawlFixture(() => html("<p>No links here.</p>"));
   expect(result.status).toBe(1);
   expect(result.requests).toEqual(["/"]);
-  expect(result.stderr).toContain("found zero internal links");
+  expect(result.stderr).toBe("[check-links] crawl found zero internal links\n");
 });
 
 test("check-links fails when it cannot fetch the start page", async () => {
