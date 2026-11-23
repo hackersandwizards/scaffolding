@@ -4,12 +4,7 @@ import { spawnSync } from "node:child_process";
 import { mkdirSync, realpathSync, rmSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { pathChunks, reader, repoRoot, withoutEnvFile } from "../lib/repo.ts";
-import {
-  gitShellShebangs,
-  needsShellShebang,
-  shellExtension,
-  shellInput,
-} from "../lib/shell-inputs.ts";
+import { gitShellScripts, shellInput, shellSources } from "../lib/shell-inputs.ts";
 import { shellcheckBinary, shellcheckScratch } from "../lib/shellcheck.ts";
 import { stagedDiff, stagedPaths } from "../lib/staged-paths.ts";
 import { indexInputs, inNodeModules, regularInput, trackedInputs } from "../lib/tracked-inputs.ts";
@@ -23,7 +18,7 @@ function lintShell(binary: string, root: string, files: string[]) {
   for (const chunk of pathChunks(files)) {
     const run = spawnSync(
       binary,
-      ["-x", "--check-sourced", ...rc, "--", ...chunk.map((path) => (path === "-" ? "./-" : path))],
+      ["-x", ...rc, "--", ...chunk.map((path) => (path === "-" ? "./-" : path))],
       {
         cwd: root,
         stdio: "inherit",
@@ -45,25 +40,18 @@ function lintStagedShell(binary: string, root: string, files: string[]) {
   const read = reader(root, true);
   try {
     const tracked = indexInputs(root);
-    for (const path of [
-      ...indexShellScripts(root, tracked),
-      ...tracked.filter((path) => path === ".shellcheckrc"),
-    ]) {
+    const scripts = gitShellScripts(root, tracked);
+    shellSources(scripts, tracked, (path) => {
+      const content = read(path);
       const file = join(snapshot, path);
       mkdirSync(dirname(file), { recursive: true });
-      writeFileSync(file, read(path));
-    }
+      writeFileSync(file, content);
+      return content;
+    });
     return lintShell(binary, snapshot, files);
   } finally {
     rmSync(snapshot, { recursive: true, force: true });
   }
-}
-
-function indexShellScripts(root: string, paths: string[]) {
-  return [
-    ...paths.filter((path) => shellExtension.test(path)),
-    ...gitShellShebangs(root, paths.filter(needsShellShebang)),
-  ];
 }
 
 try {
@@ -72,7 +60,7 @@ try {
   let files: string[];
   if (staged) {
     const paths = stagedPaths(stagedDiff(root)).regularPaths.filter((path) => !inNodeModules(path));
-    files = indexShellScripts(root, paths);
+    files = gitShellScripts(root, paths);
   } else {
     files = trackedInputs(root).filter((path) => shellInput(path, join(root, path)));
   }

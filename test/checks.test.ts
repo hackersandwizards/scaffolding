@@ -2510,15 +2510,18 @@ describe("check-confidential", () => {
     write(dir, {
       ".confidential-purged.json": run(dir, "check-confidential", ["purged", purged]).out,
     });
-    const push = (sha: string, name = "origin") =>
+    const push = (sha: string, name = "origin", source = "refs/heads/main") =>
       spawnSync(process.execPath, [bin("check-confidential"), "prepush", name, remote], {
         cwd: dir,
-        input: `refs/heads/main ${sha} refs/heads/main ${"0".repeat(40)}\n`,
+        input: `${source} ${sha} refs/heads/main ${"0".repeat(40)}\n`,
         encoding: "utf8",
       });
     const refused = push(purged);
     expect(refused.status).toBe(1);
     expect(refused.stderr).toContain("purged from this repository's history");
+    expect(push(purged, "origin", "HEAD@{1 day ago}").stderr).toContain(
+      "purged from this repository's history",
+    );
     const clean = sh(dir, ["rev-parse", "HEAD~1"]).stdout.toString().trim();
     expect(push(clean).status).toBe(0);
     // A stale tracking ref or a fetched pull request holding it hides nothing.
@@ -3403,6 +3406,34 @@ describe("scaffolding check", () => {
     expect(r.out).toContain("skipped markdown: no changed path maps to it");
   });
 
+  test("--changed selects shell when a sourced tracked file changes", async () => {
+    const { shell: _s, ...rest } = skip;
+    const dir = gate({ skip: rest });
+    write(dir, {
+      "scripts/main.sh": '#!/bin/sh\n. ./lib/common.inc\nprintf "%s\\n" "$value"\n',
+      "lib/common.inc": "value=before\n",
+    });
+    expect(sh(dir, ["add", "--", "scripts/main.sh", "lib/common.inc"]).status).toBe(0);
+    expect(
+      sh(dir, ["commit", "-qm", "add source", "--", "scripts/main.sh", "lib/common.inc"]).status,
+    ).toBe(0);
+    const base = sh(dir, ["rev-parse", "HEAD"]).stdout.toString().trim();
+    const env = { CHECK_LOCK: join(temp(), "lock"), ...(await realShellcheckFixture(dir)) };
+    write(dir, { "lib/common.inc": "value=after\n" });
+    const local = run(dir, "scaffolding", ["check", "--changed"], env);
+    expect(local.code, local.out).toBe(0);
+    expect(local.out).toContain('selected shell: sources "lib/common.inc"');
+    rmSync(join(dir, "lib/common.inc"));
+    write(dir, { "scripts/main.sh": "#!/bin/sh\ntrue\n" });
+    expect(sh(dir, ["add", "--", "scripts/main.sh", "lib/common.inc"]).status).toBe(0);
+    expect(
+      sh(dir, ["commit", "-qm", "remove source", "--", "scripts/main.sh", "lib/common.inc"]).status,
+    ).toBe(0);
+    const pushed = run(dir, "scaffolding", ["check", "--changed", `${base}..HEAD`], env);
+    expect(pushed.code, pushed.out).toBe(0);
+    expect(pushed.out).toContain('selected shell: sources "lib/common.inc"');
+  });
+
   test.each([
     ["template/.githooks/pre-push", "#!/bin/sh\ntrue\n", []],
     ["template/guide.md", "# Guide\n", []],
@@ -3646,6 +3677,27 @@ describe("scaffolding check", () => {
       const docs = push(dir, "HEAD:refs/heads/main");
       expect(docs.out).toContain("docs-ran");
       expect(docs.out).not.toContain("src-ran");
+      const previous = sh(dir, ["rev-parse", "HEAD"]).stdout.toString().trim();
+      write(dir, { "docs/reflog.md": "reflog\n" });
+      expect(sh(dir, ["add", "--", "docs/reflog.md"]).status).toBe(0);
+      expect(
+        spawnSync("git", ["commit", "-qm", "dated target", "--", "docs/reflog.md"], {
+          cwd: dir,
+          env: {
+            ...process.env,
+            GIT_COMMITTER_DATE: new Date(Date.now() - 172_800_000).toISOString(),
+          },
+        }).status,
+      ).toBe(0);
+      const target = sh(dir, ["rev-parse", "HEAD"]).stdout.toString().trim();
+      commit(dir, { "src/later.ts": "export {};\n" });
+      const reflog = push(dir, "HEAD@{1 day ago}:refs/heads/main");
+      expect(reflog.code, reflog.out).toBe(0);
+      expect(readFileSync(refs, "utf8")).toBe(
+        `HEAD@{1 day ago} ${target} refs/heads/main ${previous}\n`,
+      );
+      expect(reflog.out).toContain('selected check:docs: matches "docs/reflog.md"');
+      expect(reflog.out).not.toContain("src-ran");
       // From a detached linked worktree, which has no upstream, the range is still the pushed one.
       const tree = join(temp(), "tree");
       sh(dir, ["worktree", "add", "-q", "--detach", tree]);
@@ -3895,6 +3947,34 @@ describe("scaffolding check", () => {
   });
 
   test.each([
+    [{ server: { command: "true" } }, [], "server"],
+    [{ brand: { retired: ["dist"] } }, ["retired"], "brand.retired"],
+    [
+      { brand: { elements: "server" }, server: { command: "true" } },
+      ["elements", "links"],
+      "brand.elements",
+    ],
+    [{ brand: { directory: "site" } }, ["colours", "elements"], "brand.directory"],
+    [{ server: { command: "true" }, linkSkips: ["/catalog"] }, ["links"], "linkSkips"],
+  ] as const)("rejects unused gate configuration %#", (config, local, key) => {
+    const replacements = local.map((step): string => `check:${step}`);
+    const skips = Object.fromEntries(
+      ["colours", "copies", "retired", "elements"]
+        .filter((step) => !replacements.includes(`check:${step}`))
+        .map((step) => [step, "fixture"]),
+    );
+    const dir = gate(
+      { skip: { ...skip, ...skips }, check: replacements, ...config },
+      Object.fromEntries(replacements.map((step) => [step, "true"])),
+      { devDependencies: { "@hackersandwizards/brand": "file:brand" } },
+    );
+    write(dir, { "brand/package.json": '{"name":"@hackersandwizards/brand","version":"1.0.0"}' });
+    const result = run(dir, "scaffolding", ["check"], { CHECK_LOCK: join(dir, ".lock") });
+    expect(result.out).toContain(`scaffolding.${key} is unused`);
+    expect(result.code).toBe(1);
+  });
+
+  test.each([
     ["colours", "cd site && brand-colours", '[ "$#" = 0 ] && test -f paint.css', "site/paint.css"],
     ["copies", "brand-copies", '[ "$#" = 0 ] && test -f mark.svg', "mark.svg"],
     [
@@ -3925,7 +4005,12 @@ describe("scaffolding check", () => {
         const dir = gate(
           {
             skip: skips,
-            brand: { directory: "site", retired: ["site/dist", "more output"] },
+            brand: {
+              ...(!useLocal && (name === "colours" || name === "elements")
+                ? { directory: "site" }
+                : {}),
+              ...(name === "retired" && !useLocal ? { retired: ["site/dist", "more output"] } : {}),
+            },
             check: useLocal ? [local] : [],
           },
           { [local]: command },
@@ -4006,6 +4091,7 @@ describe("scaffolding check", () => {
         console.log("vitest arguments", JSON.stringify(args));
         if (args[1] !== "--exclude" && !(await Bun.file("built").exists())) process.exit(9);
         if (args[1] !== "--exclude" && await Bun.file("broken").exists()) process.exit(1);
+        if (args[1] === "--exclude" && await Bun.file("broken-fast").exists()) process.exit(7);
       `,
       });
       chmodSync(join(dir, "node_modules/.bin/vitest"), 0o755);
@@ -4015,6 +4101,11 @@ describe("scaffolding check", () => {
       expect(direct.out).toContain(
         JSON.stringify(["run", "--exclude", `${folder}/**`, "unit.test.ts"]),
       );
+      write(dir, { "broken-fast": "" });
+      const fastRed = run(dir, "scaffolding", ["test"], env);
+      expect(fastRed.out).toContain(JSON.stringify(["run", "--exclude", `${folder}/**`]));
+      expect(fastRed.code).toBe(7);
+      rmSync(join(dir, "broken-fast"));
       write(dir, { "src/input.ts": "", "src/broken.ts": "" });
       const changed = run(dir, "scaffolding", ["check", "--changed"], env);
       expect(changed.code, changed.out).toBe(0);
@@ -4084,7 +4175,7 @@ describe("scaffolding check", () => {
     expect(result.out).toContain("scaffolding.skip names no shared step: constructor");
   });
 
-  test("changed checks scope colours to the brand directory, include binary copies and defer built scans", () => {
+  test("changed checks select both brand scans for any path and defer built scans", () => {
     const dir = gate(
       { skip, brand: { directory: "site", retired: ["site/dist"] } },
       {},
@@ -4102,16 +4193,18 @@ describe("scaffolding check", () => {
     sh(dir, ["add", "brand"]);
     sh(dir, ["commit", "-qm", "pin"]);
     const env = { CHECK_LOCK: join(temp(), "lock") };
-    write(dir, { "assets/partner.svg": "<svg/>", "assets/sample.png": "binary fixture" });
+    mkdirSync(join(dir, "site"));
+    write(dir, { "assets/sample.png": "binary fixture" });
     const outside = run(dir, "scaffolding", ["check", "--changed"], env);
     expect(outside.code, outside.out).toBe(0);
-    expect(outside.out).toContain("selected copies");
-    expect(outside.out).toContain("skipped colours: no changed path maps to it");
+    expect(outside.out).toContain('selected copies: matches "assets/sample.png"');
+    expect(outside.out).toContain('selected colours: matches "assets/sample.png"');
     expect(outside.out).toContain("deferred retired");
     expect(outside.out).toContain("deferred elements");
-    write(dir, { "site/card.css": "p {}" });
+    rmSync(join(dir, "assets/sample.png"));
+    write(dir, { "site/card.md": "# Card\n" });
     const inside = run(dir, "scaffolding", ["check", "--changed"], env);
-    expect(inside.out).toContain('selected colours: matches "site/card.css"');
+    expect(inside.out).toContain('selected colours: matches "site/card.md"');
     expect(inside.code).toBe(0);
   });
 
@@ -4203,7 +4296,7 @@ describe("scaffolding check", () => {
         {
           skip,
           server: { command: server, timeout: 5, stderr: true },
-          linkSkips: ["/catalog"],
+          ...(step === "links" ? { linkSkips: ["/catalog"] } : {}),
           fullOnly: {
             "check:preview": "builds the preview",
             "check:rebuild": "rebuilds the preview",
@@ -4264,13 +4357,14 @@ describe("scaffolding check", () => {
           copies: "fixture",
           retired: "fixture",
         },
-        brand: { elements: "server" },
+        brand: { directory: "site with space", elements: "server" },
         server: { command: 'exec bun server.ts "$PORT"', timeout: 5, stderr: true },
       },
       { build: "printf 'element fixture' > built.html" },
       { devDependencies: { "@hackersandwizards/brand": "file:brand" } },
     );
     write(dir, {
+      "site with space/elements-input": "element configuration",
       "brand/package.json": JSON.stringify({
         name: "@hackersandwizards/brand",
         bin: { "brand-elements": "elements.ts" },
@@ -4278,7 +4372,8 @@ describe("scaffolding check", () => {
       "brand/elements.ts": `#!/usr/bin/env bun
         const [flag, address, ...extra] = process.argv.slice(2);
         const response = await fetch(address);
-        if (flag !== "--base" || extra.length || await response.text() !== "element fixture") process.exit(1);
+        if (flag !== "--base" || extra.length || await response.text() !== "element fixture" ||
+          await Bun.file("elements-input").text() !== "element configuration") process.exit(1);
         console.log("elements fetched the built page");
       `,
       "server.ts": `Bun.serve({ port: Number(process.argv[2]), hostname: "127.0.0.1",
@@ -6952,20 +7047,46 @@ describe("check-staged", () => {
     expect(red.out).toContain("SC2154");
   });
 
-  test("ShellCheck reports style findings in unchanged index sources", async () => {
-    const dir = repo({ "package.json": lintPkg, "scripts/lib.sh": shellStyleFinding });
+  test("ShellCheck follows a staged script's tracked source without a shebang", async () => {
+    const main = '#!/bin/sh\n. ./lib/common.inc\nprintf "%s\\n" "$value"\n';
+    const dir = repo({ "package.json": lintPkg, "lib/common.inc": "value=from_index\n" });
     const env = await realShellcheckFixture(dir);
+    write(dir, { "main.sh": main });
+    expect(sh(dir, ["add", "--", "main.sh"]).status).toBe(0);
+    expect(checkedShell(dir, env)).toEqual({ code: 0, out: "" });
     write(dir, {
-      "scripts/main.sh": "#!/bin/sh\n. ./scripts/lib.sh\n",
-      "scripts/lib.sh": "#!/bin/sh\nprintf '%s\\n' ok\n",
+      "main.sh": "#!/bin/sh\nfalse\n",
+      "lib/common.inc": "false\n",
     });
-    expect(sh(dir, ["add", "--", "scripts/main.sh"]).status).toBe(0);
-    const red = run(dir, "check-staged", [], env);
-    expect(red.code, red.out).toBe(1);
-    expect(red.out).toMatch(/In \.\/scripts\/lib\.sh line 2:[\s\S]*SC2006 \(style\)/);
-    expect(sh(dir, ["add", "--", "scripts/lib.sh"]).status).toBe(0);
     const green = run(dir, "check-staged", [], env);
     expect(green.code, green.out).toBe(0);
+  });
+
+  test("ShellCheck follows transitive index sources and source directives", async () => {
+    const dir = repo({
+      "package.json": lintPkg,
+      "lib/common.inc": '# shellcheck source="lib/value with space.inc"\n. "$1"\n',
+      "lib/value with space.inc": "value=from_index\n",
+    });
+    const env = await realShellcheckFixture(dir);
+    write(dir, { "main.sh": '#!/bin/sh\n. ./lib/common.inc\nprintf "%s\\n" "$value"\n' });
+    expect(sh(dir, ["add", "--", "main.sh"]).status).toBe(0);
+    const result = run(dir, "check-staged", [], env);
+    expect(result.code, result.out).toBe(0);
+  });
+
+  test("ShellCheck lints an index source only when it is itself a staged shell input", async () => {
+    const dir = repo({ "package.json": lintPkg, "scripts/lib.sh": shellStyleFinding });
+    const env = await realShellcheckFixture(dir);
+    write(dir, { "scripts/main.sh": "#!/bin/sh\n. ./scripts/lib.sh\n" });
+    expect(sh(dir, ["add", "--", "scripts/main.sh"]).status).toBe(0);
+    const green = run(dir, "check-staged", [], env);
+    expect(green.code, green.out).toBe(0);
+    write(dir, { "scripts/lib.sh": shellStyleFinding + "true\n" });
+    expect(sh(dir, ["add", "--", "scripts/lib.sh"]).status).toBe(0);
+    const red = run(dir, "check-staged", [], env);
+    expect(red.code, red.out).toBe(1);
+    expect(red.out).toMatch(/In scripts\/lib\.sh line 2:[\s\S]*SC2006 \(style\)/);
   });
 
   test("a staged item file runs admin-check, a broken one goes red", () => {
@@ -8689,18 +8810,25 @@ exit "$status"
 }
 
 describe("scaffolding shell", () => {
-  test.each(["tracked script", "sourced script"])(
-    "fails on a style finding in a %s",
-    async (input) => {
-      const script = input === "tracked script" ? shellStyleFinding : "#!/bin/sh\n. ./lib.sh\n";
-      const dir = repo({ "main.sh": script });
-      if (input === "sourced script") write(dir, { "lib.sh": shellStyleFinding });
-      const red = checkedShell(dir, await realShellcheckFixture(dir));
-      expect(red.code, red.out).toBe(1);
-      expect(red.out).toContain(input === "tracked script" ? "In main.sh" : "In ./lib.sh");
-      expect(red.out).toContain("SC2006 (style)");
-    },
-  );
+  test("fails on a style finding in a tracked script", async () => {
+    const dir = repo({ "main.sh": shellStyleFinding });
+    const red = checkedShell(dir, await realShellcheckFixture(dir));
+    expect(red.code, red.out).toBe(1);
+    expect(red.out).toContain("In main.sh");
+    expect(red.out).toContain("SC2006 (style)");
+  });
+
+  test("follows an untracked source without printing its contents", async () => {
+    const dir = repo({
+      "main.sh": '#!/bin/sh\n. ./local-config\nprintf "%s\\n" "$value"\n',
+    });
+    const assignment = "PRIVATE_KEY=synthetic-shellcheck-fixture";
+    write(dir, { "local-config": `${shellStyleFinding}${assignment}\nvalue=from_source\n` });
+    const result = checkedShell(dir, await realShellcheckFixture(dir));
+    expect(result.out).not.toContain(assignment);
+    expect(result.out).not.toContain("SC2006");
+    expect(result.code).toBe(0);
+  });
 
   test("checks shell extensions and shebangs, honors .shellcheckrc and ignores other scripts", () => {
     const dir = repo({
@@ -8771,7 +8899,7 @@ test.each([".githooks/pre-push", "template/.githooks/pre-push"])(
     mkdirSync(fake, { recursive: true });
     writeFileSync(
       join(fake, "bun"),
-      '#!/bin/sh\n[ "$3" = check ] || exit 0\nprintf "%s\\n" "${GIT_DIR-unset}" "${GIT_INDEX_FILE-unset}" "$@"\n',
+      '#!/bin/sh\nif [ "$3" = check-confidential ]; then cat > refs.log; exit; fi\nprintf "%s\\n" "${GIT_DIR-unset}" "${GIT_INDEX_FILE-unset}" "$@"\n',
       { mode: 0o755 },
     );
     const hook = join(import.meta.dirname, "..", path);
@@ -8787,8 +8915,10 @@ test.each([".githooks/pre-push", "template/.githooks/pre-push"])(
         input,
         encoding: "utf8",
       });
-    const r = push("refs/heads/a a1 refs/heads/a a0\nrefs/heads/b b1 refs/heads/b b0\n");
+    const refs = "refs/heads/a a1 refs/heads/a a0\nHEAD@{1 day ago} b1 refs/heads/b b0\n";
+    const r = push(refs);
     expect(r.status).toBe(0);
+    expect(readFileSync(join(dir, "refs.log"), "utf8")).toBe(refs);
     expect(r.stdout.trim().split("\n")).toEqual([
       "unset",
       "unset",

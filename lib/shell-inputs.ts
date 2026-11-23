@@ -1,5 +1,6 @@
 import { spawnSync } from "node:child_process";
 import { closeSync, openSync, readFileSync, readSync } from "node:fs";
+import { posix } from "node:path";
 
 import { pathChunks } from "./repo.ts";
 
@@ -31,6 +32,84 @@ export function shellInput(path: string, file: string): boolean {
 
 export const needsShellShebang = (path: string) =>
   !shellExtension.test(path) && !otherScript.test(path);
+
+export function gitShellScripts(root: string, paths: string[], ref?: string): string[] {
+  return [
+    ...paths.filter((path) => shellExtension.test(path)),
+    ...gitShellShebangs(root, paths.filter(needsShellShebang), ref),
+  ];
+}
+
+// Read literal paths without evaluating shell expansions.
+const shellWord = /(?:'[^'\n]*'|"(?:\\.|[^"\\\n])*"|\\.|[^\s;&|()<>'"\\])+/;
+const sourceLine = new RegExp(
+  String.raw`(?:^|[;&|({])[ \t]*(?:(?:if|then|elif|else|do|while|until|command)[ \t]+)*(?:\.|source)[ \t]+(${shellWord.source})`,
+  "g",
+);
+const sourceDirective = new RegExp(
+  String.raw`(?:^|[ \t])(source|source-path)=(${shellWord.source})`,
+  "g",
+);
+
+function literalWord(word: string): string | undefined {
+  let value = "";
+  for (const [part, single, double, escaped] of word.matchAll(
+    /'([^']*)'|"((?:\\.|[^"\\])*)"|\\(.)|[^"'\\]+/g,
+  )) {
+    if (single !== undefined) value += single;
+    else if (double !== undefined) {
+      if (/(^|[^\\])(?:\\\\)*[$`]/.test(double)) return;
+      value += double.replace(/\\([$`"\\])/g, "$1");
+    } else if (escaped !== undefined) value += escaped;
+    else {
+      if (/[$`*?[\]{}~]/.test(part)) return;
+      value += part;
+    }
+  }
+  return value;
+}
+
+export function shellSources(
+  scripts: string[],
+  paths: string[],
+  read: (path: string) => Buffer,
+): Set<string> {
+  const tracked = new Set(paths);
+  const pending = new Set(scripts);
+  const sources = new Set<string>();
+  const rc = tracked.has(".shellcheckrc") ? read(".shellcheckrc").toString() : "";
+  const rcPaths = rc
+    .split("\n")
+    .flatMap((line) => [...line.matchAll(sourceDirective)])
+    .filter(([, key]) => key === "source-path")
+    .map(([, , word]) => literalWord(word!));
+  for (const script of pending) {
+    const content = read(script).toString().replace(/\\\n/g, "");
+    const names: (string | undefined)[] = [];
+    const directories = [".", ...rcPaths];
+    for (const line of content.split("\n")) {
+      const directive = /^\s*#\s*shellcheck\s+(.*)$/.exec(line);
+      if (directive) {
+        for (const [, key, word] of directive[1]!.matchAll(sourceDirective))
+          (key === "source" ? names : directories).push(literalWord(word!));
+      } else if (!/^\s*#/.test(line)) {
+        for (const [, word] of line.matchAll(sourceLine)) names.push(literalWord(word!));
+      }
+    }
+    for (const name of names) {
+      if (!name || posix.isAbsolute(name)) continue;
+      for (const directory of directories) {
+        if (!directory || posix.isAbsolute(directory)) continue;
+        const base = directory.replace(/^SCRIPTDIR(?=\/|$)/, posix.dirname(script));
+        const path = posix.join(base, name);
+        if (!tracked.has(path)) continue;
+        sources.add(path);
+        pending.add(path);
+      }
+    }
+  }
+  return sources;
+}
 
 export function gitShellShebangs(root: string, candidates: string[], ref?: string): string[] {
   const scripts: string[] = [];

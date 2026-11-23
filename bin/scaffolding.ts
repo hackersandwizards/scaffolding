@@ -1,14 +1,13 @@
 #!/bin/sh
 // 2>/dev/null; exec bun --no-env-file "$0" "$@"
 import { spawn, spawnSync } from "node:child_process";
-import { existsSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { allChangedSteps, fastSteps, selectChangedSteps, validGlob } from "../lib/changed-steps.ts";
 import {
   brandProblem,
   brandSteps,
   browserTestProblem,
-  changedBrandSteps,
   linksProblem,
   placedSteps,
   pinsPackage,
@@ -20,6 +19,7 @@ import { ownEntry } from "../lib/own-entry.ts";
 import {
   isReason,
   isObject,
+  git as readGit,
   readPackage,
   repoRoot,
   styleFiles,
@@ -31,8 +31,13 @@ import {
   type Package,
 } from "../lib/repo.ts";
 import { machineLoad } from "../lib/serve.ts";
-import { gitShellShebangs, needsShellShebang, shellInput } from "../lib/shell-inputs.ts";
-import { inNodeModules, regularInput } from "../lib/tracked-inputs.ts";
+import {
+  gitShellScripts,
+  needsShellShebang,
+  shellInput,
+  shellSources,
+} from "../lib/shell-inputs.ts";
+import { inNodeModules, regularInput, trackedInputs, treeInputs } from "../lib/tracked-inputs.ts";
 
 const usage =
   "usage: scaffolding check [--changed [<from>..<to>...]] | scaffolding shell | scaffolding markdown [--fix] | scaffolding test [<vitest args>...] | scaffolding fix";
@@ -202,7 +207,13 @@ if (pinsPackage(pkg, "@hackersandwizards/brand")) {
     if (step === "elements")
       full.set(
         step,
-        `${directory}${brand?.elements === "server" && !isReason(skip.elements) ? withServer("brand-elements --base {url}") : "brand-elements"}`,
+        brand?.elements === "server" && !isReason(skip.elements)
+          ? withServer(
+              directory
+                ? `sh -c ${quote(`${directory}exec brand-elements --base "$1"`)} sh {url}`
+                : "brand-elements --base {url}",
+            )
+          : `${directory}brand-elements`,
       );
   }
 }
@@ -230,6 +241,25 @@ for (const [step, reason] of Object.entries(skip)) {
   full.delete(step);
   if (step === "lint") delete shared.oxlint;
 }
+
+const serverElements = config.brand?.elements === "server" && full.has("elements");
+for (const [key, unused] of [
+  ["brand.retired", config.brand?.retired !== undefined && !full.has("retired")],
+  ["brand.elements", config.brand?.elements !== undefined && !serverElements],
+  [
+    "brand.directory",
+    config.brand?.directory !== undefined && !shared.colours && !full.has("elements"),
+  ],
+  ["linkSkips", config.linkSkips !== undefined && !full.has("links")],
+  [
+    "server",
+    config.server !== undefined &&
+      !full.has("links") &&
+      !replacements.has("links") &&
+      !serverElements,
+  ],
+] as const)
+  if (unused) fail(`scaffolding.${key} is unused`);
 
 for (const step of new Set(entries))
   if (placedSteps.has(step) || [...replacements.values()].includes(step)) {
@@ -275,6 +305,19 @@ function changedSteps(): Map<string, string> {
   const pathsFrom = (names: string) => names.split("\0").filter(Boolean);
   const paths = new Set<string>();
   const shellShebangs = new Set<string>();
+  const sourcedPaths = new Set<string>();
+  const checkedShellTrees = new Set<string>();
+  const readShellTree = (ref: string) => {
+    if (checkedShellTrees.has(ref)) return;
+    const tracked = treeInputs(root, ref);
+    const scripts = gitShellScripts(root, tracked, ref);
+    for (const path of scripts.filter(needsShellShebang)) shellShebangs.add(path);
+    for (const path of shellSources(scripts, tracked, (path) =>
+      readGit(["show", `${ref}:${path}`], root),
+    ))
+      sourcedPaths.add(path);
+    checkedShellTrees.add(ref);
+  };
   const shellCandidates = (paths: string[]) =>
     fast.has("shell")
       ? paths.filter((path) => !inNodeModules(path) && needsShellShebang(path))
@@ -298,12 +341,13 @@ function changedSteps(): Map<string, string> {
       if (diff.status !== 0) return fallback("git could not list the changes");
       const touched = pathsFrom(diff.stdout);
       for (const path of touched) paths.add(path);
-      const candidates = shellCandidates(touched);
       try {
-        for (const ref of [base, head])
-          for (const path of gitShellShebangs(root, candidates, ref)) shellShebangs.add(path);
+        if (fast.has("shell") && touched.length) {
+          readShellTree(base);
+          readShellTree(head);
+        }
       } catch {
-        return fallback("git could not read shell shebangs in the pushed ranges");
+        return fallback("git could not read shell inputs in the pushed ranges");
       }
     }
     since = ranges.map((r) => r.split("..")[0]!.slice(0, 9)).join(", ");
@@ -317,12 +361,17 @@ function changedSteps(): Map<string, string> {
     const touched = pathsFrom(diff.stdout);
     for (const path of [...touched, ...pathsFrom(untracked.stdout)]) paths.add(path);
     try {
-      for (const path of gitShellShebangs(root, shellCandidates(touched), base))
-        shellShebangs.add(path);
+      if (fast.has("shell") && paths.size) {
+        readShellTree(base);
+        const tracked = trackedInputs(root);
+        const scripts = tracked.filter((path) => shellInput(path, join(root, path)));
+        for (const path of shellSources(scripts, tracked, (path) => readFileSync(join(root, path))))
+          sourcedPaths.add(path);
+      }
       for (const path of shellCandidates([...paths]))
         if (regularInput(root, path) && shellInput(path, join(root, path))) shellShebangs.add(path);
     } catch {
-      return fallback("could not read shell shebangs in the base commit or working tree");
+      return fallback("could not read shell inputs in the base commit or working tree");
     }
     if (upstream) since = upstream.slice(0, 9);
   }
@@ -332,11 +381,8 @@ function changedSteps(): Map<string, string> {
     local,
     mappings,
     shellShebangs,
+    sourcedPaths,
   );
-  if (!why && (fast.has("colours") || fast.has("copies")))
-    for (const path of paths)
-      for (const step of changedBrandSteps(path, config.brand?.directory))
-        if (fast.has(step) && !steps.has(step)) steps.set(step, `matches ${JSON.stringify(path)}`);
   if (why !== undefined) console.error(`[scaffolding] --changed: ${why}: all fast steps run`);
   else console.error(`[scaffolding] --changed: ${paths.size} paths since ${since}`);
   return steps;

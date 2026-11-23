@@ -1,4 +1,3 @@
-import { posix } from "node:path";
 import { isObject, isReason, type Package } from "./repo.ts";
 
 export const brandSteps = ["colours", "copies", "retired", "elements"] as const;
@@ -105,17 +104,4 @@ export function linksProblem(config: NonNullable<Package["scaffolding"]>): strin
     !skips.every((prefix) => typeof prefix === "string" && prefix.startsWith("/"))
   )
     return "scaffolding.linkSkips must be a list of path prefixes starting with /";
-  if (!config.server) return "scaffolding.linkSkips requires scaffolding.server";
-  if (!entries.includes("links") && !entries.includes("check:links"))
-    return "scaffolding.linkSkips requires links in scaffolding.check";
-}
-
-const colourInput =
-  /\.(?:css|scss|astro|tsx?|mts|cts|jsx?|mjs|cjs|vue|svelte|html|svg|py|json|webmanifest)$/;
-
-export function changedBrandSteps(path: string, directory = "."): string[] {
-  if (/(?:^|\/)\.gitignore$/.test(path)) return ["copies", "colours"];
-  const scope = posix.normalize(directory).replace(/\/+$/g, "");
-  if (scope !== "." && !path.startsWith(`${scope}/`)) return ["copies"];
-  return colourInput.test(path) ? ["copies", "colours"] : ["copies"];
 }

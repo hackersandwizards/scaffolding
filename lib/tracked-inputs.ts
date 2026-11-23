@@ -16,6 +16,15 @@ export function indexInputs(root: string, ...pathspecs: string[]): string[] {
 export const trackedInputs = (root: string, ...pathspecs: string[]) =>
   indexInputs(root, ...pathspecs).filter((path) => regularInput(root, path));
 
+export function treeInputs(root: string, ref: string): string[] {
+  return git(["ls-tree", "-rz", ref], root)
+    .toString()
+    .split("\0")
+    .filter((entry) => /^100[67][0-7]{2} blob /.test(entry))
+    .map((entry) => entry.slice(entry.indexOf("\t") + 1))
+    .filter((path) => !inNodeModules(path));
+}
+
 export function regularInput(root: string, path: string): boolean {
   const parts = path.split("/");
   const leaf = parts.pop()!;

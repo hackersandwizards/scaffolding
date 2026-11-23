@@ -69,6 +69,7 @@ export function selectChangedSteps(
   local: string[],
   mappings: Mapping[],
   shellShebangs: ReadonlySet<string> = new Set(),
+  sourcedPaths: ReadonlySet<string> = new Set(),
 ): { steps: Map<string, string>; fallback?: string } {
   const fallback = (why: string) => ({ steps: allChangedSteps(fast, why), fallback: why });
   const steps = new Map(
@@ -87,6 +88,8 @@ export function selectChangedSteps(
     const shell = shellShebangs.has(path);
     if (shell && fast.has("shell") && !steps.has("shell"))
       steps.set("shell", `matches shell shebang in ${JSON.stringify(path)}`);
+    if (sourcedPaths.has(path) && fast.has("shell") && !steps.has("shell"))
+      steps.set("shell", `sources ${JSON.stringify(path)}`);
     for (const { steps: matched } of [
       ...hits,
       ...additional.filter(({ glob }) => glob.match(path)),
@@ -94,5 +97,10 @@ export function selectChangedSteps(
       for (const step of matched)
         if (fast.has(step) && !steps.has(step)) steps.set(step, `matches ${JSON.stringify(path)}`);
   }
+  const firstPath = paths[0];
+  if (firstPath !== undefined)
+    for (const step of ["colours", "copies"])
+      if (fast.has(step) && !steps.has(step))
+        steps.set(step, `matches ${JSON.stringify(firstPath)}`);
   return { steps };
 }

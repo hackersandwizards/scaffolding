@@ -228,15 +228,18 @@ if (argv[0] === "prepush") {
     .toString()
     .split("\n")
     .map((line) => line.split(" "));
-  const sha = (i: number) => lines.map((l) => l[i]).filter((s) => s && !/^0+$/.test(s));
-  const locals = sha(1);
+  // Git writes the original source expression, which can contain spaces.
+  const sha = (i: number) =>
+    lines.map((line) => line.at(i)).filter((s): s is string => !!s && !/^0+$/.test(s));
+  const locals = sha(-3);
+  const remoteTips = sha(-1);
   // New to the remote pushed to: a commit another remote already holds may still be missing there.
   // Its tips from the input cover a push to a URL, which has no tracking refs.
-  const notOnRemote = ["--ignore-missing", "--not", `--remotes=${argv[1]}`, ...sha(3)];
+  const notOnRemote = ["--ignore-missing", "--not", `--remotes=${argv[1]}`, ...remoteTips];
   // Only the tips the remote reports count as held there: a stale tracking ref or a fetched pull
   // request may still point into the purged history.
   const commits = locals.flatMap((local) =>
-    git(["rev-list", local, "--ignore-missing", "--not", ...sha(3)], root)
+    git(["rev-list", local, "--ignore-missing", "--not", ...remoteTips], root)
       .toString()
       .split("\n")
       .filter(Boolean),
