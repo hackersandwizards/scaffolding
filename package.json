@@ -17,7 +17,9 @@
     "scaffolding": "bin/scaffolding.ts",
     "scaffolding-mutation": "bin/scaffolding-mutation.ts",
     "scaffolding-explore": "bin/scaffolding-explore.ts",
-    "raise-pins": "bin/raise-pins.ts"
+    "raise-pins": "bin/raise-pins.ts",
+    "with-server": "bin/with-server.ts",
+    "check-links": "bin/check-links.ts"
   },
   "exports": {
     "./eslint": "./config/eslint.js",
