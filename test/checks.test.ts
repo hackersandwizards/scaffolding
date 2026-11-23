@@ -1177,8 +1177,8 @@ describe("scaffold and check-structure", () => {
     );
     expect(pkg.scaffolding.skip).toEqual({ test: "new repository: no tests yet" });
     expect(pkg.scripts.build).toBe("check-lock bun --bun astro build --root catalog");
-    expect(pkg.scripts["check:retired"]).toBe("brand-retired dist");
-    expect(pkg.scaffolding.check).toEqual(["check:retired"]);
+    expect(pkg.scripts["check:retired"]).toBeUndefined();
+    expect(pkg.scaffolding.brand).toEqual({ retired: ["dist"] });
     // Under an agent `astro preview` moves into the background, which resolves --root catalog from
     // inside catalog/ and finds no catalog/catalog/dist.
     expect(pkg.scripts.preview).toBe(PREVIEW);
@@ -3846,7 +3846,7 @@ describe("scaffolding check", () => {
     expect(r.status).toBe(0);
   });
 
-  test("a gate pinning brand goes red without check:retired unless the skip gives a reason", () => {
+  test("a gate pinning brand needs retired inputs, a local check, or a skip reason", () => {
     // A local pin: a github: one downloads brand on every install the gate runs.
     const pin = { devDependencies: { "@hackersandwizards/brand": "file:brand" } };
     const branded = (scaffolding: object, scripts: Record<string, string> = {}) => {
@@ -3855,32 +3855,126 @@ describe("scaffolding check", () => {
       return dir;
     };
     const lock = (d: string) => ({ CHECK_LOCK: join(d, ".lock") });
-    const bare = branded({ skip });
+    const noScans = { ...skip, colours: "fixture", copies: "fixture", elements: "fixture" };
+    const bare = branded({ skip: noScans });
     const r = run(bare, "scaffolding", ["check"], lock(bare));
     expect(r.code).toBe(1);
-    expect(r.out).toContain("scaffolding.check runs no check:retired");
+    expect(r.out).toContain("declare scaffolding.brand.retired");
     const listed = branded(
-      { skip, check: [["check:retired", "true"]] },
+      { skip: noScans, check: [["check:retired", "true"]] },
       { "check:retired": "echo ran-retired" },
     );
     const ok = run(listed, "scaffolding", ["check"], lock(listed));
     expect(ok.out).toContain("ran-retired");
+    expect(ok.out).toContain("retired uses local check:retired");
     expect(ok.code).toBe(0);
-    const skipped = branded({ skip: { ...skip, retired: "brand only in tests" } });
+    const skipped = branded({ skip: { ...noScans, retired: "brand only in tests" } });
     expect(run(skipped, "scaffolding", ["check"], lock(skipped)).code).toBe(0);
-    const blank = branded({ skip: { ...skip, retired: " " } });
-    expect(run(blank, "scaffolding", ["check"], lock(blank)).out).toContain("no check:retired");
+    const blank = branded({ skip: { ...noScans, retired: " " } });
+    expect(run(blank, "scaffolding", ["check"], lock(blank)).out).toContain(
+      "declare scaffolding.brand.retired",
+    );
     const unpinned = gate({ skip: { ...skip, retired: "brand only in tests" } });
     expect(run(unpinned, "scaffolding", ["check"], lock(unpinned)).out).toContain(
       "scaffolding.skip names no shared step: retired",
     );
   });
 
+  test.each([
+    ["colours", "cd site && brand-colours", '[ "$#" = 0 ] && test -f paint.css', "site/paint.css"],
+    ["copies", "brand-copies", '[ "$#" = 0 ] && test -f mark.svg', "mark.svg"],
+    [
+      "retired",
+      "brand-retired site/dist 'more output'",
+      '[ "$*" = "site/dist more output" ] && [ "$#" = 2 ] && test -f "$2/page.html"',
+      "more output/page.html",
+    ],
+    [
+      "elements",
+      "cd site && brand-elements",
+      '[ "$#" = 0 ] && test -f brand-elements.json',
+      "site/brand-elements.json",
+    ],
+  ])(
+    "shared %s passes the pinned bin the same inputs as the local step",
+    (name, command, predicate, input) => {
+      const local = `check:${name}`;
+      for (const useLocal of [true, false]) {
+        const skips = {
+          ...skip,
+          ...Object.fromEntries(
+            ["colours", "copies", "retired", "elements"]
+              .filter((step) => step !== name)
+              .map((step) => [step, "fixture checks one scan"]),
+          ),
+        };
+        const dir = gate(
+          {
+            skip: skips,
+            brand: { directory: "site", retired: ["site/dist", "more output"] },
+            check: useLocal ? [local] : [],
+          },
+          { [local]: command },
+          { devDependencies: { "@hackersandwizards/brand": "file:brand" } },
+        );
+        write(dir, {
+          "brand/package.json": JSON.stringify({
+            name: "@hackersandwizards/brand",
+            bin: { [`brand-${name}`]: "check.sh" },
+          }),
+          "brand/check.sh": `#!/bin/sh\n${predicate} || exit 2\ngrep -q clean ${JSON.stringify(input.replace(name === "colours" || name === "elements" ? /^site\// : /$^/, ""))}\n`,
+          [input]: "bad",
+        });
+        chmodSync(join(dir, "brand/check.sh"), 0o755);
+        const step = useLocal ? local : name;
+        const env = { CHECK_LOCK: join(dir, ".lock") };
+        const red = run(dir, "scaffolding", ["check"], env);
+        expect(red.code).toBe(1);
+        expect(red.out).toContain(`FAIL ${step}`);
+        write(dir, { [input]: "clean" });
+        const green = run(dir, "scaffolding", ["check"], env);
+        expect(green.code).toBe(0);
+        expect(green.out).toContain(`ok   ${step}`);
+      }
+    },
+  );
+
   test("a skipped step must name an own entry in the shared step table", () => {
     const dir = gate({ skip: { ...skip, constructor: "not a step" } });
     const result = run(dir, "scaffolding", ["check"], { CHECK_LOCK: join(dir, ".lock") });
     expect(result.code).toBe(1);
     expect(result.out).toContain("scaffolding.skip names no shared step: constructor");
+  });
+
+  test("changed checks scope colours to the brand directory, include binary copies and defer built scans", () => {
+    const dir = gate(
+      { skip, brand: { directory: "site", retired: ["site/dist"] } },
+      {},
+      { devDependencies: { "@hackersandwizards/brand": "file:brand" } },
+    );
+    write(dir, {
+      "brand/package.json": JSON.stringify({
+        name: "@hackersandwizards/brand",
+        bin: { "brand-colours": "colours.sh", "brand-copies": "copies.sh" },
+      }),
+      "brand/colours.sh": "#!/bin/sh\nexit 0\n",
+      "brand/copies.sh": "#!/bin/sh\nexit 0\n",
+    });
+    for (const scan of ["colours", "copies"]) chmodSync(join(dir, `brand/${scan}.sh`), 0o755);
+    sh(dir, ["add", "brand"]);
+    sh(dir, ["commit", "-qm", "pin"]);
+    const env = { CHECK_LOCK: join(temp(), "lock") };
+    write(dir, { "assets/partner.svg": "<svg/>", "assets/sample.png": "binary fixture" });
+    const outside = run(dir, "scaffolding", ["check", "--changed"], env);
+    expect(outside.code, outside.out).toBe(0);
+    expect(outside.out).toContain("selected copies");
+    expect(outside.out).toContain("skipped colours: no changed path maps to it");
+    expect(outside.out).toContain("deferred retired");
+    expect(outside.out).toContain("deferred elements");
+    write(dir, { "site/card.css": "p {}" });
+    const inside = run(dir, "scaffolding", ["check", "--changed"], env);
+    expect(inside.out).toContain('selected colours: matches "site/card.css"');
+    expect(inside.code).toBe(0);
   });
 
   test("a test command named like an Object member runs directly", () => {

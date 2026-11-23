@@ -214,13 +214,38 @@ flags an inline closing tag or text whose next line holds one expression whose f
 inline (`{n > 0 && <span>{n}</span>}`): the package's pages show that space, a consumer's do not. It
 reads every file again once one config returns to `"jsx"`.
 
-A repository that pins `@hackersandwizards/brand` lists `check:retired` in `scaffolding.check`, brand's
-`brand-retired` over the folders its build writes (`"check:retired": "brand-retired dist"`), or
-gives `skip.retired` a reason; the gate goes red otherwise. `scaffold` writes that step for a
-repository with its catalog.
+### Brand checks
 
-Every step in `scaffolding.check` is a script named `check:<what>`. `scaffolding.private` in the
-index skips the confidential scan.
+Pinning `@hackersandwizards/brand` enables four steps. The gate runs `colours` and `copies`
+alongside the shared static checks. A changed check selects `colours` for styling and component
+sources, its allowlist and Git ignore changes. `copies` reads every kind of file for byte matches,
+so any changed path selects it. Both scanners apply brand's own file exclusions.
+
+`retired` and `elements` run in the full gate after the catalog build. Put their names in
+`scaffolding.check` to keep their position relative to a local step, including a preview build.
+Full shared steps without an explicit position run side by side after the local groups.
+Use `scaffolding.brand.retired` to name the built paths to scan. `scaffolding.brand.directory`
+sets the working directory for colours and elements, and retired paths stay relative to the
+repository root. Set `scaffolding.brand.elements` to `"server"` to pass `--base {url}` through
+`with-server`. Declare the server once, with optional readiness timeout in seconds and stderr
+forwarding.
+
+```json
+{
+  "brand": { "retired": ["dist"], "elements": "server" },
+  "server": { "command": "bun dist/server/entry.mjs", "timeout": 120, "stderr": true }
+}
+```
+
+A `check:<name>` script listed in `scaffolding.check` takes the place of its shared brand step.
+The gate prints `retired uses local check:retired` for that choice, then reports the result
+under the script's name. The script keeps its existing group, changed scopes and `fullOnly` reason.
+The manifest must declare retired paths, list `check:retired` or give `skip.retired` a reason.
+`scaffold` declares `dist` for its starter catalog and skips elements until the repository
+declares pages for the check.
+
+Other entries in `scaffolding.check` are scripts named `check:<what>`. `scaffolding.private` in
+the index skips the confidential scan.
 
 **CSS origin.** In a repository's sources, a stylesheet from a company package comes only from
 brand's `exports`; the shell's styles load only under `catalog/`; an engine's stylesheet loads where

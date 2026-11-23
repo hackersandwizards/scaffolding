@@ -222,11 +222,18 @@ export type Package = {
   scripts?: Record<string, string>;
   dependencies?: Record<string, string>;
   devDependencies?: Record<string, string>;
+  optionalDependencies?: Record<string, string>;
   scaffolding?: {
     allow?: AllowEntry[];
     private?: boolean;
     typecheck?: string;
     test?: string;
+    brand?: {
+      directory?: string;
+      retired?: string[];
+      elements?: "server";
+    };
+    server?: { command: string; timeout?: number; stderr?: boolean };
     skip?: Record<string, unknown>;
     check?: (string | string[])[];
     styles?: string[];

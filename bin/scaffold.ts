@@ -147,9 +147,9 @@ if (catalogIn) {
     catalog: "bun run dev",
     build: "check-lock bun --bun astro build --root catalog",
     preview: 'ASTRO_PREVIEW_BACKGROUND=1 bun --bun astro preview --root "$PWD/catalog"',
-    "check:retired": "brand-retired dist",
   });
-  (gate.check ??= []).push("check:retired");
+  gate.brand = { retired: ["dist"] };
+  skip.elements = "the starter catalog declares no brand element pages";
 }
 if (adminIn) skip.admin = `the admin area lives in ${adminIn}`;
 writeFileSync(pkgPath, `${JSON.stringify(pkg, null, 2)}\n`);

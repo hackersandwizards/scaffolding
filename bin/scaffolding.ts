@@ -4,6 +4,14 @@ import { spawn, spawnSync } from "node:child_process";
 import { existsSync } from "node:fs";
 import { join } from "node:path";
 import { allChangedSteps, fastSteps, selectChangedSteps, validGlob } from "../lib/changed-steps.ts";
+import {
+  brandProblem,
+  brandSteps,
+  changedBrandSteps,
+  fullBrandSteps,
+  pinsBrand,
+  serverProblem,
+} from "../lib/gate-brand.ts";
 import { help } from "../lib/help.ts";
 import { ownEntry } from "../lib/own-entry.ts";
 import {
@@ -35,6 +43,8 @@ const KEYS = new Set(
     private: 0,
     typecheck: 0,
     test: 0,
+    brand: 0,
+    server: 0,
     skip: 0,
     check: 0,
     styles: 0,
@@ -122,29 +132,65 @@ if (!config.test && !isReason(config.skip?.test))
 const declared = { ...pkg.dependencies, ...pkg.devDependencies };
 if (!("@hackersandwizards/admin" in declared) && !isReason(config.skip?.admin))
   fail("@hackersandwizards/admin is not pinned: pin it, or skip.admin with a reason");
-// The build is the repository's own, so its step names the folders: brand-retired over what it writes.
-const branded = "@hackersandwizards/brand" in declared;
-if (
-  branded &&
-  !(config.check ?? []).flat().includes("check:retired") &&
-  !isReason(config.skip?.retired)
-)
-  fail(
-    "@hackersandwizards/brand is pinned and scaffolding.check runs no check:retired: add it (brand-retired <build folders>), or skip.retired with a reason",
-  );
+for (const problem of [brandProblem(pkg), serverProblem(config.server)]) if (problem) fail(problem);
 const skip = { ...config.skip };
-const local = (config.check ?? []).flat();
-const named = new Set([...Object.keys(shared), ...local]);
+const entries = (config.check ?? []).flat();
+const local = entries.filter((step) => !fullBrandSteps.has(step));
+const full = new Map<string, string>();
+const replacements = new Map<string, string>();
+const withServer = (command: string) => {
+  const server = config.server;
+  if (!server) fail("scaffolding.server is required for a server-backed check");
+  const flags = [
+    server.timeout === undefined ? "" : ` --timeout ${server.timeout}`,
+    server.stderr ? " --stderr" : "",
+  ].join("");
+  return `${bin("with-server")}${flags} ${quote(server.command)} -- ${command}`;
+};
+if (pinsBrand(pkg)) {
+  const brand = config.brand;
+  const directory = brand?.directory ? `cd ${quote(brand.directory)} && ` : "";
+  for (const step of brandSteps) {
+    const replacement = `check:${step}`;
+    if (local.includes(replacement)) {
+      if (!isReason(ownEntry(pkg.scripts, replacement)))
+        fail(`scaffolding.check requires a script named ${replacement}`);
+      replacements.set(step, replacement);
+      continue;
+    }
+    if (step === "colours") shared[step] = `${directory}brand-colours`;
+    if (step === "copies") shared[step] = "brand-copies";
+    if (step === "retired")
+      full.set(step, `brand-retired ${(brand?.retired ?? []).map(quote).join(" ")}`);
+    if (step === "elements")
+      full.set(
+        step,
+        `${directory}${brand?.elements === "server" && !isReason(skip.elements) ? withServer("brand-elements --base {url}") : "brand-elements"}`,
+      );
+  }
+}
+const named = new Set([...Object.keys(shared), ...full.keys(), ...local]);
 for (const [step, reason] of Object.entries(skip)) {
-  if (step === "oxlint" || (!Object.hasOwn(shared, step) && !(step === "retired" && branded)))
+  if (step === "oxlint" || !(Object.hasOwn(shared, step) || full.has(step)))
     fail(`scaffolding.skip names no shared step: ${step}`);
   if (!isReason(reason)) fail(`scaffolding.skip.${step} has no reason`);
   named.add(step);
   delete shared[step];
+  full.delete(step);
   if (step === "lint") delete shared.oxlint;
 }
 
-const fullOnly = new Map([["catalog", "builds the catalog"]]);
+for (const step of new Set(entries))
+  if (fullBrandSteps.has(step) || [...replacements.values()].includes(step)) {
+    if (entries.filter((entry) => entry === step).length > 1)
+      fail(`scaffolding.check lists ${step} more than once`);
+    if (fullBrandSteps.has(step) && !named.has(step))
+      fail(`scaffolding.check names no enabled shared step: ${step}`);
+  }
+for (const [step, replacement] of replacements)
+  console.error(`[scaffolding] ${step} uses local ${replacement}`);
+
+const fullOnly = new Map([["catalog", "builds the catalog"], ...fullBrandSteps]);
 if (config.fullOnly !== undefined && !isObject(config.fullOnly))
   fail("scaffolding.fullOnly must be a map of steps to reasons");
 for (const [step, reason] of Object.entries(config.fullOnly ?? {})) {
@@ -236,6 +282,9 @@ function changedSteps(): Map<string, string> {
     mappings,
     shellShebangs,
   );
+  for (const path of paths)
+    for (const step of changedBrandSteps(path, config.brand?.directory))
+      if (fast.has(step) && !steps.has(step)) steps.set(step, `matches ${JSON.stringify(path)}`);
   if (why !== undefined) console.error(`[scaffolding] --changed: ${why}: all fast steps run`);
   else console.error(`[scaffolding] --changed: ${paths.size} paths since ${since}`);
   return steps;
@@ -378,9 +427,11 @@ if (selected) {
 const sharedSteps = Object.entries(shared).filter(([name]) => runs(name));
 const localGroups = (config.check ?? []).map((entry) =>
   (Array.isArray(entry) ? entry : [entry])
+    .filter((name) => !fullBrandSteps.has(name) || full.has(name))
     .filter(runs)
-    .map((s): [string, string] => [s, script(s)]),
+    .map((s): [string, string] => [s, full.get(s) ?? script(s)]),
 );
+localGroups.push([...full].filter(([name]) => !entries.includes(name) && runs(name)));
 const quick = (name: string) => name !== "test" && name !== "catalog";
 const order = Object.keys(shared);
 
