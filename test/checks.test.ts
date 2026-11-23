@@ -3,6 +3,7 @@ import { spawn, spawnSync } from "node:child_process";
 import { createHash } from "node:crypto";
 import {
   chmodSync,
+  copyFileSync,
   cpSync,
   existsSync,
   globSync,
@@ -7098,6 +7099,120 @@ describe("check-spaces", () => {
 
 describe("check-cycles", () => {
   const cycle = (files: Record<string, string>) => run(repo(files), "check-cycles");
+  const page = "src/pages/index.astro";
+  const frontmatter = (specifier: string) =>
+    `---\nimport { value } from "${specifier}";\n---\n<p>{value}</p>\n`;
+
+  test("a runtime cycle through Astro frontmatter names the original paths once", () => {
+    const r = cycle({
+      [page]: frontmatter("./value.ts"),
+      "src/pages/value.ts": 'import Page from "./index.astro";\nexport const value = Page;\n',
+    });
+    expect(r.code).toBe(1);
+    expect(lines(r.out, "cycles")).toHaveLength(1);
+    expect(r.out).toContain(`${page} -> src/pages/value.ts -> ${page}`);
+    expect(r.out).not.toMatch(/\.astro\.ts|node_modules\/\.cache/);
+  });
+
+  test("client script imports stay separate from frontmatter imports", () => {
+    const files = {
+      [page]: '<p>Page</p>\n<script>import "./value.ts";</script>\n',
+      "src/pages/value.ts": 'import Page from "./index.astro";\nexport const value = Page;\n',
+    };
+    expect(cycle(files)).toEqual({ code: 0, out: "" });
+    expect(cycle({ ...files, [page]: frontmatter("./value.ts") }).code).toBe(1);
+  });
+
+  test("a style block creates no self-cycle and a real self-import still fails", () => {
+    const style = "<style>p { color: red; }</style>\n";
+    expect(cycle({ [page]: `<p>Page</p>\n${style}` })).toEqual({ code: 0, out: "" });
+    const r = cycle({ [page]: `---\nimport Page from "./index.astro";\n---\n<Page />\n${style}` });
+    expect(r.code).toBe(1);
+    expect(lines(r.out, "cycles")).toHaveLength(1);
+    expect(r.out).toContain(`${page} -> ${page}`);
+  });
+
+  test("an Astro cycle follows tsconfig paths across local and installed config files", () => {
+    const dir = repo({
+      "tsconfig.json": '{"extends":"./config/tsconfig.paths.json"}',
+      "config/tsconfig.paths.json":
+        '{"extends":"cycle-config/tsconfig.json","compilerOptions":{"baseUrl":"..","paths":{"@/*":["src/*"]}}}',
+      [page]: frontmatter("@/pages/value"),
+      "src/pages/value.ts": 'import Page from "@/pages/index.astro";\nexport const value = Page;\n',
+    });
+    write(dir, {
+      "node_modules/cycle-config/tsconfig.json": '{"compilerOptions":{"strict":true}}',
+    });
+    const r = run(dir, "check-cycles");
+    expect(r.code).toBe(1);
+    expect(r.out).toContain(`${page} -> src/pages/value.ts -> ${page}`);
+  });
+
+  test("the mirror requires tracked Astro and both paths catch TypeScript cycles", () => {
+    const dir = repo({ "a.ts": 'import "./b.ts";\n', "b.ts": 'import "./a.ts";\n' });
+    const mirrorCache = join(dir, "node_modules", ".cache", "scaffolding");
+    const plain = run(dir, "check-cycles");
+    expect(plain.code).toBe(1);
+    expect(plain.out).toContain("a.ts -> b.ts -> a.ts");
+    expect(existsSync(mirrorCache)).toBe(false);
+
+    write(dir, { [page]: "<p>Page</p>\n" });
+    expect(run(dir, "check-cycles").out).toContain("a.ts -> b.ts -> a.ts");
+    expect(existsSync(mirrorCache)).toBe(false);
+    expect(sh(dir, ["add", "--", page]).status).toBe(0);
+    const astro = run(dir, "check-cycles");
+    expect(astro.code).toBe(1);
+    expect(astro.out).toContain("a.ts -> b.ts -> a.ts");
+    expect(readdirSync(mirrorCache)).toEqual([]);
+  });
+
+  test("an Astro compiler error names the source and the mirror is removed", () => {
+    const dir = repo({ [page]: "---\nconst =\n---\n<p>Page</p>\n" });
+    const r = run(dir, "check-cycles");
+    expect(r.code).toBe(1);
+    expect(r.out).toContain(`[cycles] ${page}:`);
+    expect(r.out).toContain("Unexpected token");
+    expect(readdirSync(join(dir, "node_modules", ".cache", "scaffolding"))).toEqual([]);
+  });
+
+  test("a missing Astro compiler fails only when Astro files need it", () => {
+    const installation = temp();
+    const entry = join(installation, "bin", "check-cycles.ts");
+    mkdirSync(dirname(entry));
+    copyFileSync(bin("check-cycles"), entry);
+    symlinkSync(join(import.meta.dirname, "..", "lib"), join(installation, "lib"), "dir");
+    const modules = join(installation, "node_modules");
+    mkdirSync(modules);
+    symlinkSync(
+      join(import.meta.dirname, "..", "node_modules", "dependency-cruiser"),
+      join(modules, "dependency-cruiser"),
+      "dir",
+    );
+
+    const dir = repo({ "a.ts": "export const a = 1;\n" });
+    const check = () =>
+      spawnSync(process.execPath, ["--no-install", "--no-env-file", entry], {
+        cwd: dir,
+        encoding: "utf8",
+      });
+    expect(check().status).toBe(0);
+    write(dir, { [page]: "<p>Page</p>\n" });
+    expect(sh(dir, ["add", "--", page]).status).toBe(0);
+    const r = check();
+    expect(r.status).toBe(1);
+    expect(r.stderr).toContain("[cycles] package.json: cannot load @astrojs/compiler-rs");
+    expect(existsSync(join(dir, "node_modules"))).toBe(false);
+  });
+
+  test("the Astro mirror cannot write through a cache symlink outside the checkout", () => {
+    const dir = repo({ [page]: "<p>Page</p>\n" });
+    const outside = temp();
+    symlinkSync(outside, join(dir, "node_modules"), "dir");
+    const r = run(dir, "check-cycles");
+    expect(r.code).toBe(1);
+    expect(r.out).toContain("the cycles cache path contains a symlink");
+    expect(readdirSync(outside)).toEqual([]);
+  });
 
   test("a runtime import cycle goes red once, naming its modules", () => {
     const r = cycle({

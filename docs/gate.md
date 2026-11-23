@@ -44,12 +44,13 @@ The gate runs these rules without a file cache because imported types can change
 `.oxlintrc.json` into a temporary directory and links the checkout's installed dependencies.
 The gate and pre-push hook run the typed rules.
 
-**Cycles.** The `cycles` step fails on a runtime import cycle among the repository's tracked
-`.js` and `.ts` files of every flavour, read with dependency-cruiser through the root
-`tsconfig.json`'s path aliases, and names the modules on it. A cycle of imports TypeScript erases,
-`import type` or a name used only as a type, passes. The fix moves what both sides need into a
-module neither imports back from; the step reads no allow list. Limits: an `.astro` file is not
-read, so a cycle through one passes, and a submodule is its own repository's to check.
+**Cycles.** The `cycles` step fails on a runtime import cycle and names the original source paths.
+The step compiles tracked `.astro` files and passes them to dependency-cruiser alongside JavaScript
+and TypeScript. Imports resolve using the root `tsconfig.json`'s path aliases. Each compiled client
+script is a separate module from its component's server code. The check ignores imports TypeScript
+erases, including `import type`. To fix a runtime cycle, move shared code into a module that
+neither side imports back from. The step reads no allow list. Submodule cycles belong to their
+own repositories.
 
 ## Changed paths
 
