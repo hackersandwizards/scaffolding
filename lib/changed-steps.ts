@@ -26,11 +26,15 @@ const defaults = [
     ),
     steps: [...source, "styles"],
   },
+  { glob: new Bun.Glob("docs/**/*.{md,txt}"), steps: [] },
+  { glob: new Bun.Glob("{README,CONTRIBUTING,SECURITY,CLAUDE,AGENTS}.md"), steps: [] },
+  { glob: new Bun.Glob(".claude/rules/**/*.md"), steps: [] },
+  { glob: new Bun.Glob(".claude/skills/**/*.{md,yaml,yml}"), steps: [] },
+];
+const additional = [
   { glob: new Bun.Glob("**/*.md"), steps: ["markdown"] },
   { glob: new Bun.Glob("**/*.{sh,bash}"), steps: ["shell"] },
   { glob: new Bun.Glob("**/.shellcheckrc"), steps: ["shell"] },
-  { glob: new Bun.Glob("docs/**/*.txt"), steps: [] },
-  { glob: new Bun.Glob(".claude/skills/**/*.{yaml,yml}"), steps: [] },
 ];
 const crossCutting = [
   "**/package.json",
@@ -70,11 +74,14 @@ export function selectChangedSteps(
     if (crossCutting.some((glob) => glob.match(path)))
       return fallback(`${JSON.stringify(path)} is a shared configuration path`);
     const hits = map.filter(({ glob }) => glob.match(path));
+    if (!hits.length) return fallback(`${JSON.stringify(path)} matches no path glob`);
     const shell = shellShebangs.has(path);
     if (shell && fast.has("shell") && !steps.has("shell"))
       steps.set("shell", `matches shell shebang in ${JSON.stringify(path)}`);
-    if (!hits.length && !shell) return fallback(`${JSON.stringify(path)} matches no path glob`);
-    for (const { steps: matched } of hits)
+    for (const { steps: matched } of [
+      ...hits,
+      ...additional.filter(({ glob }) => glob.match(path)),
+    ])
       for (const step of matched)
         if (fast.has(step) && !steps.has(step)) steps.set(step, `matches ${JSON.stringify(path)}`);
   }

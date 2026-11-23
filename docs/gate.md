@@ -114,7 +114,8 @@ marks a full check.
 | `**/*.{sh,bash}`, `**/.shellcheckrc`, shell shebangs                                                                  | shell                                         |
 | `docs/**/*.txt`, `.claude/skills/**/*.{yaml,yml}`                                                                     | Always-run steps only                         |
 
-An unmatched path or a path below selects all enabled fast steps.
+The shell and Markdown matches add their steps. A path covered only by those matches still
+selects all enabled fast steps under the fallback, as does an unmatched path or a path below.
 
 - `**/package.json`
 - `**/{bun.lock,bun.lockb,package-lock.json,pnpm-lock.yaml,yarn.lock,bunfig.toml,.npmrc}`
@@ -128,8 +129,9 @@ base commit and the working tree.
 A new branch, unreadable range, non-fast-forward update or failed Git enumeration selects all fast
 steps and prints the reason. Without explicit ranges, the gate compares the working tree to the
 upstream merge base, or to `HEAD` without an upstream, and includes untracked files. Each selected
-step still checks the working tree. Astro lint also selects the enabled typecheck that generates
-its content types and waits for it.
+step still checks the working tree. Shell and Markdown lint judge new files once they are staged,
+even if an untracked path already selected the step. Astro lint also selects the enabled
+typecheck that generates its content types and waits for it.
 
 ### package.json fields
 

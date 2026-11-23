@@ -3325,13 +3325,13 @@ describe("scaffolding check", () => {
 
   test.each([
     ["docs/guide.md", "# Guide\n", "markdown", 'matches "docs/guide.md"'],
-    [".shellcheckrc", "# Defaults.\n", "shell", 'matches ".shellcheckrc"'],
-    ["script.bash", "#!/bin/bash\ntrue\n", "shell", 'matches "script.bash"'],
+    ["scripts/.shellcheckrc", "# Defaults.\n", "shell", 'matches "scripts/.shellcheckrc"'],
+    ["scripts/script.bash", "#!/bin/bash\ntrue\n", "shell", 'matches "scripts/script.bash"'],
     [
-      "tool",
+      "scripts/tool",
       "#!/usr/bin/env --split-string dash\ntrue\n",
       "shell",
-      'matches shell shebang in "tool"',
+      'matches shell shebang in "scripts/tool"',
     ],
   ])("--changed selects the matching linter for %s", (path, text, step, why) => {
     const { shell: _s, markdown: _m, ...rest } = skip;
@@ -3361,6 +3361,34 @@ describe("scaffolding check", () => {
     expect(r.code, r.out).toBe(0);
     expect(r.out).toContain('selected shell: matches shell shebang in "bin/tool"');
     expect(r.out).toContain("skipped markdown: no changed path maps to it");
+  });
+
+  test.each([
+    ["template/.githooks/pre-push", "#!/bin/sh\ntrue\n", []],
+    ["template/guide.md", "# Guide\n", []],
+    ["template/.githooks/pre-push", "#!/bin/sh\ntrue\n", ["shell"]],
+    ["template/guide.md", "# Guide\n", ["markdown"]],
+    ["template/guide.md", "# Guide\n", ["shell", "markdown"]],
+  ] as const)("--changed preserves tests for %s (%#)", (path, contents, skipped) => {
+    const { shell: _s, markdown: _m, test: _t, ...rest } = skip;
+    const dir = gate(
+      {
+        skip: { ...rest, ...Object.fromEntries(skipped.map((step) => [step, "fixture"])) },
+        test: "probe",
+      },
+      { probe: "echo tests-ran" },
+    );
+    const old = sh(dir, ["rev-parse", "HEAD"]).stdout.toString().trim();
+    write(dir, { [path]: contents });
+    expect(sh(dir, ["add", "--", path]).status).toBe(0);
+    expect(sh(dir, ["commit", "-qm", "change one file", "--", path]).status).toBe(0);
+    const r = run(dir, "scaffolding", ["check", "--changed", `${old}..HEAD`], {
+      CHECK_LOCK: join(temp(), "lock"),
+      ...shellcheckFixture(dir),
+    });
+    expect(r.code, r.out).toBe(0);
+    expect(r.out).toContain("tests-ran");
+    for (const step of skipped) expect(r.out).toContain(`skipped ${step}: fixture`);
   });
 
   test.each([
