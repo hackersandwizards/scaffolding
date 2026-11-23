@@ -171,7 +171,7 @@ test.each([
 ])(
   "the consumer explore command runs aliased properties on $runtime (browser folder $folder)",
   ({ runtime, folder }) => {
-    const dir = temp();
+    const dir = temp(cache);
     const property = "sample.prop.test.ts";
     write(dir, {
       "package.json": JSON.stringify({
@@ -231,14 +231,23 @@ test("example must stay out of exploration", () => { throw new Error("example ra
     });
     const home = join(import.meta.dirname, "..");
     const scope = join(dir, "node_modules", "@hackersandwizards");
+    const installed = join(scope, "scaffolding");
     const commands = join(dir, "node_modules", ".bin");
-    mkdirSync(scope, { recursive: true });
+    mkdirSync(join(installed, "node_modules"), { recursive: true });
     mkdirSync(commands, { recursive: true });
-    symlinkSync(home, join(scope, "scaffolding"));
+    for (const entry of ["package.json", "bin", "config", "lib"])
+      cpSync(join(home, entry), join(installed, entry), { recursive: true });
+    // Use two physical copies of the same Vitest version, as each has its own runner state.
+    cpSync(join(home, "node_modules", "vitest"), join(installed, "node_modules", "vitest"), {
+      recursive: true,
+    });
     symlinkSync(join(home, "node_modules", "vitest"), join(dir, "node_modules", "vitest"));
     if (runtime === "node")
       symlinkSync(join(home, "node_modules", "@vitest"), join(dir, "node_modules", "@vitest"));
-    symlinkSync(bin("scaffolding-explore"), join(commands, "scaffolding-explore"));
+    symlinkSync(
+      join(installed, "bin", "scaffolding-explore.ts"),
+      join(commands, "scaffolding-explore"),
+    );
     symlinkSync(join(home, "node_modules", ".bin", "vitest"), join(commands, "vitest"));
     const bun = realpathSync(process.execPath);
     const path = process.env.PATH?.split(delimiter)

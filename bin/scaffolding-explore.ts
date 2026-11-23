@@ -1,8 +1,9 @@
 #!/bin/sh
 // 2>/dev/null; exec bun --no-env-file "$0" "$@"
 import { randomBytes } from "node:crypto";
+import { createRequire } from "node:module";
+import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
-import vitest from "vitest/package.json";
 import { browserTestProblem } from "../lib/gate-config.ts";
 import { help } from "../lib/help.ts";
 import { readPackage, withoutEnvFile } from "../lib/repo.ts";
@@ -36,7 +37,8 @@ if (
 }
 
 withoutEnvFile("scaffolding-explore");
-const pkg = readPackage(process.cwd());
+const root = process.cwd();
+const pkg = readPackage(root);
 const config = pkg.scaffolding ?? {};
 const problem = browserTestProblem(config);
 if (problem) {
@@ -49,7 +51,19 @@ const runtime =
   config.browserTest || /^\s*bun\s+--bun\s+(?:run\s+)?vitest(?:\s|$)/.test(command)
     ? process.execPath
     : "node";
-const cli = fileURLToPath(new URL(vitest.bin.vitest, import.meta.resolve("vitest/package.json")));
+const requireFromRoot = createRequire(join(root, "package.json"));
+const vitestManifest = "vitest/package.json";
+let manifest: string;
+try {
+  // The runner and the repository's tests must share the same Vitest instance.
+  manifest = requireFromRoot.resolve(vitestManifest);
+} catch (error) {
+  if (!(error instanceof Error && "code" in error && error.code === "MODULE_NOT_FOUND"))
+    throw error;
+  manifest = fileURLToPath(import.meta.resolve(vitestManifest));
+}
+const { bin } = requireFromRoot(manifest) as { bin: { vitest: string } };
+const cli = join(dirname(manifest), bin.vitest);
 const marker = randomBytes(16).toString("hex");
 const argsForTest = [
   "--coverage.enabled=false",
