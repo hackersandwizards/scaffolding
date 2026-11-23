@@ -3,6 +3,7 @@
 import { randomBytes } from "node:crypto";
 import { fileURLToPath } from "node:url";
 import vitest from "vitest/package.json";
+import { browserTestProblem } from "../lib/gate-config.ts";
 import { help } from "../lib/help.ts";
 import { readPackage, withoutEnvFile } from "../lib/repo.ts";
 import { runTimed } from "../lib/run-timed.ts";
@@ -36,11 +37,18 @@ if (
 
 withoutEnvFile("scaffolding-explore");
 const pkg = readPackage(process.cwd());
-const test = pkg.scaffolding?.test ?? "test";
+const config = pkg.scaffolding ?? {};
+const problem = browserTestProblem(config);
+if (problem) {
+  console.error(`[scaffolding-explore] ${problem}`);
+  process.exit(2);
+}
+const test = config.test ?? "test";
 const command = pkg.scripts?.[test] ?? test;
-const runtime = /^\s*bun\s+--bun\s+(?:run\s+)?vitest(?:\s|$)/.test(command)
-  ? process.execPath
-  : "node";
+const runtime =
+  config.browserTest || /^\s*bun\s+--bun\s+(?:run\s+)?vitest(?:\s|$)/.test(command)
+    ? process.execPath
+    : "node";
 const cli = fileURLToPath(new URL(vitest.bin.vitest, import.meta.resolve("vitest/package.json")));
 const marker = randomBytes(16).toString("hex");
 const argsForTest = [

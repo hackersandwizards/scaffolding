@@ -95,6 +95,9 @@ export function serverProblem(
 }
 
 export function linksProblem(config: NonNullable<Package["scaffolding"]>): string | undefined {
+  const entries = (config.check ?? []).flat();
+  if (entries.includes("links") && !config.server)
+    return "scaffolding.check requires scaffolding.server for links";
   const skips = config.linkSkips;
   if (skips === undefined) return;
   if (
@@ -103,6 +106,8 @@ export function linksProblem(config: NonNullable<Package["scaffolding"]>): strin
   )
     return "scaffolding.linkSkips must be a list of path prefixes starting with /";
   if (!config.server) return "scaffolding.linkSkips requires scaffolding.server";
+  if (!entries.includes("links") && !entries.includes("check:links"))
+    return "scaffolding.linkSkips requires links in scaffolding.check";
 }
 
 const colourInput =

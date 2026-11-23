@@ -3,8 +3,7 @@
 `scaffolding check` runs `bun install --frozen-lockfile`, then the shared steps side by side, the
 catalog build and lint once a typecheck that runs Astro has finished (it writes the content types the typed rules read):
 format, lint (ESLint), oxlint, styles (stylelint), typecheck, structure, coupling, cycles, shell, markdown, spaces, confidential, licenses, the tests, the catalog build (`bun run build`) and admin (the item files, with the pinned
-`@hackersandwizards/admin`'s `admin-check`; a repository without admin pinned needs `skip.admin`). Once those pass, the repository's own steps from
-`scaffolding.check`, in order, an inner array side by side; a red one stops those after it. Format, lint and styles walk past every
+`@hackersandwizards/admin`'s `admin-check`; a repository without admin pinned needs `skip.admin`). Once those pass, the full-gate groups run in order. A red group stops the groups after it. Format, lint and styles walk past every
 submodule `.gitmodules` names, which its own repository checks. A shared step drops only with a reason, a
 non-blank string in `skip`:
 
@@ -222,9 +221,12 @@ alongside the shared static checks. A changed check selects `colours` for stylin
 sources, its allowlist and Git ignore changes. `copies` reads every kind of file for byte matches,
 so any changed path selects it. Both scanners apply brand's own file exclusions.
 
-`retired` and `elements` run in the full gate after the catalog build. Put their names in
-`scaffolding.check` to keep their position relative to a local step, including a preview build.
-Full shared steps without an explicit position run side by side after the local groups.
+`retired` and `elements` run in the full gate after the catalog build. Full shared steps
+without an explicit position run side by side before the first local group. Put a shared name
+in `scaffolding.check` at the point where it should run. Each top-level entry runs after the
+previous entry finishes, and steps in an array run alongside one another. For example,
+`["check:preview", ["retired", "links"], "check:elements"]` scans and crawls the preview
+before the local elements step can rebuild it.
 Use `scaffolding.brand.retired` to name the built paths to scan. `scaffolding.brand.directory`
 sets the working directory for colours and elements, and retired paths stay relative to the
 repository root. Set `scaffolding.brand.elements` to `"server"` to pass `--base {url}` through
@@ -250,13 +252,14 @@ the index skips the confidential scan.
 
 ### Internal links
 
-`scaffolding.server` enables the full-gate `links` crawl. Each check starts its own server with
-`PORT` and `HOST` set by `with-server`. Server-backed `elements` uses the same declaration.
+`links` in `scaffolding.check` enables the full-gate crawl and requires `scaffolding.server`.
+Each server-backed check starts its own server with `PORT` and `HOST` set by `with-server`.
+An elements-only consumer can declare the server and omit the `links` entry.
 `scaffolding.linkSkips` lists optional path prefixes, such as `["/catalog"]`. The shared crawl
 passes each as a separate `--skip` argument to `check-links`.
 
-Put `links` in `scaffolding.check` where the crawl needs a specific position, such as after
-`check:preview`. A listed `check:links` replaces the shared crawl and keeps its existing group.
+Put `links` after the build it should crawl, such as after `check:preview`.
+A listed `check:links` keeps its local command and existing group.
 The gate prints `links uses local check:links` when a server is declared and the local script
 owns the crawl.
 
@@ -280,42 +283,54 @@ The folder supplies the default Vitest command for both steps. Omit `scaffolding
 `"scripts": { "test": "scaffolding test" }`. The subcommand forwards additional Vitest arguments
 and uses the same exclusion. Brand's integration and catalog suites stay project-based because
 their Vitest projects select different files and its integration command clears Git variables.
+`scaffolding-explore` selects Bun from `scaffolding.browserTest` even when the test script uses
+the shared alias. `scaffolding-mutation` selects its runner through `SCAFFOLDING_MUTATION_BUN`.
 
 ### Migrating consumer manifests
 
-Raise the scaffolding pin before using the new manifest keys. The old local scripts can run on
-the new pin during the transition. Remove the listed `scripts.check:*` entries with their
-`fullOnly` reasons. In `scaffolding.check`, drop the fast entries and replace each listed
-full-gate entry with the shared name in the same position. Replace `check:pages` and
-`check:modes` with `browser-test`. Keep each other entry in its current group.
+Raise the scaffolding pin before using the new manifest keys. Remove the listed local scripts
+and their `fullOnly` reasons. In `scaffolding.check`, remove the migrated fast steps and
+replace each migrated full-gate step in its original entry or array. Keep the other local
+steps in their original groups. Move retired scan paths into `brand.retired` and server
+commands into `server.command`. Set `brand.elements` to `"server"` when the shared elements
+step needs the URL.
 
-A server command goes in `server.command`. Declare retired paths in `brand.retired`, and set
-`brand.elements` to `"server"` only in the rows that pass the server URL to elements.
+| Consumer             | Remove local scripts                                                                            | Declarations and full-gate order                                                                                                                                                                                                                                                                                                      | On-demand aliases to remove or keep                                                  | Lines to update in the same commit                      |
+| -------------------- | ----------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------ | ------------------------------------------------------- |
+| Brand                | None                                                                                            | Order unchanged. Keep `check:integration`, `check:catalog` and `check:tokens`.                                                                                                                                                                                                                                                        | Remove `fix`, `explore`.                                                             | `CLAUDE.md:100,105`, `README.md:85`.                    |
+| Admin                | `check:colours`, `check:copies`, `check:pages`, `check:elements`, `check:retired`               | Colours and copies move to the shared static phase. Keep `check:scan`. After `check:fixture`, run `browser-test` (`test/pages`), `elements`, then `retired` (`["dist"]`).                                                                                                                                                             | Remove `fix`, `explore`.                                                             | `CLAUDE.md:53,61,62,64`, `README.md:62,63`.             |
+| Slides               | `check:colours`, `check:copies`, `check:retired`, `check:pages`, `check:elements`               | Colours and copies move to the shared static phase. Keep `["check:pins", "retired"]` (`["dist"]`), then `browser-test` (`test/pages`), then `elements`.                                                                                                                                                                               | Remove `fix`, `explore`.                                                             | `CLAUDE.md:141,142,144,152`, `README.md:68`.            |
+| Documents            | `check:colours`, `check:copies`, `check:pages`, `check:retired`, `check:elements`               | Colours and copies move to the shared static phase. Run `browser-test` (`test/pages`), `check:privacy`, `retired` (`["dist"]`), then `elements`.                                                                                                                                                                                      | Remove `fix`, `explore`.                                                             | `CLAUDE.md:150,152,153,165,168,169`, `README.md:81,82`. |
+| Mail                 | `check:colours`, `check:copies`, `check:modes`, `check:elements`, `check:retired`               | Colours and copies move to the shared static phase. Run `browser-test` (`test/browser`), `elements`, `check:frames`, then `retired` (`["dist"]`).                                                                                                                                                                                     | Remove `fix`, `explore`.                                                             | `CLAUDE.md:44,51`, `README.md:58,59,60,61`.             |
+| Internal app         | `check:colours`, `check:copies`, `check:elements`, `check:links`                                | Colours and copies move to the shared static phase. Keep local `check:scan` and `check:retired` in the middle group. Place `elements` and `links` in the last group. Server `bun dist/server/entry.mjs` with `timeout: 120`, `stderr: true`, and `linkSkips: ["/catalog"]`. Update the three changed mappings below.                  | Remove `fix`, `explore`.                                                             | `CLAUDE.md:16`, `README.md:79`.                         |
+| Talks site           | `check:pins`, `check:colours`, `check:copies`, `check:retired`, `check:links`                   | Pins, colours and copies move to the shared static phase. Keep `["retired", "check:usage"]` (`["dist"]`), then `links`, `check:density`, and local `check:elements`. The last step rebuilds with `CATALOG_FILE=1`. Server `exec bun --bun astro preview --host 127.0.0.1 --port "$PORT" --ignore-lock` and `linkSkips: ["/catalog"]`. | Remove `fix`, `explore`.                                                             | `CLAUDE.md:33,39,40,41,42,45,62`, `README.md:49,50`.    |
+| Private slide site   | `check:pins`, `check:colours`, `check:copies`, `check:retired`, `check:links`, `check:elements` | Pins, colours and copies move to the shared static phase. Keep `["retired", "links", "check:usage"]` (`["dist"]`) before `["check:density", "elements"]`. Server `cd talks && exec bun --bun run astro preview --ignore-lock --port "$PORT"`.                                                                                         | Remove `fix`, `explore`.                                                             | `talks/README.md:34,36`.                                |
+| Website              | `check:colours`, `check:copies`, `check:elements`, `check:retired`                              | Colours and copies move to the shared static phase. Keep the local `check:links` in its original group. Run `elements` via `exec bun scripts/serve-dist-webkit.mjs`, then `retired` (`["dist"]`), ahead of records and content.                                                                                                       | Remove `explore`. Keep `fix`, which runs Oxlint first and uses its own ESLint flags. | `CONTRIBUTING.md:28,101`, `README.md:47,48`.            |
+| Practitioners        | `check:colours`, `check:copies`, `check:elements`, `check:retired`, `check:links`               | Colours and copies move to the shared static phase. Keep `check:preview` before `["elements", "retired", "links"]`. Scan `[".preview"]` for retired lines. Server `exec astro preview --ignore-lock --outDir .preview --port "$PORT"`.                                                                                                | Remove `explore`.                                                                    | `.githooks/README.md:15`, `README.md:39,40,43`.         |
+| Testimonials         | `check:colours`, `check:copies`, `check:elements`, `check:retired`, `check:links`               | Colours and copies move to the shared static phase. Keep `["elements", "retired", "links"]` together. Set `brand.directory: "site"` and `brand.retired: ["site/dist"]`. Server `cd site && bun run astro preview --ignore-lock --host 127.0.0.1 --port "$PORT"`.                                                                      | Remove `fix`, `explore`.                                                             | `CLAUDE.md:42,50`, `README.md:76`.                      |
+| Certificate verifier | `check:colours`, `check:copies`                                                                 | Colours and copies move ahead of `check:deploy`. Keep local `check:elements` and then local `check:retired`, each with its `bun scripts/brand/pages.ts` prebuild. Retired reads `.site` and `node_modules/.cache/brand-pages`. Omit `links`.                                                                                          | Remove `fix`, `explore`.                                                             | `CLAUDE.md:24`, `README.md:53,54`.                      |
+| Trainer hub          | `check:colours`, `check:copies`, `check:elements`, `check:links`                                | Colours and copies move to the shared static phase and the slides pin enables `pins`. After the first local group, run `links`, local `check:retired`, `check:a11y`, `check:density`, then `elements`. Server `bun dist/server/entry.mjs` and `linkSkips: ["/catalog"]`.                                                              | Remove `fix`, `explore`.                                                             | `CLAUDE.md:29,33`, `README.md:33,34,37,38`.             |
+| Training environment | None                                                                                            | Order unchanged.                                                                                                                                                                                                                                                                                                                      | Remove `fix`.                                                                        | `justfile:2`.                                           |
+| Client PoC           | None                                                                                            | Order unchanged.                                                                                                                                                                                                                                                                                                                      | Remove `explore`. Keep `fix`, which runs the project’s `lint:fix` and then Prettier. | `CONTRIBUTING.md:61,62`.                                |
 
-| Consumer             | Remove local check scripts                                                                      | Add declarations and preserve ordering                                                                                                                                                                         | Replace on-demand aliases                   |
-| -------------------- | ----------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------- |
-| Brand                | None                                                                                            | Keep `check:integration`, `check:catalog` and `check:tokens`.                                                                                                                                                  | `fix`, `explore`                            |
-| Admin                | `check:colours`, `check:copies`, `check:retired`, `check:elements`, `check:pages`               | Retired `["dist"]`, browser `test/pages`. Keep `check:fixture` before browser tests.                                                                                                                           | `fix`, `explore`                            |
-| Slides               | `check:colours`, `check:copies`, `check:retired`, `check:elements`, `check:pages`               | Retired `["dist"]`, browser `test/pages`. Keep local `check:pins`.                                                                                                                                             | `fix`, `explore`                            |
-| Documents            | `check:colours`, `check:copies`, `check:retired`, `check:elements`, `check:pages`               | Retired `["dist"]`, browser `test/pages`. Keep `check:privacy` after browser tests.                                                                                                                            | `fix`, `explore`                            |
-| Mail                 | `check:colours`, `check:copies`, `check:retired`, `check:elements`, `check:modes`               | Retired `["dist"]`, browser `test/browser`. Keep `check:frames` between elements and retired.                                                                                                                  | `fix`, `explore`                            |
-| Internal app         | `check:colours`, `check:copies`, `check:elements`, `check:links`                                | Elements via server `bun dist/server/entry.mjs` with `timeout: 120`, `stderr: true` and `linkSkips: ["/catalog"]`. Keep local retired. Drop `check:colours` and `check:copies` from the three `changed` lists. | `fix`, `explore`                            |
-| Talks site           | `check:colours`, `check:copies`, `check:retired`, `check:links`, `check:pins`                   | Retired `["dist"]`. Server `exec bun --bun astro preview --host 127.0.0.1 --port "$PORT" --ignore-lock` and `linkSkips: ["/catalog"]`. Keep the local elements rebuild.                                        | `fix`, `explore`                            |
-| Private slide site   | `check:colours`, `check:copies`, `check:retired`, `check:elements`, `check:links`, `check:pins` | Retired `["dist"]`. Server `cd talks && exec bun --bun run astro preview --ignore-lock --port "$PORT"`. Keep elements and density together.                                                                    | `fix`, `explore`                            |
-| Website              | `check:colours`, `check:copies`, `check:retired`, `check:elements`                              | Retired `["dist"]`, elements via server `exec bun scripts/serve-dist-webkit.mjs`. Keep the local Linkinator crawl in its original group.                                                                       | `explore`. Keep the Oxlint-based `fix`.     |
-| Practitioners        | `check:colours`, `check:copies`, `check:retired`, `check:elements`, `check:links`               | Retired `[".preview"]`. Server `exec astro preview --ignore-lock --outDir .preview --port "$PORT"`. Run `elements`, `retired` and `links` together after `check:preview`.                                      | `explore`                                   |
-| Testimonials         | `check:colours`, `check:copies`, `check:retired`, `check:elements`, `check:links`               | `brand.directory: "site"`, retired `["site/dist"]`. Server `cd site && bun run astro preview --ignore-lock --host 127.0.0.1 --port "$PORT"`. Copies and retired still run at the root.                         | `fix`, `explore`                            |
-| Certificate verifier | `check:colours`, `check:copies`                                                                 | Keep both local rendering checks. Retired reads `.site` and `node_modules/.cache/brand-pages`.                                                                                                                 | `fix`, `explore`                            |
-| Trainer hub          | `check:colours`, `check:copies`, `check:elements`, `check:links`                                | Elements via server `bun dist/server/entry.mjs` and `linkSkips: ["/catalog"]`. Keep the local retired render. The slides pin enables `pins`.                                                                   | `fix`, `explore`                            |
-| Training environment | None                                                                                            | No gate declaration.                                                                                                                                                                                           | `fix`                                       |
-| Client app           | None                                                                                            | No gate declaration.                                                                                                                                                                                           | `explore`. Keep the project-specific `fix`. |
+The order changes in the table are relative to the old full gate. In each row that moves
+fast checks, the ordering of the remaining local and migrated full-gate checks is preserved.
 
-For each browser row, add `scaffolding.browserTest` and drop `scaffolding.test: "test"`.
-Set `scripts.test` to `scaffolding test` to keep the direct fast suite. In docs and callers,
-replace the deleted browser script with `bun --bun vitest run <folder>`.
-The common `fix` alias becomes `bun run scaffolding fix` and the bare `explore` alias becomes
-`bun run scaffolding-explore`. Leave `mutation` scripts in place. Some set
-`SCAFFOLDING_MUTATION_BUN=1`, which changes the mutation runner.
+The internal app maps `docs/**`, `.claude/**` and `src/content/**` to `check:colours`,
+`check:copies` and `check:scan` today. In **each** of those lists, replace
+`check:colours` with `colours` and `check:copies` with `copies`. Keep `check:scan` in all
+three lists and keep its script and check entry. The same three globs still select all three
+scans, including for Markdown. The shared colours and copies steps also have their default
+selectors. Both scanners still run from the repository root.
+
+For each browser row, set `scaffolding.browserTest` to the table's folder, drop
+`scaffolding.test: "test"` and set `scripts.test` to `scaffolding test`. Both the fast test
+suite and property exploration stay on Bun for all four browser rows. Replace on-demand
+invocations of the deleted browser scripts with `bun --bun vitest run <folder>`.
+In gate descriptions, use the shared step names. For direct invocations of deleted elements
+or links scripts, use the corresponding bin with the same build, server and flags.
+Replace the removed `fix` and `explore` invocations with `bun run scaffolding fix` and
+`bun run scaffolding-explore`, respectively. Keep the existing `mutation` scripts.
 
 **CSS origin.** In a repository's sources, a stylesheet from a company package comes only from
 brand's `exports`; the shell's styles load only under `catalog/`; an engine's stylesheet loads where

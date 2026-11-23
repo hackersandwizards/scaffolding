@@ -163,9 +163,14 @@ function write(dir: string, files: Record<string, string>) {
   }
 }
 
-test.each(["node", "bun"])(
-  "the consumer explore command runs only aliased properties on %s and reports the shrunk failing case",
-  (runtime) => {
+test.each([
+  { runtime: "node", folder: undefined },
+  { runtime: "bun", folder: undefined },
+  { runtime: "bun", folder: "test/pages" },
+  { runtime: "bun", folder: "test/browser" },
+])(
+  "the consumer explore command runs aliased properties on $runtime (browser folder $folder)",
+  ({ runtime, folder }) => {
     const dir = temp();
     const property = "sample.prop.test.ts";
     write(dir, {
@@ -174,10 +179,13 @@ test.each(["node", "bun"])(
         type: "module",
         scripts: {
           explore: "scaffolding-explore",
+          ...(folder ? { test: "scaffolding test" } : {}),
           "test:run": runtime === "bun" ? "bun --bun vitest run" : "vitest run",
           ...(runtime === "node" ? { "test:coverage": "vitest run --coverage" } : {}),
         },
-        scaffolding: { test: runtime === "node" ? "test:coverage" : "test:run" },
+        scaffolding: folder
+          ? { browserTest: folder }
+          : { test: runtime === "node" ? "test:coverage" : "test:run" },
       }),
       "vitest.config.mjs":
         runtime === "node"
@@ -4057,6 +4065,16 @@ describe("scaffolding check", () => {
     const red = bun("scaffolding", "fix");
     expect(red.status, red.stderr).toBe(7);
     expect(red.stdout).not.toContain("prettier");
+    const pkg = readPackage(dir);
+    write(dir, {
+      "package.json": JSON.stringify({
+        ...pkg,
+        scripts: { ...pkg.scripts, fix: "echo custom-fix" },
+      }),
+    });
+    const custom = bun("fix");
+    expect(custom.status, custom.stderr).toBe(0);
+    expect(custom.stdout.trim()).toBe("custom-fix");
   });
 
   test("a skipped step must name an own entry in the shared step table", () => {
@@ -4097,6 +4115,87 @@ describe("scaffolding check", () => {
     expect(inside.code).toBe(0);
   });
 
+  test("migrated brand mappings select the same scans for each previously mapped path", () => {
+    const paths = ["docs/notes.md", ".claude/rules/sample.md", "src/content/entry.md"];
+    for (const migrated of [false, true]) {
+      const scans = [migrated ? "colours" : "check:colours", migrated ? "copies" : "check:copies"];
+      const dir = gate(
+        {
+          skip: { ...skip, retired: "fixture", elements: "fixture" },
+          check: migrated ? ["check:scan"] : [[...scans, "check:scan"]],
+          changed: Object.fromEntries(
+            ["docs/**", ".claude/**", "src/content/**"].map((glob) => [
+              glob,
+              [...scans, "check:scan"],
+            ]),
+          ),
+        },
+        {
+          ...(migrated ? {} : { "check:colours": "brand-colours", "check:copies": "brand-copies" }),
+          "check:scan": "true",
+        },
+        { devDependencies: { "@hackersandwizards/brand": "file:brand" } },
+      );
+      write(dir, {
+        "brand/package.json": JSON.stringify({
+          name: "@hackersandwizards/brand",
+          bin: { "brand-colours": "pass.sh", "brand-copies": "pass.sh" },
+        }),
+        "brand/pass.sh": "#!/bin/sh\nexit 0\n",
+      });
+      chmodSync(join(dir, "brand/pass.sh"), 0o755);
+      sh(dir, ["add", "brand"]);
+      sh(dir, ["commit", "-qm", "pin"]);
+      const env = { CHECK_LOCK: join(temp(), "lock") };
+      for (const path of paths) {
+        write(dir, { [path]: "# Fixture\n" });
+        const result = run(dir, "scaffolding", ["check", "--changed"], env);
+        expect(result.code, result.out).toBe(0);
+        for (const scan of [...scans, "check:scan"]) {
+          expect(result.out).toContain(`selected ${scan}: matches "${path}"`);
+          expect(result.out).toContain(`ok   ${scan}`);
+        }
+        rmSync(join(dir, path));
+      }
+    }
+  });
+
+  test.each([false, true])(
+    "retired reads the default build or the explicitly placed preview before a later rebuild (%s)",
+    (placed) => {
+      const { catalog: _, ...skips } = skip;
+      const dir = gate(
+        {
+          skip: { ...skips, colours: "fixture", copies: "fixture", elements: "fixture" },
+          brand: { retired: ["dist"] },
+          check: placed
+            ? ["check:preview", ["retired", "check:parallel"], "check:rebuild"]
+            : ["check:rebuild"],
+          fullOnly: { "check:rebuild": "rebuilds the catalog" },
+        },
+        {
+          build: "mkdir -p dist && echo initial > dist/page",
+          "check:preview": "echo preview > dist/page",
+          "check:parallel": "test -f dist/page",
+          "check:rebuild": "echo catalog-file > dist/page",
+        },
+        { devDependencies: { "@hackersandwizards/brand": "file:brand" } },
+      );
+      write(dir, {
+        "brand/package.json": JSON.stringify({
+          name: "@hackersandwizards/brand",
+          bin: { "brand-retired": "retired.sh" },
+        }),
+        "brand/retired.sh": `#!/bin/sh\ngrep -qx ${placed ? "preview" : "initial"} "$1/page"\n`,
+      });
+      chmodSync(join(dir, "brand/retired.sh"), 0o755);
+      const result = run(dir, "scaffolding", ["check"], { CHECK_LOCK: join(dir, ".lock") });
+      expect(result.code, result.out).toBe(0);
+      expect(result.out).toContain("ok   retired");
+      expect(readFileSync(join(dir, "dist/page"), "utf8")).toBe("catalog-file\n");
+    },
+  );
+
   test("links crawls the preview build with the local skip prefixes and fails on the same broken page", () => {
     for (const step of ["check:links", "links"]) {
       const server = 'exec bun server.ts "$PORT"';
@@ -4107,13 +4206,15 @@ describe("scaffolding check", () => {
           linkSkips: ["/catalog"],
           fullOnly: {
             "check:preview": "builds the preview",
+            "check:rebuild": "rebuilds the preview",
             ...(step === "check:links" ? { [step]: "crawls the built site" } : {}),
           },
-          check: ["check:preview", step],
+          check: ["check:preview", step, "check:rebuild"],
         },
         {
           "check:preview": "mkdir -p .preview && cp page.html .preview/index.html",
           "check:links": `with-server --timeout 5 --stderr '${server}' -- check-links {url} --skip /catalog`,
+          "check:rebuild": "printf 'catalog-file build' > .preview/index.html",
         },
       );
       write(dir, {
@@ -4149,6 +4250,7 @@ describe("scaffolding check", () => {
       const green = run(dir, "scaffolding", ["check"], env);
       expect(green.code, green.out).toBe(0);
       expect(green.out).toContain(`ok   ${step}`);
+      expect(readFileSync(join(dir, ".preview/index.html"), "utf8")).toBe("catalog-file build");
     }
   });
 
@@ -4161,7 +4263,6 @@ describe("scaffolding check", () => {
           colours: "fixture",
           copies: "fixture",
           retired: "fixture",
-          links: "fixture",
         },
         brand: { elements: "server" },
         server: { command: 'exec bun server.ts "$PORT"', timeout: 5, stderr: true },

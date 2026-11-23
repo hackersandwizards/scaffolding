@@ -207,7 +207,7 @@ if (pinsPackage(pkg, "@hackersandwizards/brand")) {
   }
 }
 if (pinsPackage(pkg, "@hackersandwizards/slides") && !replaced("pins")) shared.pins = "slides-pins";
-if (config.server && !replaced("links"))
+if (config.server && !replaced("links") && entries.includes("links"))
   full.set(
     "links",
     withServer(
@@ -483,7 +483,7 @@ const localGroups = (config.check ?? []).map((entry) =>
     .filter(runs)
     .map((s): [string, string] => [s, full.get(s) ?? script(s)]),
 );
-localGroups.push([...full].filter(([name]) => !entries.includes(name) && runs(name)));
+localGroups.unshift([...full].filter(([name]) => !entries.includes(name) && runs(name)));
 const quick = (name: string) => name !== "test" && name !== "catalog";
 const order = Object.keys(shared);
 
