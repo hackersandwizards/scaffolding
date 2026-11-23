@@ -1,3 +1,5 @@
+import { once } from "node:events";
+import { createServer } from "node:http";
 import { join } from "node:path";
 import { expect, test } from "vitest";
 
@@ -105,18 +107,45 @@ test("with-server returns 124 when the check times out", async () => {
      globalThis.setTimeout = (fn, ms, ...args) => original(fn, ms === 120_000 ? 50 : ms, ...args);`,
   );
   expect(status, stderr).toBe(124);
-  expect(stderr).toContain("check reached the two-minute wall limit");
+  expect(stderr).toContain("check reached the 120-second wall limit");
+  expect(stderr).toContain("--limit");
+});
+
+test.each([
+  ["0.05", 124],
+  ["3", 0],
+] as const)("with-server runs the same check with --limit %s", async (limit, expected) => {
+  const [status, stdout, stderr] = await runSiteCommand("with-server", [
+    "--limit",
+    limit,
+    serverCommand,
+    "--",
+    process.execPath,
+    "-e",
+    'await Bun.sleep(300); console.log("check finished");',
+  ]);
+  expect(status, stderr).toBe(expected);
+  if (expected === 124) {
+    expect(stdout).toBe("");
+    expect(stderr).toContain(`check reached the ${limit}-second wall limit`);
+    expect(stderr).toContain("--limit");
+  } else {
+    expect(stdout).toBe("check finished\n");
+    expect(stderr).toBe("");
+  }
 });
 
 test.each([
   ["with-server", ["echo server", "echo check"]],
   ["with-server", ["--timeout", "0", "echo server", "--", "echo"]],
+  ["with-server", ["--limit", "0", "echo server", "--", "echo"]],
   ["check-links", ["file:///index.html"]],
   ["check-links", ["http://127.0.0.1", "--concurrency", "0"]],
 ] as const)("%s rejects invalid usage with status 2", async (name, args) => {
   const [status, , stderr] = await runSiteCommand(name, [...args]);
   expect(status).toBe(2);
   expect(stderr).toContain(`usage: ${name}`);
+  if (args[0] === "--limit") expect(stderr).toContain("--limit must be a positive number");
 });
 
 function html(body: string) {
@@ -173,6 +202,46 @@ test("check-links passes a clean site and checks query strings", async () => {
   });
   expect(result.status, result.stderr).toBe(0);
   expect(result.requests).toEqual(["/", "/item?x=1&y=2"]);
+});
+
+test("check-links reports a rejected fetch with its referrer and continues crawling", async () => {
+  const server = createServer((request, response) => {
+    switch (request.url) {
+      case "/":
+        response.writeHead(200, { "content-type": "text/html" });
+        response.end('<a href="/page">page</a>');
+        break;
+      case "/page":
+        response.writeHead(200, { "content-type": "text/html" });
+        response.end('<a href="/reset">reset</a><a href="/next">next</a>');
+        break;
+      case "/reset":
+        request.socket.destroy();
+        break;
+      case undefined:
+      default:
+        response.writeHead(404).end();
+    }
+  });
+  server.listen(0, "127.0.0.1");
+  try {
+    await once(server, "listening");
+    const address = server.address();
+    if (!address || typeof address === "string") throw new Error("expected a TCP listener");
+    const url = `http://127.0.0.1:${address.port}`;
+    const [status, stdout, stderr] = await runSiteCommand("check-links", [
+      url,
+      "--concurrency",
+      "1",
+    ]);
+    expect(status, stderr).toBe(1);
+    const reset = stderr.split("\n").find((line) => line.startsWith(`  ${url}/reset (`));
+    expect(reset).toMatch(/\) <- \/page$/);
+    expect(stderr).toContain("/next (404) <- /page");
+    expect(stdout).toContain("4 URLs crawled, 2 broken");
+  } finally {
+    server.close();
+  }
 });
 
 test("check-links skips every specified prefix, including redirect targets", async () => {
@@ -233,8 +302,8 @@ test("check-links fails a site with zero internal links", async () => {
 test("check-links fails when it cannot fetch the start page", async () => {
   const [status, stdout, stderr] = await runSiteCommand("check-links", ["http://127.0.0.1:0"]);
   expect(status).toBe(1);
-  expect(stdout).toBe("");
-  expect(stderr).toContain("[check-links]");
+  expect(stdout).toContain("1 URLs crawled, 1 broken");
+  expect(stderr).toMatch(/http:\/\/127\.0\.0\.1:0\/ .* <- start URL/);
 });
 
 test.each([1, 2])("check-links honors --concurrency %i", async (concurrency) => {

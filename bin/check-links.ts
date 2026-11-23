@@ -36,7 +36,7 @@ if (!Number.isSafeInteger(concurrency) || concurrency < 1) {
 }
 
 async function crawlSite({ origin, protocol }: URL): Promise<number> {
-  const status = new Map<string, number>();
+  const status = new Map<string, number | string>();
   const referrers = new Map<string, Set<string>>();
   const redirects = new Map<string, string>();
   const queue = new Set(["/"]);
@@ -88,15 +88,20 @@ async function crawlSite({ origin, protocol }: URL): Promise<number> {
     for (const path of queue) {
       if (inFlight.size >= concurrency) break;
       queue.delete(path);
-      const visit = visitLink(path).finally(() => inFlight.delete(visit));
+      const visit = visitLink(path)
+        .catch((error: unknown) => {
+          status.set(path, error instanceof Error ? error.message : String(error));
+        })
+        .finally(() => inFlight.delete(visit));
       inFlight.add(visit);
     }
     await Promise.race(inFlight);
   }
 
   let broken = 0;
-  for (const [path, code] of status) {
-    if (code < 400) continue;
+  for (const [path, result] of status) {
+    const requestFailed = typeof result === "string";
+    if (!requestFailed && result < 400) continue;
     broken++;
     const sources = new Set<string>();
     const via = new Set([path]);
@@ -106,7 +111,10 @@ async function crawlSite({ origin, protocol }: URL): Promise<number> {
         if (redirects.get(from) === target) via.add(from);
       }
     }
-    console.error(`  ${path} (${code}) <- ${sources.size ? [...sources].join(" ") : "start URL"}`);
+    const target = requestFailed ? origin + path : path;
+    console.error(
+      `  ${target} (${result}) <- ${sources.size ? [...sources].join(" ") : "start URL"}`,
+    );
   }
   console.log(`[check-links] ${status.size} URLs crawled, ${broken} broken`);
   if (status.size === 0 || links === 0) {

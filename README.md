@@ -71,7 +71,7 @@ Each runs through `bun run`, and [Commands](docs/commands.md) has the detail of 
 - `check-lock <command>`: runs the command once no other locked command runs in the checkout.
 - `chrome-mcp`: the chrome-devtools MCP server on Chrome for Testing, for `.mcp.json`.
 - `raise-pins [--commit]`: raises every Git pin on a `hackersandwizards` repository to its newest tag, then gates.
-- `with-server` runs a check against a server it starts on a free port.
+- `with-server [--timeout <seconds>] [--limit <seconds>] [--stderr] "<server command>" -- <check> [args...]` runs a check against a server it starts on a free port. The check has a 120-second wall limit by default.
 - `check-links` checks the internal links of a running site.
 
 ## The gate
