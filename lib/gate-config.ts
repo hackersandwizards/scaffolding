@@ -7,11 +7,12 @@ export const placedSteps = new Map([
   ["links", "crawls the built site"],
 ]);
 
-export function pinsBrand(pkg: Package): boolean {
+export function pinsPackage(pkg: Package, name: string): boolean {
   return (
-    pkg.name !== "@hackersandwizards/brand" &&
-    "@hackersandwizards/brand" in
-      { ...pkg.dependencies, ...pkg.devDependencies, ...pkg.optionalDependencies }
+    pkg.name !== name &&
+    [pkg.dependencies, pkg.devDependencies, pkg.optionalDependencies].some(
+      (dependencies) => dependencies && Object.hasOwn(dependencies, name),
+    )
   );
 }
 
@@ -25,7 +26,8 @@ export function brandProblem(pkg: Package): string | undefined {
   const config = pkg.scaffolding;
   const brand = config?.brand;
   if (brand !== undefined) {
-    if (!pinsBrand(pkg)) return "scaffolding.brand requires a brand pin";
+    if (!pinsPackage(pkg, "@hackersandwizards/brand"))
+      return "scaffolding.brand requires a brand pin";
     if (
       !isObject(brand) ||
       Object.keys(brand).some((key) => !["directory", "retired", "elements"].includes(key))
@@ -42,7 +44,7 @@ export function brandProblem(pkg: Package): string | undefined {
       return 'scaffolding.brand.elements must be "server" when declared';
   }
   if (
-    pinsBrand(pkg) &&
+    pinsPackage(pkg, "@hackersandwizards/brand") &&
     brand?.retired === undefined &&
     !(config?.check ?? []).flat().includes("check:retired") &&
     !isReason(config?.skip?.retired)

@@ -10,7 +10,7 @@ import {
   changedBrandSteps,
   linksProblem,
   placedSteps,
-  pinsBrand,
+  pinsPackage,
   serverProblem,
 } from "../lib/gate-config.ts";
 import { help } from "../lib/help.ts";
@@ -158,7 +158,7 @@ const withServer = (command: string) => {
   ].join("");
   return `${bin("with-server")}${flags} ${quote(server.command)} -- ${command}`;
 };
-if (pinsBrand(pkg)) {
+if (pinsPackage(pkg, "@hackersandwizards/brand")) {
   const brand = config.brand;
   const directory = brand?.directory ? `cd ${quote(brand.directory)} && ` : "";
   for (const step of brandSteps) {
@@ -174,6 +174,7 @@ if (pinsBrand(pkg)) {
       );
   }
 }
+if (pinsPackage(pkg, "@hackersandwizards/slides") && !replaced("pins")) shared.pins = "slides-pins";
 if (config.server && !replaced("links"))
   full.set(
     "links",

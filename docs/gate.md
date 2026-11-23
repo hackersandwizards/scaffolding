@@ -103,7 +103,7 @@ manifest.
 ## Changed paths
 
 `scaffolding check --changed` (`bun run check --changed`) always runs frozen install, then
-each enabled step among format, structure, coupling, spaces, confidential, licenses and admin.
+each enabled step among format, structure, coupling, spaces, confidential, licenses, admin and pins.
 Paths are repository-relative, case-sensitive Bun globs. Every match adds its steps.
 
 The gate sets `SCAFFOLDING_CHANGED` for each step. A value of `1` marks a changed check and `0`
@@ -258,6 +258,13 @@ Put `links` in `scaffolding.check` where the crawl needs a specific position, su
 `check:preview`. A listed `check:links` replaces the shared crawl and keeps its existing group.
 The gate prints `links uses local check:links` when a server is declared and the local script
 owns the crawl.
+
+### Slides pins
+
+Pinning `@hackersandwizards/slides` enables the fast `pins` step. It runs that version's
+`slides-pins` to check the consumer's manifest against the slides engine's brand requirement.
+The slides package keeps its own `check:pins` step. A consumer that still lists `check:pins`
+sees `pins uses local check:pins` until it removes that entry.
 
 **CSS origin.** In a repository's sources, a stylesheet from a company package comes only from
 brand's `exports`; the shell's styles load only under `catalog/`; an engine's stylesheet loads where

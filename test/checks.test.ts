@@ -3939,6 +3939,45 @@ describe("scaffolding check", () => {
     },
   );
 
+  test("pins runs the installed slides bin in full and changed checks, while its owner keeps check:pins", () => {
+    const env = { CHECK_LOCK: join(temp(), "lock") };
+    const dir = gate(
+      { skip },
+      {},
+      { devDependencies: { "@hackersandwizards/slides": "file:slides" } },
+    );
+    write(dir, {
+      "slides/package.json": JSON.stringify({
+        name: "@hackersandwizards/slides",
+        bin: { "slides-pins": "pins.sh" },
+      }),
+      "slides/pins.sh": "#!/bin/sh\necho slides-pins-fixture\ntest -f accepted\n",
+    });
+    chmodSync(join(dir, "slides/pins.sh"), 0o755);
+    const red = run(dir, "scaffolding", ["check"], env);
+    expect(red.code).toBe(1);
+    expect(red.out).toContain("slides-pins-fixture");
+    expect(red.out).toContain("FAIL pins");
+    write(dir, { accepted: "" });
+    sh(dir, ["add", "slides", "accepted"]);
+    sh(dir, ["commit", "-qm", "pin"]);
+    write(dir, { "docs/readme.md": "# Fixture" });
+    const green = run(dir, "scaffolding", ["check", "--changed"], env);
+    expect(green.code, green.out).toBe(0);
+    expect(green.out).toContain("selected pins: runs on every changed check");
+    expect(green.out).toContain("ok   pins");
+    const owner = gate(
+      { skip, check: ["check:pins"] },
+      { "check:pins": "echo own-pins-fixture" },
+      { name: "@hackersandwizards/slides" },
+    );
+    const local = run(owner, "scaffolding", ["check"], env);
+    expect(local.code, local.out).toBe(0);
+    expect(local.out).toContain("own-pins-fixture");
+    expect(local.out).toContain("ok   check:pins");
+    expect(local.out).not.toContain("ok   pins");
+  });
+
   test("a skipped step must name an own entry in the shared step table", () => {
     const dir = gate({ skip: { ...skip, constructor: "not a step" } });
     const result = run(dir, "scaffolding", ["check"], { CHECK_LOCK: join(dir, ".lock") });

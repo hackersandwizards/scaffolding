@@ -15,7 +15,16 @@ export function validGlob(pattern: string): boolean {
   return depth === 0;
 }
 
-const always = ["format", "structure", "coupling", "spaces", "confidential", "licenses", "admin"];
+const always = [
+  "format",
+  "structure",
+  "coupling",
+  "spaces",
+  "confidential",
+  "licenses",
+  "admin",
+  "pins",
+];
 const source = ["typecheck", "lint", "oxlint", "cycles", "test"];
 const defaults = [
   { glob: new Bun.Glob("**/*.{js,jsx,cjs,mjs,ts,tsx,cts,mts,astro,mdx}"), steps: source },
