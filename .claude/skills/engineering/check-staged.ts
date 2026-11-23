@@ -5,9 +5,8 @@
 // lines neither pass nor block this commit. A repository defining a `check:skills` script also
 // runs it whenever the index touches `.claude/`; that validator reads the working tree.
 import { spawn, spawnSync } from "node:child_process";
-import { existsSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 import { availableParallelism } from "node:os";
-import { delimiter, resolve } from "node:path";
 
 function refuseCommit(message: string): never {
   console.error(`[check:staged] ${message}`);
@@ -29,17 +28,33 @@ function jsonMember(value: unknown, key: string): unknown {
     : undefined;
 }
 
+function packageScripts(manifest: unknown): object {
+  const scripts = jsonMember(manifest, "scripts");
+  return scripts !== null && typeof scripts === "object" && !Array.isArray(scripts) ? scripts : {};
+}
+
 const pkg: unknown = JSON.parse(stagedContent("package.json").toString("utf8"));
-const scripts = jsonMember(pkg, "scripts");
+const scripts = packageScripts(pkg);
 // Deletions count: removing a file can break a link the validator checks. Any status but 0
 // (no change) runs it, so a failing git diff fails closed.
 const claudeStaged =
   spawnSync("git", ["diff", "--cached", "--quiet", "--", ".claude"]).status !== 0;
+if (claudeStaged) {
+  const workingScripts = existsSync("package.json")
+    ? packageScripts(JSON.parse(readFileSync("package.json", "utf8")))
+    : {};
+  const changed = Object.keys({ ...scripts, ...workingScripts }).find(
+    (name) => jsonMember(scripts, name) !== jsonMember(workingScripts, name),
+  );
+  if (changed !== undefined)
+    refuseCommit(
+      `package.json script differs between index and working tree: ${JSON.stringify(changed)}`,
+    );
+}
 // The script's former name would otherwise turn the validation off without a word.
 if (claudeStaged && jsonMember(scripts, "validate:skills") && !jsonMember(scripts, "check:skills"))
   refuseCommit("rename the script validate:skills to check:skills: check-staged runs check:skills");
-const skills = jsonMember(scripts, "check:skills");
-const checkSkills = Boolean(skills) && claudeStaged;
+const checkSkills = Boolean(jsonMember(scripts, "check:skills")) && claudeStaged;
 
 const listed = spawnSync("git", ["diff", "--cached", "--name-only", "--diff-filter=ACMRT", "-z"], {
   encoding: "utf8",
@@ -199,41 +214,19 @@ const runs = active.flatMap(([tool, flags]) => {
     }),
   ];
 });
-async function runStagedSkills(): Promise<ToolRun> {
+if (checkSkills) {
   // An inherited scope could narrow validation to none. Deletions can break links too.
   const all = spawnSync("git", ["diff", "--cached", "--no-renames", "--name-only"], {
     encoding: "utf8",
   });
   if (all.status !== 0) refuseCommit("git diff --cached failed");
-  const scoped = { ...process.env, VALIDATE_SKILLS_PATHS: all.stdout.trim() };
-  if (!differs.has("package.json"))
-    return runStagedTool(process.execPath, ["run", "check:skills"], undefined, scoped);
-
-  // Bun resolves script bodies from disk. If the manifest differs, execute the indexed lifecycle
-  // commands from the project root, where the validator expects to find its inputs.
-  if (typeof skills !== "string") refuseCommit("check:skills must be a script command");
-  const env = {
-    ...scoped,
-    PATH: [resolve("node_modules/.bin"), process.env.PATH].filter(Boolean).join(delimiter),
-    INIT_CWD: process.cwd(),
-    npm_package_json: resolve("package.json"),
-  };
-  let result: ToolRun = { out: "", code: 0, stdout: Buffer.alloc(0) };
-  for (const event of ["precheck:skills", "check:skills", "postcheck:skills"]) {
-    const command = jsonMember(scripts, event);
-    if (typeof command !== "string" || !command) continue;
-    const run = await runStagedTool("/bin/sh", ["-c", command], undefined, {
-      ...env,
-      npm_lifecycle_event: event,
-      npm_lifecycle_script: command,
-    });
-    result = { ...run, out: result.out + run.out };
-    if (result.code) break;
-  }
-  return result;
+  runs.push(
+    runStagedTool(process.execPath, ["run", "check:skills"], undefined, {
+      ...process.env,
+      VALIDATE_SKILLS_PATHS: all.stdout.trim(),
+    }),
+  );
 }
-
-if (checkSkills) runs.push(runStagedSkills());
 
 // Concurrent for speed, reported in a fixed order so the output reads the same on every run.
 let failed = false;

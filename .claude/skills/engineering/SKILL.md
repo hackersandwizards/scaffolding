@@ -41,7 +41,10 @@ handling that prevents data loss, security measures, or accessibility basics.
   A repository pinning `@hackersandwizards/scaffolding` takes its hooks from scaffolding's skeleton
   (`check-structure --fix`). Elsewhere a hook is one line in `.githooks/` calling a script:
   `check:staged` runs `check-staged.ts` from this folder, `lfs:pre-push` runs `git lfs pre-push`
-  where LFS is used. `scaffolding check` serialises `bun run check` itself. npm is stopped by
+  where LFS is used. When `.claude/` is staged, the standalone hook names a differing
+  `package.json` script and refuses the commit if the index and working tree disagree.
+  If the scripts match and define `check:skills`, it runs `bun run check:skills` with the staged
+  paths as scope. `scaffolding check` serialises `bun run check` itself. npm is stopped by
   `"engines": {"npm": "please-use-bun"}` in `package.json` with `engine-strict=true` in `.npmrc`; no
   install script guards the package manager, and a package other repositories install carries no
   `preinstall`, since a consumer's install-script check rejects it. Read `bun install`'s `Blocked N
