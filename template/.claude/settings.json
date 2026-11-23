@@ -1,8 +1,10 @@
 {
   "model": "fable",
   "effortLevel": "low",
-  "env": {
-    "CLAUDE_CODE_SUBAGENT_MODEL": "fable"
+  "modelSettings": {
+    "claude-opus-5-5": {
+      "effortLevel": "medium"
+    }
   },
   "hooks": {
     "SessionStart": [
