@@ -266,6 +266,20 @@ Pinning `@hackersandwizards/slides` enables the fast `pins` step. It runs that v
 The slides package keeps its own `check:pins` step. A consumer that still lists `check:pins`
 sees `pins uses local check:pins` until it removes that entry.
 
+### Browser tests
+
+Set `"browserTest": "test/pages"` in `scaffolding` to split a Vitest suite by folder. The shared
+`test` step runs `bun --bun vitest run --exclude 'test/pages/**'` and the full-only
+`browser-test` step runs `bun --bun vitest run test/pages` after the build. Place `browser-test`
+in `scaffolding.check` to keep its order relative to local steps. The mail engine uses
+`"browserTest": "test/browser"`.
+
+The folder supplies the default Vitest command for both steps. Omit `scaffolding.test` or set it to
+`"bun --bun vitest run"`. To retain `bun run test [<vitest args>...]` on demand, set
+`"scripts": { "test": "scaffolding test" }`. The subcommand forwards additional Vitest arguments
+and uses the same exclusion. Brand's integration and catalog suites stay project-based because
+their Vitest projects select different files and its integration command clears Git variables.
+
 **CSS origin.** In a repository's sources, a stylesheet from a company package comes only from
 brand's `exports`; the shell's styles load only under `catalog/`; an engine's stylesheet loads where
 the engine's `package.json` lists it in `scaffolding.styles`, the stylesheets its components render

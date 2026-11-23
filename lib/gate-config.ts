@@ -5,7 +5,25 @@ export const placedSteps = new Map([
   ["retired", "scans generated output"],
   ["elements", "checks rendered elements"],
   ["links", "crawls the built site"],
+  ["browser-test", "runs the browser test suite after the build"],
 ]);
+
+export const vitestRun = ["--bun", "vitest", "run"];
+
+export function browserTestProblem(
+  config: NonNullable<Package["scaffolding"]>,
+): string | undefined {
+  const folder = config.browserTest;
+  if (folder === undefined) return;
+  if (
+    !relativePath(folder) ||
+    !/^[\w.-]+(?:\/[\w.-]+)*$/.test(folder) ||
+    folder.split("/").includes(".")
+  )
+    return "scaffolding.browserTest must name a repository-relative folder without glob characters";
+  if (config.test !== undefined && config.test !== `bun ${vitestRun.join(" ")}`)
+    return "scaffolding.browserTest already supplies the Vitest command; omit scaffolding.test or set it to bun --bun vitest run";
+}
 
 export function pinsPackage(pkg: Package, name: string): boolean {
   return (

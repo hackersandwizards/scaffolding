@@ -7,11 +7,13 @@ import { allChangedSteps, fastSteps, selectChangedSteps, validGlob } from "../li
 import {
   brandProblem,
   brandSteps,
+  browserTestProblem,
   changedBrandSteps,
   linksProblem,
   placedSteps,
   pinsPackage,
   serverProblem,
+  vitestRun,
 } from "../lib/gate-config.ts";
 import { help } from "../lib/help.ts";
 import { ownEntry } from "../lib/own-entry.ts";
@@ -33,7 +35,7 @@ import { gitShellShebangs, needsShellShebang, shellInput } from "../lib/shell-in
 import { inNodeModules, regularInput } from "../lib/tracked-inputs.ts";
 
 const usage =
-  "usage: scaffolding check [--changed [<from>..<to>...]] | scaffolding shell | scaffolding markdown [--fix]";
+  "usage: scaffolding check [--changed [<from>..<to>...]] | scaffolding shell | scaffolding markdown [--fix] | scaffolding test [<vitest args>...]";
 help("scaffolding", usage);
 withoutEnvFile("scaffolding");
 
@@ -44,6 +46,7 @@ const KEYS = new Set(
     private: 0,
     typecheck: 0,
     test: 0,
+    browserTest: 0,
     brand: 0,
     server: 0,
     linkSkips: 0,
@@ -60,6 +63,18 @@ const args = process.argv.slice(2).filter((a) => a !== "--locked");
 const changed = args[1] === "--changed";
 const ranges = args.slice(2);
 const [command, ...commandArgs] = args;
+if (command === "test") {
+  const config = readPackage(repoRoot()).scaffolding ?? {};
+  const problem = browserTestProblem(config);
+  if (problem || !config.browserTest)
+    fail(problem ?? "scaffolding test requires scaffolding.browserTest");
+  const run = spawnSync(
+    process.execPath,
+    [...vitestRun, "--exclude", `${config.browserTest}/**`, ...commandArgs],
+    { stdio: "inherit" },
+  );
+  process.exit(run.status ?? 1);
+}
 const direct =
   (command === "shell" && commandArgs.length === 0) ||
   (command === "markdown" &&
@@ -124,17 +139,24 @@ const shared: Record<string, string> = {
   confidential: `${bin("check-confidential")} --index`,
   licenses: bin("check-licenses"),
   // Tests are shared too: a gate without them is a skip someone wrote down, not one that drifted.
-  test: script(config.test ?? ""),
+  test: config.browserTest
+    ? `bun ${vitestRun.join(" ")} --exclude ${quote(`${config.browserTest}/**`)}`
+    : script(config.test ?? ""),
   // The catalog build, so a broken one goes red here rather than on the Pages run.
   catalog: "bun run --silent build",
   admin: "admin-check",
 };
-if (!config.test && !isReason(config.skip?.test))
+if (!config.test && !config.browserTest && !isReason(config.skip?.test))
   fail("scaffolding.test is missing: name the tests, or skip.test with a reason");
 const declared = { ...pkg.dependencies, ...pkg.devDependencies };
 if (!("@hackersandwizards/admin" in declared) && !isReason(config.skip?.admin))
   fail("@hackersandwizards/admin is not pinned: pin it, or skip.admin with a reason");
-for (const problem of [brandProblem(pkg), serverProblem(config.server), linksProblem(config)])
+for (const problem of [
+  brandProblem(pkg),
+  serverProblem(config.server),
+  linksProblem(config),
+  browserTestProblem(config),
+])
   if (problem) fail(problem);
 const skip = { ...config.skip };
 const entries = (config.check ?? []).flat();
@@ -186,6 +208,8 @@ if (config.server && !replaced("links"))
       ].join(" "),
     ),
   );
+if (config.browserTest)
+  full.set("browser-test", `bun ${vitestRun.join(" ")} ${quote(config.browserTest)}`);
 const named = new Set([...Object.keys(shared), ...full.keys(), ...local]);
 for (const [step, reason] of Object.entries(skip)) {
   if (step === "oxlint" || !(Object.hasOwn(shared, step) || full.has(step)))

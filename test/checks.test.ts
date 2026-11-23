@@ -3978,6 +3978,46 @@ describe("scaffolding check", () => {
     expect(local.out).not.toContain("ok   pins");
   });
 
+  test.each(["test/pages", "test/browser"])(
+    "browserTest splits %s and waits for the build",
+    (folder) => {
+      const { catalog: _, test: _test, ...enabled } = skip;
+      const dir = gate(
+        { skip: enabled, browserTest: folder, check: ["browser-test"] },
+        { build: "touch built", test: "scaffolding test" },
+      );
+      write(dir, {
+        "node_modules/.bin/vitest": `#!/usr/bin/env bun
+        const args = process.argv.slice(2);
+        console.log("vitest arguments", JSON.stringify(args));
+        if (args[1] !== "--exclude" && !(await Bun.file("built").exists())) process.exit(9);
+        if (args[1] !== "--exclude" && await Bun.file("broken").exists()) process.exit(1);
+      `,
+      });
+      chmodSync(join(dir, "node_modules/.bin/vitest"), 0o755);
+      const env = { CHECK_LOCK: join(temp(), "lock") };
+      const direct = run(dir, "scaffolding", ["test", "unit.test.ts"], env);
+      expect(direct.code, direct.out).toBe(0);
+      expect(direct.out).toContain(
+        JSON.stringify(["run", "--exclude", `${folder}/**`, "unit.test.ts"]),
+      );
+      write(dir, { "src/input.ts": "", "src/broken.ts": "" });
+      const changed = run(dir, "scaffolding", ["check", "--changed"], env);
+      expect(changed.code, changed.out).toBe(0);
+      expect(changed.out).toContain("deferred browser-test");
+      expect(changed.out).toContain(JSON.stringify(["run", "--exclude", `${folder}/**`]));
+      expect(changed.out).not.toContain(JSON.stringify(["run", folder]));
+      write(dir, { broken: "" });
+      const full = run(dir, "scaffolding", ["check"], env);
+      expect(full.code).toBe(1);
+      expect(full.out).toContain("ok   catalog");
+      expect(full.out).toContain("ok   test");
+      expect(full.out).toContain(JSON.stringify(["run", folder]));
+      expect(full.out).toContain("FAIL browser-test");
+      expect(full.out).toMatch(/failed in [\d.]+ s: browser-test\n/);
+    },
+  );
+
   test("a skipped step must name an own entry in the shared step table", () => {
     const dir = gate({ skip: { ...skip, constructor: "not a step" } });
     const result = run(dir, "scaffolding", ["check"], { CHECK_LOCK: join(dir, ".lock") });

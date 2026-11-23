@@ -19,7 +19,7 @@ import { basename, dirname, join, posix } from "node:path";
 import type { Node } from "typescript";
 import own from "../package.json";
 import skeleton from "../skeleton.json";
-import { brandProblem, placedSteps } from "../lib/gate-config.ts";
+import { brandProblem, browserTestProblem, placedSteps, vitestRun } from "../lib/gate-config.ts";
 import { help } from "../lib/help.ts";
 import { lintOverlaps } from "../lib/lint-disjoint.ts";
 import { oxlintConfig, oxlintConfiguration } from "../lib/oxlint.ts";
@@ -312,8 +312,13 @@ if (existsSync(at("package.json"))) {
   for (const path of strykerConfigs) await checkMutationRanges(path);
   // The gate stretches a test's limit under load only through this variable, and no runner reads it
   // unasked: bun takes it as a flag, vitest from its config.
-  const test = pkg.scaffolding?.test;
-  if (test && !isReason(pkg.scaffolding?.skip?.test)) {
+  const config = pkg.scaffolding ?? {};
+  const browserProblem = browserTestProblem(config);
+  if (browserProblem) add("package.json", browserProblem);
+  const browser = !browserProblem && config.browserTest;
+  const browserEnabled = browser && !isReason(config.skip?.["browser-test"]);
+  const test = browser ? `bun ${vitestRun.join(" ")}` : config.test;
+  if (test && (browserEnabled || !isReason(config.skip?.test))) {
     const configs = readdirSync(root).filter((p) => /^vite(?:st)?\.config\.[cm]?[jt]s$/.test(p));
     // The command, and each script it runs, at any depth: the value itself where it names one, as
     // the gate runs it, and each `run <name>` (`bun run test` naming `test:unit`). `bun test` is

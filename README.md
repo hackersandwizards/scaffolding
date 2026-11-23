@@ -67,6 +67,7 @@ Each runs through `bun run`, and [Commands](docs/commands.md) has the detail of 
   ones).
 - `scaffolding shell`: checks tracked shell scripts with ShellCheck.
 - `scaffolding markdown [--fix]`: checks tracked Markdown and optionally applies markdownlint fixes.
+- `scaffolding test [<vitest args>...]` runs the fast Vitest suite when you declare a browser suite.
 - `check-structure [--fix]`: the repository against the skeleton; `--fix` writes it.
 - `check-staged`: the pre-commit checks on the staged files.
 - `check-confidential`: confidential terms, Company OS screenshots and purged commits.

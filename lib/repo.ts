@@ -228,6 +228,7 @@ export type Package = {
     private?: boolean;
     typecheck?: string;
     test?: string;
+    browserTest?: string;
     brand?: {
       directory?: string;
       retired?: string[];
