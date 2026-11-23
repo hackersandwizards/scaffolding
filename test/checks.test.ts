@@ -1529,20 +1529,7 @@ describe("scaffold and check-structure", () => {
     expect(out).toContain("core.hooksPath must be .githooks");
   });
 
-  test("Stryker repositories run mutation testing through the capped wrapper", () => {
-    const other = fixture("mutation-wrapper", {});
-    const pkg = scaffolded(other);
-    const check = (mutation?: string, devDependencies = pkg.devDependencies) => {
-      write(other, {
-        "package.json": JSON.stringify({
-          ...pkg,
-          devDependencies,
-          scripts: { ...pkg.scripts, mutation },
-        }),
-      });
-      const { code, out } = run(other, "check-structure");
-      return { code, findings: lines(out, "check-structure") };
-    };
+  describe("Stryker repositories run mutation testing through the capped wrapper", () => {
     const red = {
       code: 1,
       findings: [
@@ -1550,18 +1537,41 @@ describe("scaffold and check-structure", () => {
       ],
     };
     const green = { code: 0, findings: [] };
-    expect(check()).toEqual(green);
-    expect(check(undefined, { ...pkg.devDependencies, "@stryker-mutator/core": "10.1.1" })).toEqual(
-      red,
-    );
-    write(other, { "stryker.config.mjs": "export default {};\n" });
-    expect(check("stryker run")).toEqual(red);
-    expect(check("echo scaffolding-mutation")).toEqual(red);
-    expect(check("FLAG='scaffolding-mutation' bun run stryker run")).toEqual(red);
-    expect(check("scaffolding-mutation")).toEqual(green);
-    expect(check("BUN_OPTIONS='--preload vitest/node' bun --bun scaffolding-mutation")).toEqual(
-      green,
-    );
+    test.each([
+      { name: "allows no mutation script without Stryker", expected: green },
+      { name: "requires the wrapper with the Stryker dependency", dependency: true, expected: red },
+      { name: "rejects running Stryker directly", mutation: "stryker run", expected: red },
+      { name: "rejects echoing the wrapper", mutation: "echo scaffolding-mutation", expected: red },
+      {
+        name: "rejects naming the wrapper in an environment variable",
+        mutation: "FLAG='scaffolding-mutation' bun run stryker run",
+        expected: red,
+      },
+      { name: "accepts the wrapper", mutation: "scaffolding-mutation", expected: green },
+      {
+        name: "accepts the wrapper with an environment variable and Bun flags",
+        mutation: "BUN_OPTIONS='--preload vitest/node' bun --bun scaffolding-mutation",
+        expected: green,
+      },
+    ])("$name", ({ name, dependency, mutation, expected }) => {
+      const other = fixture(
+        `mutation-wrapper ${name}`,
+        {},
+        mutation === undefined ? {} : { "stryker.config.mjs": "export default {};\n" },
+      );
+      const pkg = scaffolded(other);
+      write(other, {
+        "package.json": JSON.stringify({
+          ...pkg,
+          devDependencies: dependency
+            ? { ...pkg.devDependencies, "@stryker-mutator/core": "10.1.1" }
+            : pkg.devDependencies,
+          scripts: { ...pkg.scripts, mutation },
+        }),
+      });
+      const { code, out } = run(other, "check-structure");
+      expect({ code, findings: lines(out, "check-structure") }).toEqual(expected);
+    });
   });
 
   test("Stryker mutate entries cover whole files instead of line ranges", () => {
