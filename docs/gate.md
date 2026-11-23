@@ -63,7 +63,8 @@ erases, including `import type`. To fix a runtime cycle, move shared code into a
 neither side imports back from. The step reads no allow list. Submodule cycles belong to their
 own repositories.
 
-**Shell.** ShellCheck runs at warning severity over tracked `.sh` and `.bash` files and files with
+**Shell.** ShellCheck reports findings at every severity, including in sourced files
+(`-x --check-sourced`). It checks tracked `.sh` and `.bash` files and files with
 an sh, bash, dash or ksh shebang. Other scripting extensions, including TypeScript, JavaScript
 and Python, take precedence over the shebang. The step skips symlinked scripts and unmerged index
 entries. It uses the root `.shellcheckrc` when present and reports when there are no scripts.

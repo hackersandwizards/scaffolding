@@ -30,6 +30,7 @@ import { loadRoute, rewriteRoute } from "../catalog/route.ts";
 import { runOxlint } from "../lib/oxlint.ts";
 import { rejection } from "../lib/rejection.ts";
 import { gitShellShebangs, shellInput } from "../lib/shell-inputs.ts";
+import { shellcheckBinary } from "../lib/shellcheck.ts";
 import { indexInputs, trackedInputs } from "../lib/tracked-inputs.ts";
 import {
   applyAllow,
@@ -6850,6 +6851,22 @@ describe("check-staged", () => {
     expect(red.out).toContain("SC2154");
   });
 
+  test("ShellCheck reports style findings in unchanged index sources", async () => {
+    const dir = repo({ "package.json": lintPkg, "scripts/lib.sh": shellStyleFinding });
+    const env = await realShellcheckFixture(dir);
+    write(dir, {
+      "scripts/main.sh": "#!/bin/sh\n. ./scripts/lib.sh\n",
+      "scripts/lib.sh": "#!/bin/sh\nprintf '%s\\n' ok\n",
+    });
+    expect(sh(dir, ["add", "--", "scripts/main.sh"]).status).toBe(0);
+    const red = run(dir, "check-staged", [], env);
+    expect(red.code, red.out).toBe(1);
+    expect(red.out).toMatch(/In \.\/scripts\/lib\.sh line 2:[\s\S]*SC2006 \(style\)/);
+    expect(sh(dir, ["add", "--", "scripts/lib.sh"]).status).toBe(0);
+    const green = run(dir, "check-staged", [], env);
+    expect(green.code, green.out).toBe(0);
+  });
+
   test("a staged item file runs admin-check, a broken one goes red", () => {
     const dir = repo({ "package.json": pkg, "docs/agent-work/items/a.md": "# Fine\n" });
     write(dir, { "node_modules/.bin/admin-check": adminCheck });
@@ -8494,6 +8511,7 @@ await serve([process.execPath, "-e", "console.error('boot failed: stack'); proce
 });
 
 const shellScript = '#!/bin/sh\nunused=1\nprintf "%s\\n" ok\n';
+const shellStyleFinding = '#!/bin/sh\nprintf "%s\\n" "`printf ok`"\n';
 const checkedShell = (dir: string, env?: Record<string, string>) =>
   run(dir, "scaffolding", ["shell"], env);
 
@@ -8534,6 +8552,14 @@ const shellcheckPreload = {
   BUN_OPTIONS: `--preload=${join(import.meta.dirname, "shellcheck-preload.ts")}`,
 };
 
+async function realShellcheckFixture(dir: string) {
+  const binary = await shellcheckBinary(join(import.meta.dirname, ".."));
+  const path = join(dir, "node_modules/.cache/scaffolding/shellcheck-fixture");
+  mkdirSync(dirname(path), { recursive: true });
+  symlinkSync(binary, path);
+  return { ...shellcheckPreload, SCAFFOLDING_TEST_SHELLCHECK: path };
+}
+
 function shellcheckFixture(
   dir: string,
   body = `#!/bin/sh
@@ -8562,6 +8588,19 @@ exit "$status"
 }
 
 describe("scaffolding shell", () => {
+  test.each(["tracked script", "sourced script"])(
+    "fails on a style finding in a %s",
+    async (input) => {
+      const script = input === "tracked script" ? shellStyleFinding : "#!/bin/sh\n. ./lib.sh\n";
+      const dir = repo({ "main.sh": script });
+      if (input === "sourced script") write(dir, { "lib.sh": shellStyleFinding });
+      const red = checkedShell(dir, await realShellcheckFixture(dir));
+      expect(red.code, red.out).toBe(1);
+      expect(red.out).toContain(input === "tracked script" ? "In main.sh" : "In ./lib.sh");
+      expect(red.out).toContain("SC2006 (style)");
+    },
+  );
+
   test("checks shell extensions and shebangs, honors .shellcheckrc and ignores other scripts", () => {
     const dir = repo({
       "with space.sh": shellScript,
@@ -8623,39 +8662,53 @@ describe("scaffolding shell", () => {
   });
 });
 
-test("the skeleton pre-push clears Git-local variables and passes each branch range to the gate", () => {
-  const dir = repo({});
-  const fake = join(dir, "node_modules", ".bin");
-  mkdirSync(fake, { recursive: true });
-  writeFileSync(
-    join(fake, "bun"),
-    '#!/bin/sh\n[ "$3" = check ] || exit 0\nprintf "%s\\n" "${GIT_DIR-unset}" "${GIT_INDEX_FILE-unset}" "$@"\n',
-    { mode: 0o755 },
-  );
-  const hook = join(import.meta.dirname, "..", "template/.githooks/pre-push");
-  const r = spawnSync(hook, ["origin", "remote"], {
-    cwd: dir,
-    env: {
-      ...process.env,
-      PATH: `${fake}:${process.env.PATH}`,
-      GIT_DIR: ".git",
-      GIT_INDEX_FILE: "custom",
-    },
-    input: "refs/heads/a a1 refs/heads/a a0\nrefs/heads/b b1 refs/heads/b b0\n",
-    encoding: "utf8",
-  });
-  expect(r.status).toBe(0);
-  expect(r.stdout.trim().split("\n")).toEqual([
-    "unset",
-    "unset",
-    "run",
-    "--silent",
-    "check",
-    "--changed",
-    "a0..a1",
-    "b0..b1",
-  ]);
-});
+test.each([".githooks/pre-push", "template/.githooks/pre-push"])(
+  "%s clears Git-local variables and passes each branch range to the gate",
+  (path) => {
+    const dir = repo({});
+    const fake = join(dir, "node_modules", ".bin");
+    mkdirSync(fake, { recursive: true });
+    writeFileSync(
+      join(fake, "bun"),
+      '#!/bin/sh\n[ "$3" = check ] || exit 0\nprintf "%s\\n" "${GIT_DIR-unset}" "${GIT_INDEX_FILE-unset}" "$@"\n',
+      { mode: 0o755 },
+    );
+    const hook = join(import.meta.dirname, "..", path);
+    const push = (input: string) =>
+      spawnSync(hook, ["origin", "remote"], {
+        cwd: dir,
+        env: {
+          ...process.env,
+          PATH: `${fake}:${process.env.PATH}`,
+          GIT_DIR: ".git",
+          GIT_INDEX_FILE: "custom",
+        },
+        input,
+        encoding: "utf8",
+      });
+    const r = push("refs/heads/a a1 refs/heads/a a0\nrefs/heads/b b1 refs/heads/b b0\n");
+    expect(r.status).toBe(0);
+    expect(r.stdout.trim().split("\n")).toEqual([
+      "unset",
+      "unset",
+      "run",
+      "--silent",
+      "check",
+      "--changed",
+      "a0..a1",
+      "b0..b1",
+    ]);
+    for (const refs of [
+      "",
+      "refs/tags/v1 a1 refs/tags/v1 a0\n",
+      "(delete) 0000 refs/heads/a a0\n",
+    ]) {
+      const empty = push(refs);
+      expect(empty.status).toBe(0);
+      expect(empty.stdout).toBe("");
+    }
+  },
+);
 
 describe("scaffolding markdown", () => {
   const check = (dir: string, ...args: string[]) => run(dir, "scaffolding", ["markdown", ...args]);

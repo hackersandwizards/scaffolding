@@ -23,7 +23,7 @@ function lintShell(binary: string, root: string, files: string[]) {
   for (const chunk of pathChunks(files)) {
     const run = spawnSync(
       binary,
-      ["-S", "warning", ...rc, "--", ...chunk.map((path) => (path === "-" ? "./-" : path))],
+      ["-x", "--check-sourced", ...rc, "--", ...chunk.map((path) => (path === "-" ? "./-" : path))],
       {
         cwd: root,
         stdio: "inherit",

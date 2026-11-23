@@ -18,4 +18,10 @@ while IFS= read -r var; do
 done <<EOF
 $local_env_vars
 EOF
-exec bun run --silent check --changed $ranges
+set --
+while IFS= read -r range; do
+  set -- "$@" "$range"
+done <<EOF
+$ranges
+EOF
+exec bun run --silent check --changed "$@"
