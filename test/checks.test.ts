@@ -8319,6 +8319,22 @@ describe("scaffolding markdown", () => {
   const check = (dir: string, ...args: string[]) => run(dir, "scaffolding", ["markdown", ...args]);
   const bad = "Body without a title.\n";
 
+  test("recognizes top-level frontmatter titles and limits H1s in the body", () => {
+    const dir = repo({
+      "title.md": "---\ntitle: Record\n---\n\n" + bad,
+      "name.md": "---\nname: Record\n---\n\n" + bad,
+      "nested.md": "---\nmetadata:\n  title: Record\n  name: Record\n---\n\n" + bad,
+      "single.md": "---\ntitle: Record\n---\n\n# One\n",
+      "double.md": "---\nname: Record\n---\n\n# One\n\n# Two\n",
+    });
+    const r = check(dir);
+    expect(r.code).toBe(1);
+    expect(r.out.trim().split("\n").sort()).toEqual([
+      expect.stringMatching(/^double\.md:7 error MD025\b/),
+      expect.stringMatching(/^nested\.md:7 error MD041\b/),
+    ]);
+  });
+
   test("uses only the shared rules on literal tracked files, ignoring symlinks and gitlinks", () => {
     const dir = repo({
       "[tracked].md": bad,

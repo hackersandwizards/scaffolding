@@ -87,7 +87,8 @@ with a reason to skip the whole step.
 | MD037 and MD038 | Off. The rules misread expressions such as `a * b * c` and globs, which their fixers rewrite.         |
 | MD010           | Ignore tabs inside code blocks so examples retain their indentation.                                  |
 | MD024           | Compare duplicate headings within the same section so different sections can use the same subheading. |
-| MD041 and MD025 | Use markdownlint's defaults for recognizing document titles.                                          |
+| MD041           | Accept a top-level YAML `title` or `name` because content records carry their title in frontmatter.   |
+| MD025           | Allow one H1 in the body, including when frontmatter supplies the document title.                     |
 
 At pre-commit, `check-staged` checks only the staged shell scripts and Markdown files, using
 their content from the index. ShellCheck's snapshot also includes all tracked shell scripts
