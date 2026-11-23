@@ -21,7 +21,7 @@ anyone; a run's own approval still bounds what it fixes, as step 4 of "Pins only
    Package managers do not report a newer tag of a git dependency (`git+ssh://…#vX`, our own
    `@hackersandwizards/*` included): read the newest tag with `git ls-remote --tags <url>` and raise
    the pin to it. A pin written as a commit with the tag as a trailing comment keeps that form: take
-   the tag's commit from `ls-remote` (its `^{}` line where annotated) and update the comment. Clear every open security advisory, replacing a dependency no release fixes.
+   the tag's commit from `ls-remote` (its `^{}` line where annotated) and update the comment. Clear every open security advisory, replacing a dependency no release fixes. In a bun repository `bun audit --audit-level=high` lists them; it needs the registry, and a failed call exits 1 like a finding, so read its output before calling a repository clean.
 2. Fix what the updates break until the checks the repository's `CLAUDE.md` names are green. Roll
    back only an update you cannot make green.
 3. Commit the paths the update changed as one commit and push it. Nothing changed means no commit.
