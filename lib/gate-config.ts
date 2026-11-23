@@ -1,12 +1,13 @@
 import { isObject, isReason, type Package } from "./repo.ts";
 
 export const brandSteps = ["colours", "copies", "retired", "elements"] as const;
-export const placedSteps = new Map([
+export const fullOnlySteps = new Map([
   ["retired", "scans generated output"],
   ["elements", "checks rendered elements"],
   ["links", "crawls the built site"],
   ["browser-test", "runs the browser test suite after the build"],
 ]);
+export const placedSteps = new Set(["colours", "copies", ...fullOnlySteps.keys()]);
 
 export const vitestRun = ["--bun", "vitest", "run"];
 

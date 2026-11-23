@@ -24,6 +24,8 @@ const always = [
   "licenses",
   "admin",
   "pins",
+  "colours",
+  "copies",
 ];
 const source = ["typecheck", "lint", "oxlint", "cycles", "test"];
 const defaults = [
@@ -97,10 +99,5 @@ export function selectChangedSteps(
       for (const step of matched)
         if (fast.has(step) && !steps.has(step)) steps.set(step, `matches ${JSON.stringify(path)}`);
   }
-  const firstPath = paths[0];
-  if (firstPath !== undefined)
-    for (const step of ["colours", "copies"])
-      if (fast.has(step) && !steps.has(step))
-        steps.set(step, `matches ${JSON.stringify(firstPath)}`);
   return { steps };
 }

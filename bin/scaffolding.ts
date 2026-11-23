@@ -8,6 +8,7 @@ import {
   brandProblem,
   brandSteps,
   browserTestProblem,
+  fullOnlySteps,
   linksProblem,
   placedSteps,
   pinsPackage,
@@ -271,7 +272,7 @@ for (const step of new Set(entries))
 for (const [step, replacement] of replacements)
   console.error(`[scaffolding] ${step} uses local ${replacement}`);
 
-const fullOnly = new Map([["catalog", "builds the catalog"], ...placedSteps]);
+const fullOnly = new Map([["catalog", "builds the catalog"], ...fullOnlySteps]);
 if (config.fullOnly !== undefined && !isObject(config.fullOnly))
   fail("scaffolding.fullOnly must be a map of steps to reasons");
 for (const [step, reason] of Object.entries(config.fullOnly ?? {})) {
@@ -522,16 +523,22 @@ if (selected) {
     if (step === "lint") console.error(`[scaffolding] skipped oxlint: ${String(reason)}`);
   }
 }
-const sharedSteps = Object.entries(shared).filter(([name]) => runs(name));
+const unplacedShared = Object.entries(shared).filter(
+  ([name]) => !placedSteps.has(name) || !entries.includes(name),
+);
+const sharedSteps = unplacedShared.filter(([name]) => runs(name));
 const localGroups = (config.check ?? []).map((entry) =>
   (Array.isArray(entry) ? entry : [entry])
-    .filter((name) => !placedSteps.has(name) || full.has(name))
+    .filter((name) => !placedSteps.has(name) || full.has(name) || Object.hasOwn(shared, name))
     .filter(runs)
-    .map((s): [string, string] => [s, full.get(s) ?? script(s)]),
+    .map((s): [string, string] => [
+      s,
+      full.get(s) ?? (placedSteps.has(s) ? ownEntry(shared, s) : undefined) ?? script(s),
+    ]),
 );
 localGroups.unshift([...full].filter(([name]) => !entries.includes(name) && runs(name)));
 const quick = (name: string) => name !== "test" && name !== "catalog";
-const order = Object.keys(shared);
+const order = unplacedShared.map(([name]) => name);
 
 // Install first: a tree a pin-raising merge left behind gets installed, and a lockfile out of step
 // fails under its own name, not a later step's.

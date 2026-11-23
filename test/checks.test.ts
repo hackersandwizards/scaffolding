@@ -4175,7 +4175,7 @@ describe("scaffolding check", () => {
     expect(result.out).toContain("scaffolding.skip names no shared step: constructor");
   });
 
-  test("changed checks select both brand scans for any path and defer built scans", () => {
+  test("changed checks run both brand scans even for an empty push and defer built scans", () => {
     const dir = gate(
       { skip, brand: { directory: "site", retired: ["site/dist"] } },
       {},
@@ -4194,18 +4194,58 @@ describe("scaffolding check", () => {
     sh(dir, ["commit", "-qm", "pin"]);
     const env = { CHECK_LOCK: join(temp(), "lock") };
     mkdirSync(join(dir, "site"));
+    sh(dir, ["commit", "--allow-empty", "-qm", "empty push"]);
+    const empty = run(dir, "scaffolding", ["check", "--changed", "HEAD^..HEAD"], env);
+    expect(empty.code, empty.out).toBe(0);
+    expect(empty.out).toContain("--changed: 0 paths");
+    expect(empty.out).toContain("deferred retired");
+    expect(empty.out).toContain("deferred elements");
     write(dir, { "assets/sample.png": "binary fixture" });
     const outside = run(dir, "scaffolding", ["check", "--changed"], env);
     expect(outside.code, outside.out).toBe(0);
-    expect(outside.out).toContain('selected copies: matches "assets/sample.png"');
-    expect(outside.out).toContain('selected colours: matches "assets/sample.png"');
-    expect(outside.out).toContain("deferred retired");
-    expect(outside.out).toContain("deferred elements");
-    rmSync(join(dir, "assets/sample.png"));
-    write(dir, { "site/card.md": "# Card\n" });
-    const inside = run(dir, "scaffolding", ["check", "--changed"], env);
-    expect(inside.out).toContain('selected colours: matches "site/card.md"');
-    expect(inside.code).toBe(0);
+    for (const result of [empty, outside])
+      for (const scan of ["colours", "copies"]) {
+        expect(result.out).toContain(`selected ${scan}: runs on every changed check`);
+        expect(result.out).toContain(`ok   ${scan}`);
+      }
+  });
+
+  test("placed brand scans run only in their configured group after the build", () => {
+    const { catalog: _catalog, ...skips } = skip;
+    const dir = gate(
+      {
+        skip: { ...skips, retired: "fixture", elements: "fixture" },
+        check: ["check:prepare", ["colours", "copies"]],
+      },
+      {
+        build: "mkdir -p rendered && touch rendered/page.html",
+        "check:prepare": "test -f rendered/page.html && touch ready",
+      },
+      { devDependencies: { "@hackersandwizards/brand": "file:brand" } },
+    );
+    write(dir, {
+      "brand/package.json": JSON.stringify({
+        name: "@hackersandwizards/brand",
+        bin: { "brand-colours": "scan.sh", "brand-copies": "scan.sh" },
+      }),
+      "brand/scan.sh": "#!/bin/sh\ntest -f ready\n",
+    });
+    chmodSync(join(dir, "brand/scan.sh"), 0o755);
+    sh(dir, ["add", "brand"]);
+    sh(dir, ["commit", "-qm", "pin"]);
+    const env = { CHECK_LOCK: join(dir, ".lock") };
+    const full = run(dir, "scaffolding", ["check"], env);
+    expect(full.code, full.out).toBe(0);
+    const changed = run(dir, "scaffolding", ["check", "--changed", "HEAD..HEAD"], env);
+    expect(changed.code, changed.out).toBe(0);
+    expect(changed.out).toContain("deferred catalog");
+    for (const result of [full, changed])
+      for (const scan of ["colours", "copies"]) {
+        expect(result.out.match(new RegExp(`ok   ${scan} `, "g"))).toHaveLength(1);
+        expect(result.out.indexOf(`ok   ${scan}`)).toBeGreaterThan(
+          result.out.indexOf("ok   check:prepare"),
+        );
+      }
   });
 
   test("migrated brand mappings select the same scans for each previously mapped path", () => {
@@ -4245,7 +4285,9 @@ describe("scaffolding check", () => {
         const result = run(dir, "scaffolding", ["check", "--changed"], env);
         expect(result.code, result.out).toBe(0);
         for (const scan of [...scans, "check:scan"]) {
-          expect(result.out).toContain(`selected ${scan}: matches "${path}"`);
+          expect(result.out).toContain(
+            `selected ${scan}: ${migrated && scans.includes(scan) ? "runs on every changed check" : `matches "${path}"`}`,
+          );
           expect(result.out).toContain(`ok   ${scan}`);
         }
         rmSync(join(dir, path));
