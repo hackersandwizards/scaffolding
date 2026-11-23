@@ -3,7 +3,7 @@ import { createServer } from "node:http";
 import { join } from "node:path";
 import { expect, test } from "vitest";
 
-function runSiteCommand(name: string, args: string[], preload?: string) {
+function runSiteCommand(name: string, args: string[], preload?: string, load = "0") {
   const bin = join(import.meta.dirname, "..", "bin", `${name}.ts`);
   const entry = preload
     ? [
@@ -12,6 +12,7 @@ function runSiteCommand(name: string, args: string[], preload?: string) {
       ]
     : [bin, ...args];
   const child = Bun.spawn([process.execPath, "--no-env-file", ...entry], {
+    env: { ...process.env, SCAFFOLDING_LOAD: load },
     stdout: "pipe",
     stderr: "pipe",
   });
@@ -133,15 +134,19 @@ test("with-server returns 1 when the check dies on a signal", async () => {
   expect(stdout).toBe("check started\n");
 });
 
-test("with-server returns 124 when the check times out", async () => {
+test.each([
+  ["0", 120],
+  ["99999", 1200],
+])("with-server uses the default wall limit scaled for load %s", async (load, seconds) => {
   const [status, , stderr] = await runSiteCommand(
     "with-server",
     [serverCommand, "--", process.execPath, "-e", "await Bun.sleep(1000);"],
     `const original = setTimeout;
-     globalThis.setTimeout = (fn, ms, ...args) => original(fn, ms === 120_000 ? 50 : ms, ...args);`,
+     globalThis.setTimeout = (fn, ms, ...args) => original(fn, ms === 120_000 || ms === 1_200_000 ? 50 : ms, ...args);`,
+    load,
   );
   expect(status, stderr).toBe(124);
-  expect(stderr).toContain("check reached the 120-second wall limit");
+  expect(stderr).toContain(`check reached the ${seconds}-second wall limit`);
   expect(stderr).toContain("--limit");
 });
 

@@ -6,16 +6,18 @@ export async function runTimed(
   {
     name,
     limitMs,
+    graceMs = 10_000,
     timeoutMessage,
     env,
   }: {
     name: string;
     limitMs: number;
+    graceMs?: number;
     timeoutMessage: string;
     env?: NodeJS.ProcessEnv;
   },
 ): Promise<number> {
-  // Stop subprocess workers as well, even if they ignore termination signals.
+  // Signal the subprocess workers as well as the child.
   const child = spawn(command, args, { detached: true, stdio: "inherit", env });
   const stop = (signal: NodeJS.Signals) => {
     if (child.pid === undefined) return;
@@ -31,9 +33,11 @@ export async function runTimed(
     return { signal, forward };
   });
   let timedOut = false;
+  let killTimer: ReturnType<typeof setTimeout> | undefined;
   const timer = setTimeout(() => {
     timedOut = true;
-    stop("SIGKILL");
+    stop("SIGTERM");
+    killTimer = setTimeout(() => stop("SIGKILL"), graceMs).unref();
     console.error(timeoutMessage);
   }, limitMs);
   try {
@@ -47,6 +51,7 @@ export async function runTimed(
     return 1;
   } finally {
     clearTimeout(timer);
+    clearTimeout(killTimer);
     for (const { signal, forward } of handlers) process.off(signal, forward);
   }
 }
