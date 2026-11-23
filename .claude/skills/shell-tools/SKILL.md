@@ -12,6 +12,7 @@ description: >-
 Prefer these over their classic equivalents.
 
 **Browser and frontend:**
+
 - For rendered-page, frontend, or signed-in UI checks, try in order until one works: in-app Browser, Chrome DevTools MCP, repository automation (e.g. Playwright). Before skipping Chrome DevTools, search deferred tools (`ToolSearch` or equivalent) and check the repository for automation.
 - Headless Chrome from the command line lays a page out at least 500 px wide: `--window-size=375,…` with `--screenshot` cuts a 500 px layout to 375, which looks like text overflowing the right edge. Set a phone width through CDP instead (`page.setViewport`, or the chrome-devtools MCP's `resize_page`).
 - `playwright install` deletes every build in the shared Playwright cache that no installation
@@ -23,6 +24,7 @@ Prefer these over their classic equivalents.
 **GNU vs BSD:** unprefixed CLI tools are BSD on macOS, GNU on Linux. Write scripts to run on both (POSIX, no flavor-specific flags). GNU builds are `g*` (`gsed`, `gdate`, `gtimeout`).
 
 **Text and file navigation:**
+
 - `eza` over `ls`, `bat` over `cat` and `less` when typing. In a Bash-tool pipeline or script write
   `command ls`, `command cat` and `command grep`: the shell snapshot aliases the first two, which can
   block on stdin, and wraps `grep` in a function that has kept a line `grep -v` should drop. Prove a
@@ -43,12 +45,14 @@ Prefer these over their classic equivalents.
 - `zoxide` for directory jumping (`z <pattern>`)
 
 **HTTP and data:**
+
 - `xh` over `curl` and `httpie`. `xh` reads a non-terminal stdin as the request body and waits for it to close, past `--timeout` (12 s with stdin held open, 0 s with the flag): pass `--ignore-stdin` in a script or tool call. `-q` prints nothing, the body included: a loop
   polling a page through `grep` reads it with `-b`.
 - `jaq` over `jq`, `pandoc` for document conversion
 - `scrapling` to scrape web pages to markdown (`scrapling extract get <url> out.md`)
 
 **Git and code-host:**
+
 - `gh` for GitHub, `glab` for GitLab. Before calling a repository setting one only the person can
   change, read the permission the API returns (`permissions.admin` in `gh api repos/<org>/<repo>`):
   after the person's decision, the change is yours.
@@ -64,6 +68,7 @@ Prefer these over their classic equivalents.
   - `git integrate <branch>` -> merge a branch with `--no-ff --edit` after confirming `HEAD` is up to date with that branch
 
 **System and shell:**
+
 - `btop` over `htop`, `watch` for repeated commands
 - Wait on a background job by its PID (`until ! kill -0 <pid>; do sleep 5; done`, run inside
   `Monitor` or a background command, since a foreground `sleep` loop is blocked) or a sentinel
@@ -75,6 +80,7 @@ Prefer these over their classic equivalents.
 - `cdxe` to start Codex exec. It is aliased to `codex exec --yolo`: no approvals, no sandbox.
 
 **JavaScript/TypeScript:**
+
 - bun is the package manager in every repository of ours: `bun install`, `bun run`, `bun.lock`,
   `"packageManager": "bun@<version>"`, and those lines in its README and CLAUDE.md. A participant
   repository, a training repository without our `CLAUDE.md` at its root that participants build in
@@ -89,11 +95,13 @@ Prefer these over their classic equivalents.
 - built-in `Bun.Image` for image processing (Sharp-shaped, JPEG/PNG/WebP/HEIC/AVIF, no npm deps)
 
 **Media:**
+
 - `transcribe [-l lang] [-o outdir] file...` for speech-to-text, never `whisper-cli` directly, which
   at its defaults invents repeated sentences. Install or propose no other model. Names come from
   records, never from the transcript.
 
 **Python:**
+
 - `uv` for project envs and dependencies
 - `uvx` for running tools without installing
 - `pipx` for persistent CLI installs

@@ -1,0 +1,12 @@
+{
+  "MD010": { "code_blocks": false },
+  "MD013": false,
+  "MD024": { "siblings_only": true },
+  "MD026": false,
+  "MD029": false,
+  "MD033": { "allowed_elements": ["br"] },
+  "MD034": false,
+  "MD037": false,
+  "MD038": false,
+  "MD060": false
+}

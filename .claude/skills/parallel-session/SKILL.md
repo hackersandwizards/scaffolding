@@ -122,8 +122,7 @@ items up.
 6. A report and an item state the current state only. A later batch on the same topic edits that
    report and deletes what it superseded. Earlier rounds and raw reviews go to the scratchpad. A
    clock time an item or report carries is the value a command printed in the tool call that
-   writes it (`NOW=$(date '+%H:%M')`); an event no command timed gets no time, or 'after <the
-   timed event>'.
+   writes it (`NOW=$(date '+%H:%M')`); an event no command timed gets no time, or 'after `<the timed event>`'.
 7. The page reads each repo at its last commit, so the commit is all an item change needs.
    Check: where `curl -s http://admin.localhost:4329/` answers, the page lists the item. A batch
    that changes an asset an item's images show, such as a logo, colour or lockup, re-renders those

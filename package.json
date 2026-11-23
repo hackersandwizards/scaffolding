@@ -156,6 +156,7 @@
     "eslint-config-prettier": "10.1.8",
     "fast-check": "4.11.0",
     "globals": "17.14.0",
+    "markdownlint-cli2": "0.24.2",
     "oxlint": "1.94.0",
     "oxlint-tsgolint": "7.0.2008",
     "postcss-html": "2.0.1",

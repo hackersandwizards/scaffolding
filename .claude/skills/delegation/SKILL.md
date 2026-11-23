@@ -90,7 +90,8 @@ task's next run, and once it ends the app starts the next run beside the delegat
 `output_file` path from the launch result and run this foreground Bash command with
 `timeout: 600000`:
 
-    m=$(readlink "<output_file>"); m=${m%.jsonl}.meta.json; n=0; if [ ! -f "$m" ]; then echo ERROR; else until jq -e '.finished == true' "$m" >/dev/null 2>&1 || [ $n -ge 48 ]; do sleep 10; n=$((n+1)); done; jq -e '.finished == true' "$m" >/dev/null 2>&1 && echo finished || echo running; fi
+```bash
+m=$(readlink "<output_file>"); m=${m%.jsonl}.meta.json; n=0; if [ ! -f "$m" ]; then echo ERROR; else until jq -e '.finished == true' "$m" >/dev/null 2>&1 || [ $n -ge 48 ]; do sleep 10; n=$((n+1)); done; jq -e '.finished == true' "$m" >/dev/null 2>&1 && echo finished || echo running; fi
 
 Repeat it while it prints `running`, at most six times; a result saying the command was moved to
 the background counts as `running`, and you run it again in the foreground. On `finished`, the

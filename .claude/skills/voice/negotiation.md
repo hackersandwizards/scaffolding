@@ -54,7 +54,7 @@ concession you just granted inverts this: ask *"Passt das für dich?"* and get t
 
 ### Power-of-no door
 
-*"Wenn ein Teil davon nicht passt, sag gern Bescheid."*
+> "Wenn ein Teil davon nicht passt, sag gern Bescheid."
 
 ### Tier choice and upgrade door
 

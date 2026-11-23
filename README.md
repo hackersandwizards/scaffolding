@@ -66,6 +66,7 @@ Each runs through `bun run`, and [Commands](docs/commands.md) has the detail of 
   only the steps the changed paths map to, of the ranges given (the pre-push hook passes the pushed
   ones).
 - `scaffolding shell`: checks tracked shell scripts with ShellCheck.
+- `scaffolding markdown [--fix]`: checks tracked Markdown and optionally applies markdownlint fixes.
 - `check-structure [--fix]`: the repository against the skeleton; `--fix` writes it.
 - `check-staged`: the pre-commit checks on the staged files.
 - `check-confidential`: confidential terms, Company OS screenshots and purged commits.

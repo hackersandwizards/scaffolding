@@ -3159,6 +3159,7 @@ describe("scaffolding check", () => {
     coupling: "t",
     cycles: "t",
     shell: "t",
+    markdown: "t",
   };
   const skip = {
     ...all,
@@ -3191,6 +3192,17 @@ describe("scaffolding check", () => {
     const r = run(dir, "scaffolding", ["check"], { CHECK_LOCK: join(dir, ".lock") });
     expect(r.code).toBe(1);
     expect(r.out).toMatch(/failed in [\d.]+ s: cycles/);
+  });
+
+  test("a tracked Markdown finding fails the gate under the step's name", () => {
+    const { markdown: _m, ...rest } = skip;
+    const dir = gate({ skip: rest });
+    write(dir, { "record.md": "Body without a title.\n" });
+    expect(sh(dir, ["add", "--", "record.md"]).status).toBe(0);
+    const r = run(dir, "scaffolding", ["check"], { CHECK_LOCK: join(dir, ".lock") });
+    expect(r.code).toBe(1);
+    expect(r.out).toContain("record.md:1 error MD041");
+    expect(r.out).toMatch(/failed in [\d.]+ s: markdown/);
   });
 
   test("lint waits for a typecheck that runs Astro, whose content types it reads", () => {
@@ -8083,4 +8095,56 @@ test("the skeleton pre-push clears Git-local variables and passes each branch ra
     "a0..a1",
     "b0..b1",
   ]);
+});
+
+describe("scaffolding markdown", () => {
+  const check = (dir: string, ...args: string[]) => run(dir, "scaffolding", ["markdown", ...args]);
+  const bad = "Body without a title.\n";
+
+  test("uses only the shared rules on literal tracked files, ignoring symlinks and gitlinks", () => {
+    const dir = repo({
+      "[tracked].md": bad,
+      "src/.markdownlint.json": '{"MD041":false}\n',
+      "src/inline.md": "<!-- markdownlint-disable MD041 -->\n\n" + bad,
+      "title.md": "---\ntitle: Record\n---\n\n" + bad,
+    });
+    const sub = repo({ "submodule.md": bad });
+    const tip = sh(sub, ["rev-parse", "HEAD"]).stdout.toString().trim();
+    cpSync(sub, join(dir, "sub"), { recursive: true });
+    symlinkSync("[tracked].md", join(dir, "linked.md"));
+    write(dir, {
+      "untracked.md": bad,
+      "node_modules/tracked-dependency.md": bad,
+    });
+    expect(
+      sh(dir, ["add", "-f", "--", "linked.md", "node_modules/tracked-dependency.md"]).status,
+    ).toBe(0);
+    expect(sh(dir, ["update-index", "--add", "--cacheinfo", `160000,${tip},sub`]).status).toBe(0);
+    const r = check(dir);
+    expect(r.code).toBe(1);
+    expect(r.out.trim().split("\n")).toEqual([
+      expect.stringContaining("[tracked].md:1 error MD041"),
+      expect.stringContaining("src/inline.md:3 error MD041"),
+    ]);
+  });
+
+  test("fixes trailing spaces and leaves the unfixable title finding and untracked content intact", () => {
+    const text = "Body without a title. \n";
+    const clean = "# Clean\n";
+    const dir = repo({ "tracked.md": text, "clean.md": clean });
+    write(dir, { "untracked.md": text });
+    const before = check(dir);
+    expect(before.code).toBe(1);
+    expect(before.out).toContain("MD009");
+    expect(before.out).toContain("MD041");
+    expect(readFileSync(join(dir, "tracked.md"), "utf8")).toBe(text);
+
+    const fixed = check(dir, "--fix");
+    expect(fixed.code).toBe(1);
+    expect(fixed.out).toContain("MD041");
+    expect(fixed.out).not.toContain("MD009");
+    expect(sh(dir, ["diff", "--name-only"]).stdout.toString()).toBe("tracked.md\n");
+    expect(readFileSync(join(dir, "tracked.md"), "utf8")).toBe(bad);
+    expect(readFileSync(join(dir, "untracked.md"), "utf8")).toBe(text);
+  });
 });

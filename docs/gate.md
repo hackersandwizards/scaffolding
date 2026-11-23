@@ -2,7 +2,7 @@
 
 `scaffolding check` runs `bun install --frozen-lockfile`, then the shared steps side by side, the
 catalog build and lint once a typecheck that runs Astro has finished (it writes the content types the typed rules read):
-format, lint (ESLint), oxlint, styles (stylelint), typecheck, structure, coupling, cycles, shell, spaces, confidential, licenses, the tests, the catalog build (`bun run build`) and admin (the item files, with the pinned
+format, lint (ESLint), oxlint, styles (stylelint), typecheck, structure, coupling, cycles, shell, markdown, spaces, confidential, licenses, the tests, the catalog build (`bun run build`) and admin (the item files, with the pinned
 `@hackersandwizards/admin`'s `admin-check`; a repository without admin pinned needs `skip.admin`). Once those pass, the repository's own steps from
 `scaffolding.check`, in order, an inner array side by side; a red one stops those after it. Format, lint and styles walk past every
 submodule `.gitmodules` names, which its own repository checks. A shared step drops only with a reason, a
@@ -67,6 +67,26 @@ own repositories.
 an sh, bash, dash or ksh shebang. Other scripting extensions, including TypeScript, JavaScript
 and Python, take precedence over the shebang. The step uses the root `.shellcheckrc` when present
 and reports when there are no scripts. Run `bun run scaffolding shell` to check shell scripts on demand.
+
+**Markdown.** `bun run scaffolding markdown` checks all tracked `.md` files with
+markdownlint-cli2. It skips symlinks, submodules and `node_modules`. The package supplies the rules,
+including for repositories with local markdownlint configuration. Use
+`bun run scaffolding markdown --fix` to apply markdownlint's fixes to the working tree. Findings
+that require manual edits still fail the command. The gate accepts `scaffolding.skip.markdown`
+with a reason to skip the whole step.
+
+| Rule            | Setting and reason                                                                                    |
+| --------------- | ----------------------------------------------------------------------------------------------------- |
+| MD013           | Off. Documents wrap past 80 columns, including tables, URLs and paths.                                |
+| MD034           | Off. Bare URLs cite sources in table cells.                                                           |
+| MD060           | Off. The formatter does not pad every table.                                                          |
+| MD033           | Allow `br` for line breaks within HTML-capable Markdown.                                              |
+| MD029           | Off. Step numbering can continue across headings.                                                     |
+| MD026           | Off. Headings can end with a colon or question mark.                                                  |
+| MD037 and MD038 | Off. The rules misread expressions such as `a * b * c` and globs, which their fixers rewrite.         |
+| MD010           | Ignore tabs inside code blocks so examples retain their indentation.                                  |
+| MD024           | Compare duplicate headings within the same section so different sections can use the same subheading. |
+| MD041 and MD025 | Use markdownlint's defaults for recognizing document titles.                                          |
 
 ## Changed paths
 
@@ -234,6 +254,8 @@ an item of its list, that no longer matches anything. `check` names one of the c
 list: `coupling`, `confidential`, `never-shown`, `structure` or `spaces`; any other fails the gate.
 
 ## Licences
+
+The pinned `markdownlint-cli2` 0.24.2 package uses the MIT licence.
 
 The `shellcheck` 4.1.0 npm wrapper is MIT. It downloads the upstream GPL-3.0 ShellCheck
 binary pinned to v0.11.0 into `node_modules/.cache/scaffolding/shellcheck/v0.11.0/` in the

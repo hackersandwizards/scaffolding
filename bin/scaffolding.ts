@@ -21,7 +21,9 @@ import {
 } from "../lib/repo.ts";
 import { machineLoad } from "../lib/serve.ts";
 
-help("scaffolding", "usage: scaffolding check [--changed [<from>..<to>...]] | scaffolding shell");
+const usage =
+  "usage: scaffolding check [--changed [<from>..<to>...]] | scaffolding shell | scaffolding markdown [--fix]";
+help("scaffolding", usage);
 withoutEnvFile("scaffolding");
 
 // Every key of the Package type's scaffolding and no other, or typecheck fails.
@@ -43,24 +45,26 @@ const KEYS = new Set(
 const args = process.argv.slice(2).filter((a) => a !== "--locked");
 const changed = args[1] === "--changed";
 const ranges = args.slice(2);
+const [command, ...commandArgs] = args;
+const direct =
+  (command === "shell" && commandArgs.length === 0) ||
+  (command === "markdown" &&
+    (commandArgs.length === 0 || (commandArgs.length === 1 && commandArgs[0] === "--fix")));
+if (direct) {
+  const run = spawnSync(
+    process.execPath,
+    ["--no-env-file", join(import.meta.dir, `check-${command}.ts`), ...commandArgs],
+    { stdio: "inherit" },
+  );
+  process.exit(run.status ?? 1);
+}
 if (
-  !["check", "shell"].includes(args[0]) ||
-  (args[0] === "shell" && args.length !== 1) ||
+  command !== "check" ||
   (!changed && args.length > 1) ||
   ranges.some((r) => !/^(?:(?!\.\.)\S)+\.\.(?!\.)(?:(?!\.\.)\S)+$/.test(r))
 ) {
-  console.error("usage: scaffolding check [--changed [<from>..<to>...]] | scaffolding shell");
+  console.error(usage);
   process.exit(2);
-}
-if (args[0] === "shell") {
-  const run = spawnSync(
-    process.execPath,
-    ["--no-env-file", join(import.meta.dir, "check-shell.ts")],
-    {
-      stdio: "inherit",
-    },
-  );
-  process.exit(run.status ?? 1);
 }
 const root = repoRoot();
 const home = join(import.meta.dir, "..");
@@ -100,6 +104,7 @@ const shared: Record<string, string> = {
   coupling: bin("check-coupling"),
   cycles: bin("check-cycles"),
   shell: bin("check-shell"),
+  markdown: bin("check-markdown"),
   spaces: bin("check-spaces"),
   // The index: what the next commit holds, judged by its own allow list.
   confidential: `${bin("check-confidential")} --index`,

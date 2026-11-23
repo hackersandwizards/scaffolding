@@ -209,8 +209,7 @@ verpeilt"* register gets rewritten.
 ## Name listings: own name last
 
 When several names appear together (slides, captions, talk titles, bylines, conference programmes,
-paired portrait marks, attribution lines), the author's own name goes last: "[team member] & <own
-name>", never "<own name> & [team member]". In paired visual marks, the author's portrait or name
+paired portrait marks, attribution lines), the author's own name goes last: `[team member] & <own name>`, never `<own name> & [team member]`. In paired visual marks, the author's portrait or name
 to the right or bottom. Any language, any medium.
 
 ## Before sending
