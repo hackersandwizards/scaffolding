@@ -43,6 +43,7 @@ export function gitShellShebangs(root: string, candidates: string[], ref?: strin
         "--literal-pathspecs",
         "grep",
         "--no-recurse-submodules",
+        "-G",
         "-a",
         "-n",
         "-z",

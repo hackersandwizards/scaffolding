@@ -29,6 +29,8 @@ import { catalogPath } from "../catalog/path.ts";
 import { loadRoute, rewriteRoute } from "../catalog/route.ts";
 import { runOxlint } from "../lib/oxlint.ts";
 import { rejection } from "../lib/rejection.ts";
+import { gitShellShebangs, shellInput } from "../lib/shell-inputs.ts";
+import { indexInputs, trackedInputs } from "../lib/tracked-inputs.ts";
 import {
   applyAllow,
   installedCommit,
@@ -6458,6 +6460,26 @@ describe("check-staged", () => {
     expect(readFileSync(join(dir, "bin/helper"), "utf8")).toBe(shellScript);
   });
 
+  test("ShellCheck reads an unstaged sourced sibling from the index", () => {
+    const dir = repo({
+      "package.json": lintPkg,
+      ".shellcheckrc": "external-sources=true\n",
+      "lib.sh": "#!/bin/sh\nfoo=ok\n",
+    });
+    const env = shellcheckFixture(dir);
+    write(dir, {
+      "lib.sh": "#!/bin/sh\nfalse\n",
+      "a.sh": '#!/bin/sh\n. ./lib.sh\nprintf "%s\\n" "$foo"\n',
+    });
+    expect(sh(dir, ["add", "--", "a.sh"]).status).toBe(0);
+    const result = run(dir, "check-staged", [], env);
+    expect(result.code, result.out).toBe(0);
+    expect(sh(dir, ["add", "--", "a.sh", "lib.sh"]).status).toBe(0);
+    const red = run(dir, "check-staged", [], env);
+    expect(red.code).toBe(1);
+    expect(red.out).toContain("SC2154");
+  });
+
   test("a staged item file runs admin-check, a broken one goes red", () => {
     const dir = repo({ "package.json": pkg, "docs/agent-work/items/a.md": "# Fine\n" });
     write(dir, { "node_modules/.bin/admin-check": adminCheck });
@@ -8104,6 +8126,39 @@ await serve([process.execPath, "-e", "console.error('boot failed: stack'); proce
 const shellScript = '#!/bin/sh\nunused=1\nprintf "%s\\n" ok\n';
 const checkedShell = (dir: string, env?: Record<string, string>) =>
   run(dir, "scaffolding", ["shell"], env);
+
+test("shell input discovery uses the index shebang and ignores grep.patternType", () => {
+  const dir = repo({
+    "with space": "#!/usr/bin/env -S bash\ntrue\n",
+    "tool.py": "#!/bin/sh\ntrue\n",
+    later: "text\n#!/bin/sh\n",
+    plain: "text\n",
+  });
+  expect(sh(dir, ["config", "grep.patternType", "fixed"]).status).toBe(0);
+  write(dir, { "with space": "#!/usr/bin/env python\n" });
+  expect(gitShellShebangs(dir, ["with space", "later", "plain"])).toEqual(["with space"]);
+  expect(gitShellShebangs(dir, ["with space", "later"], "HEAD")).toEqual(["with space"]);
+  expect(shellInput("with space", join(dir, "with space"))).toBe(false);
+  expect(shellInput("tool.py", join(dir, "tool.py"))).toBe(false);
+  expect(shellInput("a.bash", join(dir, "a.bash"))).toBe(true);
+});
+
+test("tracked inputs exclude symlinks, dependencies and unmerged index entries", () => {
+  const dir = repo({
+    "keep.sh": "#!/bin/sh\n",
+    "missing.sh": "#!/bin/sh\n",
+    "conflict.sh": "#!/bin/sh\n",
+  });
+  symlinkSync("keep.sh", join(dir, "linked.sh"));
+  write(dir, { "node_modules/dependency.sh": "#!/bin/sh\n" });
+  expect(sh(dir, ["add", "-f", "--", "linked.sh", "node_modules/dependency.sh"]).status).toBe(0);
+  const hash = sh(dir, ["rev-parse", ":conflict.sh"]).stdout.toString().trim();
+  const conflict = `0 ${"0".repeat(hash.length)}\tconflict.sh\n100644 ${hash} 1\tconflict.sh\n`;
+  expect(sh(dir, ["update-index", "--index-info"], conflict).status).toBe(0);
+  rmSync(join(dir, "missing.sh"));
+  expect(indexInputs(dir, "*.sh")).toEqual(["keep.sh", "missing.sh"]);
+  expect(trackedInputs(dir, "*.sh")).toEqual(["keep.sh"]);
+});
 
 const shellcheckPreload = {
   BUN_OPTIONS: `--preload=${join(import.meta.dirname, "shellcheck-preload.ts")}`,

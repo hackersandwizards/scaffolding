@@ -65,8 +65,9 @@ own repositories.
 
 **Shell.** ShellCheck runs at warning severity over tracked `.sh` and `.bash` files and files with
 an sh, bash, dash or ksh shebang. Other scripting extensions, including TypeScript, JavaScript
-and Python, take precedence over the shebang. The step uses the root `.shellcheckrc` when present
-and reports when there are no scripts. Run `bun run scaffolding shell` to check shell scripts on demand.
+and Python, take precedence over the shebang. The step skips symlinked scripts and unmerged index
+entries. It uses the root `.shellcheckrc` when present and reports when there are no scripts.
+Run `bun run scaffolding shell` to check shell scripts on demand.
 
 **Markdown.** `bun run scaffolding markdown` checks all tracked `.md` files with
 markdownlint-cli2. It skips symlinks, submodules and `node_modules`. The package supplies the rules,
@@ -89,7 +90,8 @@ with a reason to skip the whole step.
 | MD041 and MD025 | Use markdownlint's defaults for recognizing document titles.                                          |
 
 At pre-commit, `check-staged` checks only the staged shell scripts and Markdown files, using
-their content from the index. ShellCheck also reads the root `.shellcheckrc` from the index.
+their content from the index. ShellCheck's snapshot also includes all tracked shell scripts
+and the root `.shellcheckrc` from the index so staged scripts can source unchanged scripts.
 The hook uses the corresponding `skip.shell` and `skip.markdown` reasons in the staged package
 manifest.
 

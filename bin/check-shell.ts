@@ -41,8 +41,11 @@ function lintStagedShell(binary: string, root: string, files: string[]) {
   const snapshot = shellcheckScratch(dirname(binary), "staged");
   const read = reader(root, true);
   try {
-    const rc = indexInputs(root, ".shellcheckrc");
-    for (const path of [...files, ...rc]) {
+    const tracked = indexInputs(root);
+    for (const path of [
+      ...indexShellScripts(root, tracked),
+      ...tracked.filter((path) => path === ".shellcheckrc"),
+    ]) {
       const file = join(snapshot, path);
       mkdirSync(dirname(file), { recursive: true });
       writeFileSync(file, read(path));
@@ -53,16 +56,20 @@ function lintStagedShell(binary: string, root: string, files: string[]) {
   }
 }
 
+function indexShellScripts(root: string, paths: string[]) {
+  return [
+    ...paths.filter((path) => shellExtension.test(path)),
+    ...gitShellShebangs(root, paths.filter(needsShellShebang)),
+  ];
+}
+
 try {
   const root = realpathSync(repoRoot());
   const staged = process.argv[2] === "--staged";
   let files: string[];
   if (staged) {
     const paths = stagedPaths(stagedDiff(root)).regularPaths.filter((path) => !inNodeModules(path));
-    files = [
-      ...paths.filter((path) => shellExtension.test(path)),
-      ...gitShellShebangs(root, paths.filter(needsShellShebang)),
-    ];
+    files = indexShellScripts(root, paths);
   } else {
     files = trackedInputs(root).filter((path) => shellInput(path, join(root, path)));
   }
