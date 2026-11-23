@@ -1,12 +1,20 @@
 #!/bin/sh
 // 2>/dev/null; exec bun --no-env-file "$0" "$@"
 import { spawnSync } from "node:child_process";
-import { lstatSync, mkdirSync, mkdtempSync, realpathSync, renameSync, rmSync } from "node:fs";
-import { join } from "node:path";
-import { repoRoot, withoutEnvFile } from "../lib/repo.ts";
-import { shellInput } from "../lib/shell-inputs.ts";
-import { pathChunks } from "../lib/staged-paths.ts";
-import { regularInput, trackedInputs } from "../lib/tracked-inputs.ts";
+import {
+  lstatSync,
+  mkdirSync,
+  mkdtempSync,
+  realpathSync,
+  renameSync,
+  rmSync,
+  writeFileSync,
+} from "node:fs";
+import { dirname, join } from "node:path";
+import { reader, repoRoot, withoutEnvFile } from "../lib/repo.ts";
+import { indexedShellInputs, shellInput } from "../lib/shell-inputs.ts";
+import { pathChunks, stagedDiff, stagedPaths } from "../lib/staged-paths.ts";
+import { indexInputs, inNodeModules, regularInput, trackedInputs } from "../lib/tracked-inputs.ts";
 
 withoutEnvFile("shell");
 const release = "v0.11.0";
@@ -53,26 +61,56 @@ async function shellcheckBinary(root: string): Promise<string> {
   }
 }
 
-try {
-  const root = realpathSync(repoRoot());
-  const files = trackedInputs(root).filter((path) => shellInput(path, join(root, path)));
-  if (!files.length) {
-    console.log("[shell] no tracked shell scripts");
-    process.exit(0);
-  }
-  const binary = await shellcheckBinary(root);
+function lintShell(binary: string, root: string, files: string[]) {
   const rc = regularInput(root, ".shellcheckrc") ? ["--rcfile=.shellcheckrc"] : ["--norc"];
   let status = 0;
   for (const chunk of pathChunks(files)) {
-    const run = spawnSync(binary, ["-S", "warning", ...rc, "--", ...chunk], {
-      cwd: root,
-      stdio: "inherit",
-      env: { ...process.env, SHELLCHECK_OPTS: undefined },
-    });
+    const run = spawnSync(
+      binary,
+      ["-S", "warning", ...rc, "--", ...chunk.map((path) => (path === "-" ? "./-" : path))],
+      {
+        cwd: root,
+        stdio: "inherit",
+        env: { ...process.env, SHELLCHECK_OPTS: undefined },
+      },
+    );
     if (run.error) throw run.error;
     status ||= run.status ?? 1;
   }
-  process.exit(status);
+  return status;
+}
+
+function lintStagedShell(binary: string, root: string, files: string[]) {
+  const snapshot = mkdtempSync(join(dirname(binary), "staged-"));
+  const read = reader(root, true);
+  try {
+    const rc = indexInputs(root, ".shellcheckrc");
+    for (const path of [...files, ...rc]) {
+      const file = join(snapshot, path);
+      mkdirSync(dirname(file), { recursive: true });
+      writeFileSync(file, read(path));
+    }
+    return lintShell(binary, snapshot, files);
+  } finally {
+    rmSync(snapshot, { recursive: true, force: true });
+  }
+}
+
+try {
+  const root = realpathSync(repoRoot());
+  const staged = process.argv[2] === "--staged";
+  const files = staged
+    ? indexedShellInputs(
+        root,
+        stagedPaths(stagedDiff(root)).regularPaths.filter((path) => !inNodeModules(path)),
+      )
+    : trackedInputs(root).filter((path) => shellInput(path, join(root, path)));
+  if (!files.length) {
+    if (!staged) console.log("[shell] no tracked shell scripts");
+    process.exit(0);
+  }
+  const binary = await shellcheckBinary(root);
+  process.exit(staged ? lintStagedShell(binary, root, files) : lintShell(binary, root, files));
 } catch (error) {
   console.error(`[shell] ${(error as Error).message}`);
   process.exit(1);

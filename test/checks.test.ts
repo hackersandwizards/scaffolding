@@ -6364,18 +6364,58 @@ describe("check-staged", () => {
     devDependencies: { "@hackersandwizards/admin": "github:acme/admin#v1.0.0" },
   });
 
+  const lintPkg = JSON.stringify({
+    scaffolding: { private: true, skip: { format: "fixture", lint: "fixture" } },
+  });
+
+  test("Markdown checks the staged blob and leaves unstaged files alone", () => {
+    const dir = repo({ "package.json": lintPkg, "unrelated.md": "No title.\n" });
+    write(dir, { "new.md": "No title.\n" });
+    expect(sh(dir, ["add", "--", "new.md"]).status).toBe(0);
+    write(dir, { "new.md": "# Working tree title\n" });
+    const red = run(dir, "check-staged");
+    expect(red.code).toBe(1);
+    expect(red.out).toContain("new.md:1 error MD041");
+    expect(red.out).not.toContain("unrelated.md");
+    expect(sh(dir, ["add", "--", "new.md"]).status).toBe(0);
+    write(dir, { "new.md": "An unstaged edit.\n" });
+    expect(run(dir, "check-staged")).toMatchObject({ code: 0 });
+    expect(readFileSync(join(dir, "new.md"), "utf8")).toBe("An unstaged edit.\n");
+  });
+
+  test("ShellCheck reads the staged shebang, blob and .shellcheckrc", () => {
+    const dir = repo({
+      "package.json": lintPkg,
+      ".shellcheckrc": "# Defaults.\n",
+      "unchanged.sh": shellScript,
+    });
+    seedShellcheck(dir);
+    write(dir, { "bin/helper": shellScript, "check-lock.ts": shellScript });
+    expect(sh(dir, ["add", "--", "bin/helper", "check-lock.ts"]).status).toBe(0);
+    write(dir, { "bin/helper": "#!/usr/bin/env python\n", ".shellcheckrc": "disable=SC2034\n" });
+    const red = run(dir, "check-staged");
+    expect(red.code).toBe(1);
+    expect(red.out).toContain("In bin/helper line 2");
+    expect(red.out).toContain("SC2034");
+    expect(red.out).not.toMatch(/unchanged\.sh|check-lock\.ts/);
+    expect(sh(dir, ["add", "--", ".shellcheckrc"]).status).toBe(0);
+    write(dir, { ".shellcheckrc": "# Defaults.\n", "bin/helper": shellScript });
+    expect(run(dir, "check-staged")).toMatchObject({ code: 0 });
+    expect(readFileSync(join(dir, "bin/helper"), "utf8")).toBe(shellScript);
+  });
+
   test("a staged item file runs admin-check, a broken one goes red", () => {
-    const dir = repo({ "package.json": pkg, "docs/agent-work/items/a.md": "fine\n" });
+    const dir = repo({ "package.json": pkg, "docs/agent-work/items/a.md": "# Fine\n" });
     write(dir, { "node_modules/.bin/admin-check": adminCheck });
     spawnSync("chmod", ["+x", join(dir, "node_modules/.bin/admin-check")]);
-    write(dir, { "docs/agent-work/items/a.md": "broken\n" });
+    write(dir, { "docs/agent-work/items/a.md": "# broken\n" });
     sh(dir, ["add", "docs/agent-work/items/a.md"]);
     expect(run(dir, "check-staged").code).toBe(1);
-    write(dir, { "docs/agent-work/items/a.md": "fine again\n" });
+    write(dir, { "docs/agent-work/items/a.md": "# Fine again\n" });
     expect(run(dir, "check-staged").code).toBe(1);
     sh(dir, ["add", "docs/agent-work/items/a.md"]);
     expect(run(dir, "check-staged").code).toBe(0);
-    write(dir, { "docs/agent-work/items/a.md": "broken, unstaged\n" });
+    write(dir, { "docs/agent-work/items/a.md": "# broken, unstaged\n" });
     expect(run(dir, "check-staged").code).toBe(0);
   });
 
@@ -6386,9 +6426,9 @@ describe("check-staged", () => {
         scripts: { "check:skills": `printf '%s' "$VALIDATE_SKILLS_PATHS" > scope.txt` },
       }),
       ".claude/gone.md": "x\n",
-      ".claude/old.md": "rename this file\n",
+      ".claude/old.md": "# Rename this file\n",
     });
-    write(dir, { ".claude/new.md": "y\n", ".claude/half.md": "unstaged\n" });
+    write(dir, { ".claude/new.md": "# New\n", ".claude/half.md": "unstaged\n" });
     sh(dir, ["rm", "-q", ".claude/gone.md"]);
     sh(dir, ["add", ".claude/new.md"]);
     expect(sh(dir, ["config", "diff.renames", "true"]).status).toBe(0);
@@ -6429,7 +6469,7 @@ describe("check-staged", () => {
     };
     const dir = repo({ "package.json": JSON.stringify(pkg) });
     const staged = claude ? ".claude/changed.md" : "notes.md";
-    write(dir, { [staged]: "staged\n" });
+    write(dir, { [staged]: "# Staged\n" });
     expect(sh(dir, ["add", staged]).status).toBe(0);
     if (change === "script")
       write(dir, {
@@ -6455,12 +6495,12 @@ describe("check-staged", () => {
   ])("%s checks a staged file moved in the working tree from the index", (_, hook) => {
     const dir = repo({
       "package.json": JSON.stringify({ scaffolding: { private: true, skip: { lint: "fixture" } } }),
-      "old.md": "before\n",
+      "old.md": "# Before\n",
     });
     const prettier = "node_modules/.bin/prettier";
     write(dir, {
       [prettier]: '#!/bin/sh\ncase "$*" in *--stdin-filepath*) tee checked.txt;; esac\n',
-      "old.md": "staged\n",
+      "old.md": "# Staged\n",
     });
     chmodSync(join(dir, prettier), 0o755);
     expect(sh(dir, ["config", "diff.renames", "true"]).status).toBe(0);
@@ -6468,7 +6508,7 @@ describe("check-staged", () => {
     renameSync(join(dir, "old.md"), join(dir, "new.md"));
     expect(sh(dir, ["add", "-N", "new.md"]).status).toBe(0);
     expect(spawnSync(process.execPath, ["--no-env-file", hook], { cwd: dir }).status).toBe(0);
-    expect(readFileSync(join(dir, "checked.txt"), "utf8")).toBe("staged\n");
+    expect(readFileSync(join(dir, "checked.txt"), "utf8")).toBe("# Staged\n");
   });
 
   test("a repository naming its validator only validate:skills is refused, not skipped", () => {
@@ -6478,7 +6518,7 @@ describe("check-staged", () => {
         scripts: { "validate:skills": "true" },
       }),
     });
-    write(dir, { ".claude/new.md": "y\n" });
+    write(dir, { ".claude/new.md": "# New\n" });
     sh(dir, ["add", ".claude/new.md"]);
     const r = run(dir, "check-staged");
     expect(r.code).toBe(1);
@@ -6559,7 +6599,7 @@ describe("check-staged", () => {
   });
 
   test("a staged item file without admin-check installed is refused", () => {
-    const dir = repo({ "package.json": pkg, "docs/agent-work/items/a.md": "fine\n" });
+    const dir = repo({ "package.json": pkg, "docs/agent-work/items/a.md": "# Fine\n" });
     write(dir, { "docs/agent-work/items/a.md": "changed\n" });
     sh(dir, ["add", "docs/agent-work/items/a.md"]);
     const r = run(dir, "check-staged");
@@ -6711,7 +6751,7 @@ describe("check-staged", () => {
     sh(dir, ["-c", "protocol.file.allow=always", "submodule", "add", "-q", sub, "sub"]);
     sh(dir, ["commit", "-qm", "sub"]);
     sh(join(dir, "sub"), ["commit", "-q", "--allow-empty", "-m", "next"]);
-    write(dir, { "sub/x.md": "dirty\n", "docs/agent-work/items/a.md": "a\n" });
+    write(dir, { "sub/x.md": "dirty\n", "docs/agent-work/items/a.md": "# A\n" });
     sh(dir, ["add", "sub", "docs/agent-work/items/a.md"]);
     const r = run(dir, "check-staged");
     expect(r.out).toBe("");

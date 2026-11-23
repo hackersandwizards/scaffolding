@@ -59,7 +59,11 @@ test.each([
 });
 
 test("staged paths can report a path from a raw record without a file mode", () => {
-  expect(stagedPaths(":100644\0file.ts\0")).toEqual({ staged: ["file.ts"], oxlintPaths: [] });
+  expect(stagedPaths(":100644\0file.ts\0")).toEqual({
+    staged: ["file.ts"],
+    oxlintPaths: [],
+    regularPaths: [],
+  });
 });
 
 test.each([

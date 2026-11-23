@@ -4,7 +4,7 @@
 // that file into this commit. Tools read a partly staged file from the index, so its unstaged
 // lines neither pass nor block this commit. The skill validator reads skill files from the working
 // tree.
-import { pathChunks, stagedPaths } from "../lib/staged-paths.ts";
+import { pathChunks, stagedDiff, stagedPaths } from "../lib/staged-paths.ts";
 import { spawn, spawnSync } from "node:child_process";
 import {
   existsSync,
@@ -19,6 +19,8 @@ import {
 import { availableParallelism } from "node:os";
 import { join } from "node:path";
 import { help } from "../lib/help.ts";
+import { otherScript } from "../lib/shell-inputs.ts";
+import { inNodeModules } from "../lib/tracked-inputs.ts";
 import { oxlintConfig, oxlintExtends, runOxlint } from "../lib/oxlint.ts";
 import {
   isReason,
@@ -104,13 +106,7 @@ const names = (args: string[]) => {
   if (listed.status !== 0) refuseCommit(`git ${args.join(" ")} failed`);
   return listed.stdout.split("\0").filter(Boolean);
 };
-// ":<old mode> <new mode> <old sha> <new sha> <status>", then the path, two for a rename or copy.
-const listed = spawnSync("git", ["diff", "--cached", "--raw", "--diff-filter=ACMRT", "-z"], {
-  encoding: "utf8",
-  maxBuffer: Infinity,
-});
-if (listed.status !== 0) refuseCommit("git diff --cached failed");
-const { staged, oxlintPaths } = stagedPaths(listed.stdout);
+const { staged, oxlintPaths, regularPaths } = stagedPaths(stagedDiff(root));
 if (staged.length === 0 && !skills && !items) process.exit(0);
 if (
   staged.some((path) => path === "bun.lock" || path === "package.json") &&
@@ -292,6 +288,14 @@ const runs = active.flatMap(([tool, args]) => {
     }),
   ];
 });
+const stagedInputs = regularPaths.filter((path) => !inNodeModules(path));
+for (const [step, matches] of [
+  ["shell", (path: string) => !otherScript.test(path)],
+  ["markdown", (path: string) => path.endsWith(".md")],
+] as const)
+  if (!isReason(skip[step]) && stagedInputs.some(matches))
+    runs.push(runStagedTool(process.execPath, [`${import.meta.dir}/check-${step}.ts`, "--staged"]));
+
 // An inherited scope could narrow validation to none. Deletions can break links too.
 if (skills)
   runs.push(

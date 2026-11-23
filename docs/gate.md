@@ -88,6 +88,11 @@ with a reason to skip the whole step.
 | MD024           | Compare duplicate headings within the same section so different sections can use the same subheading. |
 | MD041 and MD025 | Use markdownlint's defaults for recognizing document titles.                                          |
 
+At pre-commit, `check-staged` checks only the staged shell scripts and Markdown files, using
+their content from the index. ShellCheck also reads the root `.shellcheckrc` from the index.
+The hook uses the corresponding `skip.shell` and `skip.markdown` reasons in the staged package
+manifest.
+
 ## Changed paths
 
 `scaffolding check --changed` (`bun run check --changed`) always runs frozen install, then

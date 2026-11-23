@@ -174,6 +174,9 @@ test.prop([
         ? [paths[index]]
         : [],
     ),
+    regularPaths: files.flatMap(([, , mode], index) =>
+      mode === "100644" || mode === "100755" ? [paths[index]] : [],
+    ),
     oxlintPaths: files.flatMap(([[, ext], , mode], index) =>
       (mode === "100644" || mode === "100755") && (ext === "ts" || ext === "astro")
         ? [paths[index]]
