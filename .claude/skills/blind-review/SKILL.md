@@ -19,10 +19,10 @@ Ask: who is hurt and how much if this is wrong, and how hard is it to take back?
 Examples, not triggers:
 
 - **None:** a thank-you or receipt mail, an internal note.
-- **Small:** one persona from the real recipient or audience, the other model, one run.
-- **Medium:** 2 to 3 personas, Claude and Codex, the current state scored against the new one.
-- **Large:** 4 to 6 personas, both models, two runs, noise measured, an independent counter-draft
-  scored alongside.
+- **Small:** one persona from the real recipient or audience, one model that did not author, one run.
+- **Medium:** 2 to 3 personas, two model families, the current state scored against the new one.
+- **Large:** 4 to 6 personas, two or three model families, two runs, noise measured, an independent
+  counter-draft from another family than the author's scored alongside.
 
 Cadence: a review per batch. Time pressure shortens a review (fewer rounds, parallel reviewers) and
 never drops it; a version handed over before its review says so in the same message.
@@ -105,7 +105,11 @@ is non-empty.
 
 ```bash
 codex exec -m gpt-6.2-sol -c model_reasoning_effort="high" --skip-git-repo-check --ephemeral -s read-only "<prompt>" < /dev/null
+agy --mode plan --model gemini-4-neon-high --print-timeout 600s -p="<prompt>"
 ```
 
-Where one model reviews, it is the one that did not author the work: Codex reviews Claude's text,
-Claude reviews Codex's code. Codex never authors the text under review.
+The reviewer is never the model that authored the work. Among the others, choose by what the review
+must catch: Sol for edge cases in code, Opus for code against this repository's rules, Neon for a
+large diff, a long document or a text, and never Neon alone for security. Where only the author's
+family is left, a fresh session of it reviews and the report says so. Codex never authors the text
+under review.

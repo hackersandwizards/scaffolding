@@ -2,7 +2,7 @@
 name: delegation
 description: >-
   Launch, prod, stop and check a delegate (an Agent-tool subagent or a new session),
-  which model tier and effort to run Codex at, how Codex hands authored copy to Claude, and which
+  which model and effort each role runs at, how Codex hands authored copy to Claude, and which
   code work Claude hands Codex: before starting any delegate, before code work (an implementation,
   a bug fix, a refactor, tests, a script, a dependency update, a polish pass), when running or
   configuring Codex, or when either side needs copy written.
@@ -100,15 +100,34 @@ report follows as the notification. After the sixth `running`, report that the d
 running and end with outcome deferred. On `ERROR`, the wait cannot be read: end the turn and relay
 the report when the notification arrives after it.
 
-## Codex model tiers
+## Roles and models
 
-Default: whatever `.codex/config.toml` sets, a repository's own before `~/.codex/config.toml`. Each
-repository pins its own model and effort for the work it holds. Read the value there.
+| Role                                                            | First choice                                                                                                         | If unavailable                     |
+| --------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------- | ---------------------------------- |
+| Supervisor, only where a development job has more than one epic | Neon high                                                                                                            | the orchestrator supervises itself |
+| Plan and task decomposition, once per job with several tasks    | Fable high; Opus high in Claude Desktop                                                                              | Opus high                          |
+| Orchestrator, one per epic                                      | Opus medium                                                                                                          | Fable low, then Neon high          |
+| Implementer                                                     | the repository's Codex pin, `gpt-6.2-sol` medium; high for a task the plan marks hard or that failed its review once | Neon high, then Opus medium        |
 
-| Pick                                       | For                               |
-| ------------------------------------------ | --------------------------------- |
-| the repository's pin, `gpt-6.2-sol` medium | everyday work                     |
-| gpt-6.2-sol high                           | planning, hard bugs, architecture |
+- Fable never runs at xhigh or max.
+- Probe a model with one cheap call before a long run, never wait for one to return, and name every
+  fallback taken in the report.
+- The supervisor orders the plan, starts one orchestrator per epic, reads their reports and calls
+  the review. Hand over with the harness's own tool, `delegate_task` in T3 Code and the Agent tool
+  in Claude; reach another harness through `codex exec`, `agy -p="<prompt>"` or `pi -p` only where
+  no such tool reaches it.
+
+Measured November 2026, index points from Artificial Analysis:
+
+| Model     | Strong at                                                             | Weak at                                               |
+| --------- | --------------------------------------------------------------------- | ----------------------------------------------------- |
+| Fable 5.2 | plans, decomposition, the hardest bugs (62 at high)                   | dearest per task, its own usage limit                 |
+| Opus 5.5  | repository questions, our rules, agents and memory, text in our voice | 48 at medium                                          |
+| Neon      | long context, 60 at high at about half Opus's cost per task           | stale API knowledge, hostile-input cases, short tasks |
+| Sol 6.2   | well-cut implementation tasks at about $1 each, edge cases            | records, summaries, repository questions              |
+
+The Codex pin is whatever `.codex/config.toml` sets, a repository's own before
+`~/.codex/config.toml`. Read the value there.
 
 - Sol accepts `low`, `medium`, `high`, `xhigh`, `max`, `ultra`. It has no `none`.
 - `codex exec --model` overrides the config per invocation. Heavier one-off work goes there, not
@@ -145,7 +164,7 @@ conversation with the person, records, rules, skills, research that needs our ch
 and every text a person reads.
 Claude reviews what Codex produced, as far as `blind-review` sizes the review, and pushes after it.
 
-Where `codex` is not installed or not signed in (`codex login status`), Claude does the work itself
-and a second Claude subagent takes the review.
+Where `codex` is not installed or not signed in (`codex login status`), the implementer's fallback
+applies and the review goes to a model that did not write the work.
 
 Verify what a run did with `git log`, never from its own summary.

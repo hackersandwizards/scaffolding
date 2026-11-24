@@ -1,0 +1,11 @@
+{
+  "session-start": {
+    "SessionStart": [
+      {
+        "type": "command",
+        "command": "output=$(\"$(git rev-parse --show-toplevel)/.githooks/session-start\" 2>&1); jq -cn --arg output \"$output\" 'if $output == \"\" then {} else {injectSteps: [{systemMessage: {systemMessage: $output}}]} end'",
+        "timeout": 120
+      }
+    ]
+  }
+}
