@@ -43,15 +43,19 @@ narrower `PATH`, the push is refused. So a file committed raw under an LFS path 
 git-lfs is caught there. Where git-lfs runs, it decides as it does without this hook. The attributes
 are read from each pushed branch's tip, by a Git older than 2.40 from the checked-out tree.
 
-Claude Code's `SessionStart` hook runs `.githooks/session-start`: it fetches `main` into
-`origin/main` within 20 s (`SCAFFOLDING_FETCH_WAIT_S`, whole seconds above 0, at most about 24 days), since an SSH remote can wait for a person to approve the key, says
-how many commits `origin/main` is ahead, and runs `.githooks/install`, bounded at 60 s as above. It moves no
-branch, since a fast-forward succeeds with another session's uncommitted file in the shared tree and moves `HEAD`
-under it; the session merges itself. In a cloud session (`CLAUDE_CODE_REMOTE=true`), whose
-checkout is its own, it switches to `main`, starting it from `origin/main` in a clone of one other
-branch, and fast-forwards. It prints only what the session must
-act on, since its output is the session's context. CI only builds and deploys. A
-repository that publishes GitHub Pages calls the reusable workflow, which runs `bun run build` and
+Claude Code runs `.githooks/session-start` at startup. The hook fetches `main` into `origin/main`
+within 20 s (`SCAFFOLDING_FETCH_WAIT_S`, positive whole seconds capped at about 24 days). After a
+successful fetch, it fast-forwards the checked-out `main` on every machine, including shared
+checkouts with unrelated uncommitted edits. In a cloud session (`CLAUDE_CODE_REMOTE=true`), it
+switches to `main` first and can create it from `origin/main` in a single-branch clone.
+
+If commits remain upstream because the branch diverged, an edit conflicts, or the checkout is on
+another branch, the hook reports the count in one line and directs the session to `git.md`.
+A successful or unnecessary merge is silent. The hook runs `.githooks/install` after the update
+attempt so the install uses the current lockfile.
+
+CI only builds and deploys. A repository that publishes GitHub Pages calls the reusable workflow,
+which runs `bun run build` and
 publishes `dist/`. The caller, `.github/workflows/pages.yml`, is owned: where it exists,
 `check-structure` compares it with the skeleton's (`template-catalog/`) with this version filled in, and
 `--fix` writes it, so a pin raise is `bun add` plus `check-structure --fix`. The caller grants the

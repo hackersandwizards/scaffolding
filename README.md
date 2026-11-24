@@ -91,7 +91,7 @@ and load, Environment and the exceptions a repository keeps are in [docs/gate.md
 - [Configs](docs/configs.md): every export and how to use it.
 - [The catalog](docs/catalog.md): the preset, its options and what the shell draws.
 - [The confidential-terms check](docs/confidential.md): the list, what it reads, the names h&w never shows.
-- [Hooks and CI](docs/hooks.md): the install hooks, SessionStart, pre-push and Pages.
+- [Hooks and CI](docs/hooks.md): the SessionStart fast-forward, install hooks, pre-push and Pages.
 
 ## Work on the package
 

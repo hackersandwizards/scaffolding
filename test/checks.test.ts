@@ -4976,9 +4976,9 @@ exec "${process.execPath}" "$@"
 
 describe("skeleton SessionStart hook", () => {
   const hook = join(import.meta.dirname, "..", "template/.githooks/session-start");
-  // A clone of an origin one commit ahead, its install a no-op that logs.
+  // A clone of an origin one commit ahead, its install recording the commit it sees.
   const clone = () => {
-    const origin = repo({ "a.txt": "1\n" });
+    const origin = repo({ "a.txt": "1\n", "b.txt": "original\n" });
     const dir = temp();
     spawnSync("git", ["clone", "-q", origin, dir]);
     cpSync(join(import.meta.dirname, "..", "template/.githooks"), join(dir, ".githooks"), {
@@ -4987,10 +4987,10 @@ describe("skeleton SessionStart hook", () => {
     write(origin, { "a.txt": "2\n" });
     sh(origin, ["commit", "-q", "-am", "two"]);
     const fake = temp();
-    // The install a no-op; the fetch's timer the real bun's.
+    // The fetch's timer uses the real Bun.
     writeFileSync(
       join(fake, "bun"),
-      `#!/bin/sh\n[ "$1" = install ] && exit 0\nexec "${process.execPath}" "$@"\n`,
+      `#!/bin/sh\nif [ "$1" = install ]; then\n  git rev-parse HEAD >.git/install-head\n  exit $?\nfi\nexec "${process.execPath}" "$@"\n`,
       { mode: 0o755 },
     );
     return { dir, origin, path: `${fake}:${process.env.PATH}` };
@@ -4998,24 +4998,55 @@ describe("skeleton SessionStart hook", () => {
   // dash, Debian's and Ubuntu's /bin/sh, makes no process group for `set -m` without a terminal.
   const shells = ["/bin/sh", "/bin/dash"].filter((shell) => existsSync(shell));
   const start = (dir: string, env: Record<string, string>, shell = "/bin/sh") =>
-    spawnSync(shell, [hook], { cwd: dir, env: { ...process.env, ...env }, encoding: "utf8" });
+    spawnSync(shell, [hook], {
+      cwd: dir,
+      env: { ...process.env, CLAUDE_CODE_REMOTE: "false", ...env },
+      encoding: "utf8",
+    });
   const head = (dir: string) => sh(dir, ["rev-parse", "HEAD"]).stdout.toString().trim();
+  const notMerged =
+    "origin/main is 1 commits ahead of HEAD and was not merged: merge it per git.md before work\n";
 
-  test("fetches and says how far behind main is, and moves no branch under uncommitted work", () => {
-    const { dir, path } = clone();
-    const before = head(dir);
-    write(dir, { "b.txt": "another session's\n" });
-    const r = start(dir, { PATH: path });
-    expect(r.stdout).toBe(
-      "origin/main is 1 commits ahead of HEAD: merge it per git.md before work\n",
-    );
-    expect(head(dir)).toBe(before);
-    sh(dir, ["merge", "-q", "--ff-only", "origin/main"]);
+  test("fast-forwards a clean checkout silently before installing", () => {
+    const { dir, origin, path } = clone();
+    expect(start(dir, { PATH: path }).stdout).toBe("");
+    expect(head(dir)).toBe(head(origin));
+    expect(readFileSync(join(dir, ".git/install-head"), "utf8").trim()).toBe(head(origin));
     expect(start(dir, { PATH: path }).stdout).toBe("");
     // A bound that is no number of seconds, or 0, is the default, with no warning from the timer.
     for (const bound of ["20s", "0"])
       expect(start(dir, { PATH: path, SCAFFOLDING_FETCH_WAIT_S: bound }).stdout).toBe("");
   });
+
+  test("reports a diverged main and leaves its tip in place", () => {
+    const { dir, path } = clone();
+    write(dir, { "b.txt": "local commit\n" });
+    expect(sh(dir, ["commit", "-qam", "local"]).status).toBe(0);
+    const before = head(dir);
+    expect(start(dir, { PATH: path }).stdout).toBe(notMerged);
+    expect(head(dir)).toBe(before);
+  });
+
+  test("fast-forwards silently and preserves an unrelated tracked edit", () => {
+    const { dir, origin, path } = clone();
+    write(dir, { "b.txt": "another session's\n" });
+    expect(start(dir, { PATH: path }).stdout).toBe("");
+    expect(head(dir)).toBe(head(origin));
+    expect(readFileSync(join(dir, "b.txt"), "utf8")).toBe("another session's\n");
+  });
+
+  test.each(["false", "true"])(
+    "reports and preserves a conflicting tracked edit and the tip with merge.autostash=%s",
+    (autostash) => {
+      const { dir, path } = clone();
+      expect(sh(dir, ["config", "merge.autostash", autostash]).status).toBe(0);
+      const before = head(dir);
+      write(dir, { "a.txt": "another session's\n" });
+      expect(start(dir, { PATH: path }).stdout).toBe(notMerged);
+      expect(head(dir)).toBe(before);
+      expect(readFileSync(join(dir, "a.txt"), "utf8")).toBe("another session's\n");
+    },
+  );
 
   test("a clone of one other branch still learns how far main is ahead", () => {
     const { dir, origin, path } = clone();
@@ -5023,9 +5054,10 @@ describe("skeleton SessionStart hook", () => {
     const single = temp();
     spawnSync("git", ["clone", "-q", "--single-branch", "--branch", "work", origin, single]);
     cpSync(join(dir, ".githooks"), join(single, ".githooks"), { recursive: true });
-    expect(start(single, { PATH: path }).stdout).toBe(
-      "origin/main is 1 commits ahead of HEAD: merge it per git.md before work\n",
-    );
+    const before = head(single);
+    expect(start(single, { PATH: path }).stdout).toBe(notMerged);
+    expect(sh(single, ["branch", "--show-current"]).stdout.toString()).toBe("work\n");
+    expect(head(single)).toBe(before);
   });
 
   test("a cloud session switches to main and fast-forwards", () => {
