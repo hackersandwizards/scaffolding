@@ -37,7 +37,7 @@ Once the repository is updated, run `git status` and record every file it report
 
 Review and fix committed changes only. Never edit a file in the exclusion set: polish commits what it edits, and committing one would sweep in its author's uncommitted work. Report those files as deferred, for the next run once their author has committed.
 
-Run the repo's own checks once and record the result: this baseline separates a pre-existing failure from one the sweep caused. A subagent reporting a red gate mid-run is usually reading another agent's half-finished edit.
+Run the repo's own checks once and record the result: this baseline separates a pre-existing failure from one the sweep caused.
 
 ## 2. Comment sweep
 

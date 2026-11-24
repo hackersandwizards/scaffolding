@@ -8,15 +8,11 @@ description: >-
 
 # Engineering
 
-Architecture docs (CLAUDE.md, rules) outrank existing code where the two disagree. Given a bug
-report, fix it on its best reading without asking, and name any other defensible reading with the
-fix. Ask first only where no fix can start: the requirement contradicts itself or names a missing
-artifact. Fix a bug test-first: a failing test that reproduces it, then the fix. Before editing the function a bug report names, read every caller, and fix the defect once where they all route through rather than on the one path the report names. Never simplify away input validation at a trust boundary, error
+Architecture docs (CLAUDE.md, rules) outrank existing code where the two disagree. Fix a bug test-first: a failing test that reproduces it, then the fix. Before editing the function a bug report names, read every caller, and fix the defect once where they all route through rather than on the one path the report names. Never simplify away input validation at a trust boundary, error
 handling that prevents data loss, security measures, or accessibility basics.
 
 - Cleanup, review and quality passes scan the whole working tree, not only the files this
-  conversation touched. Another session's in-flight change sits beside today's work: read it for
-  context and leave it to its author. An unstaged change you revert is gone from git for good.
+  conversation touched.
 - A parser answering "malformed" with the same value it gives "legitimately empty" turns a loud
   failure into a silent one. Put that gate at the parser, never at each consumer.
 - Repairing a record that read as absent does not re-run the jobs that skipped it, and those jobs
@@ -53,9 +49,8 @@ handling that prevents data loss, security measures, or accessibility basics.
   its package in the report.
 - Remove or replace a dependency with a known vulnerability before excusing it. An audit
   exception names the advisory ID.
-- A browser that code or an MCP server starts is Chrome for Testing with a profile from `mkdtemp`
-  under the OS temp folder, removed after the run, and `--use-mock-keychain --password-store=basic`,
-  which puppeteer and Playwright pass themselves and a direct launch adds.
+- A browser that code or an MCP server starts uses a profile from `mkdtemp` under the OS temp folder,
+  removed after the run.
 - Screenshots compared across two builds use software drawing (`--disable-gpu`), a fresh profile
   with the cache off per build, the same waits with animations stopped and lazy images loaded, and
   each image's pixel size read back. Shoot each build twice: a difference between one build's own

@@ -23,9 +23,7 @@ checks the item files, and `admin-serve` serves the page across all repos at
     preparation for it (an inventory, candidates, a decision item) is welcome, and the work itself
     waits.
   - `decision`: a question with at least two `options`, or an agent assumption the person may
-    veto. Only for direction, money, a relationship or anything leaving the company. Every other
-    such point an agent settles is `status: assumed`; a minor or reversible default is named in
-    the report only.
+    veto. Every other such point an agent settles is `status: assumed`.
   - `review`: a request to look at something, with what to look at in the body. Only for what no
     reviewer can judge for the person; a choice a blind review settled and a run shipped gets no
     review item, and the run's report names it.
@@ -128,8 +126,8 @@ items up.
    Check: where `curl -s http://admin.localhost:4329/` answers, the page lists the item. A batch
    that changes an asset an item's images show, such as a logo, colour or lockup, re-renders those
    images in that batch.
-8. When the person returns, put the open `decision` items to them in one AskUserQuestion call, each
-   with its background and the full text of every option read from the item, and report the rest
+8. When the person returns, put the open `decision` items to them in one AskUserQuestion call, options
+   read from the item, and report the rest
    from the items, all ordered by what each costs if missed. Before
    ending the session, read the transcript from its first message: every item of the first
    report, every question put and its answer, every promise. Check: each unfinished one has an

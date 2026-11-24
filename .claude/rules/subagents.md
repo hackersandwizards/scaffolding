@@ -1,7 +1,6 @@
 # Subagents
 
-Load `delegation` before launching a background delegate: it holds the launch, stop and review
-mechanics. Load `parallel-session` before fanning out a third delegate or leaving a session running
+Load `delegation` before starting any delegate. Load `parallel-session` before fanning out a third delegate or leaving a session running
 for the person's return.
 
 - Running unattended, say so in every subagent prompt you write: a fresh delegate otherwise stops

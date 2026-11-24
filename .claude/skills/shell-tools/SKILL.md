@@ -25,7 +25,7 @@ Prefer these over their classic equivalents.
 
 **Text and file navigation:**
 
-- `eza` over `ls`, `bat` over `cat` and `less` when typing. In a Bash-tool pipeline or script write
+- In a Bash-tool pipeline or script write
   `command ls`, `command cat` and `command grep`: the shell snapshot aliases the first two, which can
   block on stdin, and wraps `grep` in a function that has kept a line `grep -v` should drop. Prove a
   filter a safeguard rests on with a control: `diff` shows exactly the dropped line.
@@ -41,8 +41,6 @@ Prefer these over their classic equivalents.
 - Judge a content-search hit by its matching line (`rg -n`), never by its file's name: a topic's
   page often sits as a link line inside a hub page. Search the user's words and their synonyms
   before leaving the repository.
-- `delta` for diffs, `tree` for directory tree, `fzf` for fuzzy selection
-- `zoxide` for directory jumping (`z <pattern>`)
 
 **HTTP and data:**
 
@@ -62,14 +60,13 @@ Prefer these over their classic equivalents.
 - A pipeline exits with its last command's status: `git push ... | tail -2 && git tag vX` tags after
   a rejected push. Chain on the push itself and tag only once `git rev-parse HEAD` equals
   `origin/main`. A tag that landed off main stays put: merge `origin/main` into the tagged commit.
-- `lazygit` for git TUI, `git-filter-repo` for history rewrites
+- `git-filter-repo` for history rewrites
 - Global git aliases from `~/.gitconfig` that add workflow behavior:
   - `git all <args...>` -> run `git <args...>` in every repository under the current tree
   - `git integrate <branch>` -> merge a branch with `--no-ff --edit` after confirming `HEAD` is up to date with that branch
 
 **System and shell:**
 
-- `btop` over `htop`, `watch` for repeated commands
 - Wait on a background job by its PID (`until ! kill -0 <pid>; do sleep 5; done`, run inside
   `Monitor` or a background command, since a foreground `sleep` loop is blocked) or a sentinel
   file, never `until ! pgrep -f <pattern>`: the loop's own shell command line contains the pattern, so

@@ -22,10 +22,8 @@ where it reaches the target: `delegate_task` in T3 Code, the Agent tool in Claud
 - A whole gate, a browser suite or a load run runs one at a time.
 - Launching a queue of several runs in an attended session, tell the person its estimated end as a
   clock time a command printed, and the time per run it rests on.
-- A subagent loads the `CLAUDE.md`, rules and skills of the session's start folder only. A brief for
-  work in another repository tells it to read that repository's `CLAUDE.md` and every
-  `.claude/rules/*.md` first, to read a skill it needs there as that skill's `SKILL.md` file, and to
-  update the checkout as that repository's git rule says before changing anything.
+- A brief for work in another repository tells the delegate to read a skill it needs there as that
+  skill's `SKILL.md` file.
 - Prefix every scratch file with its run: delegates share the scratchpad, and a resume guard adopts
   another run's files. Never delete scratch by a glob while a delegate runs.
 - A brief's stop condition names which hits count: the consumer's tracked source
