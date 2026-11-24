@@ -1,11 +1,6 @@
 {
-  "defaultProvider": "antigravity",
-  "defaultModel": "gemini-4-neon",
-  "defaultThinkingLevel": "high",
-  "enabledModels": [
-    "antigravity/gemini-4-neon",
-    "anthropic/claude-fable-5-2",
-    "openai/gpt-6.2-sol",
-    "anthropic/claude-opus-5-5"
-  ]
+  "defaultProvider": "openai",
+  "defaultModel": "gpt-6.2-sol",
+  "defaultThinkingLevel": "medium",
+  "enabledModels": ["anthropic/claude-fable-5-2", "openai/gpt-6.2-sol", "anthropic/claude-opus-5-5"]
 }
