@@ -34,8 +34,9 @@ out.`, so no skill a schedule runs depends on which scheduler started it.
    branches on the `hour=` and `day=` it prints, never on the wall clock. Check: the file holds no
    step the skill could hold.
 4. Write the standing approval as a closed list of the outward acts and their limits, never the
-   record writes, which the skill names. Check: every outward act the skill performs is on the list
-   or the skill drafts it instead.
+   record writes, which the skill names. An act that goes out without a person's release names its
+   `blind-review`. Check: every outward act the skill performs is on the list or the skill drafts
+   it instead.
 5. A run reading a time window starts at the earlier of its default and the window start the file
    hands it: the file runs `bun ~/.claude/scripts/schedule/last-run.ts <name>`, which reads both
    schedulers' records of finished runs, and puts `Window start: <output>` into the instruction.
@@ -67,5 +68,5 @@ out.`, so no skill a schedule runs depends on which scheduler started it.
      a day of the month; "Once"; "On webhook". A fixed-time run more than 10 minutes late is
      dropped, not caught up, and the task shows the miss; an occurrence is skipped while an earlier
      one still waits in the thread.
-   Check: the file names no harness, model, mode or grant, and every trigger's next run matches
-   its cron.
+     Check: the file names no harness, model, mode or grant, and every trigger's next run matches
+     its cron.
