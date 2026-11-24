@@ -17,9 +17,8 @@ phase 6 bring its root Markdown files (README, CONTRIBUTING) in line with what t
 An argument narrows what each phase covers, never which phases run. Report what the scope excluded.
 
 The argument `recent` scopes the run to everything committed since the earlier of two days back
-and the start `bun ~/.claude/scripts/schedule/last-run.ts <task id>` prints for the scheduled task
-running it. Where the script exits non-zero, take the two days and say so; the report names the start
-it reached.
+and the `Window start:` its instruction carries. Where it carries `Window start: none` or no such
+line, take the two days and say so; the report names the start it reached.
 `BASE=$(git log --until="<that start>" -1 --format=%H)`, then `$BASE..HEAD`. Where `BASE` is
 `HEAD`, say in one line that nothing was committed in the window and stop. The argument
 `since <commit>` sets `BASE` to that commit.
@@ -43,7 +42,8 @@ Run the repo's own checks once and record the result: this baseline separates a 
 
 Subtract the exclusion set from the source files before batching: the batch reviewers never see phase 1.
 
-Fan out one reviewer per directory batch, told to read the Comments section of `references/failure-modes.md` and to report comment changes only, not make them. Spot-check one file per batch.
+Hand each directory batch to Codex Sol at medium effort as `delegation` hands work over, never to a
+Claude subagent, told to read the Comments section of `references/failure-modes.md` and to report comment changes only, not make them. Spot-check one file per batch.
 
 Tell each batch that zero changes is an acceptable result. Before deleting a comment on a magic number, grep the file for the other numbers doing a similar job: where a sibling uses a different value, the comment is the only statement that the divergence is deliberate, so keep it.
 
@@ -60,9 +60,9 @@ pair shares its load, and write the 1-minute load average beside each series. Be
 wait up to five minutes while that load exceeds the core count (`getconf _NPROCESSORS_ONLN`), then
 measure anyway.
 
-Fan out one subagent per module or top-level directory to review it for minimalism, design, performance and security, with the path of `references/failure-modes.md` in its prompt to read in full. Reviewers report and do not edit.
+Hand one reviewer per module or top-level directory to a model that wrote none of its code, as `delegation` hands work over and `blind-review` chooses (Codex Sol for edge cases and security, Neon for a large module, never Neon alone for security), to review it for minimalism, design, performance and security, with the path of `references/failure-modes.md` in its prompt to read in full. Reviewers report and do not edit.
 
-Review the instruction artifacts as their own module: `.claude/` rules, agents, and skills, plus `CLAUDE.md`. Look for a pointer to a path that no longer exists, a cap or boundary that contradicts an always-on rule, one rule stated twice inside a single skill or among the artifacts that are not skills, and any skill pointing outside its own directory at another skill, rule, agent or memory file by link or by name.
+Review the instruction artifacts as their own module, yourself: `.claude/` rules, agents, and skills, plus `CLAUDE.md`. Measure what every session here starts with, the bytes of the rules without `paths:`, `CLAUDE.md`, the agent files, the memory indexes and the skill descriptions, and report it before and after this run's cuts. Look for a pointer to a path that no longer exists, a cap or boundary that contradicts an always-on rule, one rule stated twice inside a single skill or among the artifacts that are not skills, and any skill pointing outside its own directory at another skill, rule, agent or memory file by link or by name.
 
 Call the prompt audit yourself, never through a reviewer's prompt: `Skill` with `skill: "claude-api"` and `args: "prompt-audit <path> <path> ..."`, naming the instruction artifacts in this run's scope. Without paths it audits the whole working directory. Its high and medium findings join this phase's fix list. A conflict it leaves as a flag goes into the final report as a decision for the user.
 

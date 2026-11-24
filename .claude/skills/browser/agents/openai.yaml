@@ -1,0 +1,4 @@
+interface:
+  display_name: "Browser"
+  short_description: "Which browser tool does each verb on Claude Desktop, T3 and chrome-devtools"
+  default_prompt: "Use $browser before a site skill's first browser call."

@@ -112,5 +112,6 @@ agy --mode plan --model gemini-4-neon-high --print-timeout 600s -p="<prompt>"
 The reviewer is never the model that authored the work. Among the others, choose by what the review
 must catch: Sol for edge cases in code, Opus for code against this repository's rules, Neon for a
 large diff, a long document or a text, and never Neon alone for security. Where only the author's
-family is left, a fresh session of it reviews and the report says so. Codex never authors the text
+family is left, a fresh session of it reviews and the report says so. A text Neon wrote is reviewed
+by Opus. Codex never authors the text
 under review.

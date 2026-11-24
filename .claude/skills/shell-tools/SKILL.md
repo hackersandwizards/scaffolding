@@ -13,7 +13,6 @@ Prefer these over their classic equivalents.
 
 **Browser and frontend:**
 
-- For rendered-page, frontend, or signed-in UI checks, try in order until one works: in-app Browser, Chrome DevTools MCP, repository automation (e.g. Playwright). Before skipping Chrome DevTools, search deferred tools (`ToolSearch` or equivalent) and check the repository for automation.
 - Headless Chrome from the command line lays a page out at least 500 px wide: `--window-size=375,…` with `--screenshot` cuts a 500 px layout to 375, which looks like text overflowing the right edge. Set a phone width through CDP instead (`page.setViewport`, or the chrome-devtools MCP's `resize_page`).
 - `playwright install` deletes every build in the shared Playwright cache that no installation
   registered in its `.links/` folder needs. List the cache before and after; restore a build that

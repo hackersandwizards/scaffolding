@@ -2,7 +2,7 @@
 name: delegation
 description: >-
   Hand work over in any direction between harnesses, launch, prod, stop and check a delegate,
-  which model and effort each role runs at, which prose goes to Claude and which code work to
+  which model and effort each role runs at, which prose goes to Neon and which code work to
   Codex: before starting any delegate, before code work (an implementation,
   a bug fix, a refactor, tests, a script, a dependency update, a polish pass), when running or
   configuring Codex, or when either side needs copy written.
@@ -13,9 +13,10 @@ description: >-
 ## Handing over
 
 Every handoff, in any direction and to any model, goes through the harness's own delegation tool
-where it reaches the target: `delegate_task` in T3 Code, the Agent tool in Claude Code,
-`spawn_agent` in Codex. Only where none reaches it, call the target's CLI: `claude -p`,
-`codex exec` (`codex --search exec` for web research), `agy -p="<prompt>"`, `pi -p`.
+where it reaches the target: `delegate_task` in T3 Code (`t3_thread_launch` with `projectId` and
+`delegatedFrom` for another local project), the Agent tool in Claude Code, `spawn_agent` in Codex.
+Only where none reaches it, call the target's CLI: `claude -p`, `codex exec` (`codex --search exec`
+for web research), `agy -p="<prompt>"`, `pi -p`.
 
 ## Running a delegate
 
@@ -61,12 +62,11 @@ where it reaches the target: `delegate_task` in T3 Code, the Agent tool in Claud
 
 ## A scheduled task's delegate
 
-A scheduled task that names this section hands its run over and cleans up this way. A task that
-also says to wait follows the last three paragraphs too.
+A scheduled run that names this section hands its run over, waits and cleans up this way.
 
-Run `echo $CLAUDE_CODE_ENTRYPOINT` first. Where it prints `claude-desktop`, the Agent call carries
-`model: "opus"` and `effort: "medium"`, or the effort the task names. Elsewhere it carries neither,
-and the delegate runs on this session's model. A delegate reporting only `wrong model` ran on Haiku:
+Where this session runs on a Haiku model, the Agent call carries `model: "opus"` and
+`effort: "medium"`, or the effort the task names. On any other model it carries neither, and the
+delegate runs on this session's model. A delegate reporting only `wrong model` ran on Haiku:
 launch it again with those two parameters.
 
 Add these three paragraphs to the instruction, `<scratchpad>` replaced by this session's scratchpad
@@ -86,8 +86,10 @@ each scratch path the report lists outside it by its literal path. Where the del
 stopped before reporting, your report says so and names the last step its transcript reached.
 
 To wait: the Agent call returns a launch result at once, and the report arrives later as a task
-notification. Do not end your turn before it arrives: while your turn is open the app skips the
-task's next run, and once it ends the app starts the next run beside the delegate. Take the
+notification. Do not end your turn before it arrives: while your turn is open the scheduler holds the
+task's next run (Claude Desktop skips it, T3 queues it). Once it ends, Claude Desktop starts the
+next run beside the delegate, and in T3 the delegate can no longer start a child thread
+(`Parent run ... is not active`). T3's `t3_background_wait` takes no subagent's id. Take the
 `output_file` path from the launch result and run this foreground Bash command with
 `timeout: 600000`:
 
@@ -138,17 +140,33 @@ The Codex pin is whatever `.codex/config.toml` sets, a repository's own before
 - A skill's `agents/openai.yaml` is ungated: bump its `short_description` by hand in the commit that
   adds a mode.
 
-## Human writing -> Claude
+## Human writing -> Neon
 
-Codex hands Claude every piece of prose a human reads. An agent's own conversation
-with the user (replies, questions, status, explanations, technical answers) it writes itself.
-Hand it over with these facts: sender and signature, recipients, language, purpose, must and
-must-not facts, new mail or reply, for a mail subject and body; ask for the text only.
+A text that leaves the session for a reader (a mail, a chat message, a post, a comment, a document
+a person outside the session reads) is written by Neon, in every mailbox and channel. The session
+that holds the facts hands it over and checks it. The session writes itself: its own conversation
+with the person, records, run reports, pre-reads, a reply of one or two sentences, and a text a
+template fixes; a quote's prices, scope and terms come from the records.
 
-Check facts (names, dates, links, recipients, language, signature), content correctness, and
-length. Never phrasing or tone. On a finding, hand it back with the previous text plus
-the concrete finding. Deliver the output verbatim: no rewording, no dropped or added sentences, no
-re-casing, no polish. Any text change goes through another handoff.
+One writer per run. The first text starts it on Neon high: `delegate_task` on the pi provider with
+`antigravity/gemini-4-neon` in T3 Code, else `agy --mode auto --model gemini-4-neon-high
+--output-format json --print-timeout 600s -p="<brief>"` (plan mode answers with a plan, not the
+text). The brief tells it to write no file and to read the `voice` skill and the channel's skill,
+and hands over every text the run already knows under `=== <id> ===`, each with sender and
+signature, recipients, language, purpose, must and must-not facts, new message or reply with its
+thread, for a mail subject and body; it asks for the texts only, under their ids. Every later text
+and every revision goes to the same writer: `t3_thread_send` to its child thread, or
+`agy --conversation <conversation_id>` with the id the first call returned. Measured: about 30 s
+for the first text and 25 s for each later one.
+
+Check facts (names, dates, links, recipients, language, signature), content correctness, length,
+and for a text published without release the standing approval's bans. Never phrasing or tone. On
+a finding, hand it back to the writer with the concrete finding. Deliver the output verbatim,
+without the id lines: no rewording, no dropped or added sentences, no re-casing, no polish. Any
+text change goes through the writer.
+
+Where Neon does not answer (no `delegate_task` or `agy`, not signed in, a capacity error after one
+retry), the session writes the text itself after loading `voice`, and its report says so.
 
 ## Claude -> Codex
 
@@ -157,8 +175,8 @@ updates and the polish pass, in the repository the work belongs to. Hand it over
 model, the roles table's effort and the repository's root as working folder. Public web research
 (companies, events, tools, vendors) goes to Codex with web search; before a result reaches a
 person, Claude checks its version numbers and dates against the cited source. Claude keeps the
-conversation with the person, records, rules, skills, research that needs our channels or records,
-and every text a person reads.
+conversation with the person, records, rules, skills and research that needs our channels or
+records, and checks every text Neon writes.
 Claude reviews what Codex produced, as far as `blind-review` sizes the review, and pushes after it.
 
 Where `codex` is not installed or not signed in (`codex login status`), the implementer's fallback
