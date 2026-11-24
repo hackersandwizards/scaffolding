@@ -53,6 +53,7 @@ const KEYS = new Set(
     typecheck: 0,
     test: 0,
     browserTest: 0,
+    markdown: 0,
     brand: 0,
     server: 0,
     linkSkips: 0,
@@ -69,7 +70,8 @@ const args = process.argv.slice(2).filter((a) => a !== "--locked");
 const changed = args[1] === "--changed";
 const ranges = args.slice(2);
 const [command, ...commandArgs] = args;
-if (command === "fix" && commandArgs.length === 0) {
+const fix = command === "fix" && commandArgs.length === 0;
+if (fix) {
   for (const flags of [
     ["eslint", "--cache", "--concurrency=auto", ".", "--fix"],
     ["prettier", "--write", "."],
@@ -77,7 +79,6 @@ if (command === "fix" && commandArgs.length === 0) {
     const run = spawnSync(process.execPath, ["--bun", ...flags], { stdio: "inherit" });
     if (run.status !== 0) process.exit(run.status ?? 1);
   }
-  process.exit(0);
 }
 if (command === "test") {
   const config = readPackage(repoRoot()).scaffolding ?? {};
@@ -92,13 +93,18 @@ if (command === "test") {
   process.exit(run.status ?? 1);
 }
 const direct =
+  fix ||
   (command === "shell" && commandArgs.length === 0) ||
   (command === "markdown" &&
     (commandArgs.length === 0 || (commandArgs.length === 1 && commandArgs[0] === "--fix")));
 if (direct) {
   const run = spawnSync(
     process.execPath,
-    ["--no-env-file", join(import.meta.dir, `check-${command}.ts`), ...commandArgs],
+    [
+      "--no-env-file",
+      join(import.meta.dir, `check-${fix ? "markdown" : command}.ts`),
+      ...(fix ? ["--fix"] : commandArgs),
+    ],
     { stdio: "inherit" },
   );
   process.exit(run.status ?? 1);

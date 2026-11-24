@@ -68,7 +68,7 @@ Each runs through `bun run`, and [Commands](docs/commands.md) has the detail of 
 - `scaffolding shell`: checks tracked shell scripts with ShellCheck.
 - `scaffolding markdown [--fix]`: checks tracked Markdown and optionally applies markdownlint fixes.
 - `scaffolding test [<vitest args>...]` runs the fast Vitest suite when you declare a browser suite.
-- `scaffolding fix` applies ESLint fixes and then formats the checkout with Prettier.
+- `scaffolding fix` applies ESLint fixes, formats the checkout with Prettier and applies Markdown fixes.
 - `scaffolding-explore [--seed <seed>]` runs the property tests on demand.
 - `check-structure [--fix]`: the repository against the skeleton; `--fix` writes it.
 - `check-staged`: the pre-commit checks on the staged files.

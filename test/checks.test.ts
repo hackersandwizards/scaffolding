@@ -3253,6 +3253,15 @@ describe("scaffolding check", () => {
     expect(green.out).not.toContain(markdownRepair);
   });
 
+  test("the gate accepts Markdown content folders and runs the Markdown step", () => {
+    const { markdown: _m, ...rest } = skip;
+    const dir = gate({ skip: rest, markdown: { content: ["articles"] } });
+    write(dir, { "articles/post.md": "Body with <span>inline HTML</span>.\n" });
+    expect(sh(dir, ["add", "--", "articles/post.md"]).status).toBe(0);
+    const result = run(dir, "scaffolding", ["check"], { CHECK_LOCK: join(dir, ".lock") });
+    expect(result.code, result.out).toBe(0);
+  });
+
   test("a tracked shell finding fails the gate under the step's name", () => {
     const { shell: _s, ...rest } = skip;
     const dir = gate({ skip: rest });
@@ -4135,15 +4144,19 @@ describe("scaffolding check", () => {
   test("fix and explore resolve as bins without scripts, and fix stops when ESLint fails", () => {
     const dir = gate({ skip });
     const bins = join(dir, "node_modules/.bin");
+    const markdown = "# Note\n\nItems:\n- One\n";
     write(dir, {
+      "note.md": markdown,
       "node_modules/.bin/eslint": `#!/usr/bin/env bun
         console.log("eslint", JSON.stringify(process.argv.slice(2)));
         if (await Bun.file("broken").exists()) process.exit(7);
       `,
       "node_modules/.bin/prettier": `#!/usr/bin/env bun
         console.log("prettier", JSON.stringify(process.argv.slice(2)));
+        if ((await Bun.file("note.md").text()) !== ${JSON.stringify(markdown)}) process.exit(8);
       `,
     });
+    expect(sh(dir, ["add", "--", "note.md"]).status).toBe(0);
     for (const command of ["eslint", "prettier"]) chmodSync(join(bins, command), 0o755);
     for (const command of ["scaffolding", "scaffolding-explore"])
       symlinkSync(bin(command), join(bins, command));
@@ -4161,10 +4174,12 @@ describe("scaffolding check", () => {
       'eslint ["--cache","--concurrency=auto",".","--fix"]',
       'prettier ["--write","."]',
     ]);
-    write(dir, { broken: "" });
+    expect(readFileSync(join(dir, "note.md"), "utf8")).toBe("# Note\n\nItems:\n\n- One\n");
+    write(dir, { broken: "", "note.md": markdown });
     const red = bun("scaffolding", "fix");
     expect(red.status, red.stderr).toBe(7);
     expect(red.stdout).not.toContain("prettier");
+    expect(readFileSync(join(dir, "note.md"), "utf8")).toBe(markdown);
     const pkg = readPackage(dir);
     write(dir, {
       "package.json": JSON.stringify({
@@ -8995,6 +9010,122 @@ test.each([".githooks/pre-push", "template/.githooks/pre-push"])(
 describe("scaffolding markdown", () => {
   const check = (dir: string, ...args: string[]) => run(dir, "scaffolding", ["markdown", ...args]);
   const bad = "Body without a title.\n";
+  const content = "Body with <span>inline HTML</span>.\n";
+  const headings = "# Same\n\n_Intro_\n\n# Same\n";
+  const manifest = (folders: unknown) =>
+    JSON.stringify({
+      scaffolding: { markdown: { content: folders } },
+      scripts: { eslint: "true", prettier: "true" },
+    });
+
+  test("uses the content rules in each named folder and its descendants", () => {
+    const dir = repo({
+      "package.json": manifest(["./articles/", "records"]),
+      "articles/nested/post.md": content,
+      "records/item.md": headings,
+    });
+    const result = check(dir);
+    expect(result.code, result.out).toBe(0);
+  });
+
+  test("reports inline HTML and a missing first heading outside the named folders", () => {
+    const dir = repo({
+      "package.json": manifest(["articles"]),
+      "articles/post.md": content,
+      "articles-old/post.md": content,
+      "docs/headings.md": headings,
+    });
+    const result = check(dir);
+    expect(result.code).toBe(1);
+    expect(result.out.trim().split("\n")).toEqual([
+      expect.stringMatching(/^articles-old\/post\.md:1.*error MD033\b/),
+      expect.stringMatching(/^articles-old\/post\.md:1.*error MD041\b/),
+      expect.stringMatching(/^docs\/headings\.md:3.*error MD036\b/),
+      expect.stringMatching(/^docs\/headings\.md:5.*error MD024\b/),
+      expect.stringMatching(/^docs\/headings\.md:5.*error MD025\b/),
+      markdownRepair,
+    ]);
+  });
+
+  test("still reports layout findings in content, even with an inline disable", () => {
+    const dir = repo({
+      "package.json": manifest(["articles"]),
+      "articles/post.md": "<!-- markdownlint-disable MD032 -->\n\n" + content + "- Item\n",
+    });
+    const result = check(dir);
+    expect(result.code).toBe(1);
+    expect(result.out.trim().split("\n")).toEqual([
+      expect.stringMatching(/^articles\/post\.md:4 error MD032\b/),
+      markdownRepair,
+    ]);
+  });
+
+  test.each([
+    ["a non-array", "articles", "must be an array"],
+    ["null", null, "must be an array"],
+    ["a non-string entry", [42], "must be a folder path string"],
+    ["an absolute path", ["/articles"], "must be repository-relative"],
+    ["a Windows absolute path", ["C:\\articles"], "must be repository-relative"],
+    ["a path outside the repository", ["../articles"], "leaves the repository"],
+    ["the repository root", ["."], "must name a folder below the repository root"],
+    [
+      "the repository root with a trailing slash",
+      ["./"],
+      "must name a folder below the repository root",
+    ],
+    ["a missing folder", ["missing"], "must name an existing folder"],
+    ["a regular file", ["package.json"], "must name an existing folder"],
+  ])("rejects %s in the content configuration even with no Markdown files", (_, folders, error) => {
+    const result = check(repo({ "package.json": manifest(folders) }));
+    expect(result.code).toBe(1);
+    expect(result.out).toMatch(/^\[markdown\] scaffolding\.markdown\.content/);
+    expect(result.out).toContain(error);
+  });
+
+  test("rejects a content folder symlink that points outside the repository", () => {
+    const dir = repo({ "package.json": manifest(["articles"]) });
+    symlinkSync(temp(), join(dir, "articles"));
+    const result = check(dir);
+    expect(result.code).toBe(1);
+    expect(result.out).toContain(
+      'scaffolding.markdown.content[0] ("articles") leaves the repository',
+    );
+  });
+
+  test.each([["markdown", "--fix"], ["fix"]])(
+    "%s uses the content rules when fixing Markdown",
+    (...args) => {
+      const trailingSpace = content.trimEnd() + " \n";
+      const dir = repo({
+        "package.json": manifest(["articles"]),
+        "articles/post.md": trailingSpace,
+        "docs/post.md": trailingSpace,
+      });
+      const result = run(dir, "scaffolding", args);
+      expect(result.code).toBe(1);
+      expect(result.out).toContain("docs/post.md:1 error MD041");
+      expect(result.out).not.toContain("articles/post.md");
+      expect(readFileSync(join(dir, "articles/post.md"), "utf8")).toBe(content);
+      expect(readFileSync(join(dir, "docs/post.md"), "utf8")).toBe(content);
+    },
+  );
+
+  test("uses the staged content folders for the pre-commit Markdown step", () => {
+    const dir = repo({
+      "package.json": JSON.stringify({
+        scaffolding: {
+          markdown: { content: ["articles"] },
+          private: true,
+          skip: { format: "fixture", lint: "fixture" },
+        },
+      }),
+      "articles/post.md": "# Post\n",
+    });
+    write(dir, { "articles/post.md": content });
+    expect(sh(dir, ["add", "--", "articles/post.md"]).status).toBe(0);
+    write(dir, { "package.json": manifest([]) });
+    expect(run(dir, "check-staged").code).toBe(0);
+  });
 
   test("recognizes top-level frontmatter titles and limits H1s in the body", () => {
     const dir = repo({

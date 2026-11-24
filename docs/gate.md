@@ -71,7 +71,9 @@ Run `bun run scaffolding shell` to check shell scripts on demand. When there are
 gate and pre-commit output end the ShellCheck report with a reminder to repair each finding in the
 script.
 
-**Markdown.** `bun run scaffolding markdown` checks all tracked `.md` files with
+## Markdown
+
+`bun run scaffolding markdown` checks all tracked `.md` files with
 markdownlint-cli2. It skips symlinks, submodules and `node_modules`. The package supplies the rules,
 including for repositories with local markdownlint configuration. Use
 `bun run scaffolding markdown --fix` to apply markdownlint's fixes to the working tree. Findings
@@ -79,6 +81,13 @@ that require manual edits still fail the command. When there are findings, both 
 pre-commit output end the Markdown report with the fix command and a reminder to repair remaining
 findings by changing only Markdown structure and preserving every word. The gate accepts
 `scaffolding.skip.markdown` with a reason to skip the whole step.
+
+Set `scaffolding.markdown.content` in `package.json` to an array of existing repository-relative
+folders below the repository root, for example `["src/content", "articles"]`. Each literal path
+applies to tracked Markdown in that folder and its descendants. Those files use the shared rules with
+MD033, MD041, MD025, MD024 and MD036 disabled. Files outside the listed folders use the full set,
+as do all files when the list is absent or empty. Invalid configuration fails the step.
+Both fix commands use the same rules. File-level and inline overrides are disabled.
 
 | Rule            | Setting and reason                                                                                    |
 | --------------- | ----------------------------------------------------------------------------------------------------- |
@@ -98,8 +107,8 @@ At pre-commit, `check-staged` checks only the staged shell scripts and Markdown 
 their content from the index. ShellCheck's snapshot also includes all tracked shell scripts,
 the root `.shellcheckrc` and tracked files referenced by literal source commands or
 `source=` directives. The snapshot follows those references recursively through index files.
-The hook uses the corresponding `skip.shell` and `skip.markdown` reasons in the staged package
-manifest.
+The hook reads the corresponding `skip.shell` and `skip.markdown` reasons and the Markdown content
+folders from the staged package manifest.
 
 ## Changed paths
 
@@ -141,6 +150,8 @@ even if an untracked path already selected the step. Astro lint also selects the
 typecheck that generates its content types and waits for it.
 
 ### package.json fields
+
+`scaffolding.markdown.content` selects the folders that use the [Markdown content rules](#markdown).
 
 `scaffolding.changed` adds paths and steps to the default map. Every entry takes a relative glob
 and a non-empty list of registered gate steps. A local path can match only your map. A

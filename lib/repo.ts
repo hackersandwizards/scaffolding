@@ -229,6 +229,7 @@ export type Package = {
     typecheck?: string;
     test?: string;
     browserTest?: string;
+    markdown?: { content?: string[] };
     brand?: {
       directory?: string;
       retired?: string[];
