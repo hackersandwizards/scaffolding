@@ -75,20 +75,6 @@ Other sessions share this working tree and its index.
 - The commit author is the machine's git identity for every session. An agent commit is marked only
   by its `Co-Authored-By` line, so git history never says who decided a change: that evidence is a
   message, a record body or a run transcript, and is often unrecorded.
-- Work in the shared checkout by default. A worktree, made with `git worktree add` or by a
-  delegate's `isolation: worktree`, is allowed where it pays off, which `parallel-session` weighs.
-  It starts from `origin/main`, so this tree's uncommitted and unpushed work is absent there. The
-  hooks need its dependencies before its first commit: where its `.githooks/post-checkout` installs
-  them, run `bun install --frozen-lockfile` only where the hook
-  printed an `[install]` line on stderr, and always in a worktree the harness made, whose hook
-  output you never see; elsewhere run it yourself. Its
-  commits reach `main` within the same delegate run (`git fetch`, `git rebase origin/main`,
-  `git push origin HEAD:main`). Where Git LFS files show as modified with no change and stop
-  that rebase, `git checkout -- <path>` inside the worktree clears them. Outside a contributor's
-  fork, never push a branch and never open a pull request. A release (version bump and tag) while
-  another session works in the same checkout goes from a detached worktree on `origin/main`
-  holding only your commits: read the version there, gate there, push, and tag once the push has
-  landed; after a rejected push fetch and bump again from the new `origin/main`. Never remove a
-  worktree with `--force`, another session's included: where `git worktree remove` refuses, it
-  holds uncommitted or untracked files, and each is committed, copied out or read against
-  `origin/main` first.
+- Before making a worktree, or releasing (version bump and tag) while another session works in
+  this checkout, load `parallel-session`. Outside a contributor's fork, never push a branch and
+  never open a pull request.

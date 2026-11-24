@@ -135,7 +135,7 @@ verb. Where a site skill names a tool of one surface, use that verb's row for th
 
 ## T3 server browser
 
-Measured so far: a signed-in read of two sites from a Claude Haiku thread on the default profile.
+Measured so far: signed-in reads from a Claude Haiku thread and a Codex Sol thread on the default profile.
 Record each quirk here as a run finds it.
 
 - Call `preview_status` first: it lists this thread's tabs, a pending dialog (answer it with

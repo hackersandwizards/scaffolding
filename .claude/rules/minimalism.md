@@ -24,17 +24,20 @@ prompts) and in any document. Say the least that fully does the job, then stop.
   asking. Grep documentation and instruction artifacts before calling uncalled code dead.
 - Leave the machine as you found it, apart from updates. Start no process whose only job is to
   consume CPU, memory or disk, a load generator for a measurement included: measure under the load
-  the machine already has. Before reporting done, stop every process your own run started and no
-  longer needs, such as a browser, a dev server, a watcher or a background shell, by the PID your
-  run started, never by name, and remove what it created and no longer needs: scratch files,
+  the machine already has. A repository's tools write no file outside its checkout, Chrome for
+  Testing aside: built helpers and fetched data go to a git-ignored folder inside it, such as
+  `node_modules/.cache/<tool>/`. Before reporting done, stop every process your own run started
+  and no longer needs, such as a browser, a dev server, a watcher or a background shell, by the PID
+  your run started, never by name, and remove what it created and no longer needs: scratch files,
   backups, container images, build or runner caches and software installed outside a project, which
   stays only with the person's go. Remove
   only exact paths your own run created, never by prefix, and never a scratch file that is the only
   copy of a deliverable. Never quit or restart a desktop app the person runs, Claude Desktop included: an
   edit that needs it closed waits for their quit. Open their desktop apps, such as Word, only after
   they agree, and run browsers headless while they work. Every Chrome you launch yourself, a scratch
-  script's included, is Chrome for Testing, the build puppeteer or Playwright installs, never
-  `/Applications/Google Chrome.app`, whose headless instance takes the person's Dock click, and runs
+  script's included, is Chrome for Testing, the build puppeteer or Playwright installs to its shared
+  cache, 570 MB a build, never `/Applications/Google Chrome.app`, whose headless instance takes the
+  person's Dock click, and runs
   with `--use-mock-keychain --password-store=basic`, or macOS asks them for the keychain password. The
   Mac's Trash is emptied within hours: before moving a folder there, list its untracked and ignored
   files, and leave it where any holds state or secrets until the person confirms.

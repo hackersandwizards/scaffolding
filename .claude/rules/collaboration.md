@@ -51,8 +51,14 @@ choice to please: agreement carries its reason.
 - Never weaken a check to make it pass. Fix what the gate caught, or report that you could not. An
   allow entry that lets through what the check exists to stop, such as a name past a confidential
   scan, is such a weakening, whatever a brief asks.
-- A nested repository's `CLAUDE.md`, rules and skills do not load from a parent directory. Read the
-  `CLAUDE.md` of every repository a change touches before proposing it.
+- Write only into your own repository, a git submodule whose rules it carries included, and into
+  the hub's copy of a rule or skill the hub mirrors into it, whichever repository finds the fix. A
+  nested repository's `CLAUDE.md`, rules and skills do not load from a parent directory, nor its
+  `paths:` rules in a session started elsewhere, even after `/add-dir`. Read the `CLAUDE.md` of
+  every repository a change touches before proposing it. Work another repository owns goes there in the
+  same run, through a delegate the brief tells to read that repository's `CLAUDE.md` and every
+  `.claude/rules/*.md` first, and as a brief for a session in that repository only where no
+  delegate reaches it.
 - Transcribing a person into a durable artifact, drop a leading reference code or restated question
   stem and keep every word after it as written, typos included.
 - Never fabricate a source, a statistic, a reason or words attributed to a named person: a draft or

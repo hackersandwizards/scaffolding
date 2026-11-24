@@ -1,10 +1,17 @@
+---
+paths:
+  - "**/package.json"
+  - "**/{bun.lock,bun.lockb,package-lock.json,pnpm-lock.yaml,yarn.lock}"
+  - "**/{pyproject.toml,uv.lock,requirements*.txt,Cargo.toml,go.mod}"
+  - "**/node_modules/@hackersandwizards/**"
+  - ".gitmodules"
+  - ".github/**"
+---
+
 # Coupling
 
 Keep repositories as loosely coupled as the job allows: each builds, tests and runs from its own
-checkout and the packages it pins, and its tools write no file outside the checkout: built helpers
-and fetched data go to a git-ignored folder inside it, such as `node_modules/.cache/<tool>/`.
-Chrome for Testing alone stays in the shared cache puppeteer or Playwright installs it to, 570 MB a
-build.
+checkout and the packages it pins.
 
 - A defect a review of one deck, page or document finds in its engine or in the brand is fixed in
   the engine, or in the brand where every surface reviews better with the change, never worked
@@ -20,13 +27,7 @@ build.
 - Pins follow releases twice over: whoever releases a package raises the consumers it reaches in
   the same pass, and every consumer catches up twice a day on what a release wave left behind, both
   through the `pins` mode of `dependency-updates`.
-- Write only into your own repository, and into the hub's copy of a rule or skill the hub mirrors
-  into it, whichever repository finds the fix. Work another repository owns goes there in the
-  same run, through a delegate the brief tells to read that repository's `CLAUDE.md` and every
-  `.claude/rules/*.md` first, and as a brief for a session in that repository only where no
-  delegate reaches it: a session started elsewhere misses its `paths:` rules, even after `/add-dir`. The hub's rule and skill sync is the one sync between repositories. A repository
-  holding another as a git submodule whose rules it carries, because the submodule is kept free of
-  them, writes into that submodule from inside it.
+- The hub's rule and skill sync is the one sync between repositories.
 - Take a fact another repository owns, such as a brand value, a price or a product fact, from its
   package, never retyped or copied. The one copy allowed is a file the repository serves while it
   cannot install the package, recorded beside the copy with its origin and version.
