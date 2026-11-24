@@ -1,0 +1,11 @@
+{
+  "mcpServers": {
+    "chrome-devtools": {
+      "command": "sh",
+      "args": [
+        "-c",
+        "cd \"${CLAUDE_PROJECT_DIR:-.}\" && { CHECK_LOCK_RUN_S=${CHECK_LOCK_RUN_S:-60} .githooks/install; exec bun run --silent chrome-mcp; }"
+      ]
+    }
+  }
+}

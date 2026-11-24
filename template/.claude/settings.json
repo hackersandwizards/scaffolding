@@ -1,11 +1,6 @@
 {
-  "model": "fable",
-  "effortLevel": "low",
-  "modelSettings": {
-    "claude-opus-5-5": {
-      "effortLevel": "medium"
-    }
-  },
+  "model": "opus",
+  "effortLevel": "medium",
   "hooks": {
     "SessionStart": [
       {

@@ -1077,6 +1077,49 @@ describe("scaffold and check-structure", () => {
     expect(r.code).toBe(0);
   });
 
+  test("scaffold sets the Claude defaults and omits the skills link without skills", () => {
+    const settings = jsonObject(readFileSync(join(dir, ".claude/settings.json")));
+    expect(settings.model).toBe("opus");
+    expect(settings.effortLevel).toBe("medium");
+    expect(settings).not.toHaveProperty("modelSettings");
+    expect(lstatSync(join(dir, ".agents/skills"), { throwIfNoEntry: false })).toBeUndefined();
+  });
+
+  test("scaffold copies the agent configs once", () => {
+    const paths = [
+      ".pi/mcp.json",
+      ".pi/settings.json",
+      ".agents/plugins/repo/plugin.json",
+      ".agents/plugins/repo/mcp_config.json",
+      ".agents/hooks.json",
+      ".codex/hooks.json",
+    ];
+    for (const path of paths) {
+      const starter = join(import.meta.dirname, "..", "template", path);
+      expect(readFileSync(join(dir, path), "utf8"), path).toBe(readFileSync(starter, "utf8"));
+    }
+
+    const changed = [".pi/mcp.json", ".agents/plugins/repo/mcp_config.json"];
+    const removed = paths.filter((path) => !changed.includes(path));
+    const files = Object.fromEntries(
+      changed.map((path) => {
+        const settings = jsonObject(readFileSync(join(dir, path)));
+        const servers = settings.mcpServers;
+        if (!isObject(servers)) throw new Error(`${path}: missing mcpServers`);
+        return [
+          path,
+          JSON.stringify({ ...settings, mcpServers: { ...servers, own: { command: "x" } } }),
+        ];
+      }),
+    );
+    const consumer = fixture("agent-configs", {}, files, removed);
+    expect(run(consumer, "check-structure")).toEqual({ code: 0, out: "" });
+    expect(run(consumer, "check-structure", ["--fix"])).toEqual({ code: 0, out: "" });
+    for (const [path, content] of Object.entries(files))
+      expect(readFileSync(join(consumer, path), "utf8"), path).toBe(content);
+    for (const path of removed) expect(existsSync(join(consumer, path)), path).toBe(false);
+  });
+
   test("the shared oxlint config is required and --fix preserves a local layer policy", () => {
     const name = ".oxlintrc.json";
     const other = fixture("oxlint-structure", {}, {}, [name]);
@@ -1368,18 +1411,16 @@ describe("scaffold and check-structure", () => {
   });
 
   test("the .agents/skills link is required where .claude/skills exists", () => {
-    const none = fixture("no-skills", {}, {}, [".agents/skills"]);
+    const none = fixture("no-skills", {});
     expect(lines(run(none, "check-structure").out, "check-structure")).toEqual([]);
-    const skills = fixture("skills", {}, { ".claude/skills/a/SKILL.md": "x\n" }, [
-      ".agents/skills",
-    ]);
+    const skills = fixture("skills", {}, { ".claude/skills/a/SKILL.md": "x\n" });
     expect(lines(run(skills, "check-structure").out, "check-structure")).toEqual([
       "[check-structure] .agents/skills: must be a symlink to ../.claude/skills",
     ]);
     run(skills, "check-structure", ["--fix"]);
     expect(run(skills, "check-structure").code).toBe(0);
     // A link that is wrong stays red where .claude/skills is absent too.
-    const wrong = fixture("wrong-link", {}, { "keep/x": "x\n" }, [".agents/skills"]);
+    const wrong = fixture("wrong-link", {}, { "keep/x": "x\n" });
     symlinkSync("../keep", join(wrong, ".agents/skills"));
     expect(lines(run(wrong, "check-structure").out, "check-structure")).toEqual([
       "[check-structure] .agents/skills: must be a symlink to ../.claude/skills",
@@ -1462,14 +1503,7 @@ describe("scaffold and check-structure", () => {
           "bin/x.ts": "export {};\n",
           ".claude/skills/a/SKILL.md": "x\n",
         },
-        [
-          ".editorconfig",
-          ".npmrc",
-          "bunfig.toml",
-          ".githooks/commit-msg",
-          ".githooks/post-merge",
-          ".agents/skills",
-        ],
+        [".editorconfig", ".npmrc", "bunfig.toml", ".githooks/commit-msg", ".githooks/post-merge"],
       );
       const pkg = scaffolded(other);
       write(other, { "package.json": JSON.stringify({ ...pkg, bin: { x: "bin/x.ts" } }) });
@@ -1492,7 +1526,7 @@ describe("scaffold and check-structure", () => {
           `skip-private-${reason ? "reason" : "blank"}`,
           { skip: { structure: reason }, private: true },
           { ".githooks/post-checkout": "#!/bin/sh\nolder\n", ".claude/skills/a/SKILL.md": "x\n" },
-          ["bunfig.toml", ".agents/skills"],
+          ["bunfig.toml"],
         );
         const before = state(other);
         expect(run(other, "check-structure", ["--fix"]).code).toBe(0);

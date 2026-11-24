@@ -85,7 +85,9 @@ for (const file of readdirSync(target, { recursive: true, encoding: "utf8" }))
   if (file.endsWith(".tmpl")) renameSync(join(target, file), join(target, file.slice(0, -5)));
 // A Git dependency installs without symlinks, so the skeleton's links are made here.
 for (const [path, link] of Object.entries(skeleton.symlinks)) {
-  mkdirSync(dirname(join(target, path)), { recursive: true });
+  const parent = dirname(join(target, path));
+  if (!existsSync(join(parent, link))) continue;
+  mkdirSync(parent, { recursive: true });
   symlinkSync(link, join(target, path));
 }
 const values: Record<string, string> = {
