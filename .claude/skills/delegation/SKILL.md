@@ -1,24 +1,27 @@
 ---
 name: delegation
 description: >-
-  Launch, prod, stop and check a delegate (an Agent-tool subagent or a new session),
-  which model and effort each role runs at, how Codex hands authored copy to Claude, and which
-  code work Claude hands Codex: before starting any delegate, before code work (an implementation,
+  Hand work over in any direction between harnesses, launch, prod, stop and check a delegate,
+  which model and effort each role runs at, which prose goes to Claude and which code work to
+  Codex: before starting any delegate, before code work (an implementation,
   a bug fix, a refactor, tests, a script, a dependency update, a polish pass), when running or
   configuring Codex, or when either side needs copy written.
 ---
 
 # Delegation
 
-## Running a Claude delegate
+## Handing over
 
-- Launch only while the 1-minute load (`uptime`) is at or below the core count
-  (`getconf _NPROCESSORS_ONLN`): hold up to ten minutes, then launch one alone. A whole gate, a
-  browser suite or a load run runs one at a time.
+Every handoff, in any direction and to any model, goes through the harness's own delegation tool
+where it reaches the target: `delegate_task` in T3 Code, the Agent tool in Claude Code,
+`spawn_agent` in Codex. Only where none reaches it, call the target's CLI: `claude -p`,
+`codex exec` (`codex --search exec` for web research), `agy -p="<prompt>"`, `pi -p`.
+
+## Running a delegate
+
+- A whole gate, a browser suite or a load run runs one at a time.
 - Launching a queue of several runs in an attended session, tell the person its estimated end as a
   clock time a command printed, and the time per run it rests on.
-- Delegate to an Agent-tool subagent of the session you are in, Desktop or terminal, or to a new
-  session the Desktop app starts, never to a nested `claude -p` process.
 - A subagent loads the `CLAUDE.md`, rules and skills of the session's start folder only. A brief for
   work in another repository tells it to read that repository's `CLAUDE.md` and every
   `.claude/rules/*.md` first, to read a skill it needs there as that skill's `SKILL.md` file, and to
@@ -113,9 +116,7 @@ the report when the notification arrives after it.
 - Probe a model with one cheap call before a long run, never wait for one to return, and name every
   fallback taken in the report.
 - The supervisor orders the plan, starts one orchestrator per epic, reads their reports and calls
-  the review. Hand over with the harness's own tool, `delegate_task` in T3 Code and the Agent tool
-  in Claude; reach another harness through `codex exec`, `agy -p="<prompt>"` or `pi -p` only where
-  no such tool reaches it.
+  the review.
 
 Measured November 2026, index points from Artificial Analysis:
 
@@ -132,9 +133,8 @@ The Codex pin is whatever `.codex/config.toml` sets, a repository's own before
 - Sol accepts `low`, `medium`, `high`, `xhigh`, `max`, `ultra`. It has no `none`.
 - `codex exec --model` overrides the config per invocation. Heavier one-off work goes there, not
   into the repository's pin.
-- `--full-auto` does not exist: the workspace-write auto-review is
-  `--approve-for-me`. `codex exec` with an open pipe on stdin waits for EOF before starting, so pass
-  `< /dev/null` where stdin might be open.
+- The workspace-write auto-review is `--approve-for-me`. `codex exec` with an open pipe on stdin
+  waits for EOF before starting, so pass `< /dev/null` where stdin might be open.
 - `startup_timeout_sec` defaults to 10s: raise it in `.codex/config.toml` for a slow-starting
   server.
 - A skill's `agents/openai.yaml` is ungated: bump its `short_description` by hand in the commit that
@@ -144,24 +144,20 @@ The Codex pin is whatever `.codex/config.toml` sets, a repository's own before
 
 Codex hands Claude every piece of prose a human reads. An agent's own conversation
 with the user (replies, questions, status, explanations, technical answers) it writes itself.
-
-```bash
-claude -p "Write the <mail/message>. Facts: sender+signature, recipients, language, purpose, must/must-not facts, new mail or reply. For mails: subject line AND body. Output only the text."
-```
+Hand it over with these facts: sender and signature, recipients, language, purpose, must and
+must-not facts, new mail or reply, for a mail subject and body; ask for the text only.
 
 Check facts (names, dates, links, recipients, language, signature), content correctness, and
-length. Never phrasing or tone. On a finding, call `claude -p` again with the previous text plus
+length. Never phrasing or tone. On a finding, hand it back with the previous text plus
 the concrete finding. Deliver the output verbatim: no rewording, no dropped or added sentences, no
-re-casing, no polish. Any text change goes through another `claude -p` call.
+re-casing, no polish. Any text change goes through another handoff.
 
 ## Claude -> Codex
 
 Claude hands Codex the code work: implementation, bug fixes, refactors, tests, scripts, dependency
-updates and the polish pass, in the repository the work belongs to. Where `orchestrator_capabilities`
-lists `codex`, that is `delegate_task` with `target.providerInstanceId: "codex"`, the pin as
-`target.model`, `target.options.reasoningEffort` from the roles table and the repository's root in
-`task`, so the run shows in T3 Code. Elsewhere it runs as `codex exec` in that repository. Public web
-research (companies, events, tools, vendors) goes to `codex --search exec`; before a result reaches a
+updates and the polish pass, in the repository the work belongs to. Hand it over with the pin as
+model, the roles table's effort and the repository's root as working folder. Public web research
+(companies, events, tools, vendors) goes to Codex with web search; before a result reaches a
 person, Claude checks its version numbers and dates against the cited source. Claude keeps the
 conversation with the person, records, rules, skills, research that needs our channels or records,
 and every text a person reads.

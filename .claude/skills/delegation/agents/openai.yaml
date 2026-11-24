@@ -1,4 +1,4 @@
 interface:
   display_name: "Delegation"
-  short_description: "Launch, prod and stop a delegate; Codex tiers and copy handoff"
+  short_description: "Hand over in any direction; launch, prod, stop a delegate; model tiers"
   default_prompt: "Use $delegation to pick the model tier for this task."
