@@ -29,6 +29,7 @@ checks the item files, and `admin-serve` serves the page across all repos at
     review item, and the run's report names it.
 
   A task, even one phrased as a question ("Who fixes the privacy policy?"), is `work`.
+
 - `docs/agent-work/YYYY-MM-DD-<topic>.md`: one report per topic, what was measured, with evidence.
   Its images sit in `docs/agent-work/YYYY-MM-DD-<topic>/`, JPEG at most 1600 px wide.
 - `docs/agent-work/items/<id>/`: the item's images, JPEG at most 1600 px wide, named in its `images`
@@ -121,7 +122,7 @@ items up.
    report and deletes what it superseded. Earlier rounds and raw reviews go to the scratchpad. A
    clock time an item or report carries is the value a command printed in the tool call that
    writes it (`NOW=$(date '+%H:%M')`); an event no command timed gets no time, or `after <the
-   timed event>`.
+timed event>`.
 7. The page reads each repo at its last commit, so the commit is all an item change needs.
    Check: where `curl -s http://admin.localhost:4329/` answers, the page lists the item. A batch
    that changes an asset an item's images show, such as a logo, colour or lockup, re-renders those
@@ -166,7 +167,8 @@ the others.
   see, and in a hand-made one where its `.githooks/post-checkout` printed an `[install]` line on
   stderr or installs nothing.
 - The delegate commits in its worktree, then runs `git fetch`, `git rebase origin/main` and
-  `git push origin HEAD:main`, repeating on rejection, before its run ends. A rebase there runs
+  `git push origin HEAD:main`, repeating on rejection, before its run ends; in a client's repository
+  it stops before the push. A rebase there runs
   the post-checkout hook on `origin/main`'s lockfile: run `bun install --frozen-lockfile` again
   before a render, measurement or gate. Where Git LFS files show as modified with no change and stop
   that rebase, `git checkout -- <path>` inside the worktree clears them. Check:
