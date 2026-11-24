@@ -157,7 +157,10 @@ re-casing, no polish. Any text change goes through another `claude -p` call.
 ## Claude -> Codex
 
 Claude hands Codex the code work: implementation, bug fixes, refactors, tests, scripts, dependency
-updates and the polish pass, run as `codex exec` in the repository the work belongs to. Public web
+updates and the polish pass, in the repository the work belongs to. Where `orchestrator_capabilities`
+lists `codex`, that is `delegate_task` with `target.providerInstanceId: "codex"`, the pin as
+`target.model`, `target.options.reasoningEffort` from the roles table and the repository's root in
+`task`, so the run shows in T3 Code. Elsewhere it runs as `codex exec` in that repository. Public web
 research (companies, events, tools, vendors) goes to `codex --search exec`; before a result reaches a
 person, Claude checks its version numbers and dates against the cited source. Claude keeps the
 conversation with the person, records, rules, skills, research that needs our channels or records,
