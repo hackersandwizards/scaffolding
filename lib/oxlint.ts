@@ -63,10 +63,7 @@ export function* oxlintRestrictionFindings(config: Record<string, unknown>) {
       if (!Array.isArray(setting) || !activeSeverity(setting)) continue;
       const options: unknown[] = setting.slice(1);
       const location = `${block}.${rule}`;
-      switch (rule) {
-        case "eslint/no-restricted-imports":
-        case "typescript/no-restricted-imports":
-        case "@typescript-eslint/no-restricted-imports":
+      switch (rule.slice(rule.lastIndexOf("/") + 1)) {
         case "no-restricted-imports":
           for (const { item, suffix, example } of restrictedImports(options)) {
             if (isObject(item) && isReason(item.message)) continue;
@@ -78,16 +75,16 @@ export function* oxlintRestrictionFindings(config: Record<string, unknown>) {
             yield { message: `${location}${suffix} ${guidance}`, text: JSON.stringify(pattern) };
           }
           break;
-        case "eslint/no-restricted-syntax":
         case "no-restricted-syntax":
           for (const option of options) {
             if (isObject(option) && isReason(option.message)) continue;
             const selector = isObject(option) ? option.selector : option;
             if (typeof selector !== "string") continue;
-            yield {
-              message: `${location} needs a message saying what to write instead`,
-              text: JSON.stringify(selector),
-            };
+            const guidance =
+              typeof option === "string"
+                ? 'replace the string with { "selector": ..., "message": ... } and say what to write instead'
+                : "needs a message saying what to write instead";
+            yield { message: `${location} ${guidance}`, text: JSON.stringify(selector) };
           }
           break;
       }

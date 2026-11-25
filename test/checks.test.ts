@@ -1212,8 +1212,8 @@ describe("scaffold and check-structure", () => {
   });
 
   test.each(
-    ["typescript", "@typescript-eslint"].flatMap((plugin) =>
-      [false, true].map((override) => ({ plugin, override })),
+    ["typescript", "@typescript-eslint", "typescript-eslint", "typescript_eslint"].flatMap(
+      (plugin) => [false, true].map((override) => ({ plugin, override })),
     ),
   )(
     "Oxlint $plugin import restrictions need messages (override $override)",
@@ -1309,7 +1309,7 @@ describe("scaffold and check-structure", () => {
     const result = run(other, "check-structure");
     expect(result.code).toBe(1);
     expect(lines(result.out, "check-structure")).toEqual([
-      '[check-structure] .oxlintrc.json: rules.no-restricted-syntax needs a message saying what to write instead ("WithStatement")',
+      '[check-structure] .oxlintrc.json: rules.no-restricted-syntax replace the string with { "selector": ..., "message": ... } and say what to write instead ("WithStatement")',
     ]);
   });
 
