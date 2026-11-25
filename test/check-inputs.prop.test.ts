@@ -218,10 +218,12 @@ test.prop(
   const files = paths.map(([letter, length]) => letter.repeat(length));
   const chunks = pathChunks(files);
   expect(chunks.flat()).toEqual(files);
-  for (const [index, chunk] of chunks.entries()) {
+  expect(chunks.filter((chunk) => chunk.length === 0)).toEqual(files.length === 0 ? [[]] : []);
+  const sizes = chunks.map((chunk) => {
     const bytes = chunk.reduce((total, file) => total + Buffer.byteLength(file) + 1, 0);
     expect(bytes).toBeLessThanOrEqual(100_000);
-    const next = chunks[index + 1]?.[0];
-    if (next !== undefined) expect(bytes + Buffer.byteLength(next) + 1).toBeGreaterThan(100_000);
-  }
+    return bytes;
+  });
+  for (const [index, [first]] of chunks.slice(1).entries())
+    expect(sizes[index]! + Buffer.byteLength(first!) + 1).toBeGreaterThan(100_000);
 });

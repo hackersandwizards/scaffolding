@@ -31,5 +31,5 @@ test("rejection can describe a resolved undefined", async () => {
 test("rejection names the call site in the trace", async () => {
   const failure = await rejection(Promise.resolve("x")).catch((error: unknown) => error);
   expect(failure).toBeInstanceOf(Error);
-  if (failure instanceof Error) expect(failure.stack).toContain("rejection.test.ts");
+  expect((failure as Error).stack).toContain("rejection.test.ts");
 });

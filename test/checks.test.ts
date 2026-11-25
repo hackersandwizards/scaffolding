@@ -181,40 +181,33 @@ function write(dir: string, files: Record<string, string>) {
   }
 }
 
-test.each([
-  { runtime: "node", folder: undefined },
-  { runtime: "bun", folder: undefined },
-  { runtime: "bun", folder: "test/pages" },
-  { runtime: "bun", folder: "test/browser" },
-])(
-  "the consumer explore command runs aliased properties on $runtime (browser folder $folder)",
-  ({ runtime, folder }) => {
-    const dir = temp(cache);
-    const property = "sample.prop.test.ts";
-    write(dir, {
-      "package.json": JSON.stringify({
-        name: "property-consumer",
-        type: "module",
-        scripts: {
-          explore: "scaffolding-explore",
-          ...(folder ? { test: "scaffolding test" } : {}),
-          "test:run": runtime === "bun" ? "bun --bun vitest run" : "vitest run",
-          ...(runtime === "node" ? { "test:coverage": "vitest run --coverage" } : {}),
-        },
-        scaffolding: folder
-          ? { browserTest: folder }
-          : { test: runtime === "node" ? "test:coverage" : "test:run" },
-      }),
-      "vitest.config.mjs":
-        runtime === "node"
-          ? `import base from "@hackersandwizards/scaffolding/vitest";
+function exploreFixture(runtime: "node" | "bun", folder?: string) {
+  const dir = temp(cache);
+  const property = "sample.prop.test.ts";
+  write(dir, {
+    "package.json": JSON.stringify({
+      name: "property-consumer",
+      type: "module",
+      scripts: {
+        explore: "scaffolding-explore",
+        ...(folder ? { test: "scaffolding test" } : {}),
+        "test:run": runtime === "bun" ? "bun --bun vitest run" : "vitest run",
+        ...(runtime === "node" ? { "test:coverage": "vitest run --coverage" } : {}),
+      },
+      scaffolding: folder
+        ? { browserTest: folder }
+        : { test: runtime === "node" ? "test:coverage" : "test:run" },
+    }),
+    "vitest.config.mjs":
+      runtime === "node"
+        ? `import base from "@hackersandwizards/scaffolding/vitest";
 import { mergeConfig } from "vitest/config";
 export default mergeConfig(base, {
   test: { coverage: { enabled: true, include: ["uncovered.ts"], thresholds: { lines: 100 } } },
 });`
-          : 'export { default } from "@hackersandwizards/scaffolding/vitest";\n',
-      "uncovered.ts": "export const uncovered = 1;\n",
-      [property]: `
+        : 'export { default } from "@hackersandwizards/scaffolding/vitest";\n',
+    "uncovered.ts": "export const uncovered = 1;\n",
+    [property]: `
 import { fc, test as propertyTest } from "@hackersandwizards/scaffolding/property";
 import { afterAll, afterEach, beforeEach, expect, test as example } from "vitest";
 example("example in a property file (with seed=-188)", () => {
@@ -243,48 +236,62 @@ propertyTest.prop([fc.integer({ min: 1, max: 100 })])("positive integers", (valu
   cases++;
   expect(value).toBeGreaterThan(0);
 });`,
-      "example.prop.test.folder/sample.test.ts": `
+    "example.prop.test.folder/sample.test.ts": `
 import { test } from "vitest";
 test("example must stay out of exploration", () => { throw new Error("example ran"); });`,
-    });
-    const home = join(import.meta.dirname, "..");
-    const scope = join(dir, "node_modules", "@hackersandwizards");
-    const installed = join(scope, "scaffolding");
-    const commands = join(dir, "node_modules", ".bin");
-    mkdirSync(join(installed, "node_modules"), { recursive: true });
-    mkdirSync(commands, { recursive: true });
-    for (const entry of ["package.json", "bin", "config", "lib"])
-      cpSync(join(home, entry), join(installed, entry), { recursive: true });
-    // Use two physical copies of the same Vitest version, as each has its own runner state.
-    cpSync(join(home, "node_modules", "vitest"), join(installed, "node_modules", "vitest"), {
-      recursive: true,
-    });
-    symlinkSync(join(home, "node_modules", "vitest"), join(dir, "node_modules", "vitest"));
-    if (runtime === "node")
-      symlinkSync(join(home, "node_modules", "@vitest"), join(dir, "node_modules", "@vitest"));
-    symlinkSync(
-      join(installed, "bin", "scaffolding-explore.ts"),
-      join(commands, "scaffolding-explore"),
-    );
-    symlinkSync(join(home, "node_modules", ".bin", "vitest"), join(commands, "vitest"));
-    const bun = realpathSync(process.execPath);
-    const path = process.env.PATH?.split(delimiter)
-      .filter((dir) => {
-        const node = join(dir, "node");
-        return !existsSync(node) || realpathSync(node) !== bun;
-      })
-      .join(delimiter);
-    if (runtime === "node") {
-      const control = spawnSync(process.execPath, ["run", "test:coverage", property], {
-        cwd: dir,
-        encoding: "utf8",
-        env: { ...process.env, PATH: path },
-      });
-      const output = control.stdout + control.stderr;
-      expect(control.status, output).toBe(1);
-      expect(output).toMatch(/Tests\s+2 passed/);
-      expect(output).toMatch(/Coverage for lines .* does not meet global threshold/);
-    }
+  });
+  const home = join(import.meta.dirname, "..");
+  const scope = join(dir, "node_modules", "@hackersandwizards");
+  const installed = join(scope, "scaffolding");
+  const commands = join(dir, "node_modules", ".bin");
+  mkdirSync(join(installed, "node_modules"), { recursive: true });
+  mkdirSync(commands, { recursive: true });
+  for (const entry of ["package.json", "bin", "config", "lib"])
+    cpSync(join(home, entry), join(installed, entry), { recursive: true });
+  // Use two physical copies of the same Vitest version, as each has its own runner state.
+  cpSync(join(home, "node_modules", "vitest"), join(installed, "node_modules", "vitest"), {
+    recursive: true,
+  });
+  symlinkSync(join(home, "node_modules", "vitest"), join(dir, "node_modules", "vitest"));
+  if (runtime === "node")
+    symlinkSync(join(home, "node_modules", "@vitest"), join(dir, "node_modules", "@vitest"));
+  symlinkSync(
+    join(installed, "bin", "scaffolding-explore.ts"),
+    join(commands, "scaffolding-explore"),
+  );
+  symlinkSync(join(home, "node_modules", ".bin", "vitest"), join(commands, "vitest"));
+  const bun = realpathSync(process.execPath);
+  const path = process.env.PATH?.split(delimiter)
+    .filter((dir) => {
+      const node = join(dir, "node");
+      return !existsSync(node) || realpathSync(node) !== bun;
+    })
+    .join(delimiter);
+  return { dir, property, path };
+}
+
+test("ordinary Node property tests still enforce the coverage threshold", () => {
+  const { dir, property, path } = exploreFixture("node");
+  const control = spawnSync(process.execPath, ["run", "test:coverage", property], {
+    cwd: dir,
+    encoding: "utf8",
+    env: { ...process.env, PATH: path },
+  });
+  const output = control.stdout + control.stderr;
+  expect(control.status, output).toBe(1);
+  expect(output).toMatch(/Tests\s+2 passed/);
+  expect(output).toMatch(/Coverage for lines .* does not meet global threshold/);
+});
+
+test.each([
+  { runtime: "node", folder: undefined },
+  { runtime: "bun", folder: undefined },
+  { runtime: "bun", folder: "test/pages" },
+  { runtime: "bun", folder: "test/browser" },
+] as const)(
+  "the consumer explore command runs aliased properties on $runtime (browser folder $folder)",
+  ({ runtime, folder }) => {
+    const { dir, property, path } = exploreFixture(runtime, folder);
     const explore = () =>
       spawnSync(process.execPath, ["run", "explore", "--seed", "-188"], {
         cwd: dir,
@@ -396,6 +403,99 @@ test("Vitest assertion lint accepts property callbacks with both assertion rules
   expect(output).toMatch(/standalone\.prop\.test\.js:[^\n]*vitest\(no-standalone-expect\)/);
 });
 
+const vitestImports = 'import { expect, test } from "vitest";\n';
+const vitestExample = `${vitestImports}test("example", () => expect(1).toBe(1));`;
+const thrownError = '() => { throw new Error("text"); }';
+test.each([
+  [
+    "expect-expect",
+    'import { test } from "vitest";\ntest("example", () => {});',
+    `${vitestImports}function expectSomething() { expect(1).toBe(1); }\ntest("example", () => expectSomething());`,
+  ],
+  [
+    "no-conditional-expect in if",
+    `${vitestImports}test("example", () => { expect(1).toBe(1); if (Number("1")) expect(1).toBe(1); });`,
+    vitestExample,
+  ],
+  [
+    "no-conditional-expect in catch",
+    `${vitestImports}test("bad JSON", () => {
+      try { JSON.parse("bad"); } catch (error) { expect(error).toBeInstanceOf(SyntaxError); }
+    });`,
+    `${vitestImports}test("bad JSON", () => expect(() => JSON.parse("bad")).toThrow(SyntaxError));`,
+  ],
+  ["no-focused-tests", vitestExample.replace("test(", "test.only("), vitestExample],
+  ["no-disabled-tests", vitestExample.replace("test(", "test.skip("), vitestExample],
+  ["no-commented-out-tests", "// it (something)\n", vitestExample],
+  [
+    "no-identical-title",
+    `import { describe, expect, test } from "vitest";
+    describe("group", () => { test("first", () => expect(1).toBe(1)); test("first", () => expect(2).toBe(2)); });`,
+    `import { describe, expect, test } from "vitest";
+    describe("group", () => { test("first", () => expect(1).toBe(1)); test("second", () => expect(2).toBe(2)); });`,
+  ],
+  [
+    "valid-expect",
+    `${vitestImports}test("example", () => { expect(1); });`,
+    `${vitestImports}test("example", () => expect(1, "message").toBe(1));`,
+  ],
+  [
+    "require-to-throw-message",
+    `${vitestImports}test("error", () => expect(${thrownError}).toThrow());`,
+    `${vitestImports}test("error", () => expect(${thrownError}).toThrow("text"));`,
+  ],
+  ["valid-title", vitestExample.replace('"example"', '""'), vitestExample],
+  [
+    "no-duplicate-hooks",
+    `import { beforeEach, describe, expect, test } from "vitest";
+    describe("group", () => { beforeEach(() => {}); beforeEach(() => {}); test("example", () => expect(1).toBe(1)); });`,
+    `import { beforeEach, describe, expect, test } from "vitest";
+    describe("group", () => { beforeEach(() => {}); test("example", () => expect(1).toBe(1)); });`,
+  ],
+  ["no-import-node-test", 'import "node:test";', vitestExample],
+])("Oxlint enforces Vitest %s only where configured", (name, failing, passing) => {
+  const rule = name.split(" ")[0];
+  const dir = repo({
+    ".oxlintrc.json": JSON.stringify(oxlintTemplate),
+    "example.test.js": failing,
+  });
+  install(dir);
+  const check = () =>
+    spawnSync(process.execPath, ["--no-env-file", join(import.meta.dirname, "../lib/oxlint.ts")], {
+      cwd: dir,
+      encoding: "utf8",
+    });
+  const red = check();
+  expect(red.status, red.stdout + red.stderr).toBe(1);
+  const finding = `vitest(${rule})`;
+  expect(red.stdout).toContain(finding);
+  expectGuideAfter(red.stdout, rule, finding);
+  write(dir, { "example.test.js": passing });
+  const green = check();
+  expect(green.status, green.stdout + green.stderr).toBe(0);
+  expect(green.stdout).not.toContain("[guide]");
+});
+
+test("Oxlint accepts fc.assert in property tests and scopes Vitest rules to test globs", () => {
+  const dir = repo({
+    ".oxlintrc.json": JSON.stringify(oxlintTemplate),
+    "test/property.prop.test.js": `
+      import { fc, test } from "@hackersandwizards/scaffolding/property";
+      test.prop([fc.integer()])("integer", () => fc.assert(fc.property(fc.integer(), Number.isInteger)));
+    `,
+    "tests/nested/example.js": `
+      import { test } from "vitest";
+      import * as fc from "fast-check";
+      test("integer", () => fc.assert(fc.property(fc.integer(), Number.isInteger)));
+    `,
+    "src/example.js": "// it (something)\n",
+    "src/example.astro": "---\n// it (something)\n---\n<p>Example</p>\n",
+  });
+  install(dir);
+  const result = runOxlint(dir, ["."], true);
+  expect(result.status, result.stdout + result.stderr).toBe(0);
+});
+
 test(
   "ESLint enforces the shared property API, budgets and exploration filenames",
   () => {
@@ -500,15 +600,17 @@ function run(
 const lines = (out: string, check: string) =>
   out.split("\n").filter((l) => l.startsWith(`[${check}]`) && !/ findings, \d+ ms$/.test(l));
 
-function expectGuide(out: string, id: string, finding?: string) {
+function expectGuide(out: string, id: string) {
   const guide = readFileSync(join(import.meta.dirname, "../config/guides", `${id}.md`), "utf8");
   expect(out).toContain(`\n\n${guide.replace(/^# /, `[guide] ${id}: `)}`);
   expect(out.match(/^\[guide\] [^:]+/gm)).toEqual([`[guide] ${id}`]);
-  if (finding !== undefined) {
-    const offset = out.indexOf(finding);
-    expect(offset).toBeGreaterThanOrEqual(0);
-    expect(out.indexOf("[guide] ")).toBeGreaterThan(offset);
-  }
+}
+
+function expectGuideAfter(out: string, id: string, finding: string) {
+  expectGuide(out, id);
+  const offset = out.indexOf(finding);
+  expect(offset).toBeGreaterThanOrEqual(0);
+  expect(out.indexOf("[guide] ")).toBeGreaterThan(offset);
 }
 
 const fixturePackage = {
@@ -593,7 +695,9 @@ test("every command answers --help first on stdout, and check-lock passes a late
       usage: new RegExp(`^usage: ${name}( |$)`).test(usage) ? usage : `usage: ${name}`,
     });
     // Its row of docs/commands.md, which the skeleton's copy of check-lock has no way to read.
-    if (name !== "check-lock") expect(r.stdout).toContain("\nRuns in: ");
+    expect(r.stdout).toContain(
+      name === "check-lock" ? "\nRuns the command under the checkout's lock:" : "\nRuns in: ",
+    );
   }
   expect(help(ownPackage.bin["check-lock"], ["echo", "--help"]).stdout).toBe("--help\n");
 });
@@ -1108,6 +1212,19 @@ describe("scaffold and check-structure", () => {
     expect(r.code).toBe(0);
   });
 
+  test("the generic folder check passes tracked lookalikes and untracked generic folders", () => {
+    const other = fixture(
+      "generic-folder-control",
+      {},
+      {
+        "src/corex/c.ts": "export {};\n",
+        "utils/untracked.ts": "export {};\n",
+      },
+    );
+    expect(sh(other, ["add", "--", "src/corex/c.ts"]).status).toBe(0);
+    expect(run(other, "check-structure")).toEqual({ code: 0, out: "" });
+  });
+
   test("tracked generic folders are reported once each with one guide", () => {
     const other = fixture(
       "generic-folder",
@@ -1116,13 +1233,8 @@ describe("scaffold and check-structure", () => {
         "src/utils/a.ts": "export {};\n",
         "src/utils/b.ts": "export {};\n",
         "src/Core/b.ts": "export {};\n",
-        "src/corex/c.ts": "export {};\n",
-        "utils/untracked.ts": "export {};\n",
       },
     );
-    expect(sh(other, ["add", "--", "src/corex/c.ts"]).status).toBe(0);
-    const green = run(other, "check-structure");
-    expect(green).toEqual({ code: 0, out: "" });
     expect(
       sh(other, ["add", "--", "src/utils/a.ts", "src/utils/b.ts", "src/Core/b.ts"]).status,
     ).toBe(0);
@@ -1132,7 +1244,8 @@ describe("scaffold and check-structure", () => {
       "[structure] src/Core: folder named `Core`",
       "[structure] src/utils: folder named `utils`",
     ]);
-    expectGuide(red.out, "generic-folder", "folder named `utils`");
+    expectGuideAfter(red.out, "generic-folder", "folder named `utils`");
+    expect(red.out).toMatch(/^\[check-structure\] 2 findings, \d+ ms$/m);
   });
 
   test("scaffold sets the Claude defaults and omits the skills link without skills", () => {
@@ -3148,12 +3261,12 @@ describe("check-confidential never", () => {
   ])("%s: refused %p", (text, refused) => {
     const r = never({ "deck/a": "Titel\n" + text });
     expect(r.code).toBe(refused ? 1 : 0);
-    if (refused) {
-      expect(r.out).toContain(
+    expect(
+      r.out.includes(
         "deck/a: a name h&w never shows from the company records: remove or anonymise the name with a generic or fictitious placeholder.",
-      );
-      expect(r.out).not.toContain("scaffolding.allow");
-    }
+      ),
+    ).toBe(refused);
+    expect(r.out).not.toContain("scaffolding.allow");
   });
 
   test("a key counts as text: a slug can show the name", () => {
@@ -3561,7 +3674,7 @@ describe("scaffolding check", () => {
     const r = run(dir, "scaffolding", ["check"], { CHECK_LOCK: join(dir, ".lock") });
     expect(r.code).toBe(1);
     expect(r.out).toMatch(/failed in [\d.]+ s: cycles/);
-    expectGuide(r.out, "import-cycle", "runtime import cycle");
+    expectGuideAfter(r.out, "import-cycle", "runtime import cycle");
   });
 
   test("the names step runs for a changed source path", () => {
@@ -3584,7 +3697,7 @@ describe("scaffolding check", () => {
     const red = changed();
     expect(red.code, red.out).toBe(1);
     expect(red.out).toContain('selected names: matches "b.js"');
-    expectGuide(red.out, "duplicate-function-name", "is also declared in b.js");
+    expectGuideAfter(red.out, "duplicate-function-name", "is also declared in b.js");
   });
 
   const layerMap = "docs/architecture/layers.md";
@@ -3652,14 +3765,14 @@ describe("scaffolding check", () => {
     const missing = check();
     expect(missing.code).toBe(1);
     expect(missing.out).toContain(stale);
-    expectGuide(missing.out, "layers", stale);
+    expectGuideAfter(missing.out, "layers", stale);
     expect(run(dir, "scaffolding", ["layers"])).toEqual({ code: 0, out: layerFixture });
     expect(existsSync(join(dir, layerMap))).toBe(false);
     write(dir, { [layerMap]: layerFixture.replace("L0 -->|2| L1", "L0 -->|1| L1") });
     const outdated = check();
     expect(outdated.code).toBe(1);
     expect(outdated.out).toContain(stale);
-    expectGuide(outdated.out, "layers", stale);
+    expectGuideAfter(outdated.out, "layers", stale);
     expect(run(dir, "scaffolding", ["layers", "--write"]).code).toBe(0);
     expect(readFileSync(join(dir, layerMap), "utf8")).toBe(layerFixture);
     expect(sh(dir, ["add", "--", layerMap]).status).toBe(0);
@@ -3986,7 +4099,7 @@ describe("scaffolding check", () => {
     const single = check();
     expect(single.code, single.out).toBe(1);
     expect(single.out).toContain(finding);
-    expectGuide(single.out, id, finding);
+    expectGuideAfter(single.out, id, finding);
     write(dir, { "b.js": broken });
     const double = check();
     expect(double.code, double.out).toBe(1);
@@ -5067,8 +5180,9 @@ describe("scaffolding check", () => {
     },
   );
 
-  test("links crawls the preview build with the local skip prefixes and fails on the same broken page", () => {
-    for (const step of ["check:links", "links"]) {
+  test.each(["check:links", "links"])(
+    "links crawls the preview build with the local skip prefixes and fails on the same broken page (%s)",
+    (step) => {
       const server = 'exec bun server.ts "$PORT"';
       const dir = gate(
         {
@@ -5111,10 +5225,8 @@ describe("scaffolding check", () => {
       expect(red.out).toContain("/missing (404) <- /");
       expect(red.out).not.toContain("/catalog/missing");
       expect(red.out).toContain(`FAIL ${step}`);
-      if (step === "check:links") {
-        expect(red.out).toContain("links uses local check:links");
-        expect(red.out).not.toContain("FAIL links");
-      }
+      expect(red.out.includes("links uses local check:links")).toBe(step === "check:links");
+      expect(red.out.includes("FAIL links")).toBe(step === "links");
       write(dir, {
         "page.html": '<a href="/found">found</a><a href="/catalog/missing">skipped</a>',
       });
@@ -5122,8 +5234,8 @@ describe("scaffolding check", () => {
       expect(green.code, green.out).toBe(0);
       expect(green.out).toContain(`ok   ${step}`);
       expect(readFileSync(join(dir, ".preview/index.html"), "utf8")).toBe("catalog-file build");
-    }
-  });
+    },
+  );
 
   test("server-backed elements sees the built site through the declared base URL", () => {
     const { catalog: _, ...previewSkips } = skip;
@@ -5856,7 +5968,7 @@ describe("skeleton SessionStart hook", () => {
         "origin main not fetched within 1 s: fetch and merge per git.md before work\n",
       );
       const sleeper = Number(readFileSync(pid, "utf8"));
-      expect(() => process.kill(sleeper, 0)).toThrow();
+      expect(() => process.kill(sleeper, 0)).toThrow(/ESRCH/);
     },
   );
 });
@@ -5914,7 +6026,7 @@ describe("shared eslint config", () => {
     const red = eslint("a.js");
     expect(red.status, red.stdout + red.stderr).toBe(1);
     expect(red.stdout.match(/scaffolding\/no-lint-disable/g)).toHaveLength(8);
-    expectGuide(red.stdout, "no-lint-disable", "scaffolding/no-lint-disable");
+    expectGuideAfter(red.stdout, "no-lint-disable", "scaffolding/no-lint-disable");
     write(dir, {
       "a.js":
         'export const text = "eslint-disable eslint-enable oxlint-disable oxlint-enable";\nexport const template = `eslint-disable eslint-enable oxlint-disable oxlint-enable`;\n',
@@ -5930,7 +6042,7 @@ describe("shared eslint config", () => {
     const result = eslint("a.js");
     expect(result.status, result.stdout + result.stderr).toBe(1);
     expect(result.stdout.match(/scaffolding\/no-lint-disable/g)).toHaveLength(1);
-    expectGuide(result.stdout, "no-lint-disable", "scaffolding/no-lint-disable");
+    expectGuideAfter(result.stdout, "no-lint-disable", "scaffolding/no-lint-disable");
   });
 
   test.each([
@@ -5944,7 +6056,7 @@ describe("shared eslint config", () => {
     const result = eslint("a.astro");
     expect(result.status, result.stdout + result.stderr).toBe(1);
     expect(result.stdout.match(/scaffolding\/no-lint-disable/g)).toHaveLength(1);
-    expectGuide(result.stdout, "no-lint-disable", "scaffolding/no-lint-disable");
+    expectGuideAfter(result.stdout, "no-lint-disable", "scaffolding/no-lint-disable");
   });
 
   test("a passing Oxlint command starts no guide collection subprocess", () => {
@@ -6360,13 +6472,12 @@ const Element = Fragment;
         expect.stringMatching(/^27:34 /),
       ]);
       expect(run.stdout).not.toContain("no-undef");
-      if (env.SCAFFOLDING_LINT_UNTYPED) expect(run.stdout).not.toContain("no-floating-promises");
-      else {
-        expect(run.stdout).toMatch(/14:3 .*@typescript-eslint\/no-floating-promises/);
-        expect(run.stdout).toMatch(/15:3 .*@typescript-eslint\/no-floating-promises/);
-        expect(run.stdout).toMatch(/19:3 .*@typescript-eslint\/no-unsafe-call/);
-        expect(run.stdout).not.toMatch(/^\s+(?:8|18|23):\d+ .*no-unsafe/m);
-      }
+      const typed = !env.SCAFFOLDING_LINT_UNTYPED;
+      expect(run.stdout.includes("no-floating-promises")).toBe(typed);
+      expect(/14:3 .*@typescript-eslint\/no-floating-promises/.test(run.stdout)).toBe(typed);
+      expect(/15:3 .*@typescript-eslint\/no-floating-promises/.test(run.stdout)).toBe(typed);
+      expect(/19:3 .*@typescript-eslint\/no-unsafe-call/.test(run.stdout)).toBe(typed);
+      expect(run.stdout).not.toMatch(/^\s+(?:8|18|23):\d+ .*no-unsafe/m);
     }
   });
 
@@ -8303,13 +8414,17 @@ describe("check-staged", () => {
 
     const result = run(dir, "check-staged", [], { npm_package_name: "" });
     expect(result.code, result.out).toBe(refused ? 1 : 0);
-    if (refused)
-      expect(result.out.trim()).toBe(
-        '[check:staged] package.json script differs between index and working tree: "other". Stage package.json (`git add package.json`) or discard its unstaged script edit so check:skills runs the script version being committed',
-      );
+    expect(result.out.trim()).toBe(
+      refused
+        ? '[check:staged] package.json script differs between index and working tree: "other". Stage package.json (`git add package.json`) or discard its unstaged script edit so check:skills runs the script version being committed'
+        : validated === undefined
+          ? ""
+          : `$ ${scripts["check:skills"]}`,
+    );
     const log = join(dir, "validator.txt");
-    if (validated) expect(readFileSync(log, "utf8")).toBe(validated);
-    else expect(existsSync(log)).toBe(false);
+    const logged = existsSync(log);
+    expect(logged).toBe(validated !== undefined);
+    expect(logged ? readFileSync(log, "utf8") : undefined).toBe(validated);
   });
 
   test.each([
@@ -8385,12 +8500,16 @@ describe("check-staged", () => {
         join(import.meta.dirname, "../node_modules/.bin/eslint"),
         join(dir, "node_modules/.bin/eslint"),
       );
+      const setupStatuses: (number | null)[] = [];
       if (entry === "symlink replacement") {
         mkdirSync(join(dir, "src"));
         symlinkSync("../eslint.config.js", join(dir, "src/a.ts"));
-        expect(sh(dir, ["add", "src/a.ts"]).status).toBe(0);
-        expect(sh(dir, ["commit", "-qm", "add link", "--", "src/a.ts"]).status).toBe(0);
+        setupStatuses.push(
+          sh(dir, ["add", "src/a.ts"]).status,
+          sh(dir, ["commit", "-qm", "add link", "--", "src/a.ts"]).status,
+        );
       }
+      expect(setupStatuses).toEqual(entry === "symlink replacement" ? [0, 0] : []);
       write(dir, { "src/replacement.ts": 'import "blocked";\n' });
       renameSync(join(dir, "src/replacement.ts"), join(dir, "src/a.ts"));
       sh(dir, ["add", "src/a.ts"]);
@@ -8763,7 +8882,7 @@ describe("raise-pins", () => {
     }
     const pid = Number(readFileSync(join(dir, "pid"), "utf8"));
     await new Promise((r) => setTimeout(r, 200));
-    expect(() => process.kill(pid, 0)).toThrow();
+    expect(() => process.kill(pid, 0)).toThrow(/ESRCH/);
   });
 
   test("invalid and capped fetch timeouts still give Git time to read local tags", async () => {
@@ -9054,7 +9173,7 @@ describe("check-names", () => {
     expect(lines(result.out, "names")).toEqual([
       "[names] a.ts: function `findEntry` is also declared in b.js, c.mjs",
     ]);
-    expectGuide(result.out, "duplicate-function-name", "is also declared in b.js, c.mjs");
+    expectGuideAfter(result.out, "duplicate-function-name", "is also declared in b.js, c.mjs");
   });
 
   test("two module-scope arrow bindings are reported", () => {

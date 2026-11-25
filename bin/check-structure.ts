@@ -460,8 +460,13 @@ for (const path of git(["ls-files", "--cached", "--deduplicate", "-z"], root)
     if (/^(?:utils|helpers|common|shared|core)$/i.test(posix.basename(folder)))
       genericFolders.add(folder);
 for (const folder of [...genericFolders].sort())
-  console.error(`[structure] ${folder}: folder named \`${posix.basename(folder)}\``);
-if (genericFolders.size) process.exitCode = 1;
+  remaining.push({
+    check: "structure",
+    prefix: "structure",
+    path: folder,
+    message: `folder named \`${posix.basename(folder)}\``,
+    text: "",
+  });
 finish(
   "check-structure",
   remaining,

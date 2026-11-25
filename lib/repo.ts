@@ -154,6 +154,7 @@ export type Finding = {
   path: string;
   text: string;
   message: string;
+  prefix?: string;
   term?: true;
   name?: true;
 };
@@ -368,7 +369,7 @@ export function applyAllow(
 
 export function finish(check: string, findings: Finding[], started: number, footer = ""): never {
   for (const f of findings)
-    console.error(`[${check}] ${f.path}: ${f.message}${f.text ? ` (${f.text})` : ""}`);
+    console.error(`[${f.prefix ?? check}] ${f.path}: ${f.message}${f.text ? ` (${f.text})` : ""}`);
   const ms = Math.round(performance.now() - started);
   if (findings.length) console.error(`[${check}] ${findings.length} findings, ${ms} ms`);
   if (footer) process.stderr.write(footer);

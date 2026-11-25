@@ -76,6 +76,13 @@ Rule guides live in `config/guides/`. In the gate, Oxlint prints each matching g
 
 ## Vitest and Stryker
 
+Oxlint checks test assertions, titles and hooks and rejects focused, disabled and commented-out
+tests and imports from `node:test`. It applies these rules to JavaScript and TypeScript tests
+using the same file globs as the shared ESLint config. Oxlint 1.94.0 recognises `test`, `it` and
+`describe` imported from `vitest` or used as globals. Tests declared through a wrapper imported
+from a local module or from `@playwright/test` fall outside these rules. This also applies to the
+shared `test.prop` wrapper. ESLint checks assertions in callbacks declared through that wrapper.
+
 Scaffolding supplies Vitest 5.1.0 and Stryker core and its Vitest runner at 10.1.1.
 Use a Scaffolding pin of v5.33.0 or later for the setup below. The shared configs and their
 TypeScript declarations first shipped together in v5.30.1. Remove direct pins for

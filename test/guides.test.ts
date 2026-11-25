@@ -15,18 +15,8 @@ const upcoming = [
   "max-params",
   "max-lines-per-function",
   "max-lines",
-  "no-conditional-expect",
   "no-conditional-in-test",
   "max-expects",
-  "no-focused-tests",
-  "no-disabled-tests",
-  "no-commented-out-tests",
-  "no-identical-title",
-  "valid-expect",
-  "require-to-throw-message",
-  "valid-title",
-  "no-duplicate-hooks",
-  "no-import-node-test",
 ];
 
 const activeRules = (rules: Rules = {}) =>

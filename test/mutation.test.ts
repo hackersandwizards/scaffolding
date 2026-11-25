@@ -44,16 +44,19 @@ test("returns the mutation command's exit status when it finishes before the lim
   expect(await runMutation([process.execPath, "-e", "process.exit(7)"])).toBe(7);
 });
 
-test("the shared Stryker and Vitest configs run a consumer property in a Node dry run", () => {
-  const dir = mkdtempSync(join(tmpdir(), "scaffolding-mutation-test-"));
-  try {
-    const root = join(import.meta.dirname, "..");
-    linkMutationDependencies(dir);
-    writeFileSync(join(dir, "package.json"), '{"name":"mutation-consumer","type":"module"}');
-    writeFileSync(join(dir, "sample.ts"), "export const double = (value: number) => value * 2;");
-    writeFileSync(
-      join(dir, "sample.prop.test.ts"),
-      `import { fc, test } from "@hackersandwizards/scaffolding/property";
+test(
+  "the shared Stryker and Vitest configs run a consumer property in a Node dry run",
+  { timeout: limit(30_000) },
+  () => {
+    const dir = mkdtempSync(join(tmpdir(), "scaffolding-mutation-test-"));
+    try {
+      const root = join(import.meta.dirname, "..");
+      linkMutationDependencies(dir);
+      writeFileSync(join(dir, "package.json"), '{"name":"mutation-consumer","type":"module"}');
+      writeFileSync(join(dir, "sample.ts"), "export const double = (value: number) => value * 2;");
+      writeFileSync(
+        join(dir, "sample.prop.test.ts"),
+        `import { fc, test } from "@hackersandwizards/scaffolding/property";
 import { expect } from "vitest";
 import { double } from "./sample.ts";
 test.prop([fc.integer({ min: 1, max: 100 })])("doubles its input", (value) => {
@@ -61,85 +64,90 @@ test.prop([fc.integer({ min: 1, max: 100 })])("doubles its input", (value) => {
   expect(fc.readConfigureGlobal().numRuns).toBe(12);
   expect(double(value)).toBe(value + value);
 });`,
-    );
-    writeFileSync(
-      join(dir, "vitest.config.mjs"),
-      'export { default } from "@hackersandwizards/scaffolding/vitest";\n',
-    );
-    writeFileSync(
-      join(dir, "stryker.config.mjs"),
-      `import base from "@hackersandwizards/scaffolding/stryker";
+      );
+      writeFileSync(
+        join(dir, "vitest.config.mjs"),
+        'export { default } from "@hackersandwizards/scaffolding/vitest";\n',
+      );
+      writeFileSync(
+        join(dir, "stryker.config.mjs"),
+        `import base from "@hackersandwizards/scaffolding/stryker";
 export default { ...base, incremental: false, reporters: ["clear-text"], mutate: ["sample.ts"] };`,
-    );
-    const bun = realpathSync(process.execPath);
-    const path = process.env.PATH?.split(delimiter)
-      .filter((dir) => {
-        const node = join(dir, "node");
-        return !existsSync(node) || realpathSync(node) !== bun;
-      })
-      .join(delimiter);
-    const run = spawnSync(
-      process.execPath,
-      ["--no-env-file", join(root, "bin/scaffolding-mutation.ts"), "--dryRunOnly"],
-      {
-        cwd: dir,
-        encoding: "utf8",
-        env: {
-          ...process.env,
-          PATH: [join(dir, "node_modules", ".bin"), path].join(delimiter),
-          SCAFFOLDING_MUTATION_BUN: undefined,
+      );
+      const bun = realpathSync(process.execPath);
+      const path = process.env.PATH?.split(delimiter)
+        .filter((dir) => {
+          const node = join(dir, "node");
+          return !existsSync(node) || realpathSync(node) !== bun;
+        })
+        .join(delimiter);
+      const run = spawnSync(
+        process.execPath,
+        ["--no-env-file", join(root, "bin/scaffolding-mutation.ts"), "--dryRunOnly"],
+        {
+          cwd: dir,
+          encoding: "utf8",
+          env: {
+            ...process.env,
+            PATH: [join(dir, "node_modules", ".bin"), path].join(delimiter),
+            SCAFFOLDING_MUTATION_BUN: undefined,
+          },
         },
-      },
-    );
-    const output = run.stdout + run.stderr;
-    expect(run.status, output).toBe(0);
-    expect(output).toMatch(/Initial test run succeeded\. Ran 1 tests/);
-  } finally {
-    rmSync(dir, { recursive: true, force: true });
-  }
-});
+      );
+      const output = run.stdout + run.stderr;
+      expect(run.status, output).toBe(0);
+      expect(output).toMatch(/Initial test run succeeded\. Ran 1 tests/);
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  },
+);
 
-test("the mutation command runs a Bun-only Vitest suite in Bun mode", () => {
-  const dir = mkdtempSync(join(tmpdir(), "scaffolding-mutation-test-"));
-  try {
-    const root = join(import.meta.dirname, "..");
-    linkMutationDependencies(dir);
-    writeFileSync(
-      join(dir, "sample.ts"),
-      'export const match = (file: string) => new Bun.Glob("*.ts").match(file);',
-    );
-    writeFileSync(
-      join(dir, "sample.test.ts"),
-      `
+test(
+  "the mutation command runs a Bun-only Vitest suite in Bun mode",
+  { timeout: limit(30_000) },
+  () => {
+    const dir = mkdtempSync(join(tmpdir(), "scaffolding-mutation-test-"));
+    try {
+      const root = join(import.meta.dirname, "..");
+      linkMutationDependencies(dir);
+      writeFileSync(
+        join(dir, "sample.ts"),
+        'export const match = (file: string) => new Bun.Glob("*.ts").match(file);',
+      );
+      writeFileSync(
+        join(dir, "sample.test.ts"),
+        `
 import { expect, test } from "vitest";
 import { match } from "./sample.ts";
 test("matches a TypeScript file using Bun.Glob", () => expect(match("sample.ts")).toBe(true));`,
-    );
-    writeFileSync(
-      join(dir, "stryker.config.mjs"),
-      `import base from "@hackersandwizards/scaffolding/stryker";
+      );
+      writeFileSync(
+        join(dir, "stryker.config.mjs"),
+        `import base from "@hackersandwizards/scaffolding/stryker";
 export default {
       ...base,
       incremental: false,
       reporters: ["clear-text"],
       mutate: ["sample.ts"],
     };`,
-    );
-    const run = spawnSync(
-      process.execPath,
-      ["--no-env-file", join(root, "bin/scaffolding-mutation.ts")],
-      {
-        cwd: dir,
-        encoding: "utf8",
-        env: { ...process.env, PATH: "/usr/bin:/bin", SCAFFOLDING_MUTATION_BUN: "1" },
-      },
-    );
-    expect(run.status, run.stdout + run.stderr).toBe(0);
-    expect(run.stdout + run.stderr).toMatch(/Instrumented 1 source file\(s\) with [1-9]/);
-  } finally {
-    rmSync(dir, { recursive: true, force: true });
-  }
-});
+      );
+      const run = spawnSync(
+        process.execPath,
+        ["--no-env-file", join(root, "bin/scaffolding-mutation.ts")],
+        {
+          cwd: dir,
+          encoding: "utf8",
+          env: { ...process.env, PATH: "/usr/bin:/bin", SCAFFOLDING_MUTATION_BUN: "1" },
+        },
+      );
+      expect(run.status, run.stdout + run.stderr).toBe(0);
+      expect(run.stdout + run.stderr).toMatch(/Instrumented 1 source file\(s\) with [1-9]/);
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  },
+);
 
 test(
   "the mutation command reports static survivors separately from its adjusted score",

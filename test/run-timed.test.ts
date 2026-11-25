@@ -28,7 +28,7 @@ test.each([true, false])("runTimed times out a child with exit on SIGTERM = %s",
     const elapsed = performance.now() - started;
     expect(status).toBe(124);
     expect(readFileSync(marker, "utf8")).toBe("SIGTERM");
-    if (!exits) expect(elapsed).toBeGreaterThanOrEqual(options.limitMs + options.graceMs - 10);
+    expect(elapsed).toBeGreaterThanOrEqual(options.limitMs + (exits ? 0 : options.graceMs) - 10);
   } finally {
     rmSync(dir, { recursive: true, force: true });
   }

@@ -53,8 +53,7 @@ test.each([0, 37])(
       "a={url}&b={url}",
     ]);
     expect(status, stderr).toBe(code);
-    if (code === 37) expect(stderr).toContain("server stderr");
-    else expect(stderr).toBe("");
+    expect(stderr).toBe(code === 37 ? "server stderr\n" : "");
     const [url, repeated, serverPid] = stdout.trimEnd().split("\n");
     const pid = Number(serverPid);
     expect(url).toMatch(/^http:\/\/127\.0\.0\.1:\d+$/);
@@ -151,41 +150,47 @@ test.each([
 });
 
 test.each([
-  ["0.05", 124],
-  ["3", 0],
-] as const)("with-server runs the same check with --limit %s", async (limit, expected) => {
-  const [status, stdout, stderr] = await runSiteCommand("with-server", [
-    "--limit",
-    limit,
-    serverCommand,
-    "--",
-    process.execPath,
-    "-e",
-    'await Bun.sleep(300); console.log("check finished");',
-  ]);
-  expect(status, stderr).toBe(expected);
-  if (expected === 124) {
-    expect(stdout).toBe("");
-    expect(stderr).toContain(`check reached the ${limit}-second wall limit`);
-    expect(stderr).toContain("--limit");
-  } else {
-    expect(stdout).toBe("check finished\n");
-    expect(stderr).toBe("");
-  }
-});
+  [
+    "0.05",
+    124,
+    "",
+    expect.stringMatching(/check reached the 0\.05-second wall limit[^\n]*--limit/),
+  ],
+  ["3", 0, "check finished\n", ""],
+] as const)(
+  "with-server runs the same check with --limit %s",
+  async (limit, expected, output, error) => {
+    const [status, stdout, stderr] = await runSiteCommand("with-server", [
+      "--limit",
+      limit,
+      serverCommand,
+      "--",
+      process.execPath,
+      "-e",
+      'await Bun.sleep(300); console.log("check finished");',
+    ]);
+    expect(status, stderr).toBe(expected);
+    expect(stdout).toBe(output);
+    expect(stderr).toEqual(error);
+  },
+);
 
 test.each([
-  ["with-server", ["echo server", "echo check"]],
-  ["with-server", ["--timeout", "0", "echo server", "--", "echo"]],
-  ["with-server", ["--limit", "0", "echo server", "--", "echo"]],
-  ["check-links", ["file:///index.html"]],
-  ["check-links", ["http://127.0.0.1:0/sub/"]],
-  ["check-links", ["http://127.0.0.1", "--concurrency", "0"]],
-] as const)("%s rejects invalid usage with status 2", async (name, args) => {
+  ["with-server", ["echo server", "echo check"], "usage: with-server"],
+  ["with-server", ["--timeout", "0", "echo server", "--", "echo"], "usage: with-server"],
+  [
+    "with-server",
+    ["--limit", "0", "echo server", "--", "echo"],
+    "--limit must be a positive number",
+  ],
+  ["check-links", ["file:///index.html"], "usage: check-links"],
+  ["check-links", ["http://127.0.0.1:0/sub/"], "usage: check-links"],
+  ["check-links", ["http://127.0.0.1", "--concurrency", "0"], "usage: check-links"],
+] as const)("%s rejects invalid usage with status 2", async (name, args, diagnostic) => {
   const [status, , stderr] = await runSiteCommand(name, [...args]);
   expect(status).toBe(2);
   expect(stderr).toContain(`usage: ${name}`);
-  if (args[0] === "--limit") expect(stderr).toContain("--limit must be a positive number");
+  expect(stderr).toContain(diagnostic);
 });
 
 function html(body: string) {

@@ -241,7 +241,7 @@ describe("check-lock serialises the checks", () => {
   it("releases the lock when the run finishes", () => {
     const lock = lockPath();
     run(lock, ["true"]);
-    expect(() => readFileSync(lock)).toThrow();
+    expect(() => readFileSync(lock)).toThrow(/ENOENT/);
   });
 
   it("reports the command's exit code rather than its own, and names it on stdout", () => {
