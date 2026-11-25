@@ -31,6 +31,6 @@ try {
     }
   }
 } catch (error) {
-  console.error(`[check:layers] ${(error as Error).message}`);
+  console.error(`[layers] ${(error as Error).message}`);
   process.exitCode = 1;
 }

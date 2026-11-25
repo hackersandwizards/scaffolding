@@ -17,12 +17,12 @@ graph LR
   L5 -->|1| L0
   L5 -->|1| L1
   L5 -->|12| L2
-  L5 -->|39| L3
+  L5 -->|40| L3
   L5 -->|3| L4
 ```
 
 ## config, lib
 
-| Forbidden import | Message                                                               |
-| ---------------- | --------------------------------------------------------------------- |
-| `^(\.\./)+bin/`  | Keep command entry points in bin. Put reusable code in lib or config. |
+| Forbidden import | Message                                                                 |
+| ---------------- | ----------------------------------------------------------------------- |
+| `^(\.\./)+bin/`  | `Keep command entry points in bin. Put reusable code in lib or config.` |

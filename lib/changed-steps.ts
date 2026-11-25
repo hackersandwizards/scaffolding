@@ -1,3 +1,5 @@
+import { layerMapPath } from "./layers.ts";
+
 export function validGlob(pattern: string): boolean {
   if (
     !pattern.trim() ||
@@ -18,7 +20,6 @@ export function validGlob(pattern: string): boolean {
 const always = [
   "format",
   "structure",
-  "check:layers",
   "coupling",
   "spaces",
   "confidential",
@@ -28,8 +29,9 @@ const always = [
   "colours",
   "copies",
 ];
-const source = ["typecheck", "lint", "oxlint", "cycles", "test"];
+const source = ["typecheck", "lint", "oxlint", "cycles", "layers", "test"];
 const defaults = [
+  { glob: new Bun.Glob(layerMapPath), steps: ["layers"] },
   { glob: new Bun.Glob("**/*.{js,jsx,cjs,mjs,ts,tsx,cts,mts,astro,mdx}"), steps: source },
   { glob: new Bun.Glob("**/*.{astro,mdx,css,scss,sass,less}"), steps: ["styles", "test"] },
   {

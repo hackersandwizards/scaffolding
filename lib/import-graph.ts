@@ -13,7 +13,7 @@ import {
 import { dirname, isAbsolute, join, relative, resolve, sep } from "node:path";
 import { allExtensions, cruise, type IDependency } from "dependency-cruiser";
 import extractTSConfig from "dependency-cruiser/config-utl/extract-ts-config";
-import { git, listFiles, submodulePaths, type Finding } from "./repo.ts";
+import { git, isObject, submodulePaths, type Finding } from "./repo.ts";
 const check = "cycles";
 const sourceExtension = /\.[cm]?[jt]sx?$/;
 const relativeImport = /^\.\.?\//;
@@ -82,7 +82,12 @@ function inspectImport(
 }
 
 type ResolvedImport = { target: string; specifier: string; system: string };
-type VisitImports = (source: string, file: string, imports: ResolvedImport[]) => void;
+type VisitImports = (
+  source: string,
+  file: string,
+  imports: ResolvedImport[],
+  sourceCode?: string,
+) => void;
 type GraphResult = { complete: boolean; findings: Finding[] };
 
 async function checkImports(
@@ -156,6 +161,17 @@ async function checkImports(
   return { complete: true, findings };
 }
 
+function astroFrontmatterCode(source: string, ast: unknown) {
+  if (!isObject(ast)) throw new Error("cannot read the Astro syntax tree");
+  const { frontmatter } = ast;
+  if (frontmatter == null) return "";
+  if (isObject(frontmatter) && isObject(frontmatter.program)) {
+    const { start, end } = frontmatter.program;
+    if (typeof start === "number" && typeof end === "number") return source.slice(start, end);
+  }
+  throw new Error("cannot read the Astro frontmatter source range");
+}
+
 async function checkAstroImports(
   root: string,
   files: string[],
@@ -188,6 +204,7 @@ async function checkAstroImports(
     }
 
     const astroPaths = new Map<string, string>();
+    const frontmatter = new Map<string, string>();
     const findings: Finding[] = [];
     const writeModule = (module: string, path: string, code: string) => {
       const target = join(mirror, module);
@@ -213,7 +230,8 @@ async function checkAstroImports(
       astroPaths.set(module, path);
     };
     for (const path of astro) {
-      const result = compiler.transform(readFileSync(join(root, path), "utf8"), { filename: path });
+      const code = readFileSync(join(root, path), "utf8");
+      const result = compiler.transform(code, { filename: path });
       const errors = result.diagnostics.filter(({ severity }) => severity === "error");
       if (errors.length) {
         findings.push(...errors.map(({ text }) => finding(text, path)));
@@ -223,13 +241,25 @@ async function checkAstroImports(
       // Compiler-generated virtual imports resolve back to the component.
       const virtualImport = `import ${JSON.stringify(path).slice(0, -1)}?astro&type=`;
       const server = result.code.split("\n").filter((line) => !line.startsWith(virtualImport));
-      writeModule(`${path}.ts`, path, server.join("\n"));
+      const module = `${path}.ts`;
+      writeModule(module, path, server.join("\n"));
+      // The server bundle repeats frontmatter imports to populate Astro's metadata.
+      if (visit)
+        frontmatter.set(join(mirror, module), astroFrontmatterCode(code, compiler.parse(code).ast));
       for (const [index, script] of result.scripts.entries()) {
         if (script.code) writeModule(`${path}.script-${index}.ts`, path, script.code);
       }
     }
     if (findings.length) return { complete: false, findings };
-    return await checkImports(root, mirror, [...sources, ...astroPaths.keys()], visit, astroPaths);
+    const visitSource: VisitImports | undefined =
+      visit && ((source, file, imports) => visit(source, file, imports, frontmatter.get(file)));
+    return await checkImports(
+      root,
+      mirror,
+      [...sources, ...astroPaths.keys()],
+      visitSource,
+      astroPaths,
+    );
   } finally {
     rmSync(mirror, { recursive: true, force: true });
   }
@@ -243,15 +273,12 @@ export async function inspectImportGraph(
   const submodules = submodulePaths(root);
   const insideSubmodule = (path: string) =>
     submodules.some((submodule) => path === submodule || path.startsWith(`${submodule}/`));
-  const files = listFiles(root, false).filter((path) => !insideSubmodule(path));
+  const files = git(["ls-files", "-z", "--cached", "--deduplicate"], root)
+    .toString()
+    .split("\0")
+    .filter((path) => path && !insideSubmodule(path) && existsSync(join(root, path)));
   const sources = files.filter((path) => sourceExtension.test(path));
-  const astroCandidates = new Set(files.filter((path) => path.endsWith(".astro")));
-  const astro = astroCandidates.size
-    ? git(["ls-files", "-z", "--cached", "--deduplicate", "--", "*.astro"], root)
-        .toString()
-        .split("\0")
-        .filter((path) => astroCandidates.has(path))
-    : [];
+  const astro = files.filter((path) => path.endsWith(".astro"));
   if (sources.length === 0 && astro.length === 0) return { complete: true, findings: [] };
   // Without a TypeScript compiler, dependency-cruiser silently skips TypeScript modules.
   if (
@@ -265,12 +292,13 @@ export async function inspectImportGraph(
 
   const visitLocal: VisitImports | undefined =
     visit &&
-    ((source, file, imports) => {
+    ((source, file, imports, sourceCode) => {
       if (!insideSubmodule(source))
         visit(
           source,
           file,
           imports.filter(({ target }) => !insideSubmodule(target)),
+          sourceCode,
         );
     });
   return astro.length

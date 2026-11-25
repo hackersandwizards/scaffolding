@@ -25,6 +25,7 @@ import { availableParallelism, tmpdir } from "node:os";
 import { delimiter, dirname, join, relative } from "node:path";
 import { pathToFileURL } from "node:url";
 import { brandFallbacks } from "../catalog/fallbacks.ts";
+import { selectChangedSteps } from "../lib/changed-steps.ts";
 import { catalogPath } from "../catalog/path.ts";
 import { loadRoute, rewriteRoute } from "../catalog/route.ts";
 import { oxlintConfiguration, oxlintRestrictionFindings, runOxlint } from "../lib/oxlint.ts";
@@ -3437,6 +3438,7 @@ describe("scaffolding check", () => {
       "a.ts": 'import { b } from "./b.ts";\nexport const a = (): number => b();\n',
       "b.ts": 'import { a } from "./a.ts";\nexport const b = (): number => a();\n',
     });
+    expect(sh(dir, ["add", "--", "a.ts", "b.ts"]).status).toBe(0);
     const r = run(dir, "scaffolding", ["check"], { CHECK_LOCK: join(dir, ".lock") });
     expect(r.code).toBe(1);
     expect(r.out).toMatch(/failed in [\d.]+ s: cycles/);
@@ -3457,19 +3459,19 @@ describe("scaffolding check", () => {
     "",
     "## src",
     "",
-    "| Forbidden import | Message         |",
-    "| ---------------- | --------------- |",
-    "| `^private/`      | Keep it in src. |",
+    "| Forbidden import | Message           |",
+    "| ---------------- | ----------------- |",
+    "| `^private/`      | `Keep it in src.` |",
     "",
     "## src/lib",
     "",
-    "| Forbidden import | Message                 |",
-    "| ---------------- | ----------------------- |",
-    "| `fs`             | Use the storage module. |",
+    "| Forbidden import | Message                   |",
+    "| ---------------- | ------------------------- |",
+    "| `fs`             | `Use the storage module.` |",
     "",
   ].join("\n");
 
-  test("check:layers rejects a missing or stale map and accepts a fresh generation", () => {
+  test("layers step rejects a missing or stale map and accepts a fresh generation", () => {
     const dir = gate({ skip });
     write(dir, {
       ".oxlintrc.json": JSON.stringify({
@@ -3500,6 +3502,7 @@ describe("scaffolding check", () => {
       "src/lib/helper.js": "export {};\n",
       "tools/build.js": "export {};\n",
     });
+    expect(sh(dir, ["add", "--", "src", "tools"]).status).toBe(0);
     const check = () => run(dir, "scaffolding", ["check"], { CHECK_LOCK: join(dir, ".lock") });
     const stale =
       "docs/architecture/layers.md is stale: run `bun run scaffolding layers --write` and commit the file with this change.";
@@ -3518,10 +3521,10 @@ describe("scaffolding check", () => {
     expect(sh(dir, ["commit", "-qm", "generate layers"]).status).toBe(0);
     const fresh = check();
     expect(fresh.code).toBe(0);
-    expect(fresh.out).toContain("ok   check:layers");
+    expect(fresh.out).toContain("ok   layers");
   });
 
-  test("check:layers requires a repository without layer overrides to have no map", () => {
+  test("layers step requires a repository without layer overrides to have no map", () => {
     const dir = gate({ skip });
     write(dir, {
       ".oxlintrc.json":
@@ -3530,11 +3533,135 @@ describe("scaffolding check", () => {
     const check = () => run(dir, "scaffolding", ["check"], { CHECK_LOCK: join(dir, ".lock") });
     const absent = check();
     expect(absent.code).toBe(0);
-    expect(absent.out).toContain("ok   check:layers");
+    expect(absent.out).toContain("ok   layers");
     write(dir, { [layerMap]: layerFixture });
     const unexpected = check();
     expect(unexpected.code).toBe(1);
     expect(unexpected.out).toContain("no layers declared: delete docs/architecture/layers.md");
+  });
+
+  const layerOverride = (files: string[], name = "private", message = "Use a public import.") => ({
+    files,
+    rules: { "no-restricted-imports": ["error", { paths: [{ name, message }] }] },
+  });
+  const withOverrides = (overrides: object[]) => JSON.stringify({ overrides });
+
+  test("layers count source imports once across Astro frontmatter and scripts", () => {
+    const dir = repo({
+      ".oxlintrc.json": withOverrides([
+        layerOverride(["src/pages/**"]),
+        layerOverride(["src/components/**"]),
+        layerOverride(["src/lib/**"]),
+      ]),
+      "src/pages/index.astro":
+        '---\nimport { helper } from "../lib/helper.ts";\nimport Card from "../components/Card.astro";\n---\n<Card>{helper}</Card>\n<script>import "../lib/helper.ts";</script>\n',
+      "src/lib/helper.ts": "export const helper = 1;\n",
+      "src/components/Card.astro": "<slot />\n",
+    });
+    const result = run(dir, "scaffolding", ["layers"]);
+    expect(result.code, result.out).toBe(0);
+    expect(result.out.match(/ {2}L\d+ -->.*/g)).toEqual(["  L2 -->|1| L0", "  L2 -->|2| L1"]);
+  });
+
+  test.each(["./src/lib/**", "src\\lib\\**"])("layers normalize the glob %s", (glob) => {
+    const dir = repo({
+      ".oxlintrc.json": withOverrides([layerOverride([glob])]),
+      "src/lib/a.js": 'import "../../tools/b.js";\n',
+      "tools/b.js": "export {};\n",
+    });
+    const result = run(dir, "scaffolding", ["layers"]);
+    expect(result.code, result.out).toBe(0);
+    expect(result.out).toContain('  L0["src/lib"]\n  L1["tools"]\n  L0 -->|1| L1');
+  });
+
+  test("layers rank narrower globs first when the literal prefix ties", () => {
+    const dir = repo({
+      ".oxlintrc.json": withOverrides([
+        layerOverride(["src/**"]),
+        layerOverride(["src/*.ts"]),
+        layerOverride(["src/**/*.test.ts"]),
+      ]),
+      "src/a.js": 'import "./a.ts";\n',
+      "src/a.ts": 'import "./a.test.ts";\n',
+      "src/a.test.ts": 'import "./nested/b.test.ts";\n',
+      "src/nested/b.test.ts": "export {};\n",
+    });
+    const result = run(dir, "scaffolding", ["layers"]);
+    expect(result.code, result.out).toBe(0);
+    const graph = result.out.split("```mermaid\n")[1]?.split("```")[0];
+    expect(graph).toBe(
+      'graph LR\n  L0["src"]\n  L1["src/**/*.test.ts"]\n  L2["src/*.ts"]\n  L0 -->|1| L2\n  L2 -->|1| L1\n',
+    );
+  });
+
+  test("layers merge duplicate normalized globs and keep both restrictions", () => {
+    const dir = repo({
+      ".oxlintrc.json": withOverrides([
+        layerOverride(["src/**"], "first", "Use the first public import."),
+        layerOverride(["src/**"], "second", "Use the second public import."),
+        layerOverride(["./src/**"], "third", "Use the third public import."),
+      ]),
+    });
+    const result = run(dir, "scaffolding", ["layers"]);
+    expect(result.code, result.out).toBe(0);
+    expect(result.out.match(/^## src$/gm)).toEqual(["## src"]);
+    expect(result.out.match(/^ {2}L\d+\["src"\]$/gm)).toEqual(['  L0["src"]']);
+    for (const name of ["first", "second", "third"]) expect(result.out).toContain(`\`${name}\``);
+  });
+
+  test("layers generate a map accepted by format and markdown with markup in a message", () => {
+    const { format: _f, markdown: _m, ...rest } = skip;
+    const dir = gate({ skip: rest });
+    const message = "Use <slot /> or <Foo> with *x* / _x_ and `foo` | bar.";
+    write(dir, {
+      ".oxlintrc.json": withOverrides([
+        layerOverride(["src/**"], "private", message),
+        layerOverride(["src/**"], "pipe", "Keep \\| literal.\nUse one line per item."),
+      ]),
+    });
+    const generate = run(dir, "scaffolding", ["layers", "--write"]);
+    expect(generate.code, generate.out).toBe(0);
+    const map = readFileSync(join(dir, layerMap), "utf8");
+    expect(sh(dir, ["add", "--", layerMap]).status).toBe(0);
+    const bins = join(dir, "node_modules/.bin");
+    mkdirSync(bins, { recursive: true });
+    symlinkSync(join(import.meta.dirname, "../node_modules/.bin/prettier"), join(bins, "prettier"));
+    const formatInputs = spawnSync(
+      process.execPath,
+      ["--bun", "prettier", "--write", ".oxlintrc.json", "package.json"],
+      { cwd: dir, encoding: "utf8" },
+    );
+    expect(formatInputs.status, formatInputs.stdout + formatInputs.stderr).toBe(0);
+    const check = run(dir, "scaffolding", ["check"], { CHECK_LOCK: join(dir, ".lock") });
+    expect(check.code, check.out).toBe(0);
+    expect(check.out).toContain("ok   format");
+    expect(check.out).toContain("ok   markdown");
+    expect(readFileSync(join(dir, layerMap), "utf8")).toBe(map);
+    expect(map).toContain(message.replace("|", "\\|"));
+    expect(map).toContain("`Keep \\`<!-- -->`\\| literal.`<br>`Use one line per item.`");
+  });
+
+  test("layers respect excludeFiles and independently match negated Oxlint globs", () => {
+    const dir = repo({
+      ".oxlintrc.json": withOverrides([
+        { ...layerOverride(["src/lib/**"]), excludeFiles: ["./src/lib/excluded.js"] },
+        layerOverride(["!src/**"]),
+      ]),
+      "src/lib/a.js": 'import "./excluded.js";\n',
+      "src/lib/excluded.js": 'import "../../outside/b.js";\n',
+      "outside/b.js": "export {};\n",
+    });
+    const result = run(dir, "scaffolding", ["layers"]);
+    expect(result.code, result.out).toBe(0);
+    expect(result.out.match(/ {2}L\d+ -->.*/g)).toEqual(["  L1 -->|1| L0", "  L2 -->|1| L1"]);
+  });
+
+  test("layers are selected by source, Oxlint config and map changes", () => {
+    const selected = (path: string) =>
+      selectChangedSteps([path], new Set(["layers", "cycles"]), [], []).steps.has("layers");
+    for (const path of ["src/a.ts", "src/a.astro", ".oxlintrc.json", layerMap])
+      expect(selected(path), path).toBe(true);
+    expect(selected("docs/other.md")).toBe(false);
   });
 
   test("a tracked Markdown finding fails the gate under the step's name", () => {
@@ -8303,7 +8430,7 @@ describe("check-cycles", () => {
     expect(r.out).toContain(`${page} -> src/pages/value.ts -> ${page}`);
   });
 
-  test("the mirror requires tracked Astro and both paths catch TypeScript cycles", () => {
+  test("the import graph starts from tracked JavaScript, TypeScript and Astro files", () => {
     const dir = repo({ "a.ts": 'import "./b.ts";\n', "b.ts": 'import "./a.ts";\n' });
     const mirrorCache = join(dir, "node_modules", ".cache", "scaffolding");
     const plain = run(dir, "check-cycles");
@@ -8311,13 +8438,20 @@ describe("check-cycles", () => {
     expect(plain.out).toContain("a.ts -> b.ts -> a.ts");
     expect(existsSync(mirrorCache)).toBe(false);
 
-    write(dir, { [page]: "<p>Page</p>\n" });
-    expect(run(dir, "check-cycles").out).toContain("a.ts -> b.ts -> a.ts");
+    write(dir, {
+      [page]: "---\nimport './missing-astro.ts';\n---\n<p>Page</p>\n",
+      "untracked.ts": 'import "./missing-ts.ts";\n',
+    });
+    const untracked = run(dir, "check-cycles");
+    expect(untracked.out).toContain("a.ts -> b.ts -> a.ts");
+    expect(untracked.out).not.toContain("missing-");
     expect(existsSync(mirrorCache)).toBe(false);
-    expect(sh(dir, ["add", "--", page]).status).toBe(0);
+    expect(sh(dir, ["add", "--", page, "untracked.ts"]).status).toBe(0);
     const astro = run(dir, "check-cycles");
     expect(astro.code).toBe(1);
     expect(astro.out).toContain("a.ts -> b.ts -> a.ts");
+    expect(astro.out).toContain("./missing-astro.ts");
+    expect(astro.out).toContain("./missing-ts.ts");
     expect(readdirSync(mirrorCache)).toEqual([]);
   });
 
