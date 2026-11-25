@@ -4707,14 +4707,14 @@ describe("scaffolding check", () => {
     limit(40_000),
   );
 
-  test("names a step stopped by SIGINT even when the runner receives no signal", () => {
-    const step = 'kill -s INT "$$"';
+  test.each(["INT", "KILL"])("reports FAIL when only a step receives SIG%s", (signal) => {
+    const step = `echo step-output; kill -s ${signal} "$$"`;
     const dir = gate({ skip, check: [step] });
     const result = run(dir, "scaffolding", ["check"], { CHECK_LOCK: join(dir, ".lock") });
     expect(result.code).toBe(1);
-    expect(result.out.match(/^\[scaffolding\] stopped .+ by SIGINT$/gm)).toEqual([
-      `[scaffolding] stopped ${step} by SIGINT`,
-    ]);
+    expect(result.out).toMatch(/^step-output$/m);
+    expect(result.out).toMatch(/^\[scaffolding\] FAIL echo step-output; kill -s .+ \d+\.\d s$/m);
+    expect(result.out).not.toMatch(/^\[scaffolding\] stopped /m);
   });
 
   test("a repository pinning puppeteer-core gets Chrome installed once, before the steps", () => {
@@ -6080,6 +6080,40 @@ describe("shared eslint config", () => {
     });
     expect(result.status, result.stdout + result.stderr).toBe(0);
     expect(readFileSync(join(dir, "starts.log"), "utf8")).toBe("lint\n");
+  });
+
+  test("Oxlint prints one guide for a diagnostic stream larger than one megabyte", () => {
+    const findings = 4000;
+    const dir = repo({
+      ".oxlintrc.json": JSON.stringify(oxlintTemplate),
+      "probe.js": "debugger;\n".repeat(findings),
+    });
+    install(dir);
+    const output = join(dir, "oxlint.log");
+    const fd = openSync(output, "wx");
+    const result = (() => {
+      try {
+        return spawnSync(
+          process.execPath,
+          ["--no-env-file", join(import.meta.dirname, "../lib/oxlint.ts")],
+          {
+            cwd: dir,
+            encoding: "utf8",
+            stdio: ["ignore", fd, "pipe"],
+          },
+        );
+      } finally {
+        closeSync(fd);
+      }
+    })();
+    expect(result.status).toBe(1);
+    expect(result.stderr).not.toMatch(/^\[oxlint\]/m);
+    expectGuideAfter(readFileSync(output, "utf8"), "no-debugger", "eslint(no-debugger)");
+
+    const json = runOxlint(dir, ["-f", "json", "probe.js"], true);
+    expect(Buffer.byteLength(json.stdout)).toBeGreaterThan(1024 * 1024);
+    expect(jsonObject(json.stdout).diagnostics).toHaveLength(findings);
+    expect(readdirSync(join(dir, "node_modules/.cache/scaffolding"))).toEqual([]);
   });
 
   test("Vue and Svelte are the native-only files among the shared lint inputs", async () => {

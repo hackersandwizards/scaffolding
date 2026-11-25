@@ -1,5 +1,15 @@
 import { spawnSync } from "node:child_process";
-import { existsSync, lstatSync, readFileSync, statSync } from "node:fs";
+import {
+  closeSync,
+  existsSync,
+  lstatSync,
+  mkdirSync,
+  mkdtempSync,
+  openSync,
+  readFileSync,
+  rmSync,
+  statSync,
+} from "node:fs";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import template from "../template/.oxlintrc.json";
@@ -80,16 +90,38 @@ export function* oxlintRestrictionFindings(config: Record<string, unknown>) {
 export function runOxlint(root: string, args: string[], capture = false) {
   const manifest = fileURLToPath(import.meta.resolve("oxlint/package.json"));
   const cli = join(dirname(manifest), "bin/oxlint");
-  return spawnSync(
-    process.execPath,
-    ["--no-env-file", "--bun", cli, "--disable-nested-config", "-c", oxlintConfig, ...args],
-    {
-      cwd: root,
-      encoding: "utf8",
-      stdio: capture ? ["ignore", "pipe", "pipe"] : "inherit",
-      maxBuffer: Infinity,
-    },
-  );
+  const command = [
+    "--no-env-file",
+    "--bun",
+    cli,
+    "--disable-nested-config",
+    "-c",
+    oxlintConfig,
+    ...args,
+  ];
+  const run = (stdio: "inherit" | ["ignore", number, number]) =>
+    spawnSync(process.execPath, command, { cwd: root, encoding: "utf8", stdio });
+  if (!capture) return run("inherit");
+
+  // Bun can truncate Oxlint output sent through pipes even when maxBuffer is unlimited.
+  const cache = join(root, "node_modules/.cache/scaffolding");
+  mkdirSync(cache, { recursive: true });
+  const dir = mkdtempSync(join(cache, "oxlint-output-"));
+  const paths = [join(dir, "stdout"), join(dir, "stderr")] as const;
+  const descriptors: number[] = [];
+  try {
+    for (const path of paths) descriptors.push(openSync(path, "wx"));
+    const result = run(["ignore", descriptors[0]!, descriptors[1]!]);
+    const stdout = readFileSync(paths[0], "utf8");
+    const stderr = readFileSync(paths[1], "utf8");
+    return { ...result, stdout, stderr, output: [null, stdout, stderr] };
+  } finally {
+    try {
+      for (const descriptor of descriptors) closeSync(descriptor);
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  }
 }
 
 export function runOxlintWithGuides(root: string, args: string[]) {

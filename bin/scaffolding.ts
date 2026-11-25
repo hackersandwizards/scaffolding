@@ -451,16 +451,18 @@ function run(name: string, command: string, buffered: boolean): Promise<Result> 
     child.stdout?.on("data", (d) => (step.out += d));
     child.stderr?.on("data", (d) => (step.out += d));
     child.on("close", (code, signal) => {
-      running.delete(name);
       const r = { name, code: code ?? 1, ms: performance.now() - begun };
-      // In a group interrupt a child's close can arrive before the gate's own signal handler.
-      if (signal) reportStopped(name, step.out, signal);
-      else {
+      const finish = () => {
+        running.delete(name);
         process.stderr.write(step.out);
         console.error(line(r));
-      }
-      results.push(r);
-      done(r);
+        results.push(r);
+        done(r);
+      };
+      // A group interrupt can close the child before this process handles the same signal.
+      // Keep the step visible to the handler for one turn before treating its exit as a failure.
+      if (signal && SIGNALS.some((interrupt) => interrupt === signal)) setImmediate(finish);
+      else finish();
     });
   });
 }

@@ -209,9 +209,11 @@ Where the repository installs `puppeteer-core`, the full gate prepares its pinne
 Testing just after install. A changed run prepares Chrome if it selects a test or a local command
 that may launch it.
 
-**Output and load.** Each step prints its output and its `ok` or `FAIL` line the moment it ends, and
-the last line names the red steps in the gate's order. A signal to `bun run check` reaches every
-step, and each step still running prints what it said so far and `stopped <step> by <signal>`.
+**Output and load.** Each step prints its output and its `ok` or `FAIL` line with its duration when
+it ends. A step killed by a signal on its own also prints `FAIL`. The last line names the red steps
+in the gate's order. The gate forwards `SIGINT`, `SIGTERM`, `SIGHUP` and `SIGQUIT` to its steps.
+On one of those gate interrupts, each interrupted step prints what it said so far and
+`stopped <step> by <signal>`.
 
 Where the one-minute load average is above the core count, the gate says so in its first line: the
 quick shared checks still run side by side, then `test` and `catalog` one after another, and each
