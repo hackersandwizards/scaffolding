@@ -66,6 +66,7 @@ Each runs through `bun run`, and [Commands](docs/commands.md) has the detail of 
   only the steps the changed paths map to, of the ranges given (the pre-push hook passes the pushed
   ones).
 - `scaffolding shell`: checks tracked shell scripts with ShellCheck.
+- `scaffolding layers [--write]` prints the import map and layer restrictions. `--write` saves them to `docs/architecture/layers.md`.
 - `scaffolding markdown [--fix]`: checks tracked Markdown and optionally applies markdownlint fixes.
 - `scaffolding test [<vitest args>...]` runs the fast Vitest suite when you declare a browser suite.
 - `scaffolding fix` applies ESLint fixes, formats the checkout with Prettier and applies Markdown fixes.

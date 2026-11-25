@@ -41,7 +41,7 @@ import {
 import { inNodeModules, regularInput, trackedInputs, treeInputs } from "../lib/tracked-inputs.ts";
 
 const usage =
-  "usage: scaffolding check [--changed [<from>..<to>...]] | scaffolding shell | scaffolding markdown [--fix] | scaffolding test [<vitest args>...] | scaffolding fix";
+  "usage: scaffolding check [--changed [<from>..<to>...]] | scaffolding shell | scaffolding markdown [--fix] | scaffolding layers [--write] | scaffolding test [<vitest args>...] | scaffolding fix";
 help("scaffolding", usage);
 withoutEnvFile("scaffolding");
 
@@ -95,6 +95,8 @@ if (command === "test") {
 const direct =
   fix ||
   (command === "shell" && commandArgs.length === 0) ||
+  (command === "layers" &&
+    (commandArgs.length === 0 || (commandArgs.length === 1 && commandArgs[0] === "--write"))) ||
   (command === "markdown" &&
     (commandArgs.length === 0 || (commandArgs.length === 1 && commandArgs[0] === "--fix")));
 if (direct) {
@@ -154,6 +156,7 @@ const shared: Record<string, string> = {
   structure: bin("check-structure"),
   coupling: bin("check-coupling"),
   cycles: bin("check-cycles"),
+  "check:layers": `${bin("check-layers")} --check`,
   shell: bin("check-shell"),
   markdown: bin("check-markdown"),
   spaces: bin("check-spaces"),

@@ -93,6 +93,7 @@
   "scripts": {
     "prepare": "[ \"$(git rev-parse --show-toplevel 2>/dev/null)\" = \"$(pwd -P)\" ] && git config core.hooksPath .githooks || true",
     "check": "bun --no-env-file bin/scaffolding.ts check",
+    "scaffolding": "bun --no-env-file bin/scaffolding.ts",
     "test": "bun --bun vitest run",
     "mutation": "SCAFFOLDING_MUTATION_BUN=1 bun --no-env-file bin/scaffolding-mutation.ts",
     "scaffolding-explore": "bun --no-env-file bin/scaffolding-explore.ts",

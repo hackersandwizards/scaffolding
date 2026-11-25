@@ -3442,6 +3442,101 @@ describe("scaffolding check", () => {
     expect(r.out).toMatch(/failed in [\d.]+ s: cycles/);
   });
 
+  const layerMap = "docs/architecture/layers.md";
+  const layerFixture = [
+    "# Layers",
+    "",
+    "```mermaid",
+    "graph LR",
+    '  L0["src"]',
+    '  L1["src/lib"]',
+    '  L2["tools"]',
+    "  L0 -->|2| L1",
+    "  L1 -->|1| L2",
+    "```",
+    "",
+    "## src",
+    "",
+    "| Forbidden import | Message         |",
+    "| ---------------- | --------------- |",
+    "| `^private/`      | Keep it in src. |",
+    "",
+    "## src/lib",
+    "",
+    "| Forbidden import | Message                 |",
+    "| ---------------- | ----------------------- |",
+    "| `fs`             | Use the storage module. |",
+    "",
+  ].join("\n");
+
+  test("check:layers rejects a missing or stale map and accepts a fresh generation", () => {
+    const dir = gate({ skip });
+    write(dir, {
+      ".oxlintrc.json": JSON.stringify({
+        overrides: [
+          {
+            files: ["src/**"],
+            rules: {
+              "no-restricted-imports": [
+                "error",
+                { patterns: [{ regex: "^private/", message: "Keep it in src." }] },
+              ],
+            },
+          },
+          {
+            files: ["src/lib/**"],
+            rules: {
+              "eslint/no-restricted-imports": [
+                "warn",
+                { name: "fs", message: "Use the storage module." },
+              ],
+            },
+          },
+        ],
+      }),
+      "src/app.js": 'import "./lib/store.js";\nimport { store } from "./lib/store.js";\nstore();\n',
+      "src/lib/store.js":
+        'import "./helper.js";\nimport "../../tools/build.js";\nexport function store() {}\n',
+      "src/lib/helper.js": "export {};\n",
+      "tools/build.js": "export {};\n",
+    });
+    const check = () => run(dir, "scaffolding", ["check"], { CHECK_LOCK: join(dir, ".lock") });
+    const stale =
+      "docs/architecture/layers.md is stale: run `bun run scaffolding layers --write` and commit the file with this change.";
+    const missing = check();
+    expect(missing.code).toBe(1);
+    expect(missing.out).toContain(stale);
+    expect(run(dir, "scaffolding", ["layers"])).toEqual({ code: 0, out: layerFixture });
+    expect(existsSync(join(dir, layerMap))).toBe(false);
+    write(dir, { [layerMap]: layerFixture.replace("L0 -->|2| L1", "L0 -->|1| L1") });
+    const outdated = check();
+    expect(outdated.code).toBe(1);
+    expect(outdated.out).toContain(stale);
+    expect(run(dir, "scaffolding", ["layers", "--write"]).code).toBe(0);
+    expect(readFileSync(join(dir, layerMap), "utf8")).toBe(layerFixture);
+    expect(sh(dir, ["add", "--", layerMap]).status).toBe(0);
+    expect(sh(dir, ["commit", "-qm", "generate layers"]).status).toBe(0);
+    const fresh = check();
+    expect(fresh.code).toBe(0);
+    expect(fresh.out).toContain("ok   check:layers");
+  });
+
+  test("check:layers requires a repository without layer overrides to have no map", () => {
+    const dir = gate({ skip });
+    write(dir, {
+      ".oxlintrc.json":
+        '{"overrides":[{"files":["src/**"],"rules":{"no-restricted-syntax":"error"}}]}',
+    });
+    const check = () => run(dir, "scaffolding", ["check"], { CHECK_LOCK: join(dir, ".lock") });
+    const absent = check();
+    expect(absent.code).toBe(0);
+    expect(absent.out).toContain("ok   check:layers");
+    write(dir, { [layerMap]: layerFixture });
+    const unexpected = check();
+    expect(unexpected.code).toBe(1);
+    expect(unexpected.out).toContain("no layers declared: delete docs/architecture/layers.md");
+  });
+
   test("a tracked Markdown finding fails the gate under the step's name", () => {
     const { markdown: _m, ...rest } = skip;
     const dir = gate({ skip: rest });
@@ -8248,7 +8343,10 @@ describe("check-cycles", () => {
     const entry = join(installation, "bin", "check-cycles.ts");
     mkdirSync(dirname(entry));
     copyFileSync(bin("check-cycles"), entry);
-    symlinkSync(join(import.meta.dirname, "..", "lib"), join(installation, "lib"), "dir");
+    const lib = join(import.meta.dirname, "..", "lib");
+    mkdirSync(join(installation, "lib"));
+    copyFileSync(join(lib, "import-graph.ts"), join(installation, "lib", "import-graph.ts"));
+    symlinkSync(join(lib, "repo.ts"), join(installation, "lib", "repo.ts"));
     const modules = join(installation, "node_modules");
     mkdirSync(modules);
     symlinkSync(

@@ -2,7 +2,7 @@
 
 `scaffolding check` runs `bun install --frozen-lockfile`, then the shared steps side by side, the
 catalog build and lint once a typecheck that runs Astro has finished (it writes the content types the typed rules read):
-format, lint (ESLint), oxlint, styles (stylelint), typecheck, structure, coupling, cycles, shell, markdown, spaces, confidential, licenses, the tests, the catalog build (`bun run build`) and admin (the item files, with the pinned
+format, lint (ESLint), oxlint, styles (stylelint), typecheck, structure, coupling, cycles, check:layers, shell, markdown, spaces, confidential, licenses, the tests, the catalog build (`bun run build`) and admin (the item files, with the pinned
 `@hackersandwizards/admin`'s `admin-check`; a repository without admin pinned needs `skip.admin`). Once those pass, the full-gate groups run in order. A red group stops the groups after it. Format, lint and styles walk past every
 submodule `.gitmodules` names, which its own repository checks. A shared step drops only with a reason, a
 non-blank string in `skip`:
@@ -65,6 +65,15 @@ erases, including `import type`. To fix a runtime cycle, move shared code into a
 neither side imports back from. The step reads no allow list. Submodule cycles belong to their
 own repositories.
 
+**Layers.** `check:layers` compares `docs/architecture/layers.md` with the generated map. Each Oxlint override
+with an enabled `no-restricted-imports` rule defines a layer. The map joins the override's file
+globs into its name, dropping each trailing `/**`. A path matches the glob with the longest
+literal prefix or falls back to its top-level folder. Edge labels count imports between layers
+using the runtime graph from `cycles`.
+
+Run `bun run scaffolding layers --write` to regenerate the map and commit it with the changes.
+Delete the map when the last layer is removed.
+
 **Shell.** ShellCheck reports findings at every severity in its inputs and follows sources
 with `-x` for analysis. It checks tracked `.sh` and `.bash` files and files with
 an sh, bash, dash or ksh shebang. Other scripting extensions, including TypeScript, JavaScript
@@ -116,7 +125,7 @@ folders from the staged package manifest.
 ## Changed paths
 
 `scaffolding check --changed` (`bun run check --changed`) always runs frozen install, then
-each enabled step among format, structure, coupling, spaces, confidential, licenses, admin,
+each enabled step among format, structure, check:layers, coupling, spaces, confidential, licenses, admin,
 pins, colours and copies.
 Paths are repository-relative, case-sensitive Bun globs. Every match adds its steps.
 

@@ -4,9 +4,10 @@ import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import template from "../template/.oxlintrc.json";
 import { activeSeverity } from "./lint-rule-overlaps.ts";
+import { oxlintConfig, restrictionRuleName, restrictedImports } from "./oxlint-restrictions.ts";
 import { isObject, isReason, isStrings, jsonObject, submodulePaths } from "./repo.ts";
 
-export const oxlintConfig = ".oxlintrc.json";
+export { oxlintConfig } from "./oxlint-restrictions.ts";
 export const oxlintSource = /\.(?:[cm]?[jt]s|[jt]sx|astro)$/;
 
 export function oxlintExtends(root: string) {
@@ -34,23 +35,6 @@ export function oxlintConfiguration(root: string) {
   return config;
 }
 
-function* restrictedImports(options: unknown[]) {
-  for (const option of options) {
-    if (typeof option === "string" || (isObject(option) && typeof option.name === "string"))
-      yield { item: option, suffix: "", example: '"name": ...' };
-    if (!isObject(option)) continue;
-    for (const [key, example] of [
-      ["paths", '"name": ...'],
-      ["patterns", '"group": [...]'],
-    ] as const) {
-      const restrictions = option[key];
-      const entries: unknown[] = Array.isArray(restrictions) ? restrictions : [];
-      for (const [index, item] of entries.entries())
-        yield { item, suffix: `.${key}[${index}]`, example };
-    }
-  }
-}
-
 export function* oxlintRestrictionFindings(config: Record<string, unknown>) {
   const overrides: unknown[] = Array.isArray(config.overrides) ? config.overrides : [];
   const blocks: [string, unknown][] = [["rules", config.rules]];
@@ -63,7 +47,7 @@ export function* oxlintRestrictionFindings(config: Record<string, unknown>) {
       if (!Array.isArray(setting) || !activeSeverity(setting)) continue;
       const options: unknown[] = setting.slice(1);
       const location = `${block}.${rule}`;
-      switch (rule.slice(rule.lastIndexOf("/") + 1)) {
+      switch (restrictionRuleName(rule)) {
         case "no-restricted-imports":
           for (const { item, suffix, example } of restrictedImports(options)) {
             if (isObject(item) && isReason(item.message)) continue;

@@ -18,6 +18,7 @@ export function validGlob(pattern: string): boolean {
 const always = [
   "format",
   "structure",
+  "check:layers",
   "coupling",
   "spaces",
   "confidential",
