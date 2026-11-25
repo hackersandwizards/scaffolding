@@ -104,18 +104,21 @@ the report when the notification arrives after it.
 
 ## Roles and models
 
-| Role                                                            | First choice                                                                                                         | If unavailable                     |
-| --------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------- | ---------------------------------- |
-| Supervisor, only where a development job has more than one epic | Neon high                                                                                                            | the orchestrator supervises itself |
-| Plan and task decomposition, once per job with several tasks    | Fable high; Opus high in Claude Desktop                                                                              | Opus high                          |
-| Orchestrator, one per epic                                      | Opus medium                                                                                                          | Fable low, then Neon high          |
-| Implementer                                                     | the repository's Codex pin, `gpt-6.2-sol` medium; high for a task the plan marks hard or that failed its review once | Neon high, then Opus medium        |
+| Role                                         | First choice                                                                                  | If unavailable              |
+| -------------------------------------------- | --------------------------------------------------------------------------------------------- | --------------------------- |
+| Implementer                                  | the repository's Codex pin, `gpt-6.2-sol` medium; high for a task that failed its review once | Neon high, then Opus medium |
+| Planner, only for a job of two or more epics | Fable high; Opus high in Claude Desktop                                                       | Opus high                   |
 
+- The session that takes a development job runs it to the end, on whatever model it runs, with no
+  session in between. The planner writes the job's checklist to a file, one row per task with its
+  check; a job without a planner is one row.
+- The implementer works its row to the end: tests, the gate, a commit. The session waits for it in
+  one blocking call, reads `git log` and the gate's output once, has a model that did not write the
+  code review the diff, returns the findings to the same implementer for at most three rounds, then
+  starts the next row. A row still open after three rounds goes into the report as open.
 - Fable never runs at xhigh or max.
 - Probe a model with one cheap call before a long run, never wait for one to return, and name every
   fallback taken in the report.
-- The supervisor orders the plan, starts one orchestrator per epic, reads their reports and calls
-  the review.
 
 Measured November 2026, index points from Artificial Analysis:
 
