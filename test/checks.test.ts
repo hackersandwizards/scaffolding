@@ -1353,23 +1353,32 @@ describe("scaffold and check-structure", () => {
     });
 
     test.each([
-      ["missing severity", '"vitest/no-import-node-test":'],
-      ["trailing comma", '"vitest/no-import-node-test": "off",'],
-    ])("check-structure still reports malformed Oxlint configuration with %s", (name, rule) => {
-      const malformed = fixture(
-        `malformed-commented-oxlint-${name}`,
-        {},
-        {
-          ".oxlintrc.json": comment.replace('"vitest/no-import-node-test": "off"', rule),
-        },
-      );
-      const result = run(malformed, "check-structure");
-      expect(result.code).toBe(1);
-      expect(result.out).toMatch(/^\[check-structure\] \.oxlintrc\.json: .+/m);
-      expect(run(malformed, "check-layers", ["--check"]).out).toContain(
-        ".oxlintrc.json: cannot parse the config",
-      );
-    });
+      ["missing severity", '"vitest/no-import-node-test":', "ValueExpected at position 602"],
+      [
+        "trailing comma",
+        '"vitest/no-import-node-test": "off",',
+        "PropertyNameExpected at position 609",
+      ],
+    ])(
+      "check-structure still reports malformed Oxlint configuration with %s",
+      (name, rule, reason) => {
+        const malformed = fixture(
+          `malformed-commented-oxlint-${name}`,
+          {},
+          {
+            ".oxlintrc.json": comment.replace('"vitest/no-import-node-test": "off"', rule),
+          },
+        );
+        const result = run(malformed, "check-structure");
+        expect(result.code).toBe(1);
+        expect(lines(result.out, "check-structure")).toEqual([
+          `[check-structure] .oxlintrc.json: ${reason}`,
+        ]);
+        expect(run(malformed, "check-layers", ["--check"]).out).toContain(
+          `.oxlintrc.json: cannot parse the config (${reason})`,
+        );
+      },
+    );
   });
 
   test("scaffold sets the Claude defaults and omits the skills link without skills", () => {
@@ -8797,6 +8806,54 @@ describe("check-staged", () => {
     expect(green.code, green.out).toBe(0);
     expect(green.out).not.toContain("[guide] ");
   });
+
+  const commentedOxlint = readFileSync(
+    join(import.meta.dirname, "../template/.oxlintrc.json"),
+    "utf8",
+  ).replace("{\n", "{\n  // Keep the shared configuration.\n");
+  const malformedOxlint = '{\n  // Missing value.\n  "options":\n}\n';
+
+  test.each([
+    ["commented", commentedOxlint, malformedOxlint, 0, []],
+    [
+      "malformed",
+      malformedOxlint,
+      commentedOxlint,
+      1,
+      ["[check:staged] oxlint: ValueExpected at position 35"],
+    ],
+  ])(
+    "check-staged reads the %s Oxlint configuration from the index",
+    (_, staged, working, code, diagnostics) => {
+      const dir = repo({
+        "package.json": JSON.stringify({
+          type: "module",
+          scaffolding: { private: true, skip: { format: "fixture" } },
+        }),
+        ".oxlintrc.json": JSON.stringify(oxlintTemplate),
+        "eslint.config.js": 'export { default } from "@hackersandwizards/scaffolding/eslint";\n',
+        "a.js": "console.log(1);\n",
+      });
+      install(dir);
+      symlinkSync(
+        join(import.meta.dirname, "../node_modules/.bin"),
+        join(dir, "node_modules/.bin"),
+      );
+      write(dir, { ".oxlintrc.json": staged, "a.js": "console.log(2);\n" });
+      expect(sh(dir, ["add", "--", ".oxlintrc.json", "a.js"]).status).toBe(0);
+      write(dir, { ".oxlintrc.json": working });
+      const result = run(dir, "check-staged");
+      expect(
+        {
+          code: result.code,
+          diagnostics: lines(result.out, "check:staged").filter((line) =>
+            line.startsWith("[check:staged] oxlint:"),
+          ),
+        },
+        result.out,
+      ).toEqual({ code, diagnostics });
+    },
+  );
 
   test("a coupling or licence step the gate skips with a reason is skipped here too", () => {
     const staged = (skip: object) => {

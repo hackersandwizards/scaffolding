@@ -209,10 +209,13 @@ export default { ...base, incremental: false, mutate: ["sample.ts"]`;
     };
 
     limited = run();
+    expect(limited.status, limited.stdout + limited.stderr).toBe(0);
     staticSurvivor = initialMutant();
     dryRun = run("--dryRunOnly");
+    expect(dryRun.status, dryRun.stdout + dryRun.stderr).toBe(0);
     writeFileSync(configFile, `${config}, ignoreStatic: false };`);
     full = run();
+    expect(full.status, full.stdout + full.stderr).toBe(0);
     staticKill = initialMutant();
   }, limit(30_000));
 
@@ -221,7 +224,6 @@ export default { ...base, incremental: false, mutate: ["sample.ts"]`;
   });
 
   test("the default run reports the module-level mutant as surviving its one covering test", () => {
-    expect(limited.status, limited.stdout + limited.stderr).toBe(0);
     assert(staticSurvivor, "the default run should report the initial mutant");
     expect({
       static: staticSurvivor.static,
@@ -246,7 +248,6 @@ export default { ...base, incremental: false, mutate: ["sample.ts"]`;
   });
 
   test("testing static mutants against the full suite kills the same mutant outside its covering test", () => {
-    expect(full.status, full.stdout + full.stderr).toBe(0);
     assert(staticSurvivor, "the default run should report the initial mutant");
     assert(staticKill, "the full run should report the initial mutant");
     expect({
@@ -267,7 +268,6 @@ export default { ...base, incremental: false, mutate: ["sample.ts"]`;
   });
 
   test("a dry run omits the module-level survivor summary", () => {
-    expect(dryRun.status, dryRun.stdout + dryRun.stderr).toBe(0);
     expect(dryRun.stdout).not.toContain(heading);
   });
 });

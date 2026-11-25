@@ -1,13 +1,7 @@
-import { createRequire } from "node:module";
-import type { ParseError } from "jsonc-parser";
+import { parse, printParseErrorCode, type ParseError } from "jsonc-parser";
 import { isObject } from "./json.ts";
 
 export const oxlintConfig = ".oxlintrc.json";
-
-// Resolve the parser through its declaring dependency so isolated installs also find it.
-const { parse, printParseErrorCode } = createRequire(import.meta.resolve("markdownlint-cli2"))(
-  "jsonc-parser",
-) as typeof import("jsonc-parser");
 
 export function parseOxlintConfig(text: string): Record<string, unknown> {
   const errors: ParseError[] = [];

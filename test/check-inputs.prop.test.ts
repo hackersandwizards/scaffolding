@@ -1,5 +1,5 @@
 import { fc, test, unicodeString } from "@hackersandwizards/scaffolding/property";
-import { expect } from "vitest";
+import { describe, expect } from "vitest";
 import { lostSpaceTag, spaceTemplateLines } from "../lib/astro-spaces.ts";
 import {
   addedLines,
@@ -16,35 +16,55 @@ const line = fc.oneof(
   unicodeString.filter((text) => !text.includes("\n")),
 );
 
-test.prop([word, fc.constantFrom("a", "code", "span"), fc.nat(8)])(
-  "indentation preserves inline boundaries while an explicit space fixes them",
-  (text, tag, spaces) => {
-    const next = `${" ".repeat(spaces)}<${tag}>`;
-    const expression = `{<${tag} />}`;
-    const indentedText = `${" ".repeat(spaces)}${text}`;
-    for (const [left, right, previous, kept] of [
-      [text, next, "", false],
-      [`${text} {name}`, next, "", false],
-      [text, expression, "", true],
-      [`</${tag}>`, expression, "", true],
-      [`</${tag}>`, indentedText, "", false],
-      [">", indentedText, `</${tag}`, false],
-    ] as const)
-      expect(
-        lostSpaceTag(left, right, previous, kept),
-        JSON.stringify([left, right, previous, kept]),
-      ).toBe(tag);
-    for (const [left, right, previous, kept] of [
-      [`${text}{" "}`, next, "", false],
-      [`{name}`, next, "", false],
-      [text, expression, "", false],
-    ] as const)
-      expect(
-        lostSpaceTag(left, right, previous, kept),
-        JSON.stringify([left, right, previous, kept]),
-      ).toBeFalsy();
-  },
-);
+type BoundaryInput = (
+  text: string,
+  tag: string,
+  indent: string,
+) => [string, string, string, boolean];
+const detectedBoundaries: [string, BoundaryInput][] = [
+  ["indented opening tag", (text, tag, indent) => [text, `${indent}<${tag}>`, "", false]],
+  [
+    "words before an expression",
+    (text, tag, indent) => [`${text} {name}`, `${indent}<${tag}>`, "", false],
+  ],
+  ["kept inline expression after text", (text, tag) => [text, `{<${tag} />}`, "", true]],
+  [
+    "kept inline expression after a closing tag",
+    (_, tag) => [`</${tag}>`, `{<${tag} />}`, "", true],
+  ],
+  [
+    "closing tag before indented text",
+    (text, tag, indent) => [`</${tag}>`, indent + text, "", false],
+  ],
+  [
+    "wrapped closing tag before indented text",
+    (text, tag, indent) => [">", indent + text, `</${tag}`, false],
+  ],
+];
+
+describe.each(detectedBoundaries)("inline boundary at %s", (_, input) => {
+  test.prop([word, fc.constantFrom("a", "code", "span"), fc.nat(8)])(
+    "reports the generated tag",
+    (text, tag, spaces) => {
+      expect(lostSpaceTag(...input(text, tag, " ".repeat(spaces)))).toBe(tag);
+    },
+  );
+});
+
+const absentBoundaries: [string, BoundaryInput][] = [
+  ["explicit space", (text, tag, indent) => [`${text}{" "}`, `${indent}<${tag}>`, "", false]],
+  ["bare expression", (_, tag, indent) => ["{name}", `${indent}<${tag}>`, "", false]],
+  ["discarded expression", (text, tag) => [text, `{<${tag} />}`, "", false]],
+];
+
+describe.each(absentBoundaries)("inline boundary at %s", (_, input) => {
+  test.prop([word, fc.constantFrom("a", "code", "span"), fc.nat(8)])(
+    "reports no lost space",
+    (text, tag, spaces) => {
+      expect(lostSpaceTag(...input(text, tag, " ".repeat(spaces)))).toBeFalsy();
+    },
+  );
+});
 
 test.prop([fc.array(word), word, fc.constantFrom("script", "style", "pre", "textarea")])(
   "blanking non-template text preserves template line numbers",
@@ -83,18 +103,19 @@ test.prop([...termFields])(
   },
 );
 
-test.prop([...termFields])(
-  "purged lists reject non-string salts and hashes",
-  (salt, hashes, _never, maxTokens) => {
-    for (const invalid of [
-      { salt: maxTokens, hashes },
-      { salt, hashes: [...hashes, 1] },
-    ])
-      expect(() => parsePurgedList(JSON.stringify(invalid))).toThrow(
-        "expected a salt and a list of hashes",
-      );
-  },
-);
+type PurgedInput = (salt: string, hashes: string[], maxTokens: number) => object;
+const invalidPurgedInputs: [string, PurgedInput][] = [
+  ["numeric salt", (_, hashes, maxTokens) => ({ salt: maxTokens, hashes })],
+  ["numeric hash", (salt, hashes) => ({ salt, hashes: [...hashes, 1] })],
+];
+
+describe.each(invalidPurgedInputs)("purged list with %s", (_, input) => {
+  test.prop([...termFields])("rejects the generated list", (salt, hashes, _never, maxTokens) => {
+    expect(() => parsePurgedList(JSON.stringify(input(salt, hashes, maxTokens)))).toThrow(
+      "expected a salt and a list of hashes",
+    );
+  });
+});
 
 test.prop([...termFields])(
   "term lists preserve valid fields and normalize optional metadata",
@@ -109,28 +130,32 @@ test.prop([...termFields])(
   },
 );
 
-test.prop([...termFields])(
-  "term lists reject malformed text and invalid required fields",
-  (salt, hashes, never, maxTokens) => {
-    const list = { salt, hashes, maxTokens, never, built: salt };
-    for (const invalid of [
-      "{",
-      ...[
-        { ...list, salt: 1 },
-        { ...list, maxTokens: String(maxTokens) },
-        { salt, hashes },
-        { maxTokens, hashes },
-        { salt, maxTokens },
-        { ...list, maxTokens: maxTokens + 6 },
-        { ...list, maxTokens: maxTokens - 6 },
-        { ...list, maxTokens: maxTokens - 0.5 },
-        { ...list, hashes: [...hashes, 1] },
-        { ...list, never: [...never, 1] },
-      ].map((entry) => JSON.stringify(entry)),
-    ])
-      expect(parseTermList(invalid), invalid).toBeUndefined();
-  },
-);
+type TermInput = {
+  salt: string;
+  hashes: string[];
+  never: string[];
+  maxTokens: number;
+  built: string;
+};
+const invalidTermInputs: [string, (list: TermInput) => object][] = [
+  ["numeric salt", (list) => ({ ...list, salt: 1 })],
+  ["string token bound", (list) => ({ ...list, maxTokens: String(list.maxTokens) })],
+  ["missing token bound", ({ salt, hashes }) => ({ salt, hashes })],
+  ["missing salt", ({ maxTokens, hashes }) => ({ maxTokens, hashes })],
+  ["missing hashes", ({ salt, maxTokens }) => ({ salt, maxTokens })],
+  ["token bound above the maximum", (list) => ({ ...list, maxTokens: list.maxTokens + 6 })],
+  ["nonpositive token bound", (list) => ({ ...list, maxTokens: list.maxTokens - 6 })],
+  ["fractional token bound", (list) => ({ ...list, maxTokens: list.maxTokens - 0.5 })],
+  ["numeric hash", (list) => ({ ...list, hashes: [...list.hashes, 1] })],
+  ["numeric exception", (list) => ({ ...list, never: [...list.never, 1] })],
+];
+
+describe.each(invalidTermInputs)("term list with %s", (_, input) => {
+  test.prop([...termFields])("rejects the generated list", (salt, hashes, never, maxTokens) => {
+    const invalid = JSON.stringify(input({ salt, hashes, never, maxTokens, built: salt }));
+    expect(parseTermList(invalid), invalid).toBeUndefined();
+  });
+});
 
 test.prop([fc.integer({ min: 0, max: 0x10ffff })], { examples: [[0x10ffff]] })(
   "decimal and hexadecimal entities decode to the same Unicode code point",

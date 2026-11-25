@@ -20,6 +20,7 @@ import {
 import { createHash } from "node:crypto";
 import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
+import { setTimeout as delay } from "node:timers/promises";
 import { afterAll, assert, describe, expect, it } from "vitest";
 import { jsonObject } from "../lib/json.ts";
 import { limit } from "@hackersandwizards/scaffolding/test-timeout";
@@ -86,18 +87,45 @@ const openWriter = async (fifo: string): Promise<number> => {
 // A process starting on a loaded machine took more than 5 s to write its lock, and the read after
 // a silent timeout failed on a file that was not there yet; so the wait is long and says when it
 // runs out.
-const until = async (ok: () => boolean | undefined, what: string): Promise<void> => {
-  for (const end = Date.now() + 20_000; !ok(); await new Promise((go) => setTimeout(go, 50)))
+const until = async (ok: () => boolean, what: string, signal?: AbortSignal): Promise<void> => {
+  for (const end = Date.now() + 20_000; !signal?.aborted && !ok(); await Bun.sleep(50))
     if (Date.now() > end) throw new Error(`still waiting for ${what} after 20 s`);
 };
 
-// The lock and queue entries may still be absent while their child process starts.
-function observeLockPath<T>(read: () => T): T | undefined {
+function untilPath<T>(
+  path: string,
+  read: (path: string) => T,
+  ready: (value: T) => boolean,
+  what: string,
+) {
+  return until(() => {
+    let value: T;
+    try {
+      value = read(path);
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code === "ENOENT") return false;
+      throw error;
+    }
+    return ready(value);
+  }, `${what} at ${path}`);
+}
+
+function untilFile(path: string, ready: (value: string) => boolean, what: string) {
+  return untilPath(path, (name) => readFileSync(name, "utf8"), ready, what);
+}
+
+async function untilBefore(
+  ready: () => boolean,
+  what: string,
+  stop: (signal: AbortSignal) => Promise<unknown>,
+) {
+  const controller = new AbortController();
+  const waiter = until(ready, what, controller.signal);
   try {
-    return read();
-  } catch (error) {
-    if ((error as NodeJS.ErrnoException).code === "ENOENT") return undefined;
-    throw error;
+    await Promise.race([waiter, stop(controller.signal)]);
+  } finally {
+    controller.abort();
+    await waiter;
   }
 }
 
@@ -203,10 +231,11 @@ describe("check-lock serialises the checks", () => {
       const second = start(3, { CHECK_LOCK_WAIT_MS: "20000" });
       // Long enough for the second waiter to clear an aged claim, reclaim and start its run.
       // Unchecked: a regression starts the run here, which the breach below then shows.
-      await Promise.race([
-        until(() => existsSync(inside), "a command entering the lock"),
-        Bun.sleep(6_000),
-      ]);
+      await untilBefore(
+        () => existsSync(inside),
+        "a command entering the lock",
+        (signal) => delay(6_000, undefined, { signal }),
+      );
       pipe = await openWriter(fifo);
       writeSync(pipe, stale);
       closeSync(pipe);
@@ -369,8 +398,10 @@ describe("check-lock serialises the checks", () => {
       const first = start("sleep 2");
       await until(() => existsSync(lock), "the first holder");
       const second = start("sleep 2");
-      await until(
-        () => Boolean(observeLockPath(() => readdirSync(`${lock}.queue`))?.length),
+      await untilPath<string[]>(
+        `${lock}.queue`,
+        readdirSync,
+        (files) => files.length > 0,
         "the queue",
       );
       // Longer than either holder alone, shorter than both.
@@ -439,10 +470,11 @@ describe("check-lock serialises the checks", () => {
       // The waiter ahead renews its ticket, however slow the waiter's start.
       const renew = setInterval(() => writeFileSync(ahead, ""), 1_000);
       try {
-        await Promise.race([
-          until(() => readdirSync(`${lock}.queue`).length > 1, "the waiter's ticket"),
-          status,
-        ]);
+        await untilBefore(
+          () => readdirSync(`${lock}.queue`).length > 1,
+          "the waiter's ticket",
+          () => status,
+        );
         await new Promise((go) => setTimeout(go, 1_000));
       } finally {
         clearInterval(renew);
@@ -483,8 +515,10 @@ describe("check-lock serialises the checks", () => {
       child.stdout.on("data", (chunk: Buffer) => (stdout += chunk));
       child.stderr.on("data", (chunk: Buffer) => (stderr += chunk));
       const status = new Promise<number | null>((done) => child.on("close", done));
-      await until(
-        () => Boolean(observeLockPath(() => readdirSync(`${lock}.queue`))?.length),
+      await untilPath<string[]>(
+        `${lock}.queue`,
+        readdirSync,
+        (files) => files.length > 0,
         "the ticket",
       );
       disturb(`${lock}.queue`);
@@ -572,8 +606,10 @@ describe("check-lock serialises the checks", () => {
         stdio: "ignore",
       });
       const exit = new Promise((done) => child.on("exit", done));
-      await until(
-        () => Boolean(observeLockPath(() => readdirSync(`${lock}.queue`))?.length),
+      await untilPath<string[]>(
+        `${lock}.queue`,
+        readdirSync,
+        (files) => files.length > 0,
         "the ticket",
       );
       const waiting = Date.now();
@@ -703,10 +739,7 @@ describe("check-lock wraps a consumer's build", () => {
       const finished = new Promise<NodeJS.Signals | null>((go) =>
         check.on("close", (_, how) => go(how)),
       );
-      await until(
-        () => observeLockPath(() => readFileSync(pidFile, "utf8"))?.endsWith("\n"),
-        "the build's pid",
-      );
+      await untilFile(pidFile, (text) => text.endsWith("\n"), "the build's pid");
       const child = Number(readFileSync(pidFile, "utf8"));
       const holderPid = check.pid;
       assert(holderPid, "check-lock should have started");
@@ -750,10 +783,7 @@ describe("check-lock wraps a consumer's build", () => {
         stdio: "ignore",
         detached: true,
       });
-      await until(
-        () => observeLockPath(() => readFileSync(lock, "utf8"))?.includes("group"),
-        "the command's group in the lock",
-      );
+      await untilFile(lock, (text) => text.includes("group"), "the command's group in the lock");
       expect(readFileSync(lock, "utf8")).toContain('"group"');
       // Reaped first: a zombie holder would read as live through its pid alone.
       const reaped = new Promise((go) => check.on("close", go));
@@ -778,10 +808,7 @@ describe("check-lock wraps a consumer's build", () => {
         stdio: "ignore",
         detached: true,
       });
-      await until(
-        () => observeLockPath(() => readFileSync(lock, "utf8"))?.includes("group"),
-        "the command's group in the lock",
-      );
+      await untilFile(lock, (text) => text.includes("group"), "the command's group in the lock");
       const { group } = JSON.parse(readFileSync(lock, "utf8")) as { group: number };
       const reaped = new Promise((go) => check.on("close", go));
       process.kill(-check.pid!, "SIGKILL");
@@ -809,10 +836,7 @@ describe("check-lock wraps a consumer's build", () => {
         { env: { ...process.env, CHECK_LOCK: lock }, stdio: "ignore", detached: true },
       );
       await until(() => existsSync(ready), "the build's trap");
-      await until(
-        () => observeLockPath(() => readFileSync(lock, "utf8"))?.includes("group"),
-        "the command's group in the lock",
-      );
+      await untilFile(lock, (text) => text.includes("group"), "the command's group in the lock");
       check.kill("SIGTERM");
       await until(() => readFileSync(lock, "utf8").includes("signalled"), "the signal in the lock");
       const reaped = new Promise((go) => check.on("close", go));
@@ -837,10 +861,7 @@ describe("check-lock wraps a consumer's build", () => {
         { env: { ...process.env, CHECK_LOCK: lock }, stdio: "ignore" },
       );
       const finished = new Promise((go) => check.on("close", go));
-      await until(
-        () => observeLockPath(() => readFileSync(pidFile, "utf8"))?.endsWith("\n"),
-        "the pid",
-      );
+      await untilFile(pidFile, (text) => text.endsWith("\n"), "the pid");
       process.kill(Number(readFileSync(pidFile, "utf8")), "SIGTERM");
       await finished;
       expect(existsSync(lock)).toBe(false);
@@ -861,10 +882,7 @@ describe("check-lock wraps a consumer's build", () => {
         { env: { ...process.env, CHECK_LOCK: lock }, stdio: "ignore" },
       );
       const finished = new Promise((go) => check.on("close", go));
-      await until(
-        () => observeLockPath(() => readFileSync(pidFile, "utf8"))?.endsWith("\n"),
-        "the pid",
-      );
+      await untilFile(pidFile, (text) => text.endsWith("\n"), "the pid");
       const sent = Date.now();
       process.kill(Number(readFileSync(pidFile, "utf8")), "SIGTERM");
       await finished;

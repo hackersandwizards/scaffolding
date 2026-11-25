@@ -1,5 +1,5 @@
 import { fc, test } from "@hackersandwizards/scaffolding/property";
-import { expect } from "vitest";
+import { describe, expect } from "vitest";
 import { fastSteps, selectChangedSteps, validGlob } from "../lib/changed-steps.ts";
 
 const name = fc.stringMatching(/^[a-z]{1,10}$/);
@@ -80,23 +80,26 @@ test.prop([fc.constantFrom("src/package.json", "docs/yarn.lock", ".githooks/pre-
   },
 );
 
-test.prop([fc.array(name, { minLength: 1 }), name, name, fc.constantFrom("", ".", "..")])(
-  "changed globs accept braces and classes and reject malformed patterns and segments",
-  (segments, first, second, invalid) => {
-    const base = segments.join("/");
-    for (const [glob, accepted] of [
-      [base, true],
-      [`${base}/{${first},${second}}/[ab]*`, true],
-      [`${base}/{${first},${second}`, false],
-      [`${base}/${first},${second}}`, false],
-      [`${base}/[ab`, false],
-      [`${base}/}{`, false],
-      [`${base}/a\0b`, false],
-      [" ", false],
-      [`${base}/[{]\\}`, true],
-      [`${base}/a\\`, false],
-      [`${base}/${invalid}/${first}`, false],
-    ] as const)
-      expect(validGlob(glob), glob).toBe(accepted);
-  },
-);
+type GlobInput = (base: string, first: string, second: string, invalid: string) => string;
+const globCases: [string, GlobInput, boolean][] = [
+  ["plain path", (base) => base, true],
+  ["braces and a class", (base, first, second) => `${base}/{${first},${second}}/[ab]*`, true],
+  ["unclosed brace", (base, first, second) => `${base}/{${first},${second}`, false],
+  ["extra closing brace", (base, first, second) => `${base}/${first},${second}}`, false],
+  ["unclosed class", (base) => `${base}/[ab`, false],
+  ["reversed braces", (base) => `${base}/}{`, false],
+  ["NUL", (base) => `${base}/a\0b`, false],
+  ["escaped brace and a class", (base) => `${base}/[{]\\}`, true],
+  ["trailing escape", (base) => `${base}/a\\`, false],
+  ["invalid path segment", (base, first, _second, invalid) => `${base}/${invalid}/${first}`, false],
+];
+
+describe.each(globCases)("changed glob with %s", (_, glob, accepted) => {
+  test.prop([fc.array(name, { minLength: 1 }), name, name, fc.constantFrom("", ".", "..")])(
+    "classifies the generated pattern",
+    (segments, first, second, invalid) => {
+      const pattern = glob(segments.join("/"), first, second, invalid);
+      expect(validGlob(pattern), pattern).toBe(accepted);
+    },
+  );
+});

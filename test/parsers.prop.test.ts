@@ -1,5 +1,5 @@
 import { fc, test, unicodeString } from "@hackersandwizards/scaffolding/property";
-import { expect, vi } from "vitest";
+import { describe, expect, vi } from "vitest";
 import { jsonObject, isStrings } from "../lib/json.ts";
 import { licenceAllowed } from "../lib/licence-expression.ts";
 import { exported, targeted } from "../lib/package-exports.ts";
@@ -108,20 +108,24 @@ test.prop([licence], { examples: licenceExamples })(
   },
 );
 
-test.prop([licence], { examples: licenceExamples })(
-  "SPDX expressions reject unmatched parentheses and trailing tokens",
-  ({ source }) => {
-    for (const malformed of [
-      `(${source}`,
-      `${source} MIT`,
-      `${source})`,
-      `MIT OR ${source} WITH`,
-      `MIT OR ${source} WITH AND`,
-      `(MIT ${source}`,
-    ])
+const malformedLicences: [string, (source: string) => string][] = [
+  ["unclosed group", (source) => `(${source}`],
+  ["trailing licence", (source) => `${source} MIT`],
+  ["extra closing parenthesis", (source) => `${source})`],
+  ["missing exception", (source) => `MIT OR ${source} WITH`],
+  ["operator instead of an exception", (source) => `MIT OR ${source} WITH AND`],
+  ["unclosed group with adjacent licences", (source) => `(MIT ${source}`],
+];
+
+describe.each(malformedLicences)("SPDX expression with %s", (_, expression) => {
+  test.prop([licence], { examples: licenceExamples })(
+    "rejects the generated expression",
+    ({ source }) => {
+      const malformed = expression(source);
       expect(licenceAllowed(malformed), malformed).toBe(false);
-  },
-);
+    },
+  );
+});
 
 test.prop([segment, fc.array(segment, { minLength: 1 }), word])(
   "wildcard exports match paths across directories within their prefix and suffix",
@@ -152,20 +156,37 @@ test.prop([fc.array(segment), fc.array(segment)])(
   },
 );
 
-test.prop([
-  segment,
-  segment,
-  fc.constantFrom("https://example.test/", "ssh://example.test/", "git@example.test:"),
-])("an owned git URL uses the organization segment and ignores its ref", (repo, ref, base) => {
-  for (const [url, owned] of [
-    [`${base}hackersandwizards/${repo}.git#${ref}`, true],
-    [`${base}other-hackersandwizards/${repo}.git#${ref}`, false],
-    [`${base}hackersandwizards/${repo}/nested.git`, false],
-    [`${base}hackersandwizards/`, false],
-    [`${base}hackersandwizards/#${ref}`, false],
-    [`${base}unrelated/${repo}.git#${ref}/hackersandwizards/other`, false],
-  ] as const)
+type RepositoryUrl = (base: string, repo: string, ref: string) => string;
+const repositoryUrls: [string, RepositoryUrl, boolean][] = [
+  [
+    "exact owner with a ref",
+    (base, repo, ref) => `${base}hackersandwizards/${repo}.git#${ref}`,
+    true,
+  ],
+  [
+    "different owner with the same suffix",
+    (base, repo, ref) => `${base}other-hackersandwizards/${repo}.git#${ref}`,
+    false,
+  ],
+  ["extra path segment", (base, repo) => `${base}hackersandwizards/${repo}/nested.git`, false],
+  ["missing repository", (base) => `${base}hackersandwizards/`, false],
+  ["ref without a repository", (base, _repo, ref) => `${base}hackersandwizards/#${ref}`, false],
+  [
+    "owner name only in the ref",
+    (base, repo, ref) => `${base}unrelated/${repo}.git#${ref}/hackersandwizards/other`,
+    false,
+  ],
+];
+
+describe.each(repositoryUrls)("Git URL with %s", (_, input, owned) => {
+  test.prop([
+    segment,
+    segment,
+    fc.constantFrom("https://example.test/", "ssh://example.test/", "git@example.test:"),
+  ])("classifies ownership of the generated URL", (repo, ref, base) => {
+    const url = input(base, repo, ref);
     expect(ourRepository(url), url).toBe(owned);
+  });
 });
 
 test.prop([segment, fc.constantFrom("astro", "css")])(
