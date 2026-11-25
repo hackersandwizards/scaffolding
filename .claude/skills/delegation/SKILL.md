@@ -16,7 +16,7 @@ Every handoff, in any direction and to any model, goes through the harness's own
 where it reaches the target: `delegate_task` in T3 Code (`t3_thread_launch` with `projectId` and
 `delegatedFrom` for another local project), the Agent tool in Claude Code, `spawn_agent` in Codex.
 Only where none reaches it, call the target's CLI: `claude -p`, `codex exec` (`codex --search exec`
-for web research), `agy -p="<prompt>"`, `pi -p`.
+for web research), `agy -p="<prompt>"`.
 
 ## Running a delegate
 
@@ -148,15 +148,17 @@ that holds the facts hands it over and checks it. The session writes itself: its
 with the person, records, run reports, pre-reads, a reply of one or two sentences, and a text a
 template fixes; a quote's prices, scope and terms come from the records.
 
-One writer per run. The first text starts it on Neon high: `delegate_task` on the pi provider with
-`antigravity/gemini-4-neon` in T3 Code, else `agy --mode auto --model gemini-4-neon-high
---output-format json --print-timeout 600s -p="<brief>"` (plan mode answers with a plan, not the
+One writer per run. The first text starts it on Neon high through `agy`. In T3 Code, start the
+writer as a child thread on T3's Antigravity provider (`delegate_task`), whose runtime is the `agy`
+CLI in ACP mode, and send every later text with `t3_thread_send` to that thread. Elsewhere:
+`agy --mode auto --model gemini-4-neon-high --output-format json --print-timeout 600s
+-p="<brief>"` (plan mode answers with a plan, not the
 text). The brief tells it to write no file and to read the `voice` skill and the channel's skill,
 and hands over every text the run already knows under `=== <id> ===`, each with sender and
 signature, recipients, language, purpose, must and must-not facts, new message or reply with its
 thread, for a mail subject and body; it asks for the texts only, under their ids. Every later text
-and every revision goes to the same writer: `t3_thread_send` to its child thread, or
-`agy --conversation <conversation_id>` with the id the first call returned. Measured: about 30 s
+and every revision goes to the same writer: outside T3, `agy --conversation <conversation_id>`
+with the id the first call returned. Measured: about 30 s
 for the first text and 25 s for each later one.
 
 Check facts (names, dates, links, recipients, language, signature), content correctness, length,
@@ -165,7 +167,7 @@ a finding, hand it back to the writer with the concrete finding. Deliver the out
 without the id lines: no rewording, no dropped or added sentences, no re-casing, no polish. Any
 text change goes through the writer.
 
-Where Neon does not answer (no `delegate_task` or `agy`, not signed in, a capacity error after one
+Where Neon does not answer (no `agy`, not signed in, a capacity error after one
 retry), the session writes the text itself after loading `voice`, and its report says so.
 
 ## Claude -> Codex
