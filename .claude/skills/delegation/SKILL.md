@@ -110,7 +110,7 @@ the report when the notification arrives after it.
   Neon high where the result has to be found (an open spec, design, hill climbing, a bug sweep);
   else the other of the two, then Opus medium.
 - Reviewer: never the row's implementer, chosen as `blind-review` says.
-- Child for browser, tool or mechanical steps: the Codex pin at medium; else this session.
+- Child for the browser steps a skill hands off: the Codex pin at medium; else this session.
 
 - The session that takes a development job runs it to its end, on whatever model it runs; no other
   session coordinates it. On the planner's or the implementer's model it does that role itself;
