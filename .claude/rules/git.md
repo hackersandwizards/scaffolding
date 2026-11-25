@@ -1,43 +1,28 @@
 # Git
 
-Other sessions share this working tree and its index.
+Other sessions share this working tree and its index. Load `git-recovery` before a rare case its
+description names.
 
 - Name the paths on `git commit` itself, `--amend` included. Never `git add -A`, `git add .` or a
   bare `git commit`: a commit without a pathspec takes whatever another session staged.
-- Commit a path holding `[` or `*` with `:(literal)<path>`, never `git --literal-pathspecs`, which
-  exports `GIT_LITERAL_PATHSPECS=1` into the hook, so every pathspec the hook passes to git turns
-  literal.
 - `git add` each new file by name, and both paths of a `git mv`, before committing. A pathspec
   skips untracked files, and naming only a rename's destination leaves the file at both paths. The
   local gate still passes, because it reads the working tree rather than the commit.
-- A pathspec commit takes the working tree, so `git commit -- <path>` re-adds a file that
-  `git rm --cached` only untracked, `.gitignore` notwithstanding. Move the file out of the tree for
-  that commit and back afterwards.
-- A case-only rename commits nothing through a pathspec where `core.ignorecase` is true: the commit
-  reports success and leaves the rename staged. Rename through an intermediate name in two commits
-  (`Foo` -> `foo-case` -> `foo`) and read `git ls-tree HEAD -- <dir>` afterwards.
 - Name files, not the directory holding them. A file can still hold another session's uncommitted
   lines beside yours: read each path's own diff, commit the clean paths now, and leave a shared file
   while its other author's session is open. Leaving it uncommitted is no reason to wait: attended,
   name the clash in one line and make the edit, or ask, never start a wait of your own.
-- Before `--amend`, verify that `HEAD` is still your commit. Repair a wrong fold index-free with
-  `git commit-tree` plus `git update-ref` and the expected old value, never `reset` or `rebase`.
-  Abandon the repair if it races.
+- Before `--amend`, verify that `HEAD` is still your commit.
 - Never switch a hook off: no `--no-verify`, no variable or `core.hooksPath` override that skips it,
-  and no `commit-tree` outside the fold repair above. A hook failing on another session's file waits
-  for that session. A hook failing a correct commit is a defect for the repository that owns it: fix
-  it in this run where that is yours, else the commit waits and the report names the defect.
-- A commit from a private index (`GIT_INDEX_FILE`) reads that index from the commit's parent
-  immediately before writing the tree. Check: `git show --stat HEAD` lists only your paths.
+  and no `commit-tree` outside `git-recovery`'s fold repair. A hook failing on another session's
+  file waits for that session. A hook failing a correct commit is a defect for the repository that
+  owns it: fix it in this run where that is yours, else the commit waits and the report names the
+  defect.
 - `git checkout -- <path>` and `git restore` install whatever another session staged there. Revert
   with `git show HEAD:<path> > <path>`, after reading `HEAD` for that path, since it moves while
-  your run is open. For a Git LFS file, follow it with `git lfs checkout <path>`. In a file
-  another session also edits, revert only your own hunks. Before reverting or countering a push,
-  deploy or edit you did not order, read the other sessions' transcripts
-  (`grep -rl "<sha or subject>" ~/.claude/projects/*/`) for the person's decision.
-- A killed merge leaves upstream files half-written with `HEAD` unmoved. Before calling a modified
-  file another session's work, compare it with the merge target:
-  `git show <target>:<path> | cmp -s - <path>`.
+  your run is open. In a file another session also edits, revert only your own hunks. Before
+  reverting or countering a push, deploy or edit you did not order, read the other sessions'
+  transcripts (`grep -rl "<sha or subject>" ~/.claude/projects/*/`) for the person's decision.
 - Commit and push each finished batch without being asked, a push that deploys included: one
   coherent unit whose checks pass. A hold on a repository's deploy lives in its goal item
   (`docs/agent-work/items/goal.md`), never in a rule. A hold that names its end lifts then: read the
@@ -66,15 +51,9 @@ Other sessions share this working tree and its index.
 - `.git/index.lock` is another session committing. A commit holds it for seconds: wait and
   retry, and if it outlives a couple of minutes, name the owning process and report it.
   Never delete it.
-- Read `HEAD` back with `git ls-tree HEAD -- <paths>` before reporting anything committed. `git
-  commit <path>` answering `no changes added to commit` usually means another session swept your
-  edit into its own commit: find it with `git log -m -S` before editing again,
-  since a plain `-S` skips merge diffs.
+- Read `HEAD` back with `git ls-tree HEAD -- <paths>` before reporting anything committed.
 - In a public repository a commit message carries no company data and no person's words: name
   what a request asked, never quote it, a brief's verbatim quotation included.
-- The commit author is the machine's git identity for every session. An agent commit is marked only
-  by its `Co-Authored-By` line, so git history never says who decided a change: that evidence is a
-  message, a record body or a run transcript, and is often unrecorded.
 - Before making a worktree, or releasing (version bump and tag) while another session works in
   this checkout, load `parallel-session`. Outside a contributor's fork, never push a branch and
   never open a pull request.

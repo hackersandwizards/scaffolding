@@ -1,0 +1,4 @@
+interface:
+  display_name: "Git Recovery"
+  short_description: "Rare git cases in a shared checkout"
+  default_prompt: "Use $git-recovery for a rare git case in a shared checkout."
