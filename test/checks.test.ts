@@ -1086,9 +1086,8 @@ describe("scaffold and check-structure", () => {
   });
 
   test("scaffold copies the agent configs once", () => {
+    expect(lstatSync(join(dir, ".pi"), { throwIfNoEntry: false })).toBeUndefined();
     const paths = [
-      ".pi/mcp.json",
-      ".pi/settings.json",
       ".agents/plugins/repo/plugin.json",
       ".agents/plugins/repo/mcp_config.json",
       ".agents/hooks.json",
@@ -1099,24 +1098,19 @@ describe("scaffold and check-structure", () => {
       expect(readFileSync(join(dir, path), "utf8"), path).toBe(readFileSync(starter, "utf8"));
     }
 
-    const changed = [".pi/mcp.json", ".agents/plugins/repo/mcp_config.json"];
-    const removed = paths.filter((path) => !changed.includes(path));
-    const files = Object.fromEntries(
-      changed.map((path) => {
-        const settings = jsonObject(readFileSync(join(dir, path)));
-        const servers = settings.mcpServers;
-        if (!isObject(servers)) throw new Error(`${path}: missing mcpServers`);
-        return [
-          path,
-          JSON.stringify({ ...settings, mcpServers: { ...servers, own: { command: "x" } } }),
-        ];
-      }),
-    );
-    const consumer = fixture("agent-configs", {}, files, removed);
+    const changed = ".agents/plugins/repo/mcp_config.json";
+    const removed = paths.filter((path) => path !== changed);
+    const settings = jsonObject(readFileSync(join(dir, changed)));
+    const servers = settings.mcpServers;
+    if (!isObject(servers)) throw new Error(`${changed}: missing mcpServers`);
+    const content = JSON.stringify({
+      ...settings,
+      mcpServers: { ...servers, own: { command: "x" } },
+    });
+    const consumer = fixture("agent-configs", {}, { [changed]: content }, removed);
     expect(run(consumer, "check-structure")).toEqual({ code: 0, out: "" });
     expect(run(consumer, "check-structure", ["--fix"])).toEqual({ code: 0, out: "" });
-    for (const [path, content] of Object.entries(files))
-      expect(readFileSync(join(consumer, path), "utf8"), path).toBe(content);
+    expect(readFileSync(join(consumer, changed), "utf8"), changed).toBe(content);
     for (const path of removed) expect(existsSync(join(consumer, path)), path).toBe(false);
   });
 
