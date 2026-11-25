@@ -39,7 +39,8 @@ out.`, so no skill a schedule runs depends on which scheduler started it.
    it instead.
 5. A run reading a time window starts at the earlier of its default and the window start the file
    hands it: the file runs `bun ~/.claude/scripts/schedule/last-run.ts <name>`, which reads both
-   schedulers' records of finished runs, and puts `Window start: <output>` into the instruction.
+   schedulers' records of finished runs, and puts `Window start: <output>` into the instruction; a file that
+   starts with `due.ts` takes the value from that line's `window=`.
    The skill reads that line and names no schedule of its own. Where the script exits non-zero,
    the run takes its default and says so. The run reports how far back it reached. A file whose
    work belongs to its own day or slot says in one line that it does not catch up. Catch a missed

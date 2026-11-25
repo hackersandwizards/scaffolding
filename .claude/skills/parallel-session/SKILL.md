@@ -152,8 +152,8 @@ app code that the full gate checks. Short record and document edits stay in the 
 A release (version bump and tag) while another session works in the same checkout goes from a
 hand-made worktree, so it carries none of that session's unpushed work.
 
-The gate's lock serialises runs within one checkout only, so each worktree's full gate runs beside
-the others.
+The gate's lock serialises runs within one checkout only: across worktrees, run one full gate at a
+time.
 
 - Before the fan-out, commit and push everything the delegates need: a worktree starts from
   `origin/main`, without this checkout's uncommitted and unpushed work.

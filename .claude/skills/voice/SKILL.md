@@ -38,6 +38,7 @@ Layers 1-3 are positive: write from them. Layer 4 is a filter: check the draft a
 | File | When | Owns |
 |------|------|------|
 | `slack-channel.md` | Slack via the MCP tool | Markdown quirks and Slack-only conventions |
+| `visuals.md` | A reply or document that explains structure, order, dependency, status, options, change or time | One form per reader's question, and where a diagram lives |
 | `content-formula.md` | Post-length content: LinkedIn essays, blog articles, talk arcs | Six beats, the research-backed pattern |
 | `negotiation.md` | Pricing pushback, advisor or partner setup, speaker fees, training scope, scope creep, asking for visibility, intros or access | Tactics and h&w-specific phrasings |
 | `intro-framework.md` | 30-second self-introduction | NSFAG: Name, Same, Fame, Aim, Game |

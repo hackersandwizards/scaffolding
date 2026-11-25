@@ -14,7 +14,7 @@ for the person's return.
   goes in as an assumption the delegate tests.
 - A brief yields to a rule and to the channel's skill, and the delegate names the instruction it
   skipped. A brief naming a channel lets the delegate draft there.
-- The colleague holding a case drafts its outbound message itself through the channel's skill.
+- The colleague holding a case drafts its outbound message through the channel's skill.
 - A delegate reviewing credential handling reasons from the source: no command that reads a
   keychain, a credential helper or a secret store.
 - Every brief names its run's scratch folder. A delegate started through the Agent tool never runs

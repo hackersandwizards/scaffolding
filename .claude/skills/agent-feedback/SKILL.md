@@ -147,13 +147,11 @@ The sync script's own `GLOBAL_RULES` and `GLOBAL_SKILLS` arrays say which files 
 against all three, per file rather than once per task, and edit the hub copy. The next sync replaces a mirrored directory whole, so a repo-local file
 inside a mirrored skill directory goes too, and no check reports either loss.
 
-Before syncing, diff every mirror against the hub, not only the one you touched. Where a mirror
-that is not a declared fork carries edits the hub lacks, copy it to the hub first, or the sync
-deletes those lines in every repo at once. A declared fork drifting from the hub is the fork
-working: leave it, and never lift it into the hub. Build that loop over a shell array: an unquoted
-parameter does not word-split in zsh, so the loop runs once against the whole list and reports no
-drift. Count the comparisons it made and check that number against repos x artifacts less the
-declared forks and `OMITTED` pairs before believing a green result.
+Before syncing, run the sync script with `--dry-run` on the committed hub: it changes no mirror and
+prints an `update` line for every mirrored file or skill directory that differs from the hub. A line for a file you did not change is a hub change
+not yet synced or a mirror carrying edits the hub lacks: read its diff, and copy a mirror's own
+edits to the hub first, or the sync deletes them in every repo at once. A declared fork drifting
+from the hub is the fork working: leave it, and never lift it into the hub.
 
 The hub is a git repository of its own: commit the hub copy there with its paths named, then run
 the sync script, which commits and pushes the mirrors in every configured repository itself. It first commits every dirty rule, mirrored skill and `statusline-command.sh` in the hub, so read the hub's `git status --porcelain` before running it. A dirty one you did not write defers the sync: copy the files you committed from hub `HEAD` into the current repository's mirror and report the other repositories as pending. Name a repository held for a reason git cannot show, such as a deploy hold, with `--hold <path suffix>`: the sync leaves it, and every repository with unpushed commits no sync wrote, untouched and prints each as `pending:`, a line the report carries.

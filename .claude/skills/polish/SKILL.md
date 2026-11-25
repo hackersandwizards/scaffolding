@@ -42,7 +42,7 @@ Run the repo's own checks once and record the result: this baseline separates a 
 
 Subtract the exclusion set from the source files before batching: the batch reviewers never see phase 1.
 
-Hand each directory batch to Codex Sol at medium effort as `delegation` hands work over, never to a
+Hand each directory batch to the Codex pin at medium effort as `delegation` hands work over, never to a
 Claude subagent, told to read the Comments section of `references/failure-modes.md` and to report comment changes only, not make them. Spot-check one file per batch.
 
 Tell each batch that zero changes is an acceptable result. Before deleting a comment on a magic number, grep the file for the other numbers doing a similar job: where a sibling uses a different value, the comment is the only statement that the divergence is deliberate, so keep it.
@@ -84,7 +84,7 @@ One pass of each. Name any finding you dismissed, and why, in the final summary,
 
 Run the repo's own checks, the gate on its own line, and read `$?`. "A gate that ran but was never read" in `references/failure-modes.md` names this phase's traps.
 
-A failing check blocks the commit. Fix it if the sweep caused it; report it and stop if it predates the sweep. A failure traced to a file in the exclusion set is another session's half-finished edit: wait for the gate to clear, and report it and stop if it does not. Never bypass the hook to get past it.
+A failing check blocks the commit. Fix it if the sweep caused it; report it and stop if it predates the sweep. A failure traced to a file in the exclusion set is another session's half-finished edit: wait for the gate to clear, and report it and stop if it does not.
 
 ## 6. Commit and push
 

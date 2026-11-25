@@ -3,7 +3,7 @@
 Load the `voice` skill before the first text a human reads in a session, this conversation,
 records and documents included. Messages between agents, agent memory, instruction artifacts and
 scratch files follow only this file. A text that leaves the session for a reader is written by Neon
-as the `delegation` skill says, and the session that hands it over checks it.
+as the `delegation` skill says.
 
 - In a reply, lead with the answer, challenge a wrong assumption in the first sentence, and end on
   what the reader must act on; a report that closes a task ends on what stays open and who moves
