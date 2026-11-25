@@ -58,6 +58,10 @@ handling that prevents data loss, security measures, or accessibility basics.
   its package in the report.
 - Remove or replace a dependency with a known vulnerability before excusing it. An audit
   exception names the advisory ID.
+- On a rename or relocation, a search for the old value misses the store
+  you never opened. Rename a legacy internal name in current files too, labels and provenance
+  text included. Reach a path from before a repository move through a stable suffix or a Git glob,
+  never the former name.
 - A browser that code or an MCP server starts uses a profile from `mkdtemp` under the OS temp folder,
   removed after the run.
 - Screenshots compared across two builds use software drawing (`--disable-gpu`), a fresh profile

@@ -12,7 +12,7 @@ description: >-
 
 - Architecture exists to split work between teams so they can ship independently. If it doesn't serve coordination, it's ornamental.
 - Principles over rules in complex environments: teach judgment.
-- Code changeability matters more than code correctness. "It is more important for code to be changeable than that it work."
+- Code changeability matters more than code correctness.
 - The Three Ways: Fast Flow, Fast Feedback, Continuous Learning
 - Five Ideals: Locality/Simplicity, Focus/Flow/Joy, Improvement of Daily Work, Psychological Safety, Customer Focus
 

@@ -25,8 +25,8 @@ calling a set absent.
 A terminal Claude session has neither signed-in surface. A page behind a login goes to a signed-in
 surface only. Where the session has none, or the site answers with its sign-in page, report the
 site as unavailable and stop. A page without a login (a dev server, a public page) goes to the
-first of these that works: a signed-in surface, chrome-devtools, the repository's own automation
-(such as Playwright).
+first of these that works: chrome-devtools, the repository's own automation (such as Playwright).
+It goes to a signed-in surface only where the request asks for browser work.
 
 Never enter a password and never sign in: the person signs in.
 

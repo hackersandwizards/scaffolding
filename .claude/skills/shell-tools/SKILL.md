@@ -60,9 +60,6 @@ Prefer these over their classic equivalents.
   a rejected push. Chain on the push itself and tag only once `git rev-parse HEAD` equals
   `origin/main`. A tag that landed off main stays put: merge `origin/main` into the tagged commit.
 - `git-filter-repo` for history rewrites
-- Global git aliases from `~/.gitconfig` that add workflow behavior:
-  - `git all <args...>` -> run `git <args...>` in every repository under the current tree
-  - `git integrate <branch>` -> merge a branch with `--no-ff --edit` after confirming `HEAD` is up to date with that branch
 
 **System and shell:**
 
@@ -73,7 +70,6 @@ Prefer these over their classic equivalents.
 - `just` as command runner, `parallel` for fan-out
 - Where Docker runs on OrbStack and a run needs it, start it with `orb start` and say so, without
   asking; stop it only where your run started it and nothing else uses it.
-- `cdxe` to start Codex exec. It is aliased to `codex exec --yolo`: no approvals, no sandbox.
 
 **JavaScript/TypeScript:**
 

@@ -56,13 +56,13 @@ free port (Lighthouse per public page type, response and render time per app rou
 before and after numbers for each fix in the repository's one `YYYY-MM-DD-performance.md`, in the
 folder its `CLAUDE.md` names for documents, written with today's date, deleting the previous one in the same commit. Serve the before state
 from a detached worktree on the commit before the fix, measure before and after back to back so each
-pair shares its load, and write the 1-minute load average beside each series. Before each batch,
-wait up to five minutes while that load exceeds the core count (`getconf _NPROCESSORS_ONLN`), then
-measure anyway.
+pair shares its load, and write the 1-minute load average beside each series.
 
 Hand one reviewer per module or top-level directory to a model that wrote none of its code, as `delegation` hands work over and `blind-review` chooses, to review it for minimalism, design, performance and security, with the path of `references/failure-modes.md` in its prompt to read in full. Reviewers report and do not edit.
 
-Review the instruction artifacts as their own module, yourself: `.claude/` rules, agents, and skills, plus `CLAUDE.md`. Measure what every session here starts with, the bytes of the rules without `paths:`, `CLAUDE.md`, the agent files, the memory indexes and the skill descriptions, and report it before and after this run's cuts. Look for a pointer to a path that no longer exists, a cap or boundary that contradicts an always-on rule, one rule stated twice inside a single skill or among the artifacts that are not skills, and any skill pointing outside its own directory at another skill, rule, agent or memory file by link or by name.
+Review the instruction artifacts as their own module, yourself: `.claude/` rules, agents, and skills, plus `CLAUDE.md`. Measure what every session here starts with, the bytes of the rules without `paths:`, `CLAUDE.md`, the agent files, the memory indexes and the skill descriptions, and report it before and after this run's cuts. Look for a pointer to a path that no longer exists, a cap or boundary that contradicts an always-on rule, one rule stated twice inside a single skill or among the artifacts that are not skills, and any skill pointing outside its own directory at another skill, rule, agent or memory file by link or by name, other than a channel's reference skill it loads or a skill it runs as a step.
+Load `agent-feedback` before fixing one: it says where the fix to a mirrored file goes and how the
+sync carries it.
 
 Call the prompt audit yourself, never through a reviewer's prompt: `Skill` with `skill: "claude-api"` and `args: "prompt-audit <path> <path> ..."`, naming the instruction artifacts in this run's scope. Without paths it audits the whole working directory. Its high and medium findings join this phase's fix list. A conflict it leaves as a flag goes into the final report as a decision for the user.
 

@@ -31,7 +31,7 @@ choice to please: agreement carries its reason.
 - A finding about a record or message rests on reading it whole in the same turn, attachments
   included: a grep, a sheet cell or a delegate's report is not that read. Before reporting a move as
   owed, unanswered or unsent, read the thread's newest message, Sent and Trash (`in:anywhere`) and
-  the calendar. Before dropping a claim as unverifiable, check the derived or rendered artifact next
+  the calendar. Read Sent in the mailbox of whoever owns the step, not the one you reach. Before dropping a claim as unverifiable, check the derived or rendered artifact next
   to the raw one. Never take a record count from the top level of a paginated snapshot.
 - A zero from a query, helper or new check proves nothing until a control of the same shape that
   must hit returns non-zero.
@@ -42,10 +42,7 @@ choice to please: agreement carries its reason.
   for a flag, every table for a question of ownership, a page's markup rather than WebFetch's
   paraphrase. A search across it is not enough.
 - Verify a rename or relocation by listing every stored reference, across every tool that keeps
-  such references, and testing each against reality. A search for the old value misses the store
-  you never opened. Rename a legacy internal name in current files too, labels and provenance
-  text included. Reach a path from before a repository move through a stable suffix or a Git glob,
-  never the former name.
+  such references, and testing each against reality.
 - Never print, copy, commit or summarize the contents of a `.env` file, a token, Terraform state or a
   CI variable.
 - Never weaken a check to make it pass. Fix what the gate caught, or report that you could not. An
@@ -59,8 +56,6 @@ choice to please: agreement carries its reason.
   same run, through a delegate the brief tells to read that repository's `CLAUDE.md` and every
   `.claude/rules/*.md` first, and as a brief for a session in that repository only where no
   delegate reaches it.
-- Transcribing a person into a durable artifact, drop a leading reference code or restated question
-  stem and keep every word after it as written, typos included.
 - Never fabricate a source, a statistic, a reason or words attributed to a named person: a draft or
   declaration carries only what its principal or a source states, and a missing reason, headcount
   or scope stays a question. An external or
@@ -69,7 +64,9 @@ choice to please: agreement carries its reason.
   quotation.
 - Flag every stubbed or simulated integration in the report.
 - An effort estimate names its method and cross-checks it against a second one, such as the client's
-  own velocity. Mark every figure that is your judgement rather than a measurement.
+  own velocity. Mark every figure that is your judgement rather than a measurement. Never cut
+  agent-built scope by person-hours; report the serial gate, dependency order and what waits on a
+  person instead.
 - Give a number with the age of its source and whether its window is representative. Group a count
   by its own status field before calling it reach, audience or capacity. Where someone else owns
   the calculation, hand over the rows and name the missing terms, never a total.
@@ -84,8 +81,6 @@ choice to please: agreement carries its reason.
 - Where a durable artifact states a measurement and your run measures otherwise, keep both readings
   and propose the edit. A selector, route or path you falsified against the live system you correct
   in place.
-- A rule change said to apply retroactively authorizes the rule, not the repair. Count the
-  artifacts first, split into fillable from data in hand, correctly empty, and needing a source.
 - Read the clock again in every turn that computes a date, a weekday or a deadline: the session's
   stamped date is the day it opened. Read who is in the session from its identity signals before
   writing a salutation, a role or a recipient.

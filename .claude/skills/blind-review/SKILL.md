@@ -105,7 +105,7 @@ read as an image and Codex answers "No prompt provided via stdin". Check: every 
 is non-empty.
 
 ```bash
-codex exec -m gpt-6.2-sol -c model_reasoning_effort="high" --skip-git-repo-check --ephemeral -s read-only "<prompt>" < /dev/null
+codex exec -c model_reasoning_effort="high" --skip-git-repo-check --ephemeral -s read-only "<prompt>" < /dev/null
 agy --mode plan --model gemini-4-neon-high --print-timeout 600s -p="<prompt>"
 ```
 

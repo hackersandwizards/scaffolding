@@ -13,6 +13,9 @@ allowed-tools: Read, Glob, Grep, Bash
 
 Drafting into an existing conversation: read it first. Greeting, sign-off, one block or a stream, and the sender's own unanswered questions come from the thread, not from the request.
 
+Transcribing a person into a durable artifact, drop a leading reference code or restated question
+stem and keep every word after it as written, typos included.
+
 1. Pick the register. Relational (email, Slack, WhatsApp, DMs, a comment or reply under a social post: a person answers): `personal-voice.md` wins conflicts. Authored (articles, LinkedIn posts, proposals, slides, docs: an audience reads): `prose-style.md` wins on sentence mechanics. A comment answers a person, so it is relational however public the thread is.
 2. Name the posture. Relational prose always has one: read `postures.md` before writing a word. Authored prose has no posture and takes a scaffold overlay instead.
 3. Apply the four base layers in order, then the overlays the situation calls for.

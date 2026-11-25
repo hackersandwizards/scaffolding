@@ -24,7 +24,8 @@ out.`, so no skill a schedule runs depends on which scheduler started it.
    frontmatter holds `name`, `description` and `cron`, the five-field cadence in local time and
    the one owner of it. The file carries only what is true because it runs on a schedule: the cadence, the working directory, the
    colleague it delegates to and the check on that colleague's report, the standing approval and
-   its limit, what an empty run reports, and the ledger that dedupes across runs. A file has one
+   its limit, what an empty run reports, and the ledger that dedupes across runs. A file that hands its run to
+   a colleague says `Read ~/.claude/skills/schedules/hand-over.md and hand over as it says.` A file has one
    cron expression, so a cadence with two firing patterns is two schedules. A day-of-month and a
    weekday in one expression are OR'd: `22-28 * 4` fires all seven days and every Thursday, and no
    five-field expression says "last Thursday". Read each trigger's next run to confirm an

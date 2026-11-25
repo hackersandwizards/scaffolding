@@ -77,17 +77,15 @@ options:
 The question's context, in Markdown.
 ```
 
-Items are written in English; a quotation keeps its original words. Across the repos the hub
-lists, the open items fill every priority from 1 to 3. Give a new item the priority and `order`
-of what it costs if missed against the open items, and when a level empties, move the costliest
-items up.
+Items are written in English; a quotation keeps its original words. Give a new item the priority
+and `order` of what it costs if missed against the open items.
 
 ## Steps
 
 1. At start, read `docs/agent-work/items/` in every repo the work touches. Where no goal item
    exists and the work spans sessions or delegates, create `goal.md` with the goal quoted from
-   the person's message; another repo's goal goes to a session in that repo. A work item outside
-   the session's goal waits for its own session, whoever owns it. A `/goal` stop-hook rejection is
+   the person's message; another repo's goal goes to a session in that repo. A work item another
+   agent owns waits for its session. A `/goal` stop-hook rejection is
    a model's reading of the goal: it never decides an open decision item or overrides a ruling of
    the person. On the second such rejection, stop the loop, say why once, and give the person the
    `/goal clear` or `/goal <new condition>` line. Check: the goal item quotes the person.

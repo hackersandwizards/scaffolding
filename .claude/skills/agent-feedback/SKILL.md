@@ -88,6 +88,9 @@ A failure that costs a second time in one session names its owner:
 A new or changed line rests on a person's message or an observed failure, named in the commit
 message. A line with neither is not written.
 
+A rule change said to apply retroactively authorizes the rule, not the repair. Count the
+artifacts first, split into fillable from data in hand, correctly empty, and needing a source.
+
 For a change the person orders, draft the one-sentence target text, read the whole file for the
 line it folds into, and show the wordings before committing, or name them in the report on an unattended run; a delegate brief carries that text or
 a length cap and asks for the removal-first diff. A rule the person states for every session goes
@@ -104,7 +107,9 @@ through it with today's state: no marker, no record, the run that starts tomorro
 
 A cleanup of skills and rules has three equal goals: cut what another owner states or what only
 narrates history, collapse special cases, and leave no two passages contradicting each other,
-reported in their own section. A skill checked into a repository stays on there: this machine's usage
+reported in their own section. A list whose gaps read as answers keeps a row that restates its
+owner where the missing row would say "nothing is needed here". Where it would send the reader
+elsewhere, the row goes. A skill checked into a repository stays on there: this machine's usage
 counters measure only one person's sessions. One the person does not run is switched off for them
 alone, in the git-ignored `.claude/settings.local.json` (`skillOverrides`).
 
@@ -115,6 +120,14 @@ A gate deciding whether to produce an artifact answers two questions separately:
 possible, and what makes it wanted. Every suppressing condition ships with its trace, naming the
 item it dropped and the reason in the run report, or a wrong suppression leaves no evidence
 anywhere.
+
+One owner per fact stops at a skill's edge: a skill's files point only at that skill's own files
+and at the repository data and scripts it acts on, never at another skill, rule, agent or memory
+file. It may name the reference skill that owns a channel it calls, to load before the first call,
+since that skill carries the channel's tool grants and limits, and a skill it runs as one of its
+steps. A skill whose subject is the inventory of those artifacts may name them in the rows it
+catalogs, and no other skill cites such a row ID. Redundancy between skills is the price of that
+independence.
 
 Cutting a skill's reference to another artifact is a deletion, never a substitution: a description
 in place of the name ("the skill that owns the page mechanics") is the same reference, and a shorter
