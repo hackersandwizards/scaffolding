@@ -2,8 +2,7 @@
 name: delegation
 description: >-
   Hand work over in any direction between harnesses, launch, prod, stop and check a delegate,
-  which model and effort each role runs at, which prose goes to Neon and which code work to
-  Codex: before starting any delegate, before code work (an implementation,
+  which model and effort each role runs at: before starting any delegate, before code work (an implementation,
   a bug fix, a refactor, tests, a script, a dependency update, a polish pass), when running or
   configuring Codex, or when either side needs copy written.
 ---
@@ -104,21 +103,36 @@ the report when the notification arrives after it.
 
 ## Roles and models
 
-| Role                                         | First choice                                                                                  | If unavailable              |
-| -------------------------------------------- | --------------------------------------------------------------------------------------------- | --------------------------- |
-| Implementer                                  | the repository's Codex pin, `gpt-6.2-sol` medium; high for a task that failed its review once | Neon high, then Opus medium |
-| Planner, only for a job of two or more epics | Fable high; Opus high in Claude Desktop                                                       | Opus high                   |
+| Role                                                                                         | First choice                                                | If unavailable                            |
+| -------------------------------------------------------------------------------------------- | ----------------------------------------------------------- | ----------------------------------------- |
+| Planner: a job of two or more epics, and the root cause of a row its implementer did not fix | Fable high, never higher                                    | Opus high                                 |
+| Implementer, hill climbing and bug sweeps included                                           | Neon high                                                   | the Codex pin at medium, then Opus medium |
+| Reviewer                                                                                     | Sol high; Opus medium in a fresh context for code Sol wrote | Opus medium                               |
 
-- The session that takes a development job runs it to the end, on whatever model it runs, with no
-  session in between. The planner writes the job's checklist to a file, one row per task with its
-  check; a job without a planner is one row.
-- The implementer works its row to the end: tests, the gate, a commit. The session waits for it in
-  one blocking call, reads `git log` and the gate's output once, has a model that did not write the
-  code review the diff, returns the findings to the same implementer for at most three rounds, then
-  starts the next row. A row still open after three rounds goes into the report as open.
-- Fable never runs at xhigh or max.
-- Probe a model with one cheap call before a long run, never wait for one to return, and name every
-  fallback taken in the report.
+- The session that takes a development job runs it to its end, on whatever model it runs; no other
+  session coordinates it. On the planner's or the implementer's model it does that role itself;
+  otherwise it hands the role over and writes no code.
+- An epic is a part of the job that ships on its own. The planner, or the session where none runs,
+  writes the checklist as a JSON file in the scratch folder, one row per task: `id`, `task`,
+  `check` (a command or an observable result), `depends_on`, `status` (`open`, `pass`, `fail`).
+  After that only `status` changes, and only the session changes it.
+- The implementer works its row to the end: the check, the gate, a commit. A row whose check is a
+  number (gate time, test runtime, mutation score, Lighthouse, a run's token cost) is worked as a
+  loop: change one thing, measure again, keep the change only where the number improves; its report
+  gives the number before and after.
+- The session waits for the implementer in one blocking call and reads the commits and the gate's
+  exit status without rerunning the gate. The reviewer reads the row's diff and its check's result.
+  A blocking finding (a defect, a failed check, a broken rule) goes back to the same implementer
+  thread, at most three times; other findings go into the report. A row with no blocking finding
+  left is `pass`. A row still failing after the third return goes to the planner once for its root
+  cause and the fix; still failing, its commits are reverted with `git revert` and it is `fail`,
+  as is every row that depends on it.
+- The job ends when every row is `pass` or `fail` and the gate passes on the last commit, or at a
+  blocker only the person can lift. The report gives each row's status, every finding left open and
+  every fallback taken. A finding the review raised in two rows goes to `agent-feedback` before the
+  report.
+- Probe each model with one cheap call before its first handover; on an error, take the next
+  fallback.
 
 Measured November 2026, index points from Artificial Analysis:
 
@@ -176,16 +190,15 @@ Public web research (companies, events, tools, vendors) goes to Neon high the sa
 its `search_web` tool; before a result reaches a person, Claude checks its version numbers and
 dates against the cited source.
 
-## Claude -> Codex
+## Code work
 
-Claude hands Codex the code work: implementation, bug fixes, refactors, tests, scripts, dependency
-updates and the polish pass, in the repository the work belongs to. Hand it over with the pin as
-model, the roles table's effort and the repository's root as working folder. Claude keeps the
-conversation with the person, records, rules, skills and research that needs our channels or
+The session hands the implementer the code work: implementation, bug fixes, refactors, tests,
+scripts, dependency updates and the polish fixes, with the root of the repository the work belongs to
+as working folder. In T3 Code the implementer is a child thread on T3's Antigravity provider
+(`delegate_task`), and every fix round goes to it with `t3_thread_send`. Elsewhere:
+`agy --model gemini-4-neon-high --output-format json --print-timeout 3600s -p="<brief>" < /dev/null`
+from the repository root, each fix round with `--conversation <conversation_id>`. The session keeps
+the conversation with the person, records, rules, skills and research that needs our channels or
 records, and checks every text Neon writes.
-Claude reviews what Codex produced, as far as `blind-review` sizes the review, and pushes after it.
-
-Where `codex` is not installed or not signed in (`codex login status`), the implementer's fallback
-applies and the review goes to a model that did not write the work.
 
 Verify what a run did with `git log`, never from its own summary.

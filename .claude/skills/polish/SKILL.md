@@ -27,7 +27,7 @@ The argument also scopes where you hunt for defects, never which proven defects 
 Once a fact is verified false, fix every live copy of it, the generator that produced them
 included, in files the argument never named. The phase 1 exclusion set still binds.
 
-Every finding goes to the executor the `delegation` skill names (Claude or Codex) as a brief line
+Every finding goes to the implementer the `delegation` skill names as a brief line
 carrying file, lines and change in full: that executor has none of the review skills.
 
 ## 1. Preflight
