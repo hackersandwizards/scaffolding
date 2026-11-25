@@ -109,8 +109,7 @@ the report when the notification arrives after it.
   description, a data model, a contract, a failing test), edge cases, hostile input, a current API;
   Neon high where the result has to be found (an open spec, design, hill climbing, a bug sweep);
   else the other of the two, then Opus medium.
-- Reviewer: the other of the two at high; Opus medium in a fresh context for a change against our
-  rules; else Opus medium.
+- Reviewer: never the row's implementer, chosen as `blind-review` says.
 - Child for browser, tool or mechanical steps: the Codex pin at medium; else this session.
 
 - The session that takes a development job runs it to its end, on whatever model it runs; no other
