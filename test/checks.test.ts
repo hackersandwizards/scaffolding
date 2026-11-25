@@ -1592,7 +1592,7 @@ describe("scaffold and check-structure", () => {
     expect(lines(run(none, "check-structure").out, "check-structure")).toEqual([]);
     const skills = fixture("skills", {}, { ".claude/skills/a/SKILL.md": "x\n" });
     expect(lines(run(skills, "check-structure").out, "check-structure")).toEqual([
-      "[check-structure] .agents/skills: must be a symlink to ../.claude/skills: if missing, run check-structure --fix; if a regular file or wrong target exists there, remove it and create the symlink with `ln -s ../.claude/skills <path>`",
+      "[check-structure] .agents/skills: must be a symlink to ../.claude/skills: if missing, run check-structure --fix; if a regular file or wrong target exists there, remove it and create the symlink with `ln -s ../.claude/skills .agents/skills`",
     ]);
     run(skills, "check-structure", ["--fix"]);
     expect(run(skills, "check-structure").code).toBe(0);
@@ -1600,7 +1600,7 @@ describe("scaffold and check-structure", () => {
     const wrong = fixture("wrong-link", {}, { "keep/x": "x\n" });
     symlinkSync("../keep", join(wrong, ".agents/skills"));
     expect(lines(run(wrong, "check-structure").out, "check-structure")).toEqual([
-      "[check-structure] .agents/skills: must be a symlink to ../.claude/skills: if missing, run check-structure --fix; if a regular file or wrong target exists there, remove it and create the symlink with `ln -s ../.claude/skills <path>`",
+      "[check-structure] .agents/skills: must be a symlink to ../.claude/skills: if missing, run check-structure --fix; if a regular file or wrong target exists there, remove it and create the symlink with `ln -s ../.claude/skills .agents/skills`",
     ]);
   });
 
@@ -1990,8 +1990,8 @@ export default {
   test("a repository without package.json is reported, not a crash", () => {
     const r = run(repo({ "a.md": "a\n" }), "check-structure");
     expect(r.code).toBe(1);
-    expect(r.out).toContain(
-      "[check-structure] package.json: missing: create this required skeleton file (see @hackersandwizards/scaffolding skeleton.json), or if this is a private repository and LICENSE is missing, set scaffolding.private: true in package.json",
+    expect(lines(r.out, "check-structure")).toContain(
+      "[check-structure] package.json: missing: create this required skeleton file (see @hackersandwizards/scaffolding skeleton.json)",
     );
   });
 
@@ -3612,7 +3612,7 @@ describe("scaffolding check", () => {
     const dir = repo({
       ".oxlintrc.json": withOverrides([
         layerOverride(["src/**"]),
-        layerOverride(["src/*.ts"]),
+        layerOverride(["src/**/*.ts"]),
         layerOverride(["src/**/*.test.ts"]),
       ]),
       "src/a.js": 'import "./a.ts";\n',
@@ -3624,8 +3624,52 @@ describe("scaffolding check", () => {
     expect(result.code, result.out).toBe(0);
     const graph = result.out.split("```mermaid\n")[1]?.split("```")[0];
     expect(graph).toBe(
-      'graph LR\n  L0["src"]\n  L1["src/**/*.test.ts"]\n  L2["src/*.ts"]\n  L0 -->|1| L2\n  L2 -->|1| L1\n',
+      'graph LR\n  L0["src"]\n  L1["src/**/*.test.ts"]\n  L2["src/**/*.ts"]\n  L0 -->|1| L2\n  L2 -->|1| L1\n',
     );
+  });
+
+  test.each([
+    ["src/**/*.ts", "src/*.ts", "ts"],
+    ["src/**/*", "src/*", "ts"],
+    ["src/**/*.{ts,tsx}", "src/*.ts", "tsx"],
+    ["src/*.{ts,tsx}", "src/*.ts", "tsx"],
+  ])("layers distinguish %s from %s", (broad, narrow, extension) => {
+    const target = `${broad.includes("**") ? "sub/" : ""}deep.${extension}`;
+    const dir = repo({
+      ".oxlintrc.json": withOverrides([layerOverride([broad]), layerOverride([narrow])]),
+      "src/root.ts": `import "./${target}";\n`,
+      [`src/${target}`]: "export {};\n",
+    });
+    const result = run(dir, "scaffolding", ["layers"]);
+    expect(result.code, result.out).toBe(0);
+    const graph = result.out.split("```mermaid\n")[1]?.split("```")[0];
+    const [first, second] = [broad, narrow].sort();
+    expect(graph).toBe(
+      `graph LR\n  L0["${first}"]\n  L1["${second}"]\n  L${first === narrow ? 0 : 1} -->|1| L${first === broad ? 0 : 1}\n`,
+    );
+  });
+
+  test("layers distinguish a top-level layer from its excluded files", () => {
+    const dir = repo({
+      ".oxlintrc.json": withOverrides([
+        { ...layerOverride(["src/**"]), excludeFiles: ["src/excluded.js"] },
+      ]),
+      "src/a.js": 'import "./excluded.js";\n',
+      "src/excluded.js": "export {};\n",
+    });
+    const result = run(dir, "scaffolding", ["layers"]);
+    expect(result.code, result.out).toBe(0);
+    expect(result.out).toContain('  L0["src"]\n  L1["src (outside layers)"]\n  L0 -->|1| L1');
+  });
+
+  test("layers reject an empty excludeFiles glob", () => {
+    const dir = repo({
+      ".oxlintrc.json": withOverrides([{ ...layerOverride(["src/**"]), excludeFiles: [""] }]),
+    });
+    expect(run(dir, "scaffolding", ["layers"])).toEqual({
+      code: 1,
+      out: "[layers] .oxlintrc.json: layer excludeFiles must list non-empty globs\n",
+    });
   });
 
   test("layers merge duplicate normalized globs and keep both restrictions", () => {

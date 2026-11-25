@@ -69,8 +69,9 @@ own repositories.
 with an enabled `no-restricted-imports` rule contributes to a layer named for its file globs.
 The map joins the normalized globs, dropping each trailing `/**`, and combines restrictions
 under the same name. A path matches the glob with the longest literal prefix, subject to
-`excludeFiles`. Ties favor more literal characters, then fewer `**`. Unmatched paths use their
-top-level folder. Edge labels count imports between layers
+`excludeFiles`. Ties favor fewer `**`, then more literal characters, counting the shortest
+alternative in each brace group. Unmatched paths use their top-level folder, with
+` (outside layers)` appended when needed for a unique label. Edge labels count imports between layers
 using the runtime graph from `cycles`.
 
 Run `bun run scaffolding layers --write` to regenerate the map and commit it with the changes.

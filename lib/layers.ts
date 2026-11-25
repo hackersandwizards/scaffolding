@@ -39,7 +39,8 @@ function declaredLayers(root: string): DeclaredLayer[] {
     if (!isStrings(override.files) || !override.files.length || override.files.includes(""))
       throw new Error(`${oxlintConfig}: each layer must declare files globs`);
     const exclude = override.excludeFiles ?? [];
-    if (!isStrings(exclude)) throw new Error(`${oxlintConfig}: layer excludeFiles must list globs`);
+    if (!isStrings(exclude) || exclude.includes(""))
+      throw new Error(`${oxlintConfig}: layer excludeFiles must list non-empty globs`);
     const globs = override.files.map(normalizeLayerGlob);
     const name = [...new Set(globs.map(({ display }) => display.replace(/\/\*\*$/, "")))]
       .sort(compareLayers)
@@ -66,9 +67,17 @@ function declaredLayers(root: string): DeclaredLayer[] {
 }
 
 function rankLayerGlob(pattern: string) {
+  let literals = pattern.replace(/[*?[\]]/g, "");
+  const braceGroup = /\{([^{}]*)\}/g;
+  while (/\{[^{}]*\}/.test(literals))
+    literals = literals.replace(braceGroup, (_, alternatives: string) =>
+      alternatives
+        .split(",")
+        .reduce((shortest, option) => (option.length < shortest.length ? option : shortest)),
+    );
   return {
     prefix: pattern.startsWith("!") ? -1 : pattern.search(/[*?[\]{}]|$/),
-    literals: pattern.replace(/[*?[\]{},]/g, "").length,
+    literals: literals.length,
     globstars: pattern.match(/\*\*/g)?.length ?? 0,
   };
 }
@@ -85,7 +94,7 @@ function layerForPath(layers: DeclaredLayer[]) {
         })),
       ),
     )
-    .sort((a, b) => b.prefix - a.prefix || b.literals - a.literals || a.globstars - b.globstars);
+    .sort((a, b) => b.prefix - a.prefix || a.globstars - b.globstars || b.literals - a.literals);
   const folders = new Map<string, Layer>();
   return (path: string): Layer => {
     const declared = matchers.find(
@@ -187,6 +196,15 @@ export async function renderLayers(root: string) {
   if (!complete)
     throw new Error(findings.map(({ path, message }) => `${path}: ${message}`).join("\n"));
 
+  const declaredNames = new Set(layers.map(({ name }) => name));
+  const usedNames = new Set([...nodes].map(({ name }) => name));
+  for (const layer of nodes) {
+    if ("scopes" in layer || !declaredNames.has(layer.name)) continue;
+    do {
+      layer.name += " (outside layers)";
+    } while (usedNames.has(layer.name));
+    usedNames.add(layer.name);
+  }
   const order = [...nodes].sort((a, b) => compareLayers(a.name, b.name));
   const graph = order.map(
     ({ name }, i) => `  L${i}["${name.replace(/[#"<>&]/g, (char) => `#${char.charCodeAt(0)};`)}"]`,

@@ -136,7 +136,10 @@ for (const path of skeleton.present)
   if (!exists(path) && !exempt.optional.includes(path))
     add(
       path,
-      "missing: create this required skeleton file (see @hackersandwizards/scaffolding skeleton.json), or if this is a private repository and LICENSE is missing, set scaffolding.private: true in package.json",
+      "missing: create this required skeleton file (see @hackersandwizards/scaffolding skeleton.json)" +
+        (path === "LICENSE"
+          ? ", or if this is a private repository and LICENSE is missing, set scaffolding.private: true in package.json"
+          : ""),
     );
 for (const path of skeleton.absent)
   if (exists(path))
@@ -167,7 +170,7 @@ for (const [path, target] of Object.entries(skeleton.symlinks)) {
     continue;
   add(
     path,
-    `must be a symlink to ${target}: if missing, run check-structure --fix; if a regular file or wrong target exists there, remove it and create the symlink with \`ln -s ${target} <path>\``,
+    `must be a symlink to ${target}: if missing, run check-structure --fix; if a regular file or wrong target exists there, remove it and create the symlink with \`ln -s ${target} ${path}\``,
     "",
     exists(path)
       ? undefined
