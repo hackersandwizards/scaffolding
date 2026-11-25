@@ -1119,7 +1119,15 @@ describe("scaffold and check-structure", () => {
     const other = fixture("oxlint-structure", {}, {}, [name]);
     expect(run(other, "check-structure").out).toContain(`${name}: missing`);
     expect(run(other, "check-structure", ["--fix"]).code).toBe(0);
-    const config = { ...oxlintTemplate, rules: { "no-restricted-imports": ["error", "blocked"] } };
+    const config = {
+      ...oxlintTemplate,
+      rules: {
+        "no-restricted-imports": [
+          "error",
+          { name: "blocked", message: "Use the public entry point." },
+        ],
+      },
+    };
     write(other, { [name]: JSON.stringify(config) });
     expect(run(other, "check-structure", ["--fix"]).code).toBe(0);
     expect(jsonObject(readFileSync(join(other, name))).rules).toEqual(config.rules);
@@ -1200,6 +1208,108 @@ describe("scaffold and check-structure", () => {
       '[check-structure] .oxlintrc.json: rules.no-restricted-syntax needs a message saying what to write instead ("ThrowStatement")',
       '[check-structure] .oxlintrc.json: overrides[0].rules.no-restricted-imports.patterns[0] needs a message saying where code that needs this import belongs ("^private/")',
       '[check-structure] .oxlintrc.json: overrides[1].rules.no-restricted-syntax needs a message saying what to write instead ("DebuggerStatement")',
+    ]);
+  });
+
+  test.each(
+    ["typescript", "@typescript-eslint"].flatMap((plugin) =>
+      [false, true].map((override) => ({ plugin, override })),
+    ),
+  )(
+    "Oxlint $plugin import restrictions need messages (override $override)",
+    ({ plugin, override }) => {
+      const rule = `${plugin}/no-restricted-imports`;
+      const rules = { [rule]: ["error", { paths: [{ name: "fs" }] }] };
+      const config = override ? { overrides: [{ files: ["src/**"], rules }] } : { rules };
+      const file = ".oxlintrc.json";
+      const other = fixture(
+        `oxlint-imports-${plugin}-${override}`,
+        {},
+        {
+          [file]: JSON.stringify({ ...oxlintTemplate, ...config }),
+        },
+      );
+      const location = override ? "overrides[0].rules" : "rules";
+      const result = run(other, "check-structure");
+      expect(result.code).toBe(1);
+      expect(lines(result.out, "check-structure")).toEqual([
+        `[check-structure] ${file}: ${location}.${rule}.paths[0] needs a message saying where code that needs this import belongs ("fs")`,
+      ]);
+    },
+  );
+
+  test.each([
+    {
+      name: "bare-string",
+      option: "fs",
+      location: "",
+      guidance:
+        'replace the string with { "name": ..., "message": ... } and say where code that needs this import belongs',
+    },
+    {
+      name: "bare-object",
+      option: { name: "fs" },
+      location: "",
+      guidance: "needs a message saying where code that needs this import belongs",
+    },
+    {
+      name: "blank-message",
+      option: { name: "fs", message: "   " },
+      location: "",
+      guidance: "needs a message saying where code that needs this import belongs",
+    },
+    {
+      name: "path-string",
+      option: { paths: ["fs"] },
+      location: ".paths[0]",
+      guidance:
+        'replace the string with { "name": ..., "message": ... } and say where code that needs this import belongs',
+    },
+    {
+      name: "pattern-string",
+      option: { patterns: ["fs"] },
+      location: ".patterns[0]",
+      guidance:
+        'replace the string with { "group": [...], "message": ... } and say where code that needs this import belongs',
+    },
+  ])(
+    "Oxlint import restriction $name tells the reader how to add a message",
+    ({ name, option, location, guidance }) => {
+      const file = ".oxlintrc.json";
+      const config = { ...oxlintTemplate, rules: { "no-restricted-imports": ["error", option] } };
+      const other = fixture(`oxlint-imports-${name}`, {}, { [file]: JSON.stringify(config) });
+      const result = run(other, "check-structure");
+      expect(result.code).toBe(1);
+      expect(lines(result.out, "check-structure")).toEqual([
+        `[check-structure] ${file}: rules.no-restricted-imports${location} ${guidance} ("fs")`,
+      ]);
+    },
+  );
+
+  test.each(["off", 0, "allow"])(
+    "Oxlint disabled import restriction (%s) needs no message",
+    (severity) => {
+      const file = ".oxlintrc.json";
+      const config = {
+        ...oxlintTemplate,
+        rules: { "no-restricted-imports": [severity, { paths: [{ name: "fs" }] }] },
+      };
+      const other = fixture(`oxlint-disabled-${severity}`, {}, { [file]: JSON.stringify(config) });
+      expect(run(other, "check-structure")).toEqual({ code: 0, out: "" });
+    },
+  );
+
+  test("Oxlint bare string selectors need a message", () => {
+    const file = ".oxlintrc.json";
+    const config = {
+      ...oxlintTemplate,
+      rules: { "no-restricted-syntax": ["error", "WithStatement"] },
+    };
+    const other = fixture("oxlint-syntax-string", {}, { [file]: JSON.stringify(config) });
+    const result = run(other, "check-structure");
+    expect(result.code).toBe(1);
+    expect(lines(result.out, "check-structure")).toEqual([
+      '[check-structure] .oxlintrc.json: rules.no-restricted-syntax needs a message saying what to write instead ("WithStatement")',
     ]);
   });
 

@@ -3,6 +3,7 @@ import { existsSync, lstatSync, readFileSync, statSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import template from "../template/.oxlintrc.json";
+import { activeSeverity } from "./lint-rule-overlaps.ts";
 import { isObject, isReason, isStrings, jsonObject, submodulePaths } from "./repo.ts";
 
 export const oxlintConfig = ".oxlintrc.json";
@@ -33,6 +34,23 @@ export function oxlintConfiguration(root: string) {
   return config;
 }
 
+function* restrictedImports(options: unknown[]) {
+  for (const option of options) {
+    if (typeof option === "string" || (isObject(option) && typeof option.name === "string"))
+      yield { item: option, suffix: "", example: '"name": ...' };
+    if (!isObject(option)) continue;
+    for (const [key, example] of [
+      ["paths", '"name": ...'],
+      ["patterns", '"group": [...]'],
+    ] as const) {
+      const restrictions = option[key];
+      const entries: unknown[] = Array.isArray(restrictions) ? restrictions : [];
+      for (const [index, item] of entries.entries())
+        yield { item, suffix: `.${key}[${index}]`, example };
+    }
+  }
+}
+
 export function* oxlintRestrictionFindings(config: Record<string, unknown>) {
   const overrides: unknown[] = Array.isArray(config.overrides) ? config.overrides : [];
   const blocks: [string, unknown][] = [["rules", config.rules]];
@@ -42,39 +60,33 @@ export function* oxlintRestrictionFindings(config: Record<string, unknown>) {
   for (const [block, rules] of blocks) {
     if (!isObject(rules)) continue;
     for (const [rule, setting] of Object.entries(rules)) {
-      const options: unknown[] = Array.isArray(setting) ? setting.slice(1) : [];
+      if (!Array.isArray(setting) || !activeSeverity(setting)) continue;
+      const options: unknown[] = setting.slice(1);
       const location = `${block}.${rule}`;
-      switch (rule.replace(/^eslint\//, "")) {
+      switch (rule) {
+        case "eslint/no-restricted-imports":
+        case "typescript/no-restricted-imports":
+        case "@typescript-eslint/no-restricted-imports":
         case "no-restricted-imports":
-          for (const option of options) {
-            if (!isObject(option)) continue;
-            for (const key of ["paths", "patterns"]) {
-              const restrictions: unknown = option[key];
-              const entries: unknown[] = Array.isArray(restrictions) ? restrictions : [];
-              for (const [index, item] of entries.entries()) {
-                if (isObject(item) && isReason(item.message)) continue;
-                const pattern = isObject(item)
-                  ? (item.name ?? item.regex ?? item.group ?? item)
-                  : item;
-                yield {
-                  message: `${location}.${key}[${index}] needs a message saying where code that needs this import belongs`,
-                  text: JSON.stringify(pattern),
-                };
-              }
-            }
+          for (const { item, suffix, example } of restrictedImports(options)) {
+            if (isObject(item) && isReason(item.message)) continue;
+            const pattern = isObject(item) ? (item.name ?? item.regex ?? item.group ?? item) : item;
+            const guidance =
+              typeof item === "string"
+                ? `replace the string with { ${example}, "message": ... } and say where code that needs this import belongs`
+                : "needs a message saying where code that needs this import belongs";
+            yield { message: `${location}${suffix} ${guidance}`, text: JSON.stringify(pattern) };
           }
           break;
+        case "eslint/no-restricted-syntax":
         case "no-restricted-syntax":
           for (const option of options) {
-            if (
-              !isObject(option) ||
-              typeof option.selector !== "string" ||
-              isReason(option.message)
-            )
-              continue;
+            if (isObject(option) && isReason(option.message)) continue;
+            const selector = isObject(option) ? option.selector : option;
+            if (typeof selector !== "string") continue;
             yield {
               message: `${location} needs a message saying what to write instead`,
-              text: JSON.stringify(option.selector),
+              text: JSON.stringify(selector),
             };
           }
           break;
