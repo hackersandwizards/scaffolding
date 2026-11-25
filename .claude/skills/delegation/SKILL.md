@@ -103,11 +103,15 @@ the report when the notification arrives after it.
 
 ## Roles and models
 
-| Role                                                                                         | First choice                                                                                                                                                | If unavailable                         |
-| -------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------- |
-| Planner: a job of two or more epics, and the root cause of a row its implementer did not fix | Fable high, never higher                                                                                                                                    | Opus high                              |
-| Implementer                                                                                  | per row: Neon high for hill climbing, a bug sweep and a large change; the Codex pin at medium for a well-cut task, edge cases, hostile input, a current API | the other of the two, then Opus medium |
-| Reviewer                                                                                     | the other of the two at high; Opus medium in a fresh context for a change against our rules                                                                 | Opus medium                            |
+- Planner, for a job of two or more epics and the root cause of a row its implementer did not
+  fix: Fable high, never higher; else Opus high.
+- Implementer, per row: the Codex pin at medium where the row follows an exact spec (an API
+  description, a data model, a contract, a failing test), edge cases, hostile input, a current API;
+  Neon high where the result has to be found (an open spec, design, hill climbing, a bug sweep);
+  else the other of the two, then Opus medium.
+- Reviewer: the other of the two at high; Opus medium in a fresh context for a change against our
+  rules; else Opus medium.
+- Child for browser, tool or mechanical steps: the Codex pin at medium; else this session.
 
 - The session that takes a development job runs it to its end, on whatever model it runs; no other
   session coordinates it. On the planner's or the implementer's model it does that role itself;
@@ -160,16 +164,14 @@ The Codex pin is whatever `.codex/config.toml` sets, a repository's own before
 
 A text that leaves the session for a reader (a mail, a chat message, a post, a comment, a document
 a person outside the session reads) is written by Neon, in every mailbox and channel. The session
-that holds the facts hands it over and checks it. The session writes itself: its own conversation
+writes itself: its own conversation
 with the person, records, run reports, pre-reads, a reply of one or two sentences, and a text a
 template fixes; a quote's prices, scope and terms come from the records.
 
-One writer per run. The first text starts it on Neon high through `agy`. In T3 Code, start the
-writer as a child thread on T3's Antigravity provider (`delegate_task`), whose runtime is the `agy`
-CLI in ACP mode, and send every later text with `t3_thread_send` to that thread. Elsewhere:
-`agy --mode auto --model gemini-4-neon-high --output-format json --print-timeout 600s
--p="<brief>"` (plan mode answers with a plan, not the
-text). The brief tells it to write no file and to read the `voice` skill and the channel's skill,
+One writer per run, on Neon high. In T3 Code it is a child thread on T3's Antigravity provider
+(`delegate_task`), every later text sent with `t3_thread_send` to that thread. Elsewhere:
+`agy --model gemini-4-neon-high --output-format json --print-timeout 600s -p="<brief>"`. The brief
+tells it to write no file and to read the `voice` skill and the channel's skill,
 and hands over every text the run already knows under `=== <id> ===`, each with sender and
 signature, recipients, language, purpose, must and must-not facts, new message or reply with its
 thread, for a mail subject and body; it asks for the texts only, under their ids. Every later text
@@ -187,20 +189,16 @@ Where Neon does not answer (no `agy`, not signed in, a capacity error after one
 retry), the session writes the text itself after loading `voice`, and its report says so.
 
 Public web research (companies, events, tools, vendors) goes to Neon high the same way, through
-its `search_web` tool; before a result reaches a person, Claude checks its version numbers and
+its `search_web` tool; before a result reaches a person, the session checks its version numbers and
 dates against the cited source.
 
 ## Code work
 
-The session hands the implementer the code work: implementation, bug fixes, refactors, tests,
-scripts, dependency updates and the polish fixes, with the root of the repository the work belongs to
-as working folder, through the harness's own delegation tool where it reaches the implementer: in T3
-Code a child thread on T3's Antigravity or Codex provider (`delegate_task`), every fix round with
-`t3_thread_send` to it. Elsewhere, from the repository root:
+Code work (an implementation, a bug fix, a refactor, tests, a script, a dependency update, a polish
+fix) goes to its row's implementer, from the root of the repository it belongs to, every fix round to
+the same thread: in T3 Code a child thread on T3's Antigravity or Codex provider (`delegate_task`),
+each fix round with `t3_thread_send`. Elsewhere
 `agy --model gemini-4-neon-high --output-format json --print-timeout 3600s -p="<brief>" < /dev/null`,
-each fix round with `--conversation <conversation_id>`, or `codex exec` with the pin, each fix round
-with `codex exec resume <session_id>`. The session keeps
-the conversation with the person, records, rules, skills and research that needs our channels or
-records, and checks every text Neon writes.
-
-Verify what a run did with `git log`, never from its own summary.
+each fix round with `--conversation <conversation_id>`, or `codex exec` on the pin, each fix round
+with `codex exec resume <session_id>`. The session keeps the conversation with the person, records,
+rules, skills and research that needs our channels or records.

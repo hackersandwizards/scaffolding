@@ -60,15 +60,13 @@ pair shares its load, and write the 1-minute load average beside each series. Be
 wait up to five minutes while that load exceeds the core count (`getconf _NPROCESSORS_ONLN`), then
 measure anyway.
 
-Hand one reviewer per module or top-level directory to a model that wrote none of its code, as `delegation` hands work over and `blind-review` chooses (Codex Sol for edge cases and security, Neon for a large module, never Neon alone for security), to review it for minimalism, design, performance and security, with the path of `references/failure-modes.md` in its prompt to read in full. Reviewers report and do not edit.
+Hand one reviewer per module or top-level directory to a model that wrote none of its code, as `delegation` hands work over and `blind-review` chooses, to review it for minimalism, design, performance and security, with the path of `references/failure-modes.md` in its prompt to read in full. Reviewers report and do not edit.
 
 Review the instruction artifacts as their own module, yourself: `.claude/` rules, agents, and skills, plus `CLAUDE.md`. Measure what every session here starts with, the bytes of the rules without `paths:`, `CLAUDE.md`, the agent files, the memory indexes and the skill descriptions, and report it before and after this run's cuts. Look for a pointer to a path that no longer exists, a cap or boundary that contradicts an always-on rule, one rule stated twice inside a single skill or among the artifacts that are not skills, and any skill pointing outside its own directory at another skill, rule, agent or memory file by link or by name.
 
 Call the prompt audit yourself, never through a reviewer's prompt: `Skill` with `skill: "claude-api"` and `args: "prompt-audit <path> <path> ..."`, naming the instruction artifacts in this run's scope. Without paths it audits the whole working directory. Its high and medium findings join this phase's fix list. A conflict it leaves as a flag goes into the final report as a decision for the user.
 
 Review agent memory the same way, plus index lines without a file, files without an index line, and the pairs `bun ${CLAUDE_SKILL_DIR}/memory-twins.ts` lists as duplicate or conflict. Move an instruction into the artifact that owns it. Edit only your own memory. Brief every other owner's agent with its prune list (file, lines, new home) through the Agent tool, one delegate per owner: a list only printed in the summary reaches nobody on an unattended run.
-
-A fix to a file the sync script lists as mirrored goes into the hub copy: the sync swaps the whole directory, and no check reports the lost fix. Edit and commit in the hub, then run the sync, and read its output rather than its exit status. The sync first commits every dirty rule, mirrored skill and `statusline-command.sh` in the hub and fans them out, so read the hub's `git status --porcelain` before running it. A dirty one this run did not write defers the sync: copy the files this run committed from hub `HEAD` into this repository's mirror and report the other repositories as pending. The sync leaves a repository with unpushed commits no sync wrote, or one named with `--hold <path suffix>`, untouched and prints it as `pending:`: report those lines.
 
 ## 4. Gates
 

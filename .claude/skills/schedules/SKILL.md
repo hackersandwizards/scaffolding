@@ -50,9 +50,8 @@ out.`, so no skill a schedule runs depends on which scheduler started it.
 6. Every run ends its report with its outcome, done, deferred or blocked, and the reason for
    anything but done. Check: the task text demands that line.
 7. Harness, model, effort, permission mode and tool grants live on the trigger, never in the file.
-   A session that only delegates runs Claude Haiku at high effort, one that also works itself
-   Claude Opus at medium effort, and a file whose run uses no colleague may run on Codex Sol at
-   medium effort.
+   The trigger runs Claude Haiku at high effort, and the colleague the file hands the run to runs on
+   Claude Opus at medium effort.
    - **Claude Desktop task.** Its prompt file, `~/.claude/scheduled-tasks/<name>/SKILL.md`, holds
      the frontmatter and the trigger line. Set model and mode in the app's edit form: the app
      rewrites `scheduled-tasks.json` from its own store and has dropped a permission mode edited
