@@ -1,5 +1,5 @@
-# This test or `describe` title is empty, non-string, padded with spaces, or starts with `test`, `it`, or `describe`.
+# This test or `describe` title is empty, non-string, padded, or starts with `test`, `it`, or `describe`.
 
-Write a trimmed string title stating the behaviour the test's assertions verify, without starting with `test`, `it`, or `describe`.
+Write a trimmed string title stating the behaviour the assertions verify, without starting with `test`, `it`, or `describe`. For a title in a variable, use `test.each` with a title pattern.
 
-No fix: a generic title such as `"works"`, a title naming only the function under test, or a title that does not match the assertions.
+No fix: wrapping a variable in a bare template literal, a generic title (`"works"`), or naming only the function. A title not matching the assertions is also no fix.
