@@ -24,7 +24,16 @@ function declaredLayers(root: string): DeclaredLayer[] {
   const stat = lstatSync(path, { throwIfNoEntry: false });
   if (!stat) return [];
   if (!stat.isFile()) throw new Error(`${oxlintConfig} must be a regular file`);
-  const { overrides } = jsonObject(readFileSync(path));
+  const config = readFileSync(path);
+  let overrides: unknown;
+  try {
+    ({ overrides } = jsonObject(config));
+  } catch (error) {
+    throw new Error(
+      `${oxlintConfig}: cannot parse the config (${(error as Error).message}). Fix the config so it is a valid JSON object.`,
+      { cause: error },
+    );
+  }
   if (overrides === undefined) return [];
   if (!Array.isArray(overrides)) throw new Error(`${oxlintConfig}: overrides must be an array`);
 
@@ -110,14 +119,22 @@ function layerForPath(layers: DeclaredLayer[]) {
   };
 }
 
-function importOccurrences(file: string, sourceCode?: string) {
+function importOccurrences(source: string, file: string, sourceCode?: string) {
   const typescript = /\.[cm]?tsx?$/.test(file);
-  const jsx = file.endsWith("x");
-  const loader = typescript ? (jsx ? "tsx" : "ts") : jsx ? "jsx" : "js";
+  const loader = typescript ? (file.endsWith("x") ? "tsx" : "ts") : "jsx";
   const counts = new Map<string, number>();
   const code = (sourceCode ?? readFileSync(file, "utf8")).replace(/^#![^\n]*/, "");
+  let imports;
+  try {
+    imports = new Bun.Transpiler({ loader }).scanImports(code);
+  } catch (error) {
+    throw new Error(
+      `${source}: cannot scan imports (${(error as Error).message}). Fix the source syntax and rerun \`bun run scaffolding layers\`.`,
+      { cause: error },
+    );
+  }
   // Dependency-cruiser collapses repeated specifiers within one file and module system.
-  for (const { path, kind } of new Bun.Transpiler({ loader }).scanImports(code)) {
+  for (const { path, kind } of imports) {
     const system = kind === "require-call" || kind === "require-resolve" ? "cjs" : "es6";
     const key = `${system}:${path}`;
     counts.set(key, (counts.get(key) ?? 0) + 1);
@@ -182,7 +199,7 @@ export async function renderLayers(root: string) {
         .map((dependency) => ({ ...dependency, to: layerFor(dependency.target) }))
         .filter(({ to }) => from !== to);
       if (!otherLayers.length) return;
-      const occurrences = importOccurrences(file, sourceCode);
+      const occurrences = importOccurrences(source, file, sourceCode);
       const targets = edges.get(from) ?? new Map<Layer, number>();
       edges.set(from, targets);
       nodes.add(from);

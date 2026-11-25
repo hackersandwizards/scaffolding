@@ -3580,6 +3580,38 @@ describe("scaffolding check", () => {
   });
   const withOverrides = (overrides: object[]) => JSON.stringify({ overrides });
 
+  test.each(["js", "mjs", "cjs"])("layers count repeated imports in .%s files with JSX", (ext) => {
+    const dir = repo({
+      ".oxlintrc.json": withOverrides([layerOverride(["src/a/**"]), layerOverride(["src/b/**"])]),
+      [`src/a/a.${ext}`]:
+        'import { B } from "../b/b.js";\nimport "../b/b.js";\nexport const A = () => <B />;\n',
+      "src/b/b.js": "export const B = () => null;\n",
+    });
+    const result = run(dir, "scaffolding", ["layers"]);
+    expect(result.code, result.out).toBe(0);
+    expect(result.out).toContain('  L0["src/a"]\n  L1["src/b"]\n  L0 -->|2| L1');
+  });
+
+  test("layers name the source and the remedy when scanning fails", () => {
+    const dir = repo({
+      ".oxlintrc.json": withOverrides([layerOverride(["src/a/**"]), layerOverride(["src/b/**"])]),
+      "src/a/a.ts": 'import "../b/b.ts";\nexport const broken = ;\n',
+      "src/b/b.ts": "export {};\n",
+    });
+    const result = run(dir, "scaffolding", ["layers"]);
+    expect(result.code).toBe(1);
+    expect(result.out).toContain("[layers] src/a/a.ts: cannot scan imports");
+    expect(result.out).toContain("Fix the source syntax and rerun");
+  });
+
+  test("layers name the Oxlint config and the remedy when parsing fails", () => {
+    const dir = repo({ ".oxlintrc.json": '{ /* comment */ "overrides": [] }\n' });
+    const result = run(dir, "scaffolding", ["layers"]);
+    expect(result.code).toBe(1);
+    expect(result.out).toContain("[layers] .oxlintrc.json: cannot parse the config");
+    expect(result.out).toContain("Fix the config so it is a valid JSON object");
+  });
+
   test("layers count source imports once across Astro frontmatter and scripts", () => {
     const dir = repo({
       ".oxlintrc.json": withOverrides([
@@ -3647,6 +3679,27 @@ describe("scaffolding check", () => {
     expect(graph).toBe(
       `graph LR\n  L0["${first}"]\n  L1["${second}"]\n  L${first === narrow ? 0 : 1} -->|1| L${first === broad ? 0 : 1}\n`,
     );
+  });
+
+  test("layers break equal specificity ties by layer name in either override order", () => {
+    const first = layerOverride(["src/**/*y.js"]);
+    const second = layerOverride(["src/**/x*.js"]);
+    const dir = repo({
+      "src/a.js": 'import "./q/xy.js";\n',
+      "src/q/xy.js": "export {};\n",
+    });
+    for (const order of [
+      [first, second],
+      [second, first],
+    ]) {
+      write(dir, { ".oxlintrc.json": withOverrides(order) });
+      const result = run(dir, "scaffolding", ["layers"]);
+      expect(result.code, result.out).toBe(0);
+      const graph = result.out.split("```mermaid\n")[1]?.split("```")[0];
+      expect(graph).toBe(
+        'graph LR\n  L0["src"]\n  L1["src/**/*y.js"]\n  L2["src/**/x*.js"]\n  L0 -->|1| L1\n',
+      );
+    }
   });
 
   test("layers distinguish a top-level layer from its excluded files", () => {

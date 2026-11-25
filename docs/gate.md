@@ -70,7 +70,8 @@ with an enabled `no-restricted-imports` rule contributes to a layer named for it
 The map joins the normalized globs, dropping each trailing `/**`, and combines restrictions
 under the same name. A path matches the glob with the longest literal prefix, subject to
 `excludeFiles`. Ties favor fewer `**`, then more literal characters, counting the shortest
-alternative in each brace group. Unmatched paths use their top-level folder, with
+alternative in each brace group. If the globs still tie, the alphabetically first layer name wins.
+Unmatched paths use their top-level folder, with
 ` (outside layers)` appended when needed for a unique label. Edge labels count imports between layers
 using the runtime graph from `cycles`.
 
