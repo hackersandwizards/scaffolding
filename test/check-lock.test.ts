@@ -22,7 +22,7 @@ import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { afterAll, assert, describe, expect, it } from "vitest";
 import { jsonObject } from "../lib/json.ts";
-import { limit } from "./test-timeout.ts";
+import { limit } from "@hackersandwizards/scaffolding/test-timeout";
 
 const SCRIPT = resolve(import.meta.dirname, "../template/.githooks/check-lock.ts");
 

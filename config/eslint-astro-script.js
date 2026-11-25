@@ -33,9 +33,10 @@ export function astroTypePrograms(processor, astroParser) {
   const virtual = (file, index) => `${file}.${index}.ts`;
   function extractScripts(code, file) {
     const extracted = processor.preprocess(code, file);
+    const kinds = new Map();
     const bindings = new Map();
     const unusedBindings = new Map();
-    if (code.includes("define:vars") && extracted.length > 1) {
+    if (extracted.length > 1) {
       const template = astroParser.parseTemplate(code);
       const frontmatter = template.result.ast.frontmatter?.program;
       const content = frontmatter ? code.slice(frontmatter.start, frontmatter.end) : "";
@@ -43,6 +44,8 @@ export function astroTypePrograms(processor, astroParser) {
       template.walk(template.result.ast, (node) => {
         if (!astroClientScript(node)) return;
         const block = extracted[++index];
+        const inline = node.openingElement.attributes.some((attr) => attr.name?.name !== "src");
+        kinds.set(index, inline ? ts.ScriptKind.JS : ts.ScriptKind.TS);
         const expression = node.openingElement.attributes.find(
           (attr) => attr.name?.name === "define:vars",
         )?.value;
@@ -50,10 +53,9 @@ export function astroTypePrograms(processor, astroParser) {
         if (variables?.type !== "ObjectExpression") return;
         const name = `${virtual(file, index)}.vars.ts`;
         const specifier = JSON.stringify(`./${basename(name)}`);
-        bindings.set(
-          name,
-          `${content}\nexport default (${code.slice(variables.start, variables.end)});\n`,
-        );
+        bindings.set(name, {
+          text: `${content}\nexport default (${code.slice(variables.start, variables.end)});\n`,
+        });
         const original = new Map();
         block.text = block.text.replace(
           /^\/\* global\n([\s\S]+?)\n-- define:vars \*\//,
@@ -73,7 +75,8 @@ export function astroTypePrograms(processor, astroParser) {
           names.add(key);
           if (original.has(key))
             declarations.set(block.text.split("\n").length + 1, original.get(key));
-          block.text += `\ndeclare const ${key}: (typeof import(${specifier}))["default"][${JSON.stringify(key)}];\n`;
+          const type = `(typeof import(${specifier}))["default"][${JSON.stringify(key)}]`;
+          block.text += `\n/** @type {${type}} */ let ${key};\n`;
         }
         unusedBindings.set(index, declarations);
       });
@@ -84,9 +87,14 @@ export function astroTypePrograms(processor, astroParser) {
       unusedBindings,
       server,
       sources: new Map([
-        ...extracted.slice(1).map(({ text }, index) => [virtual(file, index + 1), text]),
+        ...extracted
+          .slice(1)
+          .map(({ text }, index) => [
+            virtual(file, index + 1),
+            { text, kind: kinds.get(index + 1) },
+          ]),
         ...bindings,
-        ...(server ? [[file, code]] : []),
+        ...(server ? [[file, { text: code }]] : []),
       ]),
     };
   }
@@ -159,10 +167,10 @@ export function astroTypePrograms(processor, astroParser) {
         const { parsed, scripts } = project;
         const entry = active.get(component);
         if (
-          (!isFrontmatter && scripts.get(file) !== code) ||
-          (entry?.server && scripts.get(component) !== entry.server.source)
+          (!isFrontmatter && scripts.get(file)?.text !== code) ||
+          (entry?.server && scripts.get(component)?.text !== entry.server.source)
         ) {
-          for (const [name, text] of entry.sources) scripts.set(name, text);
+          for (const [name, source] of entry.sources) scripts.set(name, source);
           project.program = undefined;
         }
         if (!project.program) {
@@ -174,11 +182,14 @@ export function astroTypePrograms(processor, astroParser) {
           const host = ts.createCompilerHost(compilerOptions);
           const { getSourceFile, fileExists, readFile } = host;
           host.fileExists = (name) => scripts.has(name) || fileExists(name);
-          host.readFile = (name) => scripts.get(name) ?? readFile(name);
-          host.getSourceFile = (name, version, ...args) =>
-            scripts.has(name)
-              ? ts.createSourceFile(name, scripts.get(name), version)
+          host.readFile = (name) => scripts.get(name)?.text ?? readFile(name);
+          host.getSourceFile = (name, version, ...args) => {
+            const source = scripts.get(name);
+            // Keep ESLint's virtual .ts paths so consumer overrides still match inline scripts.
+            return source
+              ? ts.createSourceFile(name, source.text, version, false, source.kind)
               : getSourceFile(name, version, ...args);
+          };
           const astroTypes = frontmatter.host(host, compilerOptions, project.folder);
           const rootNames = [...(parsed?.fileNames ?? []), ...scripts.keys(), ...astroTypes];
           project.program = ts.createProgram({

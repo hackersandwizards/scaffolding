@@ -55,7 +55,7 @@ import ownPackage from "../package.json";
 import oxlintTemplate from "../template/.oxlintrc.json";
 import templateMcp from "../template/.mcp.json";
 import templateSettings from "../template/.claude/settings.json";
-import { limit } from "./test-timeout.ts";
+import { limit } from "@hackersandwizards/scaffolding/test-timeout";
 
 /** The member of parsed JSON at `path`, undefined where a step meets no object or list. */
 const member = (value: unknown, ...path: (string | number)[]): unknown =>
@@ -1028,6 +1028,24 @@ function install(dir: string) {
   );
 }
 
+test.each([
+  ["unset", undefined, 12_000],
+  ["scaled", "7500", 18_000],
+])("the test-timeout export gives a consumer its %s limit", (_, timeout, expected) => {
+  const dir = repo({
+    "test-limit.ts": `import { limit } from "@hackersandwizards/scaffolding/test-timeout";
+console.log(limit(12_000));\n`,
+  });
+  install(dir);
+  const result = spawnSync(process.execPath, ["--no-env-file", "test-limit.ts"], {
+    cwd: dir,
+    encoding: "utf8",
+    env: { ...process.env, SCAFFOLDING_TEST_TIMEOUT_MS: timeout },
+  });
+  expect(result.status, result.stderr).toBe(0);
+  expect(result.stdout.trim()).toBe(String(expected));
+});
+
 // Local stand-ins for the company remotes scaffold reads brand's and admin's newest tag from.
 function remotes(tags: string[]) {
   const base = temp();
@@ -1861,20 +1879,28 @@ describe("scaffold and check-structure", () => {
     expect(missing({ private: true }, "private-no-license")).toEqual([]);
   });
 
-  test("the .agents/skills link is required where .claude/skills exists", () => {
+  const skillsLinkFinding =
+    "[check-structure] .agents/skills: must be a symlink to ../.claude/skills: if missing, run check-structure --fix; if a regular file or wrong target exists there, remove it and create the symlink with `ln -s ../.claude/skills .agents/skills`";
+
+  test("the .agents/skills link is optional when .claude/skills is absent", () => {
     const none = fixture("no-skills", {});
     expect(lines(run(none, "check-structure").out, "check-structure")).toEqual([]);
+  });
+
+  test("check-structure reports and repairs a missing .agents/skills link", () => {
     const skills = fixture("skills", {}, { ".claude/skills/a/SKILL.md": "x\n" });
     expect(lines(run(skills, "check-structure").out, "check-structure")).toEqual([
-      "[check-structure] .agents/skills: must be a symlink to ../.claude/skills: if missing, run check-structure --fix; if a regular file or wrong target exists there, remove it and create the symlink with `ln -s ../.claude/skills .agents/skills`",
+      skillsLinkFinding,
     ]);
     run(skills, "check-structure", ["--fix"]);
     expect(run(skills, "check-structure").code).toBe(0);
-    // A link that is wrong stays red where .claude/skills is absent too.
+  });
+
+  test("a wrong .agents/skills link is reported even when .claude/skills is absent", () => {
     const wrong = fixture("wrong-link", {}, { "keep/x": "x\n" });
     symlinkSync("../keep", join(wrong, ".agents/skills"));
     expect(lines(run(wrong, "check-structure").out, "check-structure")).toEqual([
-      "[check-structure] .agents/skills: must be a symlink to ../.claude/skills: if missing, run check-structure --fix; if a regular file or wrong target exists there, remove it and create the symlink with `ln -s ../.claude/skills .agents/skills`",
+      skillsLinkFinding,
     ]);
   });
 
@@ -6619,6 +6645,77 @@ const Element = Fragment;
       expect(/19:3 .*@typescript-eslint\/no-unsafe-call/.test(run.stdout)).toBe(typed);
       expect(run.stdout).not.toMatch(/^\s+(?:8|18|23):\d+ .*no-unsafe/m);
     }
+  });
+
+  const jsdoc = "/** @param {HTMLElement} stage */\n";
+  const unsafeCall = "@typescript-eslint/no-unsafe-call";
+  const unsafeAccess = "@typescript-eslint/no-unsafe-member-access";
+  test.each([
+    ["inline with JSDoc", " is:inline", jsdoc, "stage", "style.setProperty", []],
+    ["unprocessed by attribute", ' type="module"', jsdoc, "stage", "style.setProperty", []],
+    [
+      "inline without JSDoc",
+      " is:inline",
+      "",
+      "stage",
+      "style.setProperty",
+      [unsafeCall, unsafeAccess],
+    ],
+    ["inline with an unknown member", " is:inline", jsdoc, "stage", "unknownMember", [unsafeCall]],
+    ["processed with a type", "", "", "stage: HTMLElement", "style.setProperty", []],
+    ["processed without a type", "", "", "stage", "style.setProperty", [unsafeCall, unsafeAccess]],
+  ])(
+    "typed Astro lint checks a helper in a script %s",
+    async (_, attrs, doc, parameter, member, rules) => {
+      const { dir } = lintFixture();
+      write(dir, {
+        "tsconfig.json": '{"compilerOptions":{"strict":true,"allowJs":false},"include":["*.ts"]}',
+        "helper.astro": `<script${attrs}>
+${doc}function fit(${parameter}) {
+  stage.${member}("width", "100px");
+}
+fit(document.body);
+</script>\n`,
+      });
+      const lint = new ESLint({ cwd: dir });
+      const [result] = await lint.lintFiles(["helper.astro"]);
+      expect(result.messages.map(({ ruleId }) => ruleId)).toEqual(rules);
+    },
+  );
+
+  test("an inline Astro script keeps its existing ESLint and Oxlint rules", async () => {
+    const { dir, oxlint } = lintFixture();
+    write(dir, {
+      "rules.astro": `<script is:inline>
+      const spare = 1;
+      console.log(missing);
+      if (document.title == "ready") {}
+      try { console.log(document.title); } catch { /* explanation */ }
+      </script>\n`,
+    });
+    const lint = new ESLint({ cwd: dir });
+    const [result] = await lint.lintFiles(["rules.astro"]);
+    expect(result.messages.map(({ ruleId }) => ruleId)).toEqual([
+      "@typescript-eslint/no-unused-vars",
+      "no-undef",
+      "scaffolding/no-empty-catch",
+    ]);
+    const native = oxlint();
+    expect(native.status, native.stderr + native.stdout).toBe(1);
+    expect(native.stdout.split("[guide]")[0]).toContain("eslint(eqeqeq)");
+    expect(native.stdout.split("[guide]")[0]).toContain("eslint(no-empty)");
+  });
+
+  test("adding is:inline rechecks an unchanged script body as JavaScript", async () => {
+    const { dir } = lintFixture();
+    const lint = new ESLint({ cwd: dir });
+    const body = `${jsdoc}function fit(stage) { stage.style.setProperty("width", "100px"); }
+fit(document.body);\n`;
+    const filePath = join(dir, "helper.astro");
+    const [processed] = await lint.lintText(`<script>\n${body}</script>\n`, { filePath });
+    expect(processed.messages.map(({ ruleId }) => ruleId)).toEqual([unsafeCall, unsafeAccess]);
+    const [inline] = await lint.lintText(`<script is:inline>\n${body}</script>\n`, { filePath });
+    expect(inline.messages).toEqual([]);
   });
 
   test("Astro frontmatter uses nested project types and reports original positions", () => {

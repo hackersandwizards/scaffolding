@@ -74,6 +74,9 @@ and client scripts. Where policies overlap, put every restriction that applies i
 block, because Oxlint replaces that rule's options. For a remaining ESLint rule that should apply
 to Astro client scripts, use `**/*.astro/*.ts`.
 
+In an Astro `<script is:inline>`, type helper parameters with JSDoc, for example
+`/** @param {HTMLElement} stage */`. The browser receives the JavaScript as written.
+
 Remove `baseUrl` from a TypeScript project that uses it and write each path target relative to
 `tsconfig.json`, for example `"@/*": ["./src/*"]`. Oxlint's TypeScript companion rejects `baseUrl`.
 
@@ -92,6 +95,10 @@ curried `test.prop` blocks from the shared wrapper or `@fast-check/vitest` for `
 `no-conditional-in-test`. When enabled, `max-expects` also counts `expect` calls inside callbacks
 declared through that wrapper, since it counts them in any function. ESLint's
 `scaffolding/property` rule checks property tests using the shared API.
+
+Import `test` from `vitest` and pass `limit(ms)` from
+`@hackersandwizards/scaffolding/test-timeout` as the timeout argument. A wrapper around `test`
+hides those tests from Oxlint's Vitest rules.
 
 Scaffolding supplies Vitest 5.1.0 and Stryker core and its Vitest runner at 10.1.1.
 Use a Scaffolding pin of v5.33.0 or later for the setup below. The shared configs and their

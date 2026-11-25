@@ -14,7 +14,7 @@ import { delimiter, join } from "node:path";
 import type { MutationTestResult } from "mutation-testing-report-schema";
 import { afterAll, assert, beforeAll, describe, expect, test, vi } from "vitest";
 import { runMutation } from "../bin/scaffolding-mutation.ts";
-import { limit } from "./test-timeout.ts";
+import { limit } from "@hackersandwizards/scaffolding/test-timeout";
 
 function linkMutationDependencies(dir: string) {
   const root = join(import.meta.dirname, "..");
