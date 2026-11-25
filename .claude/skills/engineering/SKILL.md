@@ -19,6 +19,18 @@ handling that prevents data loss, security measures, or accessibility basics.
   left no trace of the skip. Find the window between the corruption and the repair, then check the
   repaired records against their untouched siblings.
 - Write no comment except for a fact neither the code nor a doc file states, such as an ordering constraint, an external quirk or the bug a guard exists for. Keep directive comments. A comment cites a commit, never a dated report, which a later report replaces.
+- A failure message you write, in a check, a lint rule or an assertion, tells its reader the next
+  move. For a fault with one remedy, give the finding and the command. For a forbidden construct,
+  say what is forbidden and where the code belongs, and name the shortcut that is no fix where one
+  tempts, such as a disable comment or an allow entry. A limit on a measure (length, complexity,
+  duplication) ships with a guide to the responsibilities to look for. Check: a reader holding only
+  the message and the file can name the fix.
+- Before ordering a change that moves or rewires more than one module, try the direct change in a
+  worktree, record each failing check as a prerequisite of the step that caused it, and revert.
+  Check: the plan's order cites the probe, or says why the change needed none.
+- State an architecture rule once, as prose in `CLAUDE.md`, and name beside it the check that fails
+  on a breach, or say that review is its only catch. Check: every rule names a check file that
+  exists, or says review.
 - Verify each change with the checks that fit it, from the commands the repository's CLAUDE.md
   lists. You choose which; nothing requires the full gate every time, and your run is the only
   full one before the deploy.
