@@ -61,9 +61,12 @@ out.`, so no skill a schedule runs depends on which scheduler started it.
      by hand never fires. In the listing, `cronExpression` is local time, `lastRunAt` and
      `nextRunAt` are UTC, and the rendered `schedule` string flattens a range (`0 7-20 * * *`
      reads as one time). Its tasks fire only while the app runs, and a missed run is caught up.
-   - **T3 task.** Create it in Settings > Scheduled tasks: the agent tool `schedule_task` takes the
-     calling thread's model. Project checkout ("Use the project checkout"), destination "One
-     thread, fresh session each run", the model with its `effort` option. Triggers: "At a time"
+   - **T3 task.** Create it through `schedule_task` from a thread started on the trigger's model
+     and effort (`t3 thread start . - --provider <harness> --model <model> --option effort=<level>`,
+     for Codex `reasoningEffort=<level>`): the task takes both from that thread. The form in
+     Settings > Scheduled tasks has no effort field, and a model changed there loses its effort.
+     In the form set "Use the project checkout", which keeps model and effort, and the destination
+     "One thread, fresh session each run". Triggers: "At a time"
      (HH:MM and weekdays) for a daily or weekly cron; "Every interval" in minutes, counted from the
      end of the last dispatch with no fixed minute, for an hourly window; "At a time" every day for
      a day of the month; "Once"; "On webhook". A fixed-time run more than 10 minutes late is
