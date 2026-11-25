@@ -132,8 +132,8 @@ the report when the notification arrives after it.
   as is every row that depends on it.
 - The job ends when every row is `pass` or `fail` and the gate passes on the last commit, or at a
   blocker only the person can lift. The report gives each row's status, every finding left open and
-  every fallback taken. A finding the review raised in two rows goes to `agent-feedback` before the
-  report.
+  every fallback taken. A finding the review raised in two rows, and the root cause of a row the planner had to
+  fix, go to `agent-feedback` before the report.
 - Probe each model with one cheap call before its first handover; on an error, take the next
   fallback.
 
