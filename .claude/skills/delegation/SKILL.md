@@ -44,7 +44,8 @@ Only where none reaches it, call the target's CLI: `claude -p`, `codex exec`, `a
   for its class.
 - A brief for code work asks the report to list every assertion, threshold, fixture or pinned
   expectation the run changed, each with its old and new value and the reason. One a review finds
-  unlisted is a finding, whatever the suite reports.
+  unlisted is a finding, whatever the suite reports. It also asks that each test the run adds is
+  seen red once, the red line quoted.
 - Before launching on a brief built from a template or a script, search the written file for
   unfilled placeholders (`{name}`, `$VAR`) and empty paths: the delegate improvises a value for
   each, and parallel delegates improvise the same one.

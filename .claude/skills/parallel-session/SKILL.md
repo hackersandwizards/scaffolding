@@ -31,7 +31,8 @@ checks the item files, and `admin-serve` serves the page across all repos at
   A task, even one phrased as a question ("Who fixes the privacy policy?"), is `work`.
 
 - `docs/agent-work/YYYY-MM-DD-<topic>.md`: one report per topic, what was measured, with evidence.
-  Its images sit in `docs/agent-work/YYYY-MM-DD-<topic>/`, JPEG at most 1600 px wide.
+  Its images sit in `docs/agent-work/YYYY-MM-DD-<topic>/`, JPEG at most 1600 px wide. A diagram
+  in it is a `mermaid` code block; the page drops styling lines.
 - `docs/agent-work/items/<id>/`: the item's images, JPEG at most 1600 px wide, named in its `images`
   field by file name. The admin renders every review from the item in its own styles: an agent
   writes item data and images, never review HTML. The folder goes with its item.
@@ -48,7 +49,8 @@ answers, or for work who moves next: one name, with any later steps in the body)
 first sentence after the title states what the owner does, in under 120 characters; context
 follows. Optional:
 `order`, `area` (free text), `due` (ISO date), `evidence`, `needs` (item ids in the same
-repository that are finished or decided first). A decision or review may carry
+repository that are finished or decided first), `topic` (the name of a report in the same
+repository, `YYYY-MM-DD-<topic>` without `.md`, whose page then shows the item). A decision or review may carry
 `options` (each `key`, `label`, optional `detail`, and `score` and `noise` from a blind review),
 `recommended` (an option key; a list where `multiple: true` lets the person pick several) and `images` (option key to
 an image or a list of them, each a file name or `{src, caption}`, or a list for the item as a
@@ -96,7 +98,8 @@ and `order` of what it costs if missed against the open items.
    may hold commas, so read the picks against the item's option keys. A line ending
    `; answered <time>, before the question or its options changed` is checked against the item's
    current question and options before anyone acts on it; where the pick no longer fits, the item
-   stays open and the report says so. Write each answer for this repo into
+   stays open and the report says so. A line `repo:<report name>#<heading id>: <comment>` is the
+   person's comment on that section of a report: edit the report. Write each answer for this repo into
    its item (step 4), commit, and confirm the id with its commit; an answer for another repo goes,
    quoted, to a session in that repo. Report an id that is unknown or already decided. Check:
    `git diff` shows the item.

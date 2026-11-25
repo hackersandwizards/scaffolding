@@ -143,6 +143,8 @@ Largest written category.
 - Hyphen-bulleted, named slots with dates and times. Never "when are you free". A day within the
   coming week is its weekday (`morgen`, `Freitag`, `Dienstag vormittag`), never a calendar date:
   `Donnerstag, den 15. Oktober` reads as machine-written.
+- A time the other side has not yet agreed to is a proposal, even where our calendar already holds
+  it: ask whether it suits and leave room for another time, never announce it as set.
 - Attach the risk to a slot rather than dropping the slot.
 - Whole messages that are only a time: `14:30`, `9:30-10 wäre gut`. Pronoun-drop, verb-first
   openings: `Bin so 8:30 dort`, `Melde mich`.
