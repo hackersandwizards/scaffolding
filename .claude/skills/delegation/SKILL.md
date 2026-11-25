@@ -15,8 +15,7 @@ description: >-
 Every handoff, in any direction and to any model, goes through the harness's own delegation tool
 where it reaches the target: `delegate_task` in T3 Code (`t3_thread_launch` with `projectId` and
 `delegatedFrom` for another local project), the Agent tool in Claude Code, `spawn_agent` in Codex.
-Only where none reaches it, call the target's CLI: `claude -p`, `codex exec` (`codex --search exec`
-for web research), `agy -p="<prompt>"`.
+Only where none reaches it, call the target's CLI: `claude -p`, `codex exec`, `agy -p="<prompt>"`.
 
 ## Running a delegate
 
@@ -170,13 +169,15 @@ text change goes through the writer.
 Where Neon does not answer (no `agy`, not signed in, a capacity error after one
 retry), the session writes the text itself after loading `voice`, and its report says so.
 
+Public web research (companies, events, tools, vendors) goes to Neon high the same way, through
+its `search_web` tool; before a result reaches a person, Claude checks its version numbers and
+dates against the cited source.
+
 ## Claude -> Codex
 
 Claude hands Codex the code work: implementation, bug fixes, refactors, tests, scripts, dependency
 updates and the polish pass, in the repository the work belongs to. Hand it over with the pin as
-model, the roles table's effort and the repository's root as working folder. Public web research
-(companies, events, tools, vendors) goes to Codex with web search; before a result reaches a
-person, Claude checks its version numbers and dates against the cited source. Claude keeps the
+model, the roles table's effort and the repository's root as working folder. Claude keeps the
 conversation with the person, records, rules, skills and research that needs our channels or
 records, and checks every text Neon writes.
 Claude reviews what Codex produced, as far as `blind-review` sizes the review, and pushes after it.
