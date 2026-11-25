@@ -25,9 +25,6 @@ handling that prevents data loss, security measures, or accessibility basics.
   tempts, such as a disable comment or an allow entry. A limit on a measure (length, complexity,
   duplication) ships with a guide to the responsibilities to look for. Check: a reader holding only
   the message and the file can name the fix.
-- Before ordering a change that moves or rewires more than one module, try the direct change in a
-  worktree, record each failing check as a prerequisite of the step that caused it, and revert.
-  Check: the plan's order cites the probe, or says why the change needed none.
 - State an architecture rule once, as prose in `CLAUDE.md`, and name beside it the check that fails
   on a breach, or say that review is its only catch. Check: every rule names a check file that
   exists, or says review.
