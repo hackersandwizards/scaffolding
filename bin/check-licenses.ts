@@ -111,13 +111,17 @@ function checkLicenses() {
       );
   }
   if (packages.length < listed.length)
-    problems.push("bun pm licenses --json changed shape: an entry lacks a name or licence string");
+    problems.push(
+      "bun pm licenses --json changed shape: an entry lacks a name or licence string. Check `bun --version` against packageManager in package.json, run `bun pm licenses --json` to inspect the malformed entry, and update check-licenses.ts if Bun changed its schema",
+    );
   if (problems.length) done();
 
   const own: Record<string, Exception> = readPackage(root).scaffolding?.licenses ?? {};
   for (const [pattern, e] of Object.entries(own))
     if (!isReason(e?.reason) || typeof e.license !== "string" || !e.license)
-      problems.push(`scaffolding.licenses["${pattern}"] needs a license string and a reason`);
+      problems.push(
+        `scaffolding.licenses["${pattern}"] needs a license string and a reason: set { "license": "<SPDX>", "reason": "<conveyed or not, who decided>" } in package.json, or remove the entry if the package is not needed`,
+      );
   // A repository's own entries first, so one never reads as stale behind a default.
   const exceptions = [...Object.entries(own), ...Object.entries(DEFAULTS)];
   const used = new Set<string>();
@@ -139,7 +143,7 @@ function checkLicenses() {
     const found = packages.filter((p) => exceptionCovers(pattern, p.name));
     problems.push(
       found.length
-        ? `scaffolding.licenses["${pattern}"] pins "${e?.license}", installed is "${[...new Set(found.map((p) => p.license))].join('", "')}"`
+        ? `scaffolding.licenses["${pattern}"] pins "${e?.license}", installed is "${[...new Set(found.map((p) => p.license))].join('", "')}": review the new licence with \`bun pm why ${pattern}\`, then either remove the stale entry (if the new licence is on the allow list), replace the package, or update the pinned "license" and "reason" in package.json`
         : `scaffolding.licenses["${pattern}"] matches no installed package: remove it`,
     );
   }

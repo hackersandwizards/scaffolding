@@ -133,8 +133,17 @@ for (const path of skeleton.owned) {
   );
 }
 for (const path of skeleton.present)
-  if (!exists(path) && !exempt.optional.includes(path)) add(path, "missing");
-for (const path of skeleton.absent) if (exists(path)) add(path, "not allowed by the skeleton");
+  if (!exists(path) && !exempt.optional.includes(path))
+    add(
+      path,
+      "missing: create this required skeleton file (see @hackersandwizards/scaffolding skeleton.json), or if this is a private repository and LICENSE is missing, set scaffolding.private: true in package.json",
+    );
+for (const path of skeleton.absent)
+  if (exists(path))
+    add(
+      path,
+      "not allowed by the skeleton: delete this retired file and move any needed configuration into the canonical file (.oxlintrc.json, eslint.config.js, prettier.config.js, vitest.config.ts, or bun.lock)",
+    );
 
 const lintEnabled = !isReason(pkg.scaffolding?.skip?.lint);
 if (lintEnabled) {
@@ -158,7 +167,7 @@ for (const [path, target] of Object.entries(skeleton.symlinks)) {
     continue;
   add(
     path,
-    `must be a symlink to ${target}`,
+    `must be a symlink to ${target}: if missing, run check-structure --fix; if a regular file or wrong target exists there, remove it and create the symlink with \`ln -s ${target} <path>\``,
     "",
     exists(path)
       ? undefined
@@ -186,7 +195,7 @@ else {
     if (rc[key] !== value)
       add(
         "prettier config",
-        `${key} must be ${JSON.stringify(value)}`,
+        `${key} must be ${JSON.stringify(value)}: update prettier.config.js (or re-export @hackersandwizards/scaffolding/prettier) so ${key} is ${JSON.stringify(value)}`,
         `${key}: ${JSON.stringify(rc[key])}`,
       );
 }
@@ -213,7 +222,10 @@ for (const [path, keys] of Object.entries(skeleton.entries)) {
     for (const k of key.slice(0, -1)) holder = isObject(holder) ? (holder[k] ??= {}) : undefined;
     const want = key.reduce<unknown>((v, k) => (v as Record<string, unknown>)[k], template);
     if (!isObject(holder)) {
-      add(path, `${key.join(".")} sits in no JSON object`);
+      add(
+        path,
+        `${key.join(".")} sits in no JSON object: repair the JSON syntax in this file so every parent of ${key.join(".")} is an object ({}), then run check-structure --fix`,
+      );
       continue;
     }
     const has = holder[key.at(-1)!];
@@ -283,7 +295,11 @@ async function checkMutationRanges(path: string) {
     )
       for (const entry of node.initializer.elements)
         if (ts.isStringLiteralLike(entry) && /:\d+(?::\d+)?-\d+(?::\d+)?$/.test(entry.text))
-          add(path, "mutate must select whole files, without line ranges", entry.text);
+          add(
+            path,
+            "mutate must select whole files, without line ranges: remove the :start-end suffix from the mutate entry in the Stryker config so the entire file is mutated",
+            entry.text,
+          );
     ts.forEachChild(node, visit);
   };
   visit(config);
@@ -291,15 +307,30 @@ async function checkMutationRanges(path: string) {
 
 if (existsSync(at("package.json"))) {
   if (pkg.type !== skeleton.package.type)
-    add("package.json", `type must be ${skeleton.package.type}`);
+    add(
+      "package.json",
+      `type must be ${skeleton.package.type}: set "type": ${JSON.stringify(skeleton.package.type)} in package.json`,
+    );
   if (pkg.engines?.npm !== skeleton.package["engines.npm"])
-    add("package.json", `engines.npm must be ${skeleton.package["engines.npm"]}`);
+    add(
+      "package.json",
+      `engines.npm must be ${skeleton.package["engines.npm"]}: set "engines": { "npm": ${JSON.stringify(skeleton.package["engines.npm"])} } in package.json`,
+    );
   if (pkg.packageManager !== own.packageManager)
-    add("package.json", `packageManager must be ${own.packageManager}`, String(pkg.packageManager));
+    add(
+      "package.json",
+      `packageManager must be ${own.packageManager}: set "packageManager": ${JSON.stringify(own.packageManager)} in package.json`,
+      String(pkg.packageManager),
+    );
   const surface = !isReason(pkg.scaffolding?.skip?.catalog);
   const scripts = [...skeleton.package.scripts, ...(surface ? skeleton.catalog.scripts : [])];
   for (const script of scripts)
-    if (!pkg.scripts?.[script]) add("package.json", `script ${script} missing`, script);
+    if (!pkg.scripts?.[script])
+      add(
+        "package.json",
+        `script ${script} missing: add "${script}" under "scripts" in package.json (or if this is a catalog script and the repo has no catalog, set scaffolding.skip.catalog with a reason)`,
+        script,
+      );
   const strykerConfigs = listFiles(root, false).filter((path) =>
     /^(?:stryker\.config\..+|\.?stryker\.(?:conf|config)\.(?:[cm]?js|json))$/.test(basename(path)),
   );
@@ -345,7 +376,11 @@ if (existsSync(at("package.json"))) {
   if (brand) add("package.json", brand);
   for (const step of (pkg.scaffolding?.check ?? []).flat())
     if (!placedSteps.has(step) && (!/^check:[a-z0-9][\w:-]*$/.test(step) || !pkg.scripts?.[step]))
-      add("package.json", "a step of scaffolding.check is a script named check:<what>", step);
+      add(
+        "package.json",
+        "a step of scaffolding.check is a script named check:<what>: rename the step and its package.json script to check:<what>, or use a built-in placed step (colours, copies, retired, elements, links, browser-test)",
+        step,
+      );
   // bun marks a `bin` file executable only as it installs the package, so one stored 100644 is not
   // executable in the checkout, in a copy or behind a link.
   const bins = new Set(
@@ -374,7 +409,7 @@ if (existsSync(at("package.json"))) {
     if (!found.some((path) => uses.test(readFileSync(at(path), "utf8"))))
       add(
         found[0] ?? `catalog/${configs[0]}`,
-        `the Astro config must use the catalog preset from ${preset}`,
+        `the Astro config must use the catalog preset from ${preset}: import { catalog } from "${preset}" and add catalog(...) to integrations in the Astro config, or set scaffolding.skip.catalog with a reason in package.json if this repo has no UI catalog`,
       );
   }
 }
@@ -409,7 +444,7 @@ if (lintEnabled && exists(oxlintConfig) && !remaining.some(({ path }) => path ==
       check: "structure",
       path: oxlintConfig,
       text: "",
-      message: `could not check lint rule ownership: ${(error as Error).message}`,
+      message: `could not check lint rule ownership: ${(error as Error).message}. Run bun install and verify eslint.config.js and .oxlintrc.json parse cleanly, then re-run check-structure`,
     });
   }
 }

@@ -328,9 +328,20 @@ export function applyAllow(
     left.push({ check, path: "package.json", text: JSON.stringify(e), message });
   for (const e of mine) {
     if (!usable.includes(e))
-      report(e, "allow entry's path and text are strings or lists of strings");
-    else if (!isReason(e.reason)) report(e, "allow entry without a reason");
-    else if (stale && !findings.some((f) => covers(e, f))) report(e, "allow entry matches nothing");
+      report(
+        e,
+        "allow entry's path and text are strings or lists of strings: fix this entry in package.json scaffolding.allow so path and text (when set) are each a string or string[]",
+      );
+    else if (!isReason(e.reason))
+      report(
+        e,
+        'allow entry without a reason: fix the underlying finding and remove this package.json scaffolding.allow entry, or add a non-empty "reason" explaining why the exception is required',
+      );
+    else if (stale && !findings.some((f) => covers(e, f)))
+      report(
+        e,
+        "allow entry matches nothing: remove this stale entry (or unused path/text item) from package.json scaffolding.allow",
+      );
     else if (stale) {
       // Each text and each path of a list is its own exception and dies with its own case.
       const items = (v: string | string[] | undefined) => (Array.isArray(v) ? v : []);
@@ -338,10 +349,16 @@ export function applyAllow(
       const names = items(e.path).includes(NAMES) ? [NAMES] : [];
       for (const path of items(e.path).filter((p) => p !== NAMES))
         if (!findings.some((f) => covers({ ...e, path: [...names, path] }, f)))
-          report({ ...e, path }, "allow entry matches nothing");
+          report(
+            { ...e, path },
+            "allow entry matches nothing: remove this stale entry (or unused path/text item) from package.json scaffolding.allow",
+          );
       for (const t of items(e.text))
         if (!findings.some((f) => covers(e, f, t)))
-          report({ ...e, text: t }, "allow entry matches nothing");
+          report(
+            { ...e, text: t },
+            "allow entry matches nothing: remove this stale entry (or unused path/text item) from package.json scaffolding.allow",
+          );
     }
   }
   return left;

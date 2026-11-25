@@ -237,6 +237,9 @@ test("check-links reports broken targets with the pages carrying their links, in
   expect(result.requests).toContain("/lost?source=redirect");
   expect(result.stderr).toContain("/sub/dead (400) <- / /sub/page");
   expect(result.stderr).toContain("/lost (500) <- /redirect /sub/page");
+  expect(result.stderr.trimEnd().split("\n").slice(2)).toEqual([
+    "  fix or remove the broken href in the referring page(s), or add the missing route/redirect",
+  ]);
 });
 
 test("check-links preserves the query required by a preloaded server island", async () => {
@@ -383,7 +386,9 @@ test("check-links fails a site with zero internal links", async () => {
   const result = await crawlFixture(() => html("<p>No links here.</p>"));
   expect(result.status).toBe(1);
   expect(result.requests).toEqual(["/"]);
-  expect(result.stderr).toBe("[check-links] crawl found zero internal links\n");
+  expect(result.stderr).toBe(
+    "[check-links] crawl found zero internal links: check that the server serves the built site at / and that --skip does not exclude every internal href\n",
+  );
 });
 
 test("check-links fails when it cannot fetch the start page", async () => {

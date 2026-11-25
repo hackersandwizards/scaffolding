@@ -80,7 +80,7 @@ if (claudeStaged) {
   );
   if (changed !== undefined)
     refuseCommit(
-      `package.json script differs between index and working tree: ${JSON.stringify(changed)}`,
+      `package.json script differs between index and working tree: ${JSON.stringify(changed)}. Stage package.json (\`git add package.json\`) or discard its unstaged script edit so check:skills runs the script version being committed`,
     );
 }
 // The script's former name would otherwise turn the validation off without a word.
@@ -104,7 +104,10 @@ const names = (args: string[]) => {
     encoding: "utf8",
     maxBuffer: Infinity,
   });
-  if (listed.status !== 0) refuseCommit(`git ${args.join(" ")} failed`);
+  if (listed.status !== 0)
+    refuseCommit(
+      `git ${args.join(" ")} failed: inspect the git error above, check \`git status\` for a lock or broken index, and retry the commit`,
+    );
   return listed.stdout.split("\0").filter(Boolean);
 };
 const { staged, oxlintPaths, regularPaths } = stagedPaths(stagedDiff(root));
@@ -187,7 +190,10 @@ async function runStagedTool(
 function stagedContent(path: string): Buffer {
   // spawnSync's default maxBuffer cuts a file over about 1 MB off without failing.
   const shown = spawnSync("git", ["show", `:${path}`], { maxBuffer: Infinity });
-  if (shown.status !== 0) refuseCommit(`git show :${path} failed`);
+  if (shown.status !== 0)
+    refuseCommit(
+      `git show :${path} failed: check \`git status\` for an unmerged conflict or missing index entry on ${path}, resolve and re-stage it, then retry the commit`,
+    );
   return shown.stdout;
 }
 
@@ -240,10 +246,15 @@ if (oxlintPaths.length && !isReason(skip.lint)) {
     );
     if (checkout.status !== 0) throw new Error("could not check out the staged oxlint inputs");
     const configPath = join(snapshot, oxlintConfig);
-    if (!lstatSync(configPath).isFile()) throw new Error(`${oxlintConfig} must be a regular file`);
+    if (!lstatSync(configPath).isFile())
+      throw new Error(
+        `${oxlintConfig} must be a regular file: replace the symlink or directory at ${oxlintConfig} with the repository's regular file (run \`check-structure --fix\` to restore the template) and stage it`,
+      );
     const config = jsonObject(readFileSync(configPath));
     if (!isObject(config.options) || config.options.typeAware !== true)
-      throw new Error(`${oxlintConfig}: options.typeAware must be true`);
+      throw new Error(
+        `${oxlintConfig}: options.typeAware must be true — set "options": { "typeAware": true } in ${oxlintConfig} and stage it; do not turn type-aware linting off`,
+      );
     config.options = { ...config.options, typeAware: false, typeCheck: false };
     writeFileSync(configPath, JSON.stringify(config));
     symlinkSync(join(root, "node_modules"), join(snapshot, "node_modules"), "dir");
@@ -265,7 +276,10 @@ if (oxlintPaths.length && !isReason(skip.lint)) {
   } finally {
     rmSync(snapshot, { recursive: true, force: true });
   }
-  if (code) refuseCommit("oxlint refused the staged files");
+  if (code)
+    refuseCommit(
+      "oxlint refused the staged files: fix the oxlint findings reported above, stage the edits, and commit again; do not silence them with oxlint-disable",
+    );
 }
 
 const runs = active.flatMap(([tool, args]) => {

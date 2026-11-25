@@ -60,7 +60,10 @@ function inspectImport(
     return isRelative
       ? {
           issue: {
-            ...finding("relative import does not resolve to a file", source),
+            ...finding(
+              "relative import does not resolve to a file: fix the typo, add the missing file or extension, or remove the dead import",
+              source,
+            ),
             text: specifier,
           },
         }
@@ -125,9 +128,23 @@ async function checkImports(
     aliases ? { tsConfig: extractTSConfig(tsconfig) } : undefined,
   );
   if (typeof output === "string")
-    return { complete: false, findings: [finding("dependency-cruiser returned no result")] };
+    return {
+      complete: false,
+      findings: [
+        finding(
+          "dependency-cruiser returned no result: run bun install and check tsconfig.json and the source files for syntax errors, then re-run check-cycles",
+        ),
+      ],
+    };
   if (output.summary.totalCruised === 0)
-    return { complete: false, findings: [finding(`none of ${files.length} files was read`)] };
+    return {
+      complete: false,
+      findings: [
+        finding(
+          `none of ${files.length} files was read: check tsconfig.json and run bun install so dependency-cruiser can parse the repository's source files`,
+        ),
+      ],
+    };
 
   const originalPath = (path: string) => astroPaths?.get(path) ?? path;
   // Every module on a cycle reports it once: keep one finding per set of modules.
@@ -191,7 +208,14 @@ async function checkAstroImports(
     cache = join(cache, directory);
     mkdirSync(cache, { recursive: true });
     if (realpathSync(cache) !== cache)
-      return { complete: false, findings: [finding("the cycles cache path contains a symlink")] };
+      return {
+        complete: false,
+        findings: [
+          finding(
+            "the cycles cache path contains a symlink: replace node_modules/.cache/scaffolding (or a symlinked parent) with a real directory by removing the symlink and running bun install",
+          ),
+        ],
+      };
   }
   const mirror = mkdtempSync(join(cache, "cycles-"));
   try {

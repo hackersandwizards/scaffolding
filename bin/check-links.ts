@@ -127,9 +127,15 @@ async function crawlSite({ origin, protocol, search }: URL): Promise<number> {
       `  ${target} (${result}) <- ${sources.size ? [...sources].join(" ") : "start URL"}`,
     );
   }
+  if (broken)
+    console.error(
+      "  fix or remove the broken href in the referring page(s), or add the missing route/redirect",
+    );
   console.log(`[check-links] ${status.size} paths crawled, ${broken} broken`);
   if (links === 0) {
-    console.error("[check-links] crawl found zero internal links");
+    console.error(
+      "[check-links] crawl found zero internal links: check that the server serves the built site at / and that --skip does not exclude every internal href",
+    );
     return 1;
   }
   return broken ? 1 : 0;

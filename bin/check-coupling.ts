@@ -163,12 +163,16 @@ for (const path of listFiles(root, staged)) {
         if (STYLES.test(path)) {
           const file = m[2]?.slice(1) && posix.normalize(m[2].slice(1));
           if (!file || (!file.endsWith(".css") && !publishes(m[1], file, true)))
-            flag(path, m[0], `a stylesheet names a disk path only to a file ${m[1]} exports`);
+            flag(
+              path,
+              m[0],
+              `a stylesheet names a disk path only to a file ${m[1]} exports: import an exported path of ${m[1]} instead, or export the file in ${m[1]}'s package.json exports and release a new tag; do not silence with scaffolding.allow`,
+            );
         } else
           flag(
             path,
             m[0],
-            "hard-coded path into an installed package: import.meta.resolve it through the package's exports (its ./package.json for the folder), run its command from node_modules/.bin, serve a catalog asset by its package path in the preset's copy, or name the exception in scaffolding.allow",
+            "hard-coded path into an installed package: resolve it through the package's exports with import.meta.resolve (use ./package.json for the package folder), run its command from node_modules/.bin, or serve a catalog asset by its package path in the catalog preset's copy. Only if no export or bin fits, record the exception with a concrete reason in package.json scaffolding.allow",
           );
       }
   if (!IMPORTING.test(path)) continue;
@@ -183,17 +187,31 @@ for (const path of listFiles(root, staged)) {
       const published = publishes(name, subpath, disk !== undefined);
       const styles = (pkg?.scaffolding as { styles?: string[] } | undefined)?.styles ?? [];
       if (name === BRAND) {
-        if (!published) flag(path, spec, `not in the exports of ${name}`);
+        if (!published)
+          flag(
+            path,
+            spec,
+            `not in the exports of ${name}: import a subpath listed in ${name}'s package.json exports, or add this subpath to ${name}'s exports and release a new tag; do not silence with scaffolding.allow`,
+          );
       } else if (name === SHELL) {
         if (!path.startsWith("catalog/"))
-          flag(path, spec, "the catalog shell's styles load only under catalog/");
+          flag(
+            path,
+            spec,
+            "the catalog shell's styles load only under catalog/: remove this @hackersandwizards/scaffolding CSS import from application code and use @hackersandwizards/brand exports or local styles instead, or move the file under catalog/",
+          );
       } else if (!styles.some((s) => posix.normalize(s) === subpath))
         flag(
           path,
           spec,
-          "styles come from brand's exports, an engine's scaffolding.styles or this repository",
+          "styles come from brand's exports, an engine's scaffolding.styles or this repository: import the stylesheet from @hackersandwizards/brand, move the CSS into this repository, or use the owning engine's composer. If the composer cannot supply the styles, declare the stylesheet in the engine's package.json scaffolding.styles and exports",
         );
-      else if (!published) flag(path, spec, `not in the exports of ${name}`);
+      else if (!published)
+        flag(
+          path,
+          spec,
+          `not in the exports of ${name}: import a subpath listed in ${name}'s package.json exports, or add this subpath to ${name}'s exports and release a new tag; do not silence with scaffolding.allow`,
+        );
     }
   for (const [, raw] of text.matchAll(SPECIFIER)) {
     const spec = raw.replace(/\?.*/, "");
@@ -204,7 +222,11 @@ for (const path of listFiles(root, staged)) {
     if (!subpath || subpath === ".") continue;
     const pkg = manifest(name);
     if (pkg && "exports" in pkg && !exported(pkg.exports, subpath))
-      flag(path, spec, `not in the exports of ${name}`);
+      flag(
+        path,
+        spec,
+        `not in the exports of ${name}: import a subpath listed in ${name}'s package.json exports, or add this subpath to ${name}'s exports and release a new tag; do not silence with scaffolding.allow`,
+      );
   }
 }
 
@@ -215,9 +237,17 @@ if (!staged || listFiles(root, true).includes("package.json")) {
   for (const field of FIELDS)
     for (const [name, spec] of Object.entries((pkg[field] ?? {}) as Record<string, string>)) {
       if (/^(?:file|link|portal):/.test(spec))
-        flag("package.json", `${name}@${spec}`, "local path dependency");
+        flag(
+          "package.json",
+          `${name}@${spec}`,
+          "local path dependency: replace the file:/link:/portal: specifier in package.json with a pinned Git tag (git+https://...#vX.Y.Z) or registry version, then run bun install",
+        );
       else if (GIT.test(spec) && !TAG.test(spec))
-        flag("package.json", `${name}@${spec}`, "Git dependency not pinned to a version tag");
+        flag(
+          "package.json",
+          `${name}@${spec}`,
+          "Git dependency not pinned to a version tag: append a semver tag (#vX.Y.Z) to the Git URL in package.json (or run raise-pins), then run bun install",
+        );
       // A stale install renders with the old engine while every file reads the new pin.
       else if (GIT.test(spec) && field !== "peerDependencies") {
         const pinned = TAG.exec(spec)![0].replace(/^#(?:semver:)?v?/, "");

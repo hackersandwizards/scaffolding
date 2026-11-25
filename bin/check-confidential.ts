@@ -112,14 +112,16 @@ if (argv[0] === "build") {
   );
   if (neverFile !== undefined && (!names.length || short.length)) {
     console.error(
-      `[check-confidential] --never: ${short.length ? `under three letters: ${short.join(", ")}` : "no name"}; not building`,
+      `[check-confidential] --never: ${short.length ? `under three letters: ${short.join(", ")}` : "no name"}; not building. ${short.length ? "Remove or lengthen the sub-3-letter entries in the --never input (after legal-suffix stripping)" : "Pass at least one name via --never <file> (or after a NUL byte on stdin)"} and re-run \`check-confidential build\``,
     );
     process.exit(1);
   }
   const dictFile = "/usr/share/dict/words";
   // Without the dictionary every common word on the list would refuse ordinary text everywhere.
   if (!existsSync(dictFile)) {
-    console.error(`[check-confidential] no ${dictFile} on this machine: not building`);
+    console.error(
+      `[check-confidential] no ${dictFile} on this machine: not building. Run \`check-confidential build\` on macOS or install a wordlist package (such as wamerican/words) providing ${dictFile}`,
+    );
     process.exit(1);
   }
   const dict = new Set(readFileSync(dictFile, "utf8").toLowerCase().split("\n"));
@@ -336,7 +338,7 @@ if (argv[0] === "prepush") {
       report(
         "push",
         "",
-        "this push may carry Git LFS content or touch a lockable file, and git-lfs is not on PATH",
+        "this push may carry Git LFS content or touch a lockable file, and git-lfs is not on PATH: install git-lfs (brew install git-lfs && git lfs install) and push again",
       );
     else {
       const lfs = spawnSync("git", ["lfs", "pre-push", ...argv.slice(1)], {
@@ -516,7 +518,7 @@ function scanText(where: string, texts: string | string[], inPath = false) {
       check: CHECK,
       path: where,
       text: name,
-      message: `${neverMode ? "a name h&w never shows" : "confidential term"} from the company records${inPath ? " in the file's path" : ""}`,
+      message: `${neverMode ? "a name h&w never shows" : "confidential term"} from the company records${inPath ? " in the file's path" : ""}: ${inPath ? "rename the file to a generic or fictitious name" : "remove or anonymise the name with a generic or fictitious placeholder"}.${neverMode ? "" : " Only if this is a verified public false positive, add an allow entry with its reason in package.json scaffolding.allow"}`,
       term: true,
       ...(inPath && { name: true as const }),
     });
@@ -588,7 +590,11 @@ function scanBinaries(files: { where: string; data: Buffer }[]) {
   if (skipped) {
     for (const { where } of files)
       if (/(?:^|\/)docs\/agent-work\//.test(where))
-        report(where, "", "binary file in docs/agent-work not read: no OCR in CI");
+        report(
+          where,
+          "",
+          "binary file in docs/agent-work not read: no OCR in CI. Remove the binary from docs/agent-work/ or replace it with Markdown/text; only if it must live in this public repo, verify it locally on macOS and add an entry with a reason in package.json scaffolding.allow",
+        );
     return;
   }
   mkdirSync(CACHE_DIR, { recursive: true });
@@ -676,7 +682,12 @@ function scanBinaries(files: { where: string; data: Buffer }[]) {
       });
     else if (data.subarray(0, 4).toString("latin1") === "PK\x03\x04" && depth < 3) {
       const entries = unzip(data);
-      if (typeof entries === "string") return refuse(where, entry, `archive not read: ${entries}`);
+      if (typeof entries === "string")
+        return refuse(
+          where,
+          entry,
+          `archive not read: ${entries}. Replace the damaged, encrypted, or unsupported archive with plain files or a standard unencrypted ZIP (stored/deflate) so its contents can be scanned, or remove it from the repository`,
+        );
       add(where, entries.map((e) => e.name).join("\n"));
       for (const e of entries) read(where, e.name, e.data, depth + 1);
     } else if (!data.includes(0)) {
@@ -692,7 +703,11 @@ function scanBinaries(files: { where: string; data: Buffer }[]) {
           : text,
       );
     } else if (!font(name, data, depth))
-      refuse(where, entry, `binary file not read: name it with a reason in scaffolding.allow`);
+      refuse(
+        where,
+        entry,
+        `binary file not read: remove the binary or replace it with a text or scannable format so confidential terms cannot slip into this public repository. Only if the binary genuinely belongs here and contains no confidential data, add an entry with a reason in package.json scaffolding.allow`,
+      );
   };
   // Each file's text is kept by its content and this reader's code, so a gate reads a file again
   // only once either changes.
@@ -734,7 +749,12 @@ function scanBinaries(files: { where: string; data: Buffer }[]) {
   });
   for (const [where, text] of texts) {
     const nav = OS_NAV.filter((w) => new RegExp(`^${w}$`, "m").test(text));
-    if (nav.length >= 3) report(where, nav.join(", "), "Company OS screenshot");
+    if (nav.length >= 3)
+      report(
+        where,
+        nav.join(", "),
+        "Company OS screenshot: remove this internal Company OS image from the public repository and replace it with an invented diagram or anonymised mockup; do not silence with scaffolding.allow",
+      );
     scanText(where, text);
   }
 }
@@ -865,7 +885,7 @@ else if (argv.includes("--staged") || commit) {
       path: "stdin",
       text: "",
       message:
-        'nothing to scan: stdin holds no {"<where>": <value>} object, each value a string or JSON holding one',
+        'nothing to scan: stdin holds no {"<where>": <value>} object, each value a string or JSON holding one. Pipe a non-empty JSON object mapping each source key to its string or nested JSON text into `check-confidential never`',
     });
   else {
     full = true;

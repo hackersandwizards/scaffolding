@@ -504,7 +504,7 @@ const acme = {
 };
 
 const installed =
-  "hard-coded path into an installed package: import.meta.resolve it through the package's exports (its ./package.json for the folder), run its command from node_modules/.bin, serve a catalog asset by its package path in the preset's copy, or name the exception in scaffolding.allow";
+  "hard-coded path into an installed package: resolve it through the package's exports with import.meta.resolve (use ./package.json for the package folder), run its command from node_modules/.bin, or serve a catalog asset by its package path in the catalog preset's copy. Only if no export or bin fits, record the exception with a concrete reason in package.json scaffolding.allow";
 
 test("allow entries: **/ covers the root, list items die alone, a non-string is a finding", () => {
   const allow = (entries: object[], findings: [string, string][]) =>
@@ -535,12 +535,12 @@ test("allow entries: **/ covers the root, list items die alone, a non-string is 
     ),
   ).toEqual([]);
   expect(allow([pairs], [["a", "x"]])).toEqual([
-    `package.json: allow entry matches nothing ${JSON.stringify({ ...pairs, path: "b" })}`,
-    `package.json: allow entry matches nothing ${JSON.stringify({ ...pairs, text: "y" })}`,
+    `package.json: allow entry matches nothing: remove this stale entry (or unused path/text item) from package.json scaffolding.allow ${JSON.stringify({ ...pairs, path: "b" })}`,
+    `package.json: allow entry matches nothing: remove this stale entry (or unused path/text item) from package.json scaffolding.allow ${JSON.stringify({ ...pairs, text: "y" })}`,
   ]);
   expect(allow([{ check: "x", path: 5, reason: "r" }], [["a", "t"]])).toEqual([
     "a: m",
-    'package.json: allow entry\'s path and text are strings or lists of strings {"check":"x","path":5,"reason":"r"}',
+    'package.json: allow entry\'s path and text are strings or lists of strings: fix this entry in package.json scaffolding.allow so path and text (when set) are each a string or string[] {"check":"x","path":5,"reason":"r"}',
   ]);
 });
 
@@ -594,11 +594,11 @@ describe("check-coupling", () => {
       "package.json: path leaves the repository; take it from the package its owner publishes (../other)",
       "src/bad-sibling.ts: path leaves",
       "styles/bad.css: path leaves the repository; take it from the package its owner publishes (../../other/theme.css)",
-      "src/bad-exports.ts: not in the exports of @acme/pkg",
-      "styles/bad.css: not in the exports of @acme/pkg (@acme/pkg/internal/x.css)",
-      "Git dependency not pinned to a version tag (@acme/unpinned@github:acme/unpinned)",
-      "Git dependency not pinned to a version tag (@acme/branch@",
-      "local path dependency (@acme/local@file:../other)",
+      "src/bad-exports.ts: not in the exports of @acme/pkg: import a subpath listed in @acme/pkg's package.json exports, or add this subpath to @acme/pkg's exports and release a new tag; do not silence with scaffolding.allow",
+      "styles/bad.css: not in the exports of @acme/pkg: import a subpath listed in @acme/pkg's package.json exports, or add this subpath to @acme/pkg's exports and release a new tag; do not silence with scaffolding.allow (@acme/pkg/internal/x.css)",
+      "Git dependency not pinned to a version tag: append a semver tag (#vX.Y.Z) to the Git URL in package.json (or run raise-pins), then run bun install (@acme/unpinned@github:acme/unpinned)",
+      "Git dependency not pinned to a version tag: append a semver tag (#vX.Y.Z) to the Git URL in package.json (or run raise-pins), then run bun install (@acme/branch@",
+      "local path dependency: replace the file:/link:/portal: specifier in package.json with a pinned Git tag (git+https://...#vX.Y.Z) or registry version, then run bun install (@acme/local@file:../other)",
       "src/__tests__/a.test.ts: path leaves the repository; take it from the package its owner publishes (../../../other/util)",
     ])
       expect(found.some((l) => l.includes(want))).toBe(true);
@@ -686,15 +686,15 @@ describe("check-coupling", () => {
     });
     const found = lines(run(dir, "check-coupling").out, "check-coupling");
     expect(found.sort()).toEqual([
-      "[check-coupling] catalog/astro.config.ts: styles come from brand's exports, an engine's scaffolding.styles or this repository (@hackersandwizards/documents/doc.css)",
-      "[check-coupling] src/admin.ts: styles come from brand's exports, an engine's scaffolding.styles or this repository (@hackersandwizards/admin/site.css)",
+      "[check-coupling] catalog/astro.config.ts: styles come from brand's exports, an engine's scaffolding.styles or this repository: import the stylesheet from @hackersandwizards/brand, move the CSS into this repository, or use the owning engine's composer. If the composer cannot supply the styles, declare the stylesheet in the engine's package.json scaffolding.styles and exports (@hackersandwizards/documents/doc.css)",
+      "[check-coupling] src/admin.ts: styles come from brand's exports, an engine's scaffolding.styles or this repository: import the stylesheet from @hackersandwizards/brand, move the CSS into this repository, or use the owning engine's composer. If the composer cannot supply the styles, declare the stylesheet in the engine's package.json scaffolding.styles and exports (@hackersandwizards/admin/site.css)",
       `[check-coupling] src/deck-disk.ts: ${installed} (node_modules/@hackersandwizards/slides/styles/slides.css)`,
-      "[check-coupling] src/deck-other.css: styles come from brand's exports, an engine's scaffolding.styles or this repository (@hackersandwizards/slides/styles/x.css)",
+      "[check-coupling] src/deck-other.css: styles come from brand's exports, an engine's scaffolding.styles or this repository: import the stylesheet from @hackersandwizards/brand, move the CSS into this repository, or use the owning engine's composer. If the composer cannot supply the styles, declare the stylesheet in the engine's package.json scaffolding.styles and exports (@hackersandwizards/slides/styles/x.css)",
       `[check-coupling] src/deep.astro: ${installed} (node_modules/@hackersandwizards/brand/expert/expert.css)`,
-      "[check-coupling] src/fonts.css: a stylesheet names a disk path only to a file @hackersandwizards/brand exports (node_modules/@hackersandwizards/brand/fonts/inter.woff2)",
-      "[check-coupling] src/fonts.css: not in the exports of @hackersandwizards/brand (@hackersandwizards/brand/tokens.css)",
-      "[check-coupling] src/named.css: not in the exports of @hackersandwizards/brand (@hackersandwizards/brand/tokens/tokens.css)",
-      "[check-coupling] src/shell.ts: the catalog shell's styles load only under catalog/ (@hackersandwizards/scaffolding/catalog/catalog.css)",
+      "[check-coupling] src/fonts.css: a stylesheet names a disk path only to a file @hackersandwizards/brand exports: import an exported path of @hackersandwizards/brand instead, or export the file in @hackersandwizards/brand's package.json exports and release a new tag; do not silence with scaffolding.allow (node_modules/@hackersandwizards/brand/fonts/inter.woff2)",
+      "[check-coupling] src/fonts.css: not in the exports of @hackersandwizards/brand: import a subpath listed in @hackersandwizards/brand's package.json exports, or add this subpath to @hackersandwizards/brand's exports and release a new tag; do not silence with scaffolding.allow (@hackersandwizards/brand/tokens.css)",
+      "[check-coupling] src/named.css: not in the exports of @hackersandwizards/brand: import a subpath listed in @hackersandwizards/brand's package.json exports, or add this subpath to @hackersandwizards/brand's exports and release a new tag; do not silence with scaffolding.allow (@hackersandwizards/brand/tokens/tokens.css)",
+      "[check-coupling] src/shell.ts: the catalog shell's styles load only under catalog/: remove this @hackersandwizards/scaffolding CSS import from application code and use @hackersandwizards/brand exports or local styles instead, or move the file under catalog/ (@hackersandwizards/scaffolding/catalog/catalog.css)",
     ]);
   });
 
@@ -877,10 +877,12 @@ describe("check-coupling", () => {
     expect(run(allow([reasoned]), "check-coupling").code).toBe(0);
     for (const reason of ["", true])
       expect(run(allow([{ ...reasoned, reason }]), "check-coupling").out).toContain(
-        "allow entry without a reason",
+        'allow entry without a reason: fix the underlying finding and remove this package.json scaffolding.allow entry, or add a non-empty "reason" explaining why the exception is required',
       );
     const stale = allow([reasoned, { check: "coupling", path: "src/gone.ts", reason: "old" }]);
-    expect(run(stale, "check-coupling").out).toContain("allow entry matches nothing");
+    expect(run(stale, "check-coupling").out).toContain(
+      "allow entry matches nothing: remove this stale entry (or unused path/text item) from package.json scaffolding.allow",
+    );
   });
 });
 
@@ -1579,7 +1581,9 @@ describe("scaffold and check-structure", () => {
         run(fixture(name, config, {}, ["LICENSE"]), "check-structure").out,
         "check-structure",
       ).filter((l) => l.includes("LICENSE"));
-    expect(missing({}, "public-no-license")).toEqual(["[check-structure] LICENSE: missing"]);
+    expect(missing({}, "public-no-license")).toEqual([
+      "[check-structure] LICENSE: missing: create this required skeleton file (see @hackersandwizards/scaffolding skeleton.json), or if this is a private repository and LICENSE is missing, set scaffolding.private: true in package.json",
+    ]);
     expect(missing({ private: true }, "private-no-license")).toEqual([]);
   });
 
@@ -1588,7 +1592,7 @@ describe("scaffold and check-structure", () => {
     expect(lines(run(none, "check-structure").out, "check-structure")).toEqual([]);
     const skills = fixture("skills", {}, { ".claude/skills/a/SKILL.md": "x\n" });
     expect(lines(run(skills, "check-structure").out, "check-structure")).toEqual([
-      "[check-structure] .agents/skills: must be a symlink to ../.claude/skills",
+      "[check-structure] .agents/skills: must be a symlink to ../.claude/skills: if missing, run check-structure --fix; if a regular file or wrong target exists there, remove it and create the symlink with `ln -s ../.claude/skills <path>`",
     ]);
     run(skills, "check-structure", ["--fix"]);
     expect(run(skills, "check-structure").code).toBe(0);
@@ -1596,7 +1600,7 @@ describe("scaffold and check-structure", () => {
     const wrong = fixture("wrong-link", {}, { "keep/x": "x\n" });
     symlinkSync("../keep", join(wrong, ".agents/skills"));
     expect(lines(run(wrong, "check-structure").out, "check-structure")).toEqual([
-      "[check-structure] .agents/skills: must be a symlink to ../.claude/skills",
+      "[check-structure] .agents/skills: must be a symlink to ../.claude/skills: if missing, run check-structure --fix; if a regular file or wrong target exists there, remove it and create the symlink with `ln -s ../.claude/skills <path>`",
     ]);
   });
 
@@ -1634,8 +1638,8 @@ describe("scaffold and check-structure", () => {
     // A file whose value in the way is no object is a finding, never a crash.
     write(other, { ".claude/settings.json": '{ "hooks": "x" }\n', ".mcp.json": "null\n" });
     expect(lines(run(other, "check-structure", ["--fix"]).out, "check-structure")).toEqual([
-      "[check-structure] .mcp.json: mcpServers.chrome-devtools sits in no JSON object",
-      "[check-structure] .claude/settings.json: hooks.SessionStart sits in no JSON object",
+      "[check-structure] .mcp.json: mcpServers.chrome-devtools sits in no JSON object: repair the JSON syntax in this file so every parent of mcpServers.chrome-devtools is an object ({}), then run check-structure --fix",
+      "[check-structure] .claude/settings.json: hooks.SessionStart sits in no JSON object: repair the JSON syntax in this file so every parent of hooks.SessionStart is an object ({}), then run check-structure --fix",
     ]);
   });
 
@@ -1643,7 +1647,7 @@ describe("scaffold and check-structure", () => {
     const guard = "scripts/repo/only-bun.cjs";
     const other = fixture("only-bun", {}, { [guard]: "\n" });
     expect(lines(run(other, "check-structure").out, "check-structure")).toEqual([
-      `[check-structure] ${guard}: not allowed by the skeleton`,
+      `[check-structure] ${guard}: not allowed by the skeleton: delete this retired file and move any needed configuration into the canonical file (.oxlintrc.json, eslint.config.js, prettier.config.js, vitest.config.ts, or bun.lock)`,
     ]);
   });
 
@@ -1750,7 +1754,9 @@ describe("scaffold and check-structure", () => {
       }),
     });
     const out = run(other, "check-structure").out;
-    expect(out).toContain("eslint.config.mjs: not allowed by the skeleton");
+    expect(out).toContain(
+      "eslint.config.mjs: not allowed by the skeleton: delete this retired file and move any needed configuration into the canonical file (.oxlintrc.json, eslint.config.js, prettier.config.js, vitest.config.ts, or bun.lock)",
+    );
     expect(out).toContain("printWidth must be 100");
     expect(out).toContain("core.hooksPath must be .githooks");
   });
@@ -1828,7 +1834,7 @@ export default {
     const result = run(other, "check-structure");
     expect(result.code).toBe(1);
     expect(lines(result.out, "check-structure")).toEqual([
-      "[check-structure] stryker.config.mjs: mutate must select whole files, without line ranges (lib/deck-edit.ts:15-217)",
+      "[check-structure] stryker.config.mjs: mutate must select whole files, without line ranges: remove the :start-end suffix from the mutate entry in the Stryker config so the entire file is mutated (lib/deck-edit.ts:15-217)",
     ]);
   });
 
@@ -1935,12 +1941,12 @@ export default {
       write(other, { "package.json": JSON.stringify(pkg) });
       const found = lines(run(other, "check-structure").out, "check-structure");
       expect(found.sort()).toEqual([
-        "[check-structure] catalog/astro.config.ts: the Astro config must use the catalog preset from @hackersandwizards/scaffolding/catalog",
-        "[check-structure] package.json: a step of scaffolding.check is a script named check:<what> (brand-colours)",
-        "[check-structure] package.json: a step of scaffolding.check is a script named check:<what> (lint)",
-        "[check-structure] package.json: script build missing (build)",
-        "[check-structure] package.json: script catalog missing (catalog)",
-        "[check-structure] package.json: script dev missing (dev)",
+        '[check-structure] catalog/astro.config.ts: the Astro config must use the catalog preset from @hackersandwizards/scaffolding/catalog: import { catalog } from "@hackersandwizards/scaffolding/catalog" and add catalog(...) to integrations in the Astro config, or set scaffolding.skip.catalog with a reason in package.json if this repo has no UI catalog',
+        "[check-structure] package.json: a step of scaffolding.check is a script named check:<what>: rename the step and its package.json script to check:<what>, or use a built-in placed step (colours, copies, retired, elements, links, browser-test) (brand-colours)",
+        "[check-structure] package.json: a step of scaffolding.check is a script named check:<what>: rename the step and its package.json script to check:<what>, or use a built-in placed step (colours, copies, retired, elements, links, browser-test) (lint)",
+        '[check-structure] package.json: script build missing: add "build" under "scripts" in package.json (or if this is a catalog script and the repo has no catalog, set scaffolding.skip.catalog with a reason) (build)',
+        '[check-structure] package.json: script catalog missing: add "catalog" under "scripts" in package.json (or if this is a catalog script and the repo has no catalog, set scaffolding.skip.catalog with a reason) (catalog)',
+        '[check-structure] package.json: script dev missing: add "dev" under "scripts" in package.json (or if this is a catalog script and the repo has no catalog, set scaffolding.skip.catalog with a reason) (dev)',
       ]);
       pkg.scaffolding.check = [["check:markers"]];
       Object.assign(pkg.scripts, { dev: "x", catalog: "x", build: "x" });
@@ -1950,7 +1956,7 @@ export default {
         "catalog/astro.config.ts": "// @hackersandwizards/scaffolding/catalog\n",
       });
       expect(lines(run(other, "check-structure").out, "check-structure")).toEqual([
-        "[check-structure] catalog/astro.config.ts: the Astro config must use the catalog preset from @hackersandwizards/scaffolding/catalog",
+        '[check-structure] catalog/astro.config.ts: the Astro config must use the catalog preset from @hackersandwizards/scaffolding/catalog: import { catalog } from "@hackersandwizards/scaffolding/catalog" and add catalog(...) to integrations in the Astro config, or set scaffolding.skip.catalog with a reason in package.json if this repo has no UI catalog',
       ]);
       write(other, {
         "catalog/astro.config.ts":
@@ -1984,7 +1990,9 @@ export default {
   test("a repository without package.json is reported, not a crash", () => {
     const r = run(repo({ "a.md": "a\n" }), "check-structure");
     expect(r.code).toBe(1);
-    expect(r.out).toContain("[check-structure] package.json: missing");
+    expect(r.out).toContain(
+      "[check-structure] package.json: missing: create this required skeleton file (see @hackersandwizards/scaffolding skeleton.json), or if this is a private repository and LICENSE is missing, set scaffolding.private: true in package.json",
+    );
   });
 
   test("a scaffolded repository passes check-coupling but for the pins bun install fetches", () => {
@@ -2154,7 +2162,7 @@ describe("check-confidential", () => {
       "check-confidential",
     );
     expect(found).toContain(
-      "[check-confidential] notes/acme-widgets.md: confidential term from the company records in the file's path (acme widgets)",
+      "[check-confidential] notes/acme-widgets.md: confidential term from the company records in the file's path: rename the file to a generic or fictitious name. Only if this is a verified public false positive, add an allow entry with its reason in package.json scaffolding.allow (acme widgets)",
     );
     expect(found.filter((l) => l.startsWith("[check-confidential] a.md:"))).toHaveLength(2);
   });
@@ -2173,7 +2181,7 @@ describe("check-confidential", () => {
     expect(
       lines(run(dir, "check-confidential", ["--staged"], env).out, "check-confidential"),
     ).toEqual([
-      "[check-confidential] notes.sql: confidential term from the company records (Acme Widgets)",
+      "[check-confidential] notes.sql: confidential term from the company records: remove or anonymise the name with a generic or fictitious placeholder. Only if this is a verified public false positive, add an allow entry with its reason in package.json scaffolding.allow (Acme Widgets)",
     ]);
   });
 
@@ -2232,9 +2240,9 @@ describe("check-confidential", () => {
     writeFileSync(join(dir, "data.bin"), Buffer.from("x\0y ZYX"));
     sh(dir, ["add", "offer.docx", "font.woff2", "data.bin"]);
     const expected = [
-      "[check-confidential] data.bin: binary file not read: name it with a reason in scaffolding.allow",
-      "[check-confidential] offer.docx: confidential term from the company records (Acme Widgets)",
-      "[check-confidential] offer.docx: confidential term from the company records (Jane Q Doe)",
+      "[check-confidential] data.bin: binary file not read: remove the binary or replace it with a text or scannable format so confidential terms cannot slip into this public repository. Only if the binary genuinely belongs here and contains no confidential data, add an entry with a reason in package.json scaffolding.allow",
+      "[check-confidential] offer.docx: confidential term from the company records: remove or anonymise the name with a generic or fictitious placeholder. Only if this is a verified public false positive, add an allow entry with its reason in package.json scaffolding.allow (Acme Widgets)",
+      "[check-confidential] offer.docx: confidential term from the company records: remove or anonymise the name with a generic or fictitious placeholder. Only if this is a verified public false positive, add an allow entry with its reason in package.json scaffolding.allow (Jane Q Doe)",
     ];
     for (const mode of ["--staged", "--index", "--index"])
       expect(
@@ -2279,7 +2287,7 @@ describe("check-confidential", () => {
     const second = scan();
     expect(second.status, second.output).toBe(1);
     expect(second.output).toContain(
-      "document.docx: confidential term from the company records (Acme Widgets)",
+      "document.docx: confidential term from the company records: remove or anonymise the name with a generic or fictitious placeholder. Only if this is a verified public false positive, add an allow entry with its reason in package.json scaffolding.allow (Acme Widgets)",
     );
   });
 
@@ -2301,7 +2309,8 @@ describe("check-confidential", () => {
     sh(dir, ["update-index", "--add", "--cacheinfo", `100644,${blob},offer.docx`]);
     const found = (mode: string) =>
       lines(run(dir, "check-confidential", [mode], env).out, "check-confidential");
-    const term = "[check-confidential] offer.docx: confidential term from the company records";
+    const term =
+      "[check-confidential] offer.docx: confidential term from the company records: remove or anonymise the name with a generic or fictitious placeholder. Only if this is a verified public false positive, add an allow entry with its reason in package.json scaffolding.allow";
     for (const mode of ["--staged", "--index"])
       expect(found(mode)).toEqual([`${term} (Acme Widgets)`]);
     // A working tree that differs from the pointer is not what the index holds; the store is.
@@ -2326,7 +2335,7 @@ describe("check-confidential", () => {
     sh(dir, ["update-index", "--add", "--cacheinfo", `100644,${textBlob},notes.json`]);
     for (const mode of ["--staged", "--index"])
       expect(found(mode)).toContain(
-        "[check-confidential] notes.json: confidential term from the company records (Jane Q Doe)",
+        "[check-confidential] notes.json: confidential term from the company records: remove or anonymise the name with a generic or fictitious placeholder. Only if this is a verified public false positive, add an allow entry with its reason in package.json scaffolding.allow (Jane Q Doe)",
       );
     // A text that only starts like a pointer is read as text.
     write(dir, { "lfs.md": "version https://git-lfs.github.com/spec/v1\nWe met Acme Widgets.\n" });
@@ -2363,13 +2372,13 @@ describe("check-confidential", () => {
     sh(dir, ["add", ".gitattributes", "offer.docx", "b.md", "logo.woff", "broken.zip"]);
     expect(
       lines(run(dir, "check-confidential", ["--staged"], env).out, "check-confidential")
-        .map((l) => l.replace(/ \(.*/, ""))
+        .map((l) => l.replace(/ \([^()]*\)(?=\. |$)/, ""))
         .sort(),
     ).toEqual([
-      "[check-confidential] b.md: confidential term from the company records",
-      "[check-confidential] broken.zip: archive not read: damaged zip archive",
-      "[check-confidential] logo.woff: binary file not read: name it with a reason in scaffolding.allow",
-      "[check-confidential] offer.docx: confidential term from the company records",
+      "[check-confidential] b.md: confidential term from the company records: remove or anonymise the name with a generic or fictitious placeholder. Only if this is a verified public false positive, add an allow entry with its reason in package.json scaffolding.allow",
+      "[check-confidential] broken.zip: archive not read: damaged zip archive. Replace the damaged, encrypted, or unsupported archive with plain files or a standard unencrypted ZIP (stored/deflate) so its contents can be scanned, or remove it from the repository",
+      "[check-confidential] logo.woff: binary file not read: remove the binary or replace it with a text or scannable format so confidential terms cannot slip into this public repository. Only if the binary genuinely belongs here and contains no confidential data, add an entry with a reason in package.json scaffolding.allow",
+      "[check-confidential] offer.docx: confidential term from the company records: remove or anonymise the name with a generic or fictitious placeholder. Only if this is a verified public false positive, add an allow entry with its reason in package.json scaffolding.allow",
     ]);
   });
 
@@ -2454,10 +2463,10 @@ describe("check-confidential", () => {
       expect(
         lines(run(dir, "check-confidential", ["--staged"], env).out, "check-confidential").sort(),
       ).toEqual([
-        "[check-confidential] clear.png: confidential term from the company records (Acme Widgets)",
-        "[check-confidential] figure.pdf: confidential term from the company records (Jane Q Doe)",
-        "[check-confidential] pages.tiff: confidential term from the company records (Jane Q Doe)",
-        "[check-confidential] scan.pdf: confidential term from the company records (Jane Q Doe)",
+        "[check-confidential] clear.png: confidential term from the company records: remove or anonymise the name with a generic or fictitious placeholder. Only if this is a verified public false positive, add an allow entry with its reason in package.json scaffolding.allow (Acme Widgets)",
+        "[check-confidential] figure.pdf: confidential term from the company records: remove or anonymise the name with a generic or fictitious placeholder. Only if this is a verified public false positive, add an allow entry with its reason in package.json scaffolding.allow (Jane Q Doe)",
+        "[check-confidential] pages.tiff: confidential term from the company records: remove or anonymise the name with a generic or fictitious placeholder. Only if this is a verified public false positive, add an allow entry with its reason in package.json scaffolding.allow (Jane Q Doe)",
+        "[check-confidential] scan.pdf: confidential term from the company records: remove or anonymise the name with a generic or fictitious placeholder. Only if this is a verified public false positive, add an allow entry with its reason in package.json scaffolding.allow (Jane Q Doe)",
       ]);
     },
     60_000,
@@ -2491,7 +2500,7 @@ describe("check-confidential", () => {
       "check-confidential",
     );
     expect(audit).toEqual([
-      `[check-confidential] package.json: allow entry matches nothing (${JSON.stringify(gone)})`,
+      `[check-confidential] package.json: allow entry matches nothing: remove this stale entry (or unused path/text item) from package.json scaffolding.allow (${JSON.stringify(gone)})`,
     ]);
     write(dir, { "b.md": "x\n" });
     sh(dir, ["add", "b.md"]);
@@ -2568,7 +2577,7 @@ describe("check-confidential", () => {
     expect(audit("Jane Q Doe".normalize("NFD"), "JANE Q DOE and jane q doe\n")).toEqual([]);
     expect(audit("Jane-Q. Doe", "Jane Q Doe\n")).toEqual([]);
     expect(audit("Acme Widgets", "Acme Widgets GmbH\n")).toEqual([
-      "[check-confidential] a.md: confidential term from the company records (Acme Widgets GmbH)",
+      "[check-confidential] a.md: confidential term from the company records: remove or anonymise the name with a generic or fictitious placeholder. Only if this is a verified public false positive, add an allow entry with its reason in package.json scaffolding.allow (Acme Widgets GmbH)",
     ]);
     expect(
       audit(
@@ -2576,7 +2585,7 @@ describe("check-confidential", () => {
         "Jane Q Doe, Acme Widgets GmbH\n",
       ),
     ).toEqual([
-      `[check-confidential] package.json: allow entry matches nothing (${JSON.stringify(entry("zyx"))})`,
+      `[check-confidential] package.json: allow entry matches nothing: remove this stale entry (or unused path/text item) from package.json scaffolding.allow (${JSON.stringify(entry("zyx"))})`,
     ]);
   });
 
@@ -2600,10 +2609,10 @@ describe("check-confidential", () => {
       env,
     ).out;
     expect(lines(out, "check-confidential")).toEqual([
-      "[check-confidential] other.md: confidential term from the company records (Jane Q Doe)",
+      "[check-confidential] other.md: confidential term from the company records: remove or anonymise the name with a generic or fictitious placeholder. Only if this is a verified public false positive, add an allow entry with its reason in package.json scaffolding.allow (Jane Q Doe)",
       // Each path of the list dies with its own case; package.json's own entries are no case.
-      `[check-confidential] package.json: allow entry matches nothing (${JSON.stringify({ ...allow[0], path: "package.json" })})`,
-      `[check-confidential] package.json: allow entry matches nothing (${JSON.stringify({ ...allow[0], path: "gone/**" })})`,
+      `[check-confidential] package.json: allow entry matches nothing: remove this stale entry (or unused path/text item) from package.json scaffolding.allow (${JSON.stringify({ ...allow[0], path: "package.json" })})`,
+      `[check-confidential] package.json: allow entry matches nothing: remove this stale entry (or unused path/text item) from package.json scaffolding.allow (${JSON.stringify({ ...allow[0], path: "gone/**" })})`,
     ]);
   });
 
@@ -2624,9 +2633,9 @@ describe("check-confidential", () => {
       );
     const entry = { check: "confidential", text: "Acme Widgets", reason: "test" };
     const content =
-      "[check-confidential] people/acme-widgets.md: confidential term from the company records (Acme Widgets)";
+      "[check-confidential] people/acme-widgets.md: confidential term from the company records: remove or anonymise the name with a generic or fictitious placeholder. Only if this is a verified public false positive, add an allow entry with its reason in package.json scaffolding.allow (Acme Widgets)";
     const notes =
-      "[check-confidential] notes/acme-widgets.md: confidential term from the company records in the file's path (acme widgets)";
+      "[check-confidential] notes/acme-widgets.md: confidential term from the company records in the file's path: rename the file to a generic or fictitious name. Only if this is a verified public false positive, add an allow entry with its reason in package.json scaffolding.allow (acme widgets)";
     expect(scan([{ ...entry, path: "people/**" }])).toEqual([notes]);
     expect(scan([{ ...entry, path: "file names" }])).toEqual([content]);
     // The entry says it is for the file names: the term in the same file's text stays red.
@@ -2635,7 +2644,7 @@ describe("check-confidential", () => {
     expect(scan([gone])).toEqual([
       notes,
       content,
-      `[check-confidential] package.json: allow entry matches nothing (${JSON.stringify({ ...gone, path: "gone/**" })})`,
+      `[check-confidential] package.json: allow entry matches nothing: remove this stale entry (or unused path/text item) from package.json scaffolding.allow (${JSON.stringify({ ...gone, path: "gone/**" })})`,
     ]);
   });
 
@@ -2663,7 +2672,7 @@ describe("check-confidential", () => {
     expect(
       lines(run(named, "check-confidential", ["--tree", "HEAD"], env).out, "check-confidential"),
     ).toEqual([
-      "[check-confidential] package.json: confidential term from the company records (Acme Widgets)",
+      "[check-confidential] package.json: confidential term from the company records: remove or anonymise the name with a generic or fictitious placeholder. Only if this is a verified public false positive, add an allow entry with its reason in package.json scaffolding.allow (Acme Widgets)",
     ]);
     // A reason is prose, read as any other text.
     const reasoned = repo({
@@ -2677,7 +2686,7 @@ describe("check-confidential", () => {
     expect(
       lines(run(reasoned, "check-confidential", ["--tree", "HEAD"], env).out, "check-confidential"),
     ).toEqual([
-      "[check-confidential] package.json: confidential term from the company records (Acme Widgets)",
+      "[check-confidential] package.json: confidential term from the company records: remove or anonymise the name with a generic or fictitious placeholder. Only if this is a verified public false positive, add an allow entry with its reason in package.json scaffolding.allow (Acme Widgets)",
     ]);
     // The staged scan reads the added lines the same way.
     const staged = repo({ "package.json": "{}" });
@@ -3008,10 +3017,22 @@ describe("check-confidential never", () => {
   test("build refuses an empty never input and a name under three letters, its legal form dropped", () => {
     const names = join(dir, "names.txt");
     for (const [text, why] of [
-      ["\n\n", "--never: no name"],
-      ["QZX\nQZ\n", "under three letters: QZ"],
-      ["QZ AG\n", "under three letters: QZ AG"],
-      ["Q 7\n", "under three letters: Q 7"],
+      [
+        "\n\n",
+        "--never: no name; not building. Pass at least one name via --never <file> (or after a NUL byte on stdin) and re-run `check-confidential build`",
+      ],
+      [
+        "QZX\nQZ\n",
+        "under three letters: QZ; not building. Remove or lengthen the sub-3-letter entries in the --never input (after legal-suffix stripping) and re-run `check-confidential build`",
+      ],
+      [
+        "QZ AG\n",
+        "under three letters: QZ AG; not building. Remove or lengthen the sub-3-letter entries in the --never input (after legal-suffix stripping) and re-run `check-confidential build`",
+      ],
+      [
+        "Q 7\n",
+        "under three letters: Q 7; not building. Remove or lengthen the sub-3-letter entries in the --never input (after legal-suffix stripping) and re-run `check-confidential build`",
+      ],
     ]) {
       writeFileSync(names, text);
       const r = build("Acme Widgets\n", names);
@@ -3020,7 +3041,9 @@ describe("check-confidential never", () => {
     }
     const bare = run(dir, "check-confidential", ["build", "-", "--never"], {}, "Acme Widgets\n");
     expect(bare.code).toBe(1);
-    expect(bare.out).toContain("--never: no name");
+    expect(bare.out).toContain(
+      "--never: no name; not building. Pass at least one name via --never <file> (or after a NUL byte on stdin) and re-run `check-confidential build`",
+    );
     writeFileSync(names, "QZX AG\n");
     expect(build("Acme Widgets\n", names).code).toBe(0);
   });
@@ -3034,7 +3057,9 @@ describe("check-confidential never", () => {
     expect(jsonObject(r.out).never).toHaveLength(4);
     const none = run(dir, "check-confidential", both, {}, "Acme Widgets\nQZX\n");
     expect(none.code).toBe(1);
-    expect(none.out).toContain("--never: no name");
+    expect(none.out).toContain(
+      "--never: no name; not building. Pass at least one name via --never <file> (or after a NUL byte on stdin) and re-run `check-confidential build`",
+    );
   });
 
   // The matching table of the never-shown names report, each name replaced by its stand-in.
@@ -3059,7 +3084,12 @@ describe("check-confidential never", () => {
   ])("%s: refused %p", (text, refused) => {
     const r = never({ "deck/a": "Titel\n" + text });
     expect(r.code).toBe(refused ? 1 : 0);
-    if (refused) expect(r.out).toContain("deck/a: a name h&w never shows from the company records");
+    if (refused) {
+      expect(r.out).toContain(
+        "deck/a: a name h&w never shows from the company records: remove or anonymise the name with a generic or fictitious placeholder.",
+      );
+      expect(r.out).not.toContain("scaffolding.allow");
+    }
   });
 
   test("a key counts as text: a slug can show the name", () => {
@@ -3085,7 +3115,9 @@ describe("check-confidential never", () => {
     expect(never({ "deliveries/2026-qzx-a/deck": "QZX and Brennwald" }, at).code).toBe(1);
     const stale = never({ "deliveries/2026-other/deck": "nothing" }, at);
     expect(stale.code).toBe(1);
-    expect(stale.out).toContain("allow entry matches nothing");
+    expect(stale.out).toContain(
+      "allow entry matches nothing: remove this stale entry (or unused path/text item) from package.json scaffolding.allow",
+    );
     // A confidential entry is the public scans' own and covers no never name.
     write(at, {
       "package.json": JSON.stringify({
@@ -3123,7 +3155,9 @@ describe("check-confidential never", () => {
     ]) {
       const r = run(at, "check-confidential", ["never"], env, input);
       expect(r.code).toBe(1);
-      expect(r.out).toContain("stdin: nothing to scan");
+      expect(r.out).toContain(
+        'stdin: nothing to scan: stdin holds no {"<where>": <value>} object, each value a string or JSON holding one. Pipe a non-empty JSON object mapping each source key to its string or nested JSON text into `check-confidential never`',
+      );
     }
     expect(never({ a: "plain text" }).code).toBe(0);
   });
@@ -3369,7 +3403,7 @@ describe("check-confidential list source", () => {
     write(m.dir, { "docs/agent-work/shot.png": "x" });
     sh(m.dir, ["add", "docs/agent-work/shot.png"]);
     expect(m.check({ CI: "true" }, ["--index"]).out).toContain(
-      "docs/agent-work/shot.png: binary file in docs/agent-work not read: no OCR in CI",
+      "docs/agent-work/shot.png: binary file in docs/agent-work not read: no OCR in CI. Remove the binary from docs/agent-work/ or replace it with Markdown/text; only if it must live in this public repo, verify it locally on macOS and add an entry with a reason in package.json scaffolding.allow",
     );
   });
 
@@ -7693,7 +7727,7 @@ describe("check-staged", () => {
     expect(result.code, result.out).toBe(refused ? 1 : 0);
     if (refused)
       expect(result.out.trim()).toBe(
-        '[check:staged] package.json script differs between index and working tree: "other"',
+        '[check:staged] package.json script differs between index and working tree: "other". Stage package.json (`git add package.json`) or discard its unstaged script edit so check:skills runs the script version being committed',
       );
     const log = join(dir, "validator.txt");
     if (validated) expect(readFileSync(log, "utf8")).toBe(validated);
@@ -8375,7 +8409,9 @@ describe("check-spaces", () => {
         }),
       });
     expect(run(allowed("<span></span>"), "check-spaces").code).toBe(0);
-    expect(run(allowed("nothing"), "check-spaces").out).toContain("allow entry matches nothing");
+    expect(run(allowed("nothing"), "check-spaces").out).toContain(
+      "allow entry matches nothing: remove this stale entry (or unused path/text item) from package.json scaffolding.allow",
+    );
   });
 });
 
@@ -8510,7 +8546,9 @@ describe("check-cycles", () => {
     symlinkSync(outside, join(dir, "node_modules"), "dir");
     const r = run(dir, "check-cycles");
     expect(r.code).toBe(1);
-    expect(r.out).toContain("the cycles cache path contains a symlink");
+    expect(r.out).toContain(
+      "the cycles cache path contains a symlink: replace node_modules/.cache/scaffolding (or a symlinked parent) with a real directory by removing the symlink and running bun install",
+    );
     expect(readdirSync(outside)).toEqual([]);
   });
 
@@ -8603,8 +8641,8 @@ describe("check-cycles", () => {
       const r = run(dir, "check-cycles");
       expect(r.code).toBe(1);
       expect(lines(r.out, "cycles")).toEqual([
-        `[cycles] ${source}: relative import does not resolve to a file (../missing.ts)`,
-        `[cycles] ${source}: relative import does not resolve to a file (./icon.svg?raw)`,
+        `[cycles] ${source}: relative import does not resolve to a file: fix the typo, add the missing file or extension, or remove the dead import (../missing.ts)`,
+        `[cycles] ${source}: relative import does not resolve to a file: fix the typo, add the missing file or extension, or remove the dead import (./icon.svg?raw)`,
       ]);
     });
   });
@@ -8712,7 +8750,9 @@ describe("check-licenses", () => {
       expect(keep({ "gs*": pinned }).code).toBe(0);
       const changed = keep({ gsap: { ...pinned, license: "MIT" } });
       expect(changed.code).toBe(1);
-      expect(changed.out).toContain('pins "MIT", installed is "Standard');
+      expect(changed.out).toContain(
+        'scaffolding.licenses["gsap"] pins "MIT", installed is "Standard \'no charge\' license": review the new licence with `bun pm why gsap`, then either remove the stale entry (if the new licence is on the allow list), replace the package, or update the pinned "license" and "reason" in package.json',
+      );
       for (const gsap of [
         { license: pinned.license },
         { ...pinned, reason: {} },
@@ -8720,7 +8760,9 @@ describe("check-licenses", () => {
       ]) {
         const reasonless = keep({ gsap });
         expect(reasonless.code).toBe(1);
-        expect(reasonless.out).toContain("needs a license string and a reason");
+        expect(reasonless.out).toContain(
+          'scaffolding.licenses["gsap"] needs a license string and a reason: set { "license": "<SPDX>", "reason": "<conveyed or not, who decided>" } in package.json, or remove the entry if the package is not needed',
+        );
       }
       const stale = keep({ gsap: pinned, "left-pad": { license: "MIT", reason: "gone" } });
       expect(stale.code).toBe(1);
