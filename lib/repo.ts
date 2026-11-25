@@ -372,7 +372,7 @@ export function finish(check: string, findings: Finding[], started: number, foot
   const ms = Math.round(performance.now() - started);
   if (findings.length) console.error(`[${check}] ${findings.length} findings, ${ms} ms`);
   if (footer) process.stderr.write(footer);
-  process.exit(findings.length ? 1 : 0);
+  process.exit(findings.length ? 1 : (process.exitCode ?? 0));
 }
 
 /** The files a consumer installs, as `bun pm pack` lists them; none where package.json declares no

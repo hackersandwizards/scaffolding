@@ -8,12 +8,8 @@ import { guideId, guidesDirectory, renderGuides } from "../lib/guides.ts";
 import { isObject } from "../lib/json.ts";
 import { activeSeverity, type Rules } from "../lib/lint-rule-overlaps.ts";
 
-const ownAndUpcoming = [
-  "layers",
-  "import-cycle",
-  "no-lint-disable",
-  "duplicate-function-name",
-  "generic-folder",
+const ownChecks = ["layers", "import-cycle", "duplicate-function-name", "generic-folder"];
+const upcoming = [
   "complexity",
   "max-depth",
   "max-params",
@@ -71,7 +67,8 @@ test("each guide is reachable from an enforced rule, own check or upcoming rule"
     ...[...oxlintRules(sharedOxlint), ...oxlintRules(ownOxlint), ...(await eslintRules())].map(
       guideId,
     ),
-    ...ownAndUpcoming,
+    ...ownChecks,
+    ...upcoming,
   ]);
   expect(
     guideFiles.filter((file) => !reachable.has(file.slice(0, -3))),

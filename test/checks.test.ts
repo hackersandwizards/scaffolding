@@ -503,10 +503,15 @@ function run(
 const lines = (out: string, check: string) =>
   out.split("\n").filter((l) => l.startsWith(`[${check}]`) && !/ findings, \d+ ms$/.test(l));
 
-function expectGuide(out: string, id: string) {
+function expectGuide(out: string, id: string, finding?: string) {
   const guide = readFileSync(join(import.meta.dirname, "../config/guides", `${id}.md`), "utf8");
   expect(out).toContain(`\n\n${guide.replace(/^# /, `[guide] ${id}: `)}`);
   expect(out.match(/^\[guide\] [^:]+/gm)).toEqual([`[guide] ${id}`]);
+  if (finding !== undefined) {
+    const offset = out.indexOf(finding);
+    expect(offset).toBeGreaterThanOrEqual(0);
+    expect(out.indexOf("[guide] ")).toBeGreaterThan(offset);
+  }
 }
 
 const fixturePackage = {
@@ -1104,6 +1109,33 @@ describe("scaffold and check-structure", () => {
     const r = run(dir, "check-structure");
     expect(r.out).toBe("");
     expect(r.code).toBe(0);
+  });
+
+  test("tracked generic folders are reported once each with one guide", () => {
+    const other = fixture(
+      "generic-folder",
+      {},
+      {
+        "src/utils/a.ts": "export {};\n",
+        "src/utils/b.ts": "export {};\n",
+        "src/Core/b.ts": "export {};\n",
+        "src/corex/c.ts": "export {};\n",
+        "utils/untracked.ts": "export {};\n",
+      },
+    );
+    expect(sh(other, ["add", "--", "src/corex/c.ts"]).status).toBe(0);
+    const green = run(other, "check-structure");
+    expect(green).toEqual({ code: 0, out: "" });
+    expect(
+      sh(other, ["add", "--", "src/utils/a.ts", "src/utils/b.ts", "src/Core/b.ts"]).status,
+    ).toBe(0);
+    const red = run(other, "check-structure");
+    expect(red.code, red.out).toBe(1);
+    expect(lines(red.out, "structure")).toEqual([
+      "[structure] src/Core: folder named `Core`",
+      "[structure] src/utils: folder named `utils`",
+    ]);
+    expectGuide(red.out, "generic-folder", "folder named `utils`");
   });
 
   test("scaffold sets the Claude defaults and omits the skills link without skills", () => {
@@ -3487,6 +3519,7 @@ describe("scaffolding check", () => {
     structure: "t",
     coupling: "t",
     cycles: "t",
+    names: "t",
     shell: "t",
     markdown: "t",
   };
@@ -3522,7 +3555,30 @@ describe("scaffolding check", () => {
     const r = run(dir, "scaffolding", ["check"], { CHECK_LOCK: join(dir, ".lock") });
     expect(r.code).toBe(1);
     expect(r.out).toMatch(/failed in [\d.]+ s: cycles/);
-    expectGuide(r.out.slice(r.out.indexOf("runtime import cycle")), "import-cycle");
+    expectGuide(r.out, "import-cycle", "runtime import cycle");
+  });
+
+  test("the names step runs for a changed source path", () => {
+    const { names: _names, ...rest } = skip;
+    const dir = gate({ skip: rest });
+    const changed = () =>
+      run(dir, "scaffolding", ["check", "--changed"], { CHECK_LOCK: join(temp(), "lock") });
+    write(dir, {
+      ".oxlintrc.json": JSON.stringify(oxlintTemplate),
+      "a.js": "export function lookup() { return 1; }\n",
+    });
+    install(dir);
+    expect(sh(dir, ["add", "--", ".oxlintrc.json", "a.js"]).status).toBe(0);
+    expect(sh(dir, ["commit", "-qm", "add source"]).status).toBe(0);
+    write(dir, { "README.md": "# Fixture\n" });
+    const green = changed();
+    expect(green.code, green.out).toBe(0);
+    expect(green.out).toContain("skipped names: no changed path maps to it");
+    write(dir, { "b.js": "export const lookup = () => 2;\n" });
+    const red = changed();
+    expect(red.code, red.out).toBe(1);
+    expect(red.out).toContain('selected names: matches "b.js"');
+    expectGuide(red.out, "duplicate-function-name", "is also declared in b.js");
   });
 
   const layerMap = "docs/architecture/layers.md";
@@ -3590,14 +3646,14 @@ describe("scaffolding check", () => {
     const missing = check();
     expect(missing.code).toBe(1);
     expect(missing.out).toContain(stale);
-    expectGuide(missing.out.slice(missing.out.indexOf(stale)), "layers");
+    expectGuide(missing.out, "layers", stale);
     expect(run(dir, "scaffolding", ["layers"])).toEqual({ code: 0, out: layerFixture });
     expect(existsSync(join(dir, layerMap))).toBe(false);
     write(dir, { [layerMap]: layerFixture.replace("L0 -->|2| L1", "L0 -->|1| L1") });
     const outdated = check();
     expect(outdated.code).toBe(1);
     expect(outdated.out).toContain(stale);
-    expectGuide(outdated.out.slice(outdated.out.indexOf(stale)), "layers");
+    expectGuide(outdated.out, "layers", stale);
     expect(run(dir, "scaffolding", ["layers", "--write"]).code).toBe(0);
     expect(readFileSync(join(dir, layerMap), "utf8")).toBe(layerFixture);
     expect(sh(dir, ["add", "--", layerMap]).status).toBe(0);
@@ -3924,7 +3980,7 @@ describe("scaffolding check", () => {
     const single = check();
     expect(single.code, single.out).toBe(1);
     expect(single.out).toContain(finding);
-    expectGuide(single.out.slice(single.out.indexOf(finding)), id);
+    expectGuide(single.out, id, finding);
     write(dir, { "b.js": broken });
     const double = check();
     expect(double.code, double.out).toBe(1);
@@ -5828,6 +5884,76 @@ describe("shared eslint config", () => {
   const recovery = "try { return work(); } catch { return 0; }";
   const wrap = (body: string) => `export function check(work = () => 1) { ${body} }\n`;
 
+  test("lint directive comments give eight findings and one guide", () => {
+    const { dir, eslint } = lintFixture();
+    const directives = ["eslint-disable", "eslint-enable", "oxlint-disable", "oxlint-enable"];
+    write(dir, {
+      "a.js":
+        directives
+          .map(
+            (directive) => `// ${directive}-next-line no-undef\n/* ${directive}-line no-undef */`,
+          )
+          .join("\n") + "\nexport {};\n",
+    });
+    const red = eslint("a.js");
+    expect(red.status, red.stdout + red.stderr).toBe(1);
+    expect(red.stdout.match(/scaffolding\/no-lint-disable/g)).toHaveLength(8);
+    expectGuide(red.stdout, "no-lint-disable", "scaffolding/no-lint-disable");
+    write(dir, {
+      "a.js":
+        'export const text = "eslint-disable eslint-enable oxlint-disable oxlint-enable";\nexport const template = `eslint-disable eslint-enable oxlint-disable oxlint-enable`;\n',
+    });
+    const green = eslint("a.js");
+    expect(green.status, green.stdout + green.stderr).toBe(0);
+    expect(green.stdout).toBe("");
+  });
+
+  test("the first eslint-disable comment cannot suppress the rule", () => {
+    const { dir, eslint } = lintFixture();
+    write(dir, { "a.js": "/* eslint-disable */\nexport {};\n" });
+    const result = eslint("a.js");
+    expect(result.status, result.stdout + result.stderr).toBe(1);
+    expect(result.stdout.match(/scaffolding\/no-lint-disable/g)).toHaveLength(1);
+    expectGuide(result.stdout, "no-lint-disable", "scaffolding/no-lint-disable");
+  });
+
+  test.each([
+    ["frontmatter", "---\n// oxlint-disable no-undef\n---\n<p>Ready</p>\n"],
+    ["template", "<!-- eslint-disable -->\n<p>Ready</p>\n"],
+    ["script", "<script>\n// eslint-disable\n</script>\n"],
+    ["inline script", "<script is:inline>\n// eslint-disable\n</script>\n"],
+  ])("a lint directive in Astro %s gives one finding", (_region, content) => {
+    const { dir, eslint } = lintFixture();
+    write(dir, { "a.astro": content });
+    const result = eslint("a.astro");
+    expect(result.status, result.stdout + result.stderr).toBe(1);
+    expect(result.stdout.match(/scaffolding\/no-lint-disable/g)).toHaveLength(1);
+    expectGuide(result.stdout, "no-lint-disable", "scaffolding/no-lint-disable");
+  });
+
+  test("a passing Oxlint command starts no guide collection subprocess", () => {
+    const dir = repo({
+      "node_modules/oxlint/package.json":
+        '{"name":"oxlint","exports":{"./package.json":"./package.json"}}',
+      "node_modules/oxlint/bin/oxlint":
+        'import { appendFileSync } from "node:fs";\nappendFileSync("starts.log", process.argv.includes("json") ? "json\\n" : "lint\\n");\n',
+      "run.ts":
+        'import { runOxlintWithGuides } from "./lib/oxlint.ts";\nprocess.exitCode = runOxlintWithGuides(process.cwd(), ["."]);\n',
+    });
+    const root = join(import.meta.dirname, "..");
+    mkdirSync(join(dir, "lib"));
+    copyFileSync(join(root, "lib/oxlint.ts"), join(dir, "lib/oxlint.ts"));
+    for (const file of ["guides.ts", "lint-rule-overlaps.ts", "oxlint-restrictions.ts", "repo.ts"])
+      symlinkSync(join(root, "lib", file), join(dir, "lib", file));
+    symlinkSync(join(root, "template"), join(dir, "template"), "dir");
+    const result = spawnSync(process.execPath, ["--no-env-file", "run.ts"], {
+      cwd: dir,
+      encoding: "utf8",
+    });
+    expect(result.status, result.stdout + result.stderr).toBe(0);
+    expect(readFileSync(join(dir, "starts.log"), "utf8")).toBe("lint\n");
+  });
+
   test("Vue and Svelte are the native-only files among the shared lint inputs", async () => {
     const { dir } = lintFixture();
     const files = {
@@ -6362,7 +6488,9 @@ describe("catalog", () => {
       try {
         const page = await browse(served.url.href);
         try {
-          await page.until('document.readyState === "complete"');
+          await page.until(
+            `location.href === ${JSON.stringify(served.url.href)} && document.readyState === "complete"`,
+          );
           expect(await page.evaluate("document.documentElement.dataset.failure")).toBe("TypeError");
         } finally {
           page.close();
@@ -8882,6 +9010,108 @@ describe("check-spaces", () => {
     expect(run(allowed("nothing"), "check-spaces").out).toContain(
       "allow entry matches nothing: remove this stale entry (or unused path/text item) from package.json scaffolding.allow",
     );
+  });
+});
+
+describe("check-names", () => {
+  const source = "function findEntry() { return 1; }\n";
+  const namesFixture = (
+    files: Record<string, string>,
+    ignorePatterns = oxlintTemplate.ignorePatterns,
+  ) => {
+    const dir = repo({
+      ".oxlintrc.json": JSON.stringify({ ...oxlintTemplate, ignorePatterns }),
+      ...files,
+    });
+    install(dir);
+    return dir;
+  };
+
+  test("one module-scope name shared by three files gives one finding listing every file", () => {
+    const dir = namesFixture({
+      "a.ts": source,
+      "b.js": "export function findEntry() { return 2; }\n",
+      "c.mjs": "let findEntry = function inner() { return 3; };\n",
+    });
+    const result = run(dir, "check-names");
+    expect(result.code, result.out).toBe(1);
+    expect(lines(result.out, "names")).toEqual([
+      "[names] a.ts: function `findEntry` is also declared in b.js, c.mjs",
+    ]);
+    expectGuide(result.out, "duplicate-function-name", "is also declared in b.js, c.mjs");
+  });
+
+  test("two module-scope arrow bindings are reported", () => {
+    const dir = namesFixture({
+      "a.ts": "export const findEntry = () => 1;\n",
+      "b.ts": "const findEntry = (() => 2);\n",
+    });
+    const result = run(dir, "check-names");
+    expect(result.code, result.out).toBe(1);
+    expect(lines(result.out, "names")).toEqual([
+      "[names] a.ts: function `findEntry` is also declared in b.ts",
+    ]);
+    expectGuide(result.out, "duplicate-function-name");
+  });
+
+  test("a var hoisted to module scope counts and a block-local const passes", () => {
+    const dir = namesFixture({
+      "a.ts": source,
+      "b.ts": "if (ready) { var findEntry = () => 2; }\n",
+    });
+    const result = run(dir, "check-names");
+    expect(result.code, result.out).toBe(1);
+    expect(lines(result.out, "names")).toEqual([
+      "[names] a.ts: function `findEntry` is also declared in b.ts",
+    ]);
+    expectGuide(result.out, "duplicate-function-name");
+    write(dir, { "b.ts": "if (ready) { const findEntry = () => 2; findEntry(); }\n" });
+    expect(run(dir, "check-names")).toEqual({ code: 0, out: "" });
+  });
+
+  test("tests, nested declarations, excluded files, and framework names pass", () => {
+    const dir = namesFixture(
+      {
+        "a.ts": source + "export function GET() { return 1; }\n",
+        "a.test.ts": source,
+        "test/helpers.ts": source,
+        "b.d.mts": source,
+        "b.stories.ts": source,
+        "b.min.js": source,
+        "dist/b.js": source,
+        "vendor/b.js": source,
+        "x/public/b.js": source,
+        "generated.js": source,
+        "b.ts":
+          "export function GET() { function findEntry() { return 2; } return findEntry(); }\n",
+      },
+      [...oxlintTemplate.ignorePatterns, "generated.js"],
+    );
+    expect(run(dir, "check-names")).toEqual({ code: 0, out: "" });
+  });
+
+  test("verbatim installed skeleton files are exempt while modified copies are checked", () => {
+    const path = ".githooks/check-lock.ts";
+    const skeleton = readFileSync(join(import.meta.dirname, "../template", path), "utf8");
+    const dir = namesFixture(
+      {
+        [path]: skeleton,
+        "a.ts": "export function parseHolder(raw: string) { return raw; }\n",
+      },
+      oxlintTemplate.ignorePatterns.filter((pattern) => pattern !== "/.githooks/**"),
+    );
+    expect(run(dir, "check-names")).toEqual({ code: 0, out: "" });
+    write(dir, { [path]: skeleton + "\n// Local behavior.\n" });
+    const result = run(dir, "check-names");
+    expect(result.code, result.out).toBe(1);
+    expect(lines(result.out, "names")).toEqual([
+      "[names] .githooks/check-lock.ts: function `parseHolder` is also declared in a.ts",
+    ]);
+    expectGuide(result.out, "duplicate-function-name");
+  });
+
+  test("the package itself has unique production function names", () => {
+    expect(run(join(import.meta.dirname, ".."), "check-names")).toEqual({ code: 0, out: "" });
   });
 });
 

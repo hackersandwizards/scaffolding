@@ -3,13 +3,18 @@ import prettier from "eslint-config-prettier/flat";
 import globals from "globals";
 import tseslint from "typescript-eslint";
 import noEmptyCatchRule from "./no-empty-catch-rule.js";
+import noLintDisableRule from "./no-lint-disable-rule.js";
 import propertyRule from "./property-rule.js";
 import { submodulePaths } from "./submodules.js";
 
 // The files check-coupling counts as tests.
 const code = "{js,jsx,ts,tsx,mjs,cjs,mts,cts}";
 export const scaffoldingPlugin = {
-  rules: { property: propertyRule, "no-empty-catch": noEmptyCatchRule },
+  rules: {
+    property: propertyRule,
+    "no-empty-catch": noEmptyCatchRule,
+    "no-lint-disable": noLintDisableRule,
+  },
 };
 const testFiles = [`**/{__tests__,test,tests,e2e}/**/*.${code}`, `**/*.{test,spec}.${code}`];
 const propertyFiles = [`**/*.prop.test.${code}`];
@@ -38,6 +43,7 @@ export default [
       ...submodulePaths().map((path) => `${path}/**`),
     ],
   },
+  { linterOptions: { noInlineConfig: true } },
   tseslint.configs.recommended[0],
   {
     ...tseslint.configs.recommended[1],
@@ -60,7 +66,11 @@ export default [
   {
     files: [`**/*.${code}`],
     plugins: { scaffolding: scaffoldingPlugin },
-    rules: { "scaffolding/property": ["error", "source"], "scaffolding/no-empty-catch": "error" },
+    rules: {
+      "scaffolding/property": ["error", "source"],
+      "scaffolding/no-empty-catch": "error",
+      "scaffolding/no-lint-disable": "error",
+    },
   },
   {
     // An `it("...", () => {})` passes, so a gutted test reads as a covered one.

@@ -156,6 +156,7 @@ const shared: Record<string, string> = {
   structure: bin("check-structure"),
   coupling: bin("check-coupling"),
   cycles: bin("check-cycles"),
+  names: bin("check-names"),
   layers: `${bin("check-layers")} --check`,
   shell: bin("check-shell"),
   markdown: bin("check-markdown"),

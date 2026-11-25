@@ -107,7 +107,8 @@ const pinnedOurs = new Set(
 );
 const ours = (name: string) => name.startsWith("@hackersandwizards") || pinnedOurs.has(name);
 const leaves = "path leaves the repository; take it from the package its owner publishes";
-const outside = (target: string, base = root) => target !== base && !target.startsWith(`${base}/`);
+const isOutsideCheckout = (target: string, base = root) =>
+  target !== base && !target.startsWith(`${base}/`);
 for (const path of listFiles(root, staged)) {
   if (!SCANNED.test(path) || SKIPPED.test(path)) continue;
   // An allow entry names the path it excuses; no rule reads it.
@@ -127,12 +128,17 @@ for (const path of listFiles(root, staged)) {
       }));
   for (const { token, from, climb } of tokens) {
     const target = resolve(from, climb.replace(/[?#].*/, ""));
-    if (outside(target)) flag(path, token, leaves);
+    if (isOutsideCheckout(target)) flag(path, token, leaves);
   }
   if (!test)
     for (const [token, rest] of text.matchAll(HOME)) {
       const target = resolve(home + rest);
-      if (devRoot && target.startsWith(`${devRoot}/`) && outside(target) && outside(target, main))
+      if (
+        devRoot &&
+        target.startsWith(`${devRoot}/`) &&
+        isOutsideCheckout(target) &&
+        isOutsideCheckout(target, main)
+      )
         flag(path, token, leaves);
     }
   // Code, markup and data reach an installed company package through its exports or its bin, never

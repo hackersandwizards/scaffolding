@@ -20,6 +20,7 @@ import type { Node } from "typescript";
 import own from "../package.json";
 import skeleton from "../skeleton.json";
 import { brandProblem, browserTestProblem, placedSteps, vitestRun } from "../lib/gate-config.ts";
+import { renderGuides } from "../lib/guides.ts";
 import { help } from "../lib/help.ts";
 import { lintOverlaps } from "../lib/lint-disjoint.ts";
 import { oxlintConfig, oxlintConfiguration, oxlintRestrictionFindings } from "../lib/oxlint.ts";
@@ -451,4 +452,19 @@ if (lintEnabled && exists(oxlintConfig) && !remaining.some(({ path }) => path ==
     });
   }
 }
-finish("check-structure", remaining, started);
+const genericFolders = new Set<string>();
+for (const path of git(["ls-files", "--cached", "--deduplicate", "-z"], root)
+  .toString()
+  .split("\0"))
+  for (let folder = posix.dirname(path); folder !== "."; folder = posix.dirname(folder))
+    if (/^(?:utils|helpers|common|shared|core)$/i.test(posix.basename(folder)))
+      genericFolders.add(folder);
+for (const folder of [...genericFolders].sort())
+  console.error(`[structure] ${folder}: folder named \`${posix.basename(folder)}\``);
+if (genericFolders.size) process.exitCode = 1;
+finish(
+  "check-structure",
+  remaining,
+  started,
+  genericFolders.size ? renderGuides(["generic-folder"]) : "",
+);

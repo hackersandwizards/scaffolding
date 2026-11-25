@@ -128,7 +128,11 @@ export default [
     plugins: { scaffolding: scaffoldingPlugin },
     processor,
     languageOptions: { parserOptions: { parser: tseslint.parser } },
-    rules: { ...componentRules, "scaffolding/no-empty-catch": "error" },
+    rules: {
+      ...componentRules,
+      "scaffolding/no-empty-catch": "error",
+      "scaffolding/no-lint-disable": "error",
+    },
   },
   {
     files: scriptFiles,

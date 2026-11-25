@@ -18,7 +18,8 @@ const check = "cycles";
 const sourceExtension = /\.[cm]?[jt]sx?$/;
 const relativeImport = /^\.\.?\//;
 const installedPackage = /(^|\/)node_modules\//;
-const outside = (path: string) => isAbsolute(path) || path === ".." || path.startsWith(`..${sep}`);
+const isAbsoluteOrParentPath = (path: string) =>
+  isAbsolute(path) || path === ".." || path.startsWith(`..${sep}`);
 const finding = (message: string, path = "package.json"): Finding => ({
   check,
   path,
@@ -48,7 +49,7 @@ function inspectImport(
   if (dependency.coreModule || dependency.protocol) return {};
   const { module: specifier, resolved, couldNotResolve } = dependency;
   const isRelative = relativeImport.test(specifier);
-  const inMirror = baseDir !== root && !outside(resolved);
+  const inMirror = baseDir !== root && !isAbsoluteOrParentPath(resolved);
   // A relative path may leave the mirror without leaving the checkout, and files omitted
   // from the mirror (such as assets) can still exist beside the original source.
   const needsOriginalResolution = couldNotResolve || (isRelative && baseDir !== root && !inMirror);
@@ -71,7 +72,7 @@ function inspectImport(
   if (installedPackage.test(relative(root, target).split(sep).join("/"))) return {};
 
   const path = relative(root, realpathSync(target));
-  if (outside(path))
+  if (isAbsoluteOrParentPath(path))
     return {
       issue: {
         ...finding(
@@ -164,7 +165,7 @@ async function checkImports(
     });
   }
   for (const { source, dependencies } of output.modules) {
-    if (outside(source) || installedPackage.test(source)) continue;
+    if (isAbsoluteOrParentPath(source) || installedPackage.test(source)) continue;
     const path = originalPath(source);
     const imports: ResolvedImport[] = [];
     for (const dependency of dependencies) {

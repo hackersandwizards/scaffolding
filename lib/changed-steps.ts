@@ -29,7 +29,7 @@ const always = [
   "colours",
   "copies",
 ];
-const source = ["typecheck", "lint", "oxlint", "cycles", "layers", "test"];
+const source = ["typecheck", "lint", "oxlint", "cycles", "names", "layers", "test"];
 const defaults = [
   { glob: new Bun.Glob(layerMapPath), steps: ["layers"] },
   { glob: new Bun.Glob("**/*.{js,jsx,cjs,mjs,ts,tsx,cts,mts,astro,mdx}"), steps: source },

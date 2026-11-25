@@ -40,6 +40,10 @@ literal types. ESLint applies the corresponding block, equality, comment and dec
 Astro template expressions. Its `scaffolding/no-empty-catch` rule checks comment-only catch
 clauses and empty inline `.catch()` callbacks in JavaScript, TypeScript and Astro.
 
+The shared ESLint presets disable inline configuration with `linterOptions.noInlineConfig`.
+`scaffolding/no-lint-disable` reports ESLint and Oxlint enable and disable directives in comments.
+Delete the directive and fix the finding it covered.
+
 In `eslint.config.js`, keep the shared preset and any ESLint-only rules. Move the repository's
 `no-restricted-imports` blocks to `.oxlintrc.json`. A scoped policy can use an override such as
 
