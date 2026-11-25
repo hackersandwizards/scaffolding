@@ -103,18 +103,18 @@ the report when the notification arrives after it.
 
 ## Roles and models
 
-| Role                                                                                         | First choice                                                | If unavailable                            |
-| -------------------------------------------------------------------------------------------- | ----------------------------------------------------------- | ----------------------------------------- |
-| Planner: a job of two or more epics, and the root cause of a row its implementer did not fix | Fable high, never higher                                    | Opus high                                 |
-| Implementer, hill climbing and bug sweeps included                                           | Neon high                                                   | the Codex pin at medium, then Opus medium |
-| Reviewer                                                                                     | Sol high; Opus medium in a fresh context for code Sol wrote | Opus medium                               |
+| Role                                                                                         | First choice                                                                                                                                                | If unavailable                         |
+| -------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------- |
+| Planner: a job of two or more epics, and the root cause of a row its implementer did not fix | Fable high, never higher                                                                                                                                    | Opus high                              |
+| Implementer                                                                                  | per row: Neon high for hill climbing, a bug sweep and a large change; the Codex pin at medium for a well-cut task, edge cases, hostile input, a current API | the other of the two, then Opus medium |
+| Reviewer                                                                                     | the other of the two at high; Opus medium in a fresh context for a change against our rules                                                                 | Opus medium                            |
 
 - The session that takes a development job runs it to its end, on whatever model it runs; no other
   session coordinates it. On the planner's or the implementer's model it does that role itself;
   otherwise it hands the role over and writes no code.
 - An epic is a part of the job that ships on its own. The planner, or the session where none runs,
   writes the checklist as a JSON file in the scratch folder, one row per task: `id`, `task`,
-  `check` (a command or an observable result), `depends_on`, `status` (`open`, `pass`, `fail`).
+  `check` (a command or an observable result), `implementer`, `depends_on`, `status` (`open`, `pass`, `fail`).
   After that only `status` changes, and only the session changes it.
 - The implementer works its row to the end: the check, the gate, a commit. A row whose check is a
   number (gate time, test runtime, mutation score, Lighthouse, a run's token cost) is worked as a
@@ -194,10 +194,12 @@ dates against the cited source.
 
 The session hands the implementer the code work: implementation, bug fixes, refactors, tests,
 scripts, dependency updates and the polish fixes, with the root of the repository the work belongs to
-as working folder. In T3 Code the implementer is a child thread on T3's Antigravity provider
-(`delegate_task`), and every fix round goes to it with `t3_thread_send`. Elsewhere:
-`agy --model gemini-4-neon-high --output-format json --print-timeout 3600s -p="<brief>" < /dev/null`
-from the repository root, each fix round with `--conversation <conversation_id>`. The session keeps
+as working folder, through the harness's own delegation tool where it reaches the implementer: in T3
+Code a child thread on T3's Antigravity or Codex provider (`delegate_task`), every fix round with
+`t3_thread_send` to it. Elsewhere, from the repository root:
+`agy --model gemini-4-neon-high --output-format json --print-timeout 3600s -p="<brief>" < /dev/null`,
+each fix round with `--conversation <conversation_id>`, or `codex exec` with the pin, each fix round
+with `codex exec resume <session_id>`. The session keeps
 the conversation with the person, records, rules, skills and research that needs our channels or
 records, and checks every text Neon writes.
 
