@@ -8,6 +8,7 @@
     "typescript/no-duplicate-enum-values": "error",
     "typescript/no-empty-object-type": "error",
     "typescript/no-explicit-any": "error",
+    "typescript/no-inferrable-types": "error",
     "typescript/no-extra-non-null-assertion": "error",
     "typescript/no-misused-new": "error",
     "typescript/no-namespace": "error",
@@ -34,12 +35,15 @@
     "no-delete-var": "error",
     "no-dupe-else-if": "error",
     "no-duplicate-case": "error",
-    "no-empty": [
+    "no-empty": "error",
+    "eqeqeq": ["error", "always", { "null": "ignore" }],
+    "no-duplicate-imports": ["error", { "allowSeparateTypeImports": true }],
+    "no-warning-comments": [
       "error",
-      {
-        "allowEmptyCatch": true
-      }
+      { "terms": ["todo", "fixme", "xxx", "hack"], "location": "anywhere" }
     ],
+    "no-var": "error",
+    "prefer-const": ["error", { "destructuring": "any", "ignoreReadBeforeAssign": false }],
     "no-empty-character-class": "error",
     "no-empty-pattern": "error",
     "no-empty-static-block": "error",
@@ -117,14 +121,6 @@
     {
       "files": ["**/*.{ts,tsx,mts,cts,astro}"],
       "rules": {
-        "no-var": "error",
-        "prefer-const": [
-          "error",
-          {
-            "destructuring": "any",
-            "ignoreReadBeforeAssign": false
-          }
-        ],
         "prefer-rest-params": "error",
         "prefer-spread": "error"
       }

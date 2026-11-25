@@ -162,13 +162,33 @@ const root = {
     // own key: the bar takes brand's and writes both, so one choice holds on the repository's pages
     // and in its catalog. Storage may be blocked (a file:// page); the choice then holds here only.
     const BRAND_KEY = "theme";
-    // A page without data-hw-night keeps the day theme its head set.
-    if (document.documentElement.dataset.hwNight !== undefined)
+    const savedTheme = () => {
       try {
-        const chosen = localStorage.getItem(BRAND_KEY);
-        if ((chosen === "dark" || chosen === "light") && theme()?.getTheme() !== chosen)
-          theme()?.setTheme(chosen);
-      } catch {}
+        return localStorage.getItem(BRAND_KEY);
+      } catch (error) {
+        if (error instanceof DOMException && error.name === "SecurityError") return null;
+        throw error;
+      }
+    };
+    const saveTheme = (chosen) => {
+      const value = String(chosen);
+      try {
+        localStorage.setItem(BRAND_KEY, value);
+      } catch (error) {
+        if (
+          error instanceof DOMException &&
+          (error.name === "SecurityError" || error.name === "QuotaExceededError")
+        )
+          return;
+        throw error;
+      }
+    };
+    // A page without data-hw-night keeps the day theme its head set.
+    if (document.documentElement.dataset.hwNight !== undefined) {
+      const chosen = savedTheme();
+      if ((chosen === "dark" || chosen === "light") && theme()?.getTheme() !== chosen)
+        theme()?.setTheme(chosen);
+    }
     const pressed = () =>
       document
         .querySelector("[data-hw-theme]")
@@ -182,9 +202,7 @@ const root = {
         const chosen = root.dataset.theme;
         if (chosen !== "dark" && chosen !== "light") return;
         if (theme()?.getTheme() !== chosen) theme()?.setTheme(chosen);
-        try {
-          localStorage.setItem(BRAND_KEY, chosen);
-        } catch {}
+        saveTheme(chosen);
         pressed();
       }).observe(root, { attributeFilter: ["data-theme"] });
     const bar = document.getElementById("hw-catalog-bar");
@@ -213,9 +231,7 @@ const root = {
       const toggle = theme();
       if (toggle) {
         toggle.setTheme(toggle.getTheme() === "dark" ? "light" : "dark");
-        try {
-          localStorage.setItem(BRAND_KEY, toggle.getTheme());
-        } catch {}
+        saveTheme(toggle.getTheme());
       }
       pressed();
     });

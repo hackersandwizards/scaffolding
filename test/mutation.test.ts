@@ -140,84 +140,90 @@ export default {
   }
 });
 
-test("the mutation command reports static survivors separately from its adjusted score", () => {
-  const dir = mkdtempSync(join(tmpdir(), "scaffolding-mutation-test-"));
-  try {
-    linkMutationDependencies(dir);
-    writeFileSync(
-      join(dir, "sample.ts"),
-      `export const initial = "expected";
+test(
+  "the mutation command reports static survivors separately from its adjusted score",
+  {
+    timeout: (30_000 * Number(process.env.SCAFFOLDING_TEST_TIMEOUT_MS || 5000)) / 5000,
+  },
+  () => {
+    const dir = mkdtempSync(join(tmpdir(), "scaffolding-mutation-test-"));
+    try {
+      linkMutationDependencies(dir);
+      writeFileSync(
+        join(dir, "sample.ts"),
+        `export const initial = "expected";
 export const runtime = () => "runtime";`,
-    );
-    writeFileSync(
-      join(dir, "sample.test.ts"),
-      `import { expect, test } from "vitest";
+      );
+      writeFileSync(
+        join(dir, "sample.test.ts"),
+        `import { expect, test } from "vitest";
 import { initial, runtime } from "./sample.ts";
 test("checks the initial and runtime values", () => {
   expect(initial).toBe("expected");
   expect(runtime()).toBe("runtime");
 });`,
-    );
-    writeFileSync(
-      join(dir, "loader.test.ts"),
-      `import { expect, test } from "vitest";
+      );
+      writeFileSync(
+        join(dir, "loader.test.ts"),
+        `import { expect, test } from "vitest";
 test("loads the module without checking the value", async () => {
   expect(typeof (await import("./sample.ts")).initial).toBe("string");
 });`,
-    );
-    const configFile = join(dir, "stryker.config.mjs");
-    const config = `import base from "@hackersandwizards/scaffolding/stryker";
-export default { ...base, incremental: false, mutate: ["sample.ts"]`;
-    writeFileSync(configFile, `${config} };`);
-    const run = (...args: string[]) => {
-      const result = spawnSync(
-        process.execPath,
-        ["--no-env-file", join(import.meta.dirname, "../bin/scaffolding-mutation.ts"), ...args],
-        {
-          cwd: dir,
-          encoding: "utf8",
-          env: { ...process.env, PATH: "/usr/bin:/bin", SCAFFOLDING_MUTATION_BUN: "1" },
-        },
       );
-      expect(result.status, result.stdout + result.stderr).toBe(0);
-      return result.stdout;
-    };
-    const report = () =>
-      JSON.parse(
-        readFileSync(join(dir, ".stryker-reports/mutation.json"), "utf8"),
-      ) as MutationTestResult;
+      const configFile = join(dir, "stryker.config.mjs");
+      const config = `import base from "@hackersandwizards/scaffolding/stryker";
+export default { ...base, incremental: false, mutate: ["sample.ts"]`;
+      writeFileSync(configFile, `${config} };`);
+      const run = (...args: string[]) => {
+        const result = spawnSync(
+          process.execPath,
+          ["--no-env-file", join(import.meta.dirname, "../bin/scaffolding-mutation.ts"), ...args],
+          {
+            cwd: dir,
+            encoding: "utf8",
+            env: { ...process.env, PATH: "/usr/bin:/bin", SCAFFOLDING_MUTATION_BUN: "1" },
+          },
+        );
+        expect(result.status, result.stdout + result.stderr).toBe(0);
+        return result.stdout;
+      };
+      const report = () =>
+        JSON.parse(
+          readFileSync(join(dir, ".stryker-reports/mutation.json"), "utf8"),
+        ) as MutationTestResult;
 
-    const limited = run();
-    const initialMutant = () =>
-      report().files["sample.ts"].mutants.find((mutant) => mutant.location.start.line === 1);
-    const staticSurvivor = initialMutant();
-    expect(staticSurvivor).toMatchObject({ static: true, status: "Survived" });
-    expect(staticSurvivor?.coveredBy).toHaveLength(1);
+      const limited = run();
+      const initialMutant = () =>
+        report().files["sample.ts"].mutants.find((mutant) => mutant.location.start.line === 1);
+      const staticSurvivor = initialMutant();
+      expect(staticSurvivor).toMatchObject({ static: true, status: "Survived" });
+      expect(staticSurvivor?.coveredBy).toHaveLength(1);
 
-    const dryRun = run("--dryRunOnly");
-    writeFileSync(configFile, `${config}, ignoreStatic: false };`);
-    const full = run();
-    const staticKill = initialMutant();
-    expect(staticKill).toMatchObject({
-      static: true,
-      status: "Killed",
-      location: staticSurvivor?.location,
-    });
-    expect(staticKill?.coveredBy).toHaveLength(1);
-    expect(staticKill?.killedBy).toHaveLength(1);
-    expect(staticKill?.coveredBy).not.toContain(staticKill?.killedBy?.[0]);
+      const dryRun = run("--dryRunOnly");
+      writeFileSync(configFile, `${config}, ignoreStatic: false };`);
+      const full = run();
+      const staticKill = initialMutant();
+      expect(staticKill).toMatchObject({
+        static: true,
+        status: "Killed",
+        location: staticSurvivor?.location,
+      });
+      expect(staticKill?.coveredBy).toHaveLength(1);
+      expect(staticKill?.killedBy).toHaveLength(1);
+      expect(staticKill?.coveredBy).not.toContain(staticKill?.killedBy?.[0]);
 
-    const heading = "Not tested against the full suite (module-level code)";
-    expect(limited).toMatch(/All files[^\n]+33\.33[\s\S]+Done in/);
-    expect(limited.slice(limited.indexOf("Done in"))).toContain(`${heading}: 2`);
-    expect(limited.split(heading)[1]).toContain("sample.ts:1 StringLiteral");
-    expect(limited.split(heading)[1]).toContain("sample.ts:2 ArrowFunction");
-    expect(limited).toContain(
-      "Mutation score excluding these survivors: 100.00% (Stryker: 33.33%)",
-    );
-    expect(dryRun).not.toContain(heading);
-    expect(full).not.toContain(heading);
-  } finally {
-    rmSync(dir, { recursive: true, force: true });
-  }
-});
+      const heading = "Not tested against the full suite (module-level code)";
+      expect(limited).toMatch(/All files[^\n]+33\.33[\s\S]+Done in/);
+      expect(limited.slice(limited.indexOf("Done in"))).toContain(`${heading}: 2`);
+      expect(limited.split(heading)[1]).toContain("sample.ts:1 StringLiteral");
+      expect(limited.split(heading)[1]).toContain("sample.ts:2 ArrowFunction");
+      expect(limited).toContain(
+        "Mutation score excluding these survivors: 100.00% (Stryker: 33.33%)",
+      );
+      expect(dryRun).not.toContain(heading);
+      expect(full).not.toContain(heading);
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  },
+);

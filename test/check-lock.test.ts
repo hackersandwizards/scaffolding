@@ -1,5 +1,6 @@
 import { execFileSync, spawn, spawnSync } from "node:child_process";
 import {
+  chmodSync,
   closeSync,
   constants,
   existsSync,
@@ -11,13 +12,14 @@ import {
   realpathSync,
   renameSync,
   rmSync,
+  symlinkSync,
   utimesSync,
   writeFileSync,
   writeSync,
 } from "node:fs";
 import { createHash } from "node:crypto";
 import { tmpdir } from "node:os";
-import { join, resolve } from "node:path";
+import { dirname, join, resolve } from "node:path";
 import { afterAll, describe, expect, it } from "vitest";
 import { jsonObject } from "../lib/json.ts";
 
@@ -698,8 +700,8 @@ describe("check-lock wraps a consumer's build", () => {
         for (const pid of [check.pid!, child])
           try {
             process.kill(pid, "SIGKILL");
-          } catch {
-            /* already gone */
+          } catch (error) {
+            if ((error as NodeJS.ErrnoException).code !== "ESRCH") throw error;
           }
         expect(alive).toBe(false);
         expect(died).toBe(signal);
@@ -947,6 +949,82 @@ describe("check-lock fails open", () => {
     const lock = lockPath();
     writeFileSync(lock, "not json");
     expect(run(lock, ["echo", "ran"]).stdout).toContain("ran");
+  });
+
+  it("propagates a queue ticket lookup error", () => {
+    const lock = lockPath();
+    const queue = `${lock}.queue`;
+    mkdirSync(queue);
+    const name = "000000000000001-999999";
+    symlinkSync(name, join(queue, name));
+    const result = run(lock, ["echo", "ran"]);
+    expect(result.status).toBe(1);
+    expect(result.stderr).toContain("ELOOP");
+    expect(result.stdout).toBe("");
+  });
+
+  it(
+    "propagates a queue ticket cleanup error",
+    async () => {
+      const lock = lockPath();
+      heldBy(lock, process.pid);
+      const waiter = spawn("bun", [SCRIPT, "echo", "ran"], {
+        stdio: ["ignore", "pipe", "pipe"],
+        env: { ...process.env, CHECK_LOCK: lock },
+      });
+      let stdout = "";
+      let stderr = "";
+      waiter.stdout.on("data", (chunk: Buffer) => (stdout += chunk));
+      waiter.stderr.on("data", (chunk: Buffer) => (stderr += chunk));
+      const status = new Promise<number | null>((done) => waiter.on("close", done));
+      const queue = `${lock}.queue`;
+      await until(() => existsSync(queue) && readdirSync(queue).length > 0, "the waiter's ticket");
+      const ticket = join(queue, readdirSync(queue)[0]);
+      rmSync(ticket);
+      mkdirSync(ticket);
+      waiter.kill("SIGTERM");
+      expect(await status, stdout + stderr).toBe(1);
+      expect(stderr).toMatch(/EISDIR|EPERM/);
+      expect(stdout).toBe("");
+    },
+    limit(30_000),
+  );
+
+  it(
+    "stops the command and propagates an annotation write failure",
+    async () => {
+      const lock = lockPath();
+      const holder = spawn("bun", [SCRIPT, "sleep", "60"], {
+        stdio: ["ignore", "ignore", "pipe"],
+        env: { ...process.env, CHECK_LOCK: lock },
+      });
+      let stderr = "";
+      holder.stderr.on("data", (chunk: Buffer) => (stderr += chunk));
+      const status = new Promise<number | null>((done) => holder.on("close", done));
+      await until(
+        () => existsSync(lock) && typeof jsonObject(readFileSync(lock)).group === "number",
+        "the command group",
+      );
+      mkdirSync(`${lock}.${holder.pid}`);
+      holder.kill("SIGTERM");
+      expect(await status).toBe(1);
+      expect(stderr).toContain("EISDIR");
+      expect(existsSync(lock)).toBe(false);
+    },
+    limit(30_000),
+  );
+
+  it("propagates a lock release permission error", () => {
+    const lock = lockPath();
+    const folder = dirname(lock);
+    try {
+      const result = run(lock, ["chmod", "a-w", folder]);
+      expect(result.status).toBe(1);
+      expect(result.stderr).toMatch(/EACCES|EPERM/);
+      expect(existsSync(lock)).toBe(true);
+    } finally {
+      chmodSync(folder, 0o700);
+    }
   });
 
   it("runs immediately when the lock path is unusable", () => {

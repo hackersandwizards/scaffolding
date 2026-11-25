@@ -21,17 +21,19 @@ export async function newestTag(remote: string): Promise<string | undefined> {
   });
   let out = "";
   git.stdout.on("data", (chunk) => (out += chunk));
+  const result = Promise.withResolvers<number | null>();
+  git.on("error", () => result.resolve(null));
+  git.on("close", result.resolve);
   const timer = setTimeout(() => {
     console.error(`git ls-remote ${remote}: no answer within ${wait} s`);
+    if (git.pid === undefined) return;
     try {
-      process.kill(-git.pid!, "SIGTERM");
-    } catch {} // the group is already gone
+      process.kill(-git.pid, "SIGTERM");
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code !== "ESRCH") result.reject(error);
+    }
   }, wait * 1000);
-  const code = await new Promise<number | null>((done) => {
-    git.on("error", () => done(null));
-    git.on("close", done);
-  });
-  clearTimeout(timer);
+  const code = await result.promise.finally(() => clearTimeout(timer));
   if (code !== 0) return undefined;
   return out
     .split("\n")

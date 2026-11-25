@@ -13,6 +13,7 @@ import {
   renameSync,
   rmSync,
   statSync,
+  unlinkSync,
   writeFileSync,
 } from "node:fs";
 import { constants } from "node:os";
@@ -174,13 +175,17 @@ function dropIfStale(): void {
 const QUEUE = `${LOCK}.queue`;
 const TICKET_MS = 3 * POLL_MS;
 let ticket: string | undefined;
+function removeTicket(path: string) {
+  try {
+    unlinkSync(path);
+  } catch (error) {
+    const { code } = error as NodeJS.ErrnoException;
+    if (code !== "ENOENT" && code !== "ENOTDIR") throw error;
+  }
+}
 // process.exit skips a finally, so each exit while waiting hands the ticket back itself.
 const leave = () => {
-  try {
-    if (ticket) rmSync(`${QUEUE}/${ticket}`, { force: true });
-  } catch {
-    /* a queue that fails costs the order only */
-  }
+  if (ticket) removeTicket(`${QUEUE}/${ticket}`);
 };
 // The queue only orders the waiters; the lock keeps the commands apart. So a queue that fails, its
 // folder removed or a ticket that cannot be removed, costs the order, never the lock: an error here
@@ -189,26 +194,40 @@ function first(): boolean {
   try {
     mkdirSync(QUEUE, { recursive: true });
     writeFileSync(`${QUEUE}/${ticket}`, "");
-    const tickets = readdirSync(QUEUE).filter((name) => {
-      const path = `${QUEUE}/${name}`;
-      let mtime: number;
-      try {
-        mtime = statSync(path).mtimeMs;
-      } catch {
-        return false; // removed meanwhile, or no ticket this waiter can read
-      }
-      if (running(Number(name.split("-")[1])) && Date.now() - mtime < TICKET_MS) return true;
-      try {
-        rmSync(path, { force: true });
-      } catch {
-        /* passed over all the same */
-      }
-      return false;
-    });
-    return tickets.sort()[0] === ticket;
-  } catch {
-    return true;
+  } catch (error) {
+    const { code } = error as NodeJS.ErrnoException;
+    if (
+      code === "EEXIST" ||
+      code === "ENOENT" ||
+      code === "ENOTDIR" ||
+      code === "EACCES" ||
+      code === "EPERM" ||
+      code === "EROFS"
+    )
+      return true;
+    throw error;
   }
+  let names: string[];
+  try {
+    names = readdirSync(QUEUE);
+  } catch (error) {
+    const { code } = error as NodeJS.ErrnoException;
+    if (code === "ENOENT" || code === "ENOTDIR") return true;
+    throw error;
+  }
+  const tickets = names.filter((name) => {
+    const path = `${QUEUE}/${name}`;
+    try {
+      const stat = statSync(path, { throwIfNoEntry: false });
+      if (!stat?.isFile()) return false;
+      if (running(Number(name.split("-")[1])) && Date.now() - stat.mtimeMs < TICKET_MS) return true;
+      removeTicket(path);
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code !== "ENOTDIR") throw error;
+    }
+    return false;
+  });
+  return tickets.sort()[0] === ticket;
 }
 
 async function waitForLock(): Promise<boolean> {
@@ -315,8 +334,8 @@ let child: ChildProcess | undefined = undefined;
 const killGroup = (signal: NodeJS.Signals) => {
   try {
     process.kill(-child!.pid!, signal);
-  } catch {
-    /* the group is already gone */
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code !== "ESRCH") throw error;
   }
 };
 let received: NodeJS.Signals | undefined;
@@ -326,7 +345,7 @@ function onSignal(signal: NodeJS.Signals): void {
     process.exit(128 + constants.signals[signal]);
   }
   killGroup(received ? "SIGKILL" : signal);
-  if (!received) annotate({ signalled: true });
+  if (!received) updateAnnotation({ signalled: true });
   received ??= signal;
 }
 for (const signal of SIGNALS) process.on(signal, onSignal);
@@ -352,6 +371,16 @@ let held = false;
 try {
   if (process.env.SCAFFOLDING_LOCKED !== LOCK) held = await waitForLock();
 } catch (error) {
+  const { code, path } = error as NodeJS.ErrnoException;
+  if (
+    path !== `${LOCK}.${process.pid}` ||
+    (code !== "ENOENT" &&
+      code !== "ENOTDIR" &&
+      code !== "EACCES" &&
+      code !== "EPERM" &&
+      code !== "EROFS")
+  )
+    throw error;
   console.warn(
     `[check-lock] lock unusable (${String(error)}); running "${command.join(" ")}" unserialised`,
   );
@@ -361,23 +390,26 @@ try {
 function annotate(fields: Partial<Holder>): void {
   const holder = held ? readHolder() : undefined;
   if (holder?.pid !== process.pid) return;
+  writeFileSync(`${LOCK}.${process.pid}`, JSON.stringify({ ...holder, ...fields }));
   try {
-    writeFileSync(`${LOCK}.${process.pid}`, JSON.stringify({ ...holder, ...fields }));
     renameSync(`${LOCK}.${process.pid}`, LOCK);
-  } catch {
-    /* the lock keeps what it names, which covers every case but a kill of the caller's group */
   } finally {
     rmSync(`${LOCK}.${process.pid}`, { force: true });
   }
 }
 
-function release(): void {
-  if (!held) return;
+let annotationFailure: { error: unknown } | undefined;
+function updateAnnotation(fields: Partial<Holder>): void {
   try {
-    if (readHolder()?.pid === process.pid) rmSync(LOCK, { force: true });
-  } catch {
-    /* a lock we cannot remove is reclaimed by the next run once this pid is gone */
+    annotate(fields);
+  } catch (error) {
+    annotationFailure = { error };
+    killGroup("SIGKILL");
   }
+}
+
+function release(): void {
+  if (held && readHolder()?.pid === process.pid) rmSync(LOCK, { force: true });
 }
 
 // Passing the signal to the command alone was not enough: `sh -c 'cd catalog && astro build'` died
@@ -391,7 +423,7 @@ child = spawn(command[0], command.slice(1), {
 });
 // The command's own group escapes a SIGKILL to the caller's group, so the lock names the command
 // too, and a waiter reads it as live until the command has exited.
-if (child.pid) annotate({ group: child.pid });
+if (child.pid) updateAnnotation({ group: child.pid });
 const result = await new Promise<{
   status: number | null;
   signal: NodeJS.Signals | null;
@@ -404,17 +436,18 @@ clearTimeout(bound);
 // A command killed by a signal sent to it alone, not to check-lock, left its steps running in its
 // group while the lock was released; so the rest of the group gets the same signal. Only after a
 // signal: a command that exits on its own may leave a process behind on purpose.
-if (result.signal && !received) {
-  annotate({ signalled: true });
+if (result.signal && !received && !annotationFailure) {
+  updateAnnotation({ signalled: true });
   killGroup(result.signal);
 }
 const stoppedAt = Date.now();
-while ((received || result.signal) && running(-child.pid!)) {
+while ((received || result.signal || annotationFailure) && running(-child.pid!)) {
   // After a signal the command took alone, nobody sends the second one that kills: KILL_MS do.
   if (!received && Date.now() - stoppedAt > KILL_MS) killGroup("SIGKILL");
   await sleep(100);
 }
 release();
+if (annotationFailure) throw annotationFailure.error;
 if (result.error)
   console.log(`[check-lock] ${command.join(" ")} did not start: ${result.error.message}`);
 else if (result.status !== 0) {

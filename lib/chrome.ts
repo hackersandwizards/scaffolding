@@ -138,43 +138,33 @@ function stage(): string | undefined {
 
 /** The installed executable, moved from `staged` into the cache in place of a build whose install
  * died; undefined where the install failed or another job's unpack of the build is under way. */
-function place(staged: string | undefined, output: string): string | undefined {
-  if (!staged) return undefined;
+function place(staged: string, output: string): string | undefined {
+  const installed = output.trim();
+  const rel = relative(staged, installed);
+  if (!installed || rel.startsWith("..")) return undefined;
+  const [kind, build] = rel.split(sep);
+  const folder = join(cache(), kind);
+  mkdirSync(folder, { recursive: true });
+  // A build folder with no archive and no executable is an unpack that threw: @puppeteer/browsers
+  // deletes the archive either way.
+  const state = existsSync(join(folder, build)) ? stateOf(folder, build) : undefined;
+  const path = join(cache(), rel);
+  const died = state === "died" || (state === "whole" && !existsSync(path));
+  for (const name of archivesOf(build, readdirSync(folder)))
+    if (writtenAgo(join(folder, name)) >= UNPACK_WAIT_MS)
+      rmSync(join(folder, name), { force: true });
   try {
-    const installed = output.trim();
-    const rel = relative(staged, installed);
-    if (!installed || rel.startsWith("..")) return undefined;
-    const [kind, build] = rel.split(sep);
-    const folder = join(cache(), kind);
-    mkdirSync(folder, { recursive: true });
-    // A build folder with no archive and no executable is an unpack that threw: @puppeteer/browsers
-    // deletes the archive either way.
-    const state = existsSync(join(folder, build)) ? stateOf(folder, build) : undefined;
-    const path = join(cache(), rel);
-    const died = state === "died" || (state === "whole" && !existsSync(path));
-    for (const name of archivesOf(build, readdirSync(folder)))
-      if (writtenAgo(join(folder, name)) >= UNPACK_WAIT_MS)
-        rmSync(join(folder, name), { force: true });
-    try {
-      if (died) renameSync(join(folder, build), join(staged, "died"));
-    } catch {
-      /* another install replaced it first */
-    }
-    try {
-      renameSync(join(staged, kind, build), join(folder, build));
-    } catch {
-      /* another install moved the same build in first */
-    }
-    return existsSync(path) && stateOf(folder, build) === "whole" ? path : undefined;
-  } catch {
-    return undefined;
-  } finally {
-    try {
-      rmSync(staged, { recursive: true, force: true });
-    } catch {
-      /* swept an hour on */
-    }
+    if (died) renameSync(join(folder, build), join(staged, "died"));
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
   }
+  try {
+    renameSync(join(staged, kind, build), join(folder, build));
+  } catch (error) {
+    const { code } = error as NodeJS.ErrnoException;
+    if ((code !== "EEXIST" && code !== "ENOTEMPTY") || !existsSync(path)) throw error;
+  }
+  return existsSync(path) && stateOf(folder, build) === "whole" ? path : undefined;
 }
 
 /** CHROME_BINARY, else the cached build, else that build (or stable) installed into the cache,
@@ -193,16 +183,22 @@ export function chromeBinary(options: Options = {}): string | undefined {
   const { key, path } = found;
   if (path) return path;
   const staged = stage();
-  let output = "";
+  if (!staged) return undefined;
   try {
-    if (staged)
+    let output: string;
+    try {
       output = execFileSync("bunx", install(options.shell, staged), { encoding: "utf-8" });
-  } catch {
-    /* a failed install: undefined below */
+    } catch (error) {
+      if (isObject(error) && typeof error.status === "number" && error.status !== 0)
+        return undefined;
+      throw error;
+    }
+    const installed = place(staged, output);
+    if (installed) known.set(key, installed);
+    return installed;
+  } finally {
+    rmSync(staged, { recursive: true, force: true });
   }
-  const installed = place(staged, output);
-  if (installed) known.set(key, installed);
-  return installed;
 }
 
 /** The same without blocking the process, for a server answering a request meanwhile. Concurrent
@@ -222,18 +218,22 @@ export async function chromeBinaryAsync(options: Options = {}): Promise<string |
   const running = installs.get(key);
   if (running) return running;
   const staged = stage();
-  const output = staged
-    ? promisify(execFile)("bunx", install(options.shell, staged), { encoding: "utf-8" }).then(
-        ({ stdout }) => stdout,
-        () => "",
-      )
-    : Promise.resolve("");
-  const started = output
-    .then((stdout) => place(staged, stdout))
+  if (!staged) return undefined;
+  const started = promisify(execFile)("bunx", install(options.shell, staged), { encoding: "utf-8" })
+    .then(
+      ({ stdout }) => place(staged, stdout),
+      (error: unknown) => {
+        if (isObject(error) && typeof error.code === "number" && error.code !== 0) return undefined;
+        throw error;
+      },
+    )
     .then((installed) => {
-      installs.delete(key);
       if (installed) known.set(key, installed);
       return installed;
+    })
+    .finally(() => {
+      installs.delete(key);
+      rmSync(staged, { recursive: true, force: true });
     });
   installs.set(key, started);
   return started;

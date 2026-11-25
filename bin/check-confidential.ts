@@ -860,10 +860,14 @@ else if (argv.includes("--staged") || commit) {
   if (commit)
     scanText("commit message", git(["log", "-1", "--format=%B", commit], root).toString());
 } else if (neverMode) {
+  const raw = readFileSync(0, "utf8");
   let input: unknown;
   try {
-    input = JSON.parse(readFileSync(0, "utf8"));
-  } catch {}
+    input = JSON.parse(raw);
+  } catch (error) {
+    if (!(error instanceof SyntaxError)) throw error;
+    input = undefined;
+  }
   // A value may nest: its object keys and every string in it are its text, so a deck goes in whole.
   const strings = (value: unknown): string[] =>
     typeof value === "string"

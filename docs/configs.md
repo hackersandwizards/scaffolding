@@ -33,6 +33,13 @@ file path and does not inherit the plugins, environment or ignore patterns. Keep
 existing source and generated-file scopes in both configs where applicable. A submodule is skipped
 by the gate using `.gitmodules`.
 
+Oxlint rejects empty blocks, coercive equality except for null comparisons, duplicate imports
+except for a separate type import, warning comments containing `todo`, `fixme`, `xxx` or `hack`,
+`var`, never-reassigned `let` declarations and redundant TypeScript annotations for inferred
+literal types. ESLint applies the corresponding block, equality, comment and declaration rules to
+Astro template expressions. Its `scaffolding/no-empty-catch` rule checks comment-only catch
+clauses and empty inline `.catch()` callbacks in JavaScript, TypeScript and Astro.
+
 In `eslint.config.js`, keep the shared preset and any ESLint-only rules. Move the repository's
 `no-restricted-imports` blocks to `.oxlintrc.json`. A scoped policy can use an override such as
 

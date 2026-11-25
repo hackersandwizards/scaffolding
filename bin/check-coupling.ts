@@ -143,8 +143,9 @@ for (const path of listFiles(root, staged)) {
     for (const line of (path.endsWith(".py") ? text.replace(DOCSTRING, "$1") : text)
       .replace(
         commentSyntax(path),
-        (comment: string, kept: string = "", at: number, all: string) => {
+        (comment: string, captured: unknown, at: number, all: string) => {
           // A line mark after an unclosed quote (`x//y`) sits in a string: code follows.
+          const kept = typeof captured === "string" ? captured : "";
           let open = "";
           for (const c of all.slice(all.lastIndexOf("\n", at) + 1, at) + kept)
             if (open ? c === open : "\"'`".includes(c)) open = open ? "" : c;

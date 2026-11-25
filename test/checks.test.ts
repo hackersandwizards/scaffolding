@@ -3,6 +3,7 @@ import { spawn, spawnSync } from "node:child_process";
 import { createHash } from "node:crypto";
 import {
   chmodSync,
+  closeSync,
   copyFileSync,
   cpSync,
   existsSync,
@@ -10,6 +11,7 @@ import {
   lstatSync,
   mkdirSync,
   mkdtempSync,
+  openSync,
   readdirSync,
   readFileSync,
   readlinkSync,
@@ -28,7 +30,14 @@ import { brandFallbacks } from "../catalog/fallbacks.ts";
 import { selectChangedSteps } from "../lib/changed-steps.ts";
 import { catalogPath } from "../catalog/path.ts";
 import { loadRoute, rewriteRoute } from "../catalog/route.ts";
-import { oxlintConfiguration, oxlintRestrictionFindings, runOxlint } from "../lib/oxlint.ts";
+import { activeSeverity } from "../lib/lint-rule-overlaps.ts";
+import {
+  oxlintConfiguration,
+  oxlintFiles,
+  oxlintRestrictionFindings,
+  runOxlint,
+} from "../lib/oxlint.ts";
+import { ESLint } from "eslint";
 import { rejection } from "../lib/rejection.ts";
 import { gitShellShebangs, shellInput } from "../lib/shell-inputs.ts";
 import { shellcheckBinary } from "../lib/shellcheck.ts";
@@ -67,20 +76,31 @@ afterAll(() => made.forEach((dir) => rmSync(dir, { recursive: true, force: true 
 const cache = join(import.meta.dirname, "..", "node_modules", ".cache", "scaffolding");
 // A stopped run skips afterAll: the next run removes its folders once an hour old, so a run still
 // going keeps its own.
-for (const root of [tmpdir(), cache])
+function sweepFixtures(root: string) {
   for (const name of existsSync(root) ? readdirSync(root) : [])
     if (name.startsWith("scaffolding-test-"))
       try {
         const dir = join(root, name);
         if (Date.now() - statSync(dir).mtimeMs > 3_600_000)
           rmSync(dir, { recursive: true, force: true });
-      } catch {} // another run removed it first
+      } catch (error) {
+        if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
+      }
+}
+for (const root of [tmpdir(), cache]) sweepFixtures(root);
 function temp(root = tmpdir()) {
   mkdirSync(root, { recursive: true });
   const dir = mkdtempSync(join(root, "scaffolding-test-"));
   made.push(dir);
   return dir;
 }
+
+test("fixture cleanup propagates filesystem errors besides disappearance", () => {
+  const dir = temp();
+  const name = "scaffolding-test-loop";
+  symlinkSync(name, join(dir, name));
+  expect(() => sweepFixtures(dir)).toThrow(/ELOOP/);
+});
 /** A headless Chrome on a free debugging port with one tab open at `url`, driven over CDP. The
  * unused debugging pipe on fds 3 and 4 closes when this process dies, killed by a signal included,
  * where no `finally` runs, and Chrome quits on that. */
@@ -3168,6 +3188,26 @@ describe("check-confidential never", () => {
     expect(never({ a: "plain text" }).code).toBe(0);
   });
 
+  test("confidential never propagates an unreadable stdin descriptor", () => {
+    const fd = openSync(plain, "r");
+    try {
+      const result = spawnSync(
+        process.execPath,
+        ["--no-env-file", bin("check-confidential"), "never"],
+        {
+          cwd: plain,
+          env: { ...process.env, ...env },
+          stdio: [fd, "pipe", "pipe"],
+          encoding: "utf8",
+        },
+      );
+      expect(result.status).toBe(1);
+      expect(result.stderr).toContain("EISDIR");
+    } finally {
+      closeSync(fd);
+    }
+  });
+
   test("a list with a missing or empty never section refuses", () => {
     for (const section of [undefined, []]) {
       const r = never({ a: "plain text" }, plain, {
@@ -5753,6 +5793,213 @@ describe("shared eslint config", () => {
   // The untyped rules alone, as check-staged runs them: these fixtures sit in no tsconfig.
   const untyped = { ...process.env, SCAFFOLDING_LINT_UNTYPED: "1" };
 
+  const lintFixture = () => {
+    const dir = repo({
+      ".oxlintrc.json": JSON.stringify(oxlintTemplate),
+      "eslint.config.js":
+        'export { default } from "@hackersandwizards/scaffolding/eslint/astro";\n',
+      "package.json": '{"type":"module"}',
+      "tsconfig.json": '{"include":["*.ts"]}',
+      "value.ts": "export const value = 1;\nexport const other = 2;\nexport type Value = number;\n",
+    });
+    install(dir);
+    const lib = join(import.meta.dirname, "../lib");
+    const oxlint = () =>
+      spawnSync(process.execPath, ["--no-env-file", join(lib, "oxlint.ts")], {
+        cwd: dir,
+        encoding: "utf8",
+      });
+    const eslint = (file: string) =>
+      spawnSync(
+        process.execPath,
+        [
+          "--bun",
+          join(import.meta.dirname, "../node_modules/.bin/eslint"),
+          file,
+          "-f",
+          join(lib, "eslint-formatter.ts"),
+        ],
+        { cwd: dir, encoding: "utf8", env: untyped },
+      );
+    return { dir, oxlint, eslint };
+  };
+  const empty = "try { return work(); } catch {}";
+  const commented = "try { return work(); } catch { /* explanation */ }";
+  const recovery = "try { return work(); } catch { return 0; }";
+  const wrap = (body: string) => `export function check(work = () => 1) { ${body} }\n`;
+
+  test("Vue and Svelte are the native-only files among the shared lint inputs", async () => {
+    const { dir } = lintFixture();
+    const files = {
+      ".claude/task.js": "export {};",
+      ".githooks/task.js": "export {};",
+      ".agents/task.js": "export {};",
+      "nested/.claude/task.js": "export {};",
+      "nested/.githooks/task.js": "export {};",
+      "nested/.agents/task.js": "export {};",
+      "a.astro": "<script>console.log(1);</script>",
+      "a.vue": "<script>console.log(1);</script>",
+      "a.svelte": "<script>console.log(1);</script>",
+      "a.html": "<script>console.log(1);</script>",
+      ...Object.fromEntries(
+        ["js", "cjs", "mjs", "jsx", "ts", "cts", "mts", "tsx"].map((ext) => [
+          `a.${ext}`,
+          "export {};",
+        ]),
+      ),
+    };
+    write(dir, files);
+    const eslint = new ESLint({ cwd: dir });
+    const native = oxlintFiles(dir).sort();
+    const covered = await Promise.all(
+      native.map(async (file) => {
+        const config: unknown = await eslint.calculateConfigForFile(file);
+        return (
+          isObject(config) &&
+          isObject(config.rules) &&
+          activeSeverity(config.rules["scaffolding/no-empty-catch"])
+        );
+      }),
+    );
+    expect(native.filter((_, index) => !covered[index])).toEqual(["a.svelte", "a.vue"]);
+  });
+
+  test.each([
+    ["no-empty", "a.js", wrap(empty), wrap(recovery)],
+    [
+      "eqeqeq",
+      "a.js",
+      "export const same = (a, b) => a == b;\n",
+      "export const same = (a, b) => a === b || a == null;\n",
+    ],
+    [
+      "no-duplicate-imports",
+      "a.ts",
+      'import { value } from "./value";\nimport { other } from "./value";\nexport const n = value + other;\n',
+      'import { value } from "./value";\nimport type { Value } from "./value";\nexport const n: Value = value;\n',
+    ],
+    [
+      "no-warning-comments",
+      "a.js",
+      "// this has a todo in it\n// FIXME: revise\nexport {};\n",
+      "// explanation\nexport {};\n",
+    ],
+    ["no-var", "a.js", "var n = 1;\nconsole.log(n);\n", "const n = 1;\nconsole.log(n);\n"],
+    ["no-var", "a.mjs", "var n = 1;\nconsole.log(n);\n", "const n = 1;\nconsole.log(n);\n"],
+    ["prefer-const", "a.js", "let n = 1;\nconsole.log(n);\n", "const n = 1;\nconsole.log(n);\n"],
+    ["prefer-const", "a.mjs", "let n = 1;\nconsole.log(n);\n", "const n = 1;\nconsole.log(n);\n"],
+    [
+      "no-inferrable-types",
+      "a.ts",
+      "const n: number = 1;\nconsole.log(n);\n",
+      "const n = 1;\nconsole.log(n);\n",
+    ],
+  ])("Oxlint reports and guides %s in %s", (rule, file, hit, pass) => {
+    const { dir, oxlint } = lintFixture();
+    write(dir, { [file]: hit });
+    const red = oxlint();
+    expect(red.status, red.stdout + red.stderr).toBe(1);
+    const findings = red.stdout.split("[guide]")[0];
+    expect(findings.split(`(${rule})`)).toHaveLength(rule === "no-warning-comments" ? 3 : 2);
+    expectGuide(red.stdout, rule);
+    write(dir, { [file]: pass });
+    const green = oxlint();
+    expect(green.status, green.stdout + green.stderr).toBe(0);
+    expect(green.stdout).not.toContain("[guide]");
+  });
+
+  test.each([
+    [
+      "clause",
+      wrap(commented),
+      wrap(recovery) + "function control() { try { return 1; } catch {} }\ncontrol();\n",
+    ],
+    [
+      "callback",
+      "Promise.resolve(1).catch(() => {});\nPromise.resolve(1).catch(function () { /* note */ });\n",
+      "const handle = console.error;\nPromise.resolve(1).catch(() => undefined);\nPromise.resolve(1).catch(handle);\nPromise.resolve(1).catch((error) => { console.error(error); });\n",
+    ],
+  ])("ESLint reports and guides the empty catch %s", (kind, hit, pass) => {
+    const { dir, eslint } = lintFixture();
+    write(dir, { "a.js": hit });
+    const red = eslint("a.js");
+    expect(red.status, red.stdout + red.stderr).toBe(1);
+    expect(red.stdout.match(/scaffolding\/no-empty-catch/g)).toHaveLength(
+      kind === "clause" ? 1 : 2,
+    );
+    expect(red.stdout).toContain(
+      kind === "clause" ? "This catch discards" : "This .catch() callback discards",
+    );
+    expectGuide(red.stdout, "no-empty-catch");
+    write(dir, { "a.js": pass });
+    const green = eslint("a.js");
+    expect(green.status, green.stdout + green.stderr).toBe(0);
+    expect(green.stdout).not.toContain("[guide]");
+  });
+
+  test.each(["script", "script is:inline", "frontmatter"])(
+    "Astro %s catches are owned once across both linters",
+    (region) => {
+      const { dir, oxlint, eslint } = lintFixture();
+      const component = (body: string) => {
+        const code = "function check(work = () => 1) { " + body + " }\ncheck();\n";
+        return region === "frontmatter"
+          ? `---\n${code}---\n<p>ready</p>\n`
+          : `<${region}>\n${code}</script>\n`;
+      };
+      write(dir, {
+        "empty.astro": component(empty),
+        "commented.astro": component(commented),
+        "recovery.astro": component(recovery),
+      });
+      const native = oxlint();
+      const fallback = eslint(".");
+      const reported = (out: string) =>
+        out.split("[guide]")[0].match(/\b(?:empty|commented|recovery)\.astro\b/g);
+      expect(native.status, native.stdout + native.stderr).toBe(1);
+      expect(fallback.status, fallback.stdout + fallback.stderr).toBe(1);
+      expect(reported(native.stdout)).toEqual(["empty.astro"]);
+      expect(reported(fallback.stdout)).toEqual(["commented.astro"]);
+      expectGuide(native.stdout, "no-empty");
+      expectGuide(fallback.stdout, "no-empty-catch");
+    },
+  );
+
+  test("Astro template expressions get the small rules and both catch checks", () => {
+    const { dir, oxlint, eslint } = lintFixture();
+    const frontmatter = "---\nconst { a, b } = Astro.props;\n---\n";
+    write(dir, {
+      "a.astro":
+        frontmatter +
+        `{a == b ? 1 : 2}
+{(() => { var x = 1; let y = 2; /* this has a todo in it */ return x + y; })()}
+{(() => { try { return a; } catch {} })()}
+{(() => { try { return a; } catch { /* description */ } })()}\n`,
+    });
+    const red = eslint("a.astro");
+    expect(red.status, red.stdout + red.stderr).toBe(1);
+    for (const rule of [
+      "eqeqeq",
+      "no-var",
+      "prefer-const",
+      "no-warning-comments",
+      "no-empty",
+      "no-empty-catch",
+    ])
+      expect(red.stdout).toContain(`[guide] ${rule}:`);
+    expect(oxlint().status).toBe(0);
+    write(dir, {
+      "a.astro":
+        frontmatter +
+        `{a == null ? 1 : a === b ? 2 : 3}
+{(() => { const x = 1; /* explanation */ return x; })()}
+{(() => { try { return a; } catch { return 0; } })()}\n`,
+    });
+    const green = eslint("a.astro");
+    expect(green.status, green.stdout + green.stderr).toBe(0);
+    expect(green.stdout).not.toContain("[guide]");
+  });
+
   test("oxlint owns physical TypeScript's typed rules and rejects files outside the project", () => {
     const dir = repo({
       ".oxlintrc.json": JSON.stringify(oxlintTemplate),
@@ -6078,6 +6325,55 @@ const BRAND_TOKENS = {
 };
 
 describe("catalog", () => {
+  test.each(["read", "observer", "click"])(
+    "catalog theme %s propagates unexpected browser errors",
+    async (operation) => {
+      const head = readFileSync(join(import.meta.dirname, "../catalog/Head.astro"), "utf8");
+      const inline = head.split("<script is:inline>")[1].split("</script>")[0];
+      const setup =
+        operation === "read"
+          ? 'localStorage.setItem("theme", "dark"); window.astroThemeToggle = {};'
+          : `window.astroThemeToggle = { getTheme: () => "light", setTheme: () => undefined };
+           Object.defineProperty(Storage.prototype, "setItem", { value: Storage.prototype.setItem.bind({}) });`;
+      const trigger =
+        operation === "click"
+          ? 'document.querySelector("button").click();'
+          : operation === "observer"
+            ? 'document.documentElement.dataset.theme = "dark";'
+            : "";
+      const served = Bun.serve({
+        hostname: "127.0.0.1",
+        port: 0,
+        fetch: () =>
+          new Response(
+            `<!doctype html><html data-hw-night><body>
+          <button data-hw-theme>Theme</button>
+          <script>
+            window.addEventListener("error", (event) => {
+              document.documentElement.dataset.failure = event.error.name;
+            });
+            ${setup}
+          </script>
+          <script>${inline}</script><script>${trigger}</script>
+          </body></html>`,
+            { headers: { "Content-Type": "text/html" } },
+          ),
+      });
+      try {
+        const page = await browse(served.url.href);
+        try {
+          await page.until('document.readyState === "complete"');
+          expect(await page.evaluate("document.documentElement.dataset.failure")).toBe("TypeError");
+        } finally {
+          page.close();
+        }
+      } finally {
+        await served.stop(true);
+      }
+    },
+    limit(30_000),
+  );
+
   // The tests build and serve a copy of test/fixture's own files, one per run, where lint and
   // format never read, so a stopped run's output reaches neither them nor the next run. Its
   // configs import ../../../catalog, which the link beside the copy keeps.
@@ -9030,6 +9326,59 @@ describe("check-licenses", () => {
 });
 
 describe("chrome", () => {
+  test.each([
+    ["launch", "", /ENOENT|Executable not found/],
+    ["placement", 'printf "%s\\n" "$2/chrome/build/chrome-x/chrome"\n', /ENOENT/],
+    [
+      "retirement",
+      'mkdir -p "$2/died"\n: > "$2/died/occupied"\nprintf "%s\\n" "$2/chrome/%BUILD%/chrome-x/chrome"\n',
+      /ENOTEMPTY|EEXIST/,
+    ],
+    ["cleanup", ': > "$2/occupied"\nchmod a-w "$2"\n', /EACCES|EPERM|ENOTEMPTY/],
+  ] as const)(
+    "Chrome %s propagates unexpected install errors",
+    async (operation, script, error) => {
+      const { chromeBinary, chromeBinaryAsync } = await import("../lib/chrome.ts");
+      const dir = temp();
+      const chromeCache = join(dir, "cache");
+      const platform =
+        process.platform === "darwin" ? (process.arch === "arm64" ? "mac_arm" : "mac") : "linux";
+      const build = `${platform}-1.2.3`;
+      mkdirSync(join(dir, "bin"));
+      if (script)
+        writeFileSync(
+          join(dir, "bin/bunx"),
+          `#!/bin/sh\nwhile [ "$1" != --path ]; do shift; done\n${script.replace("%BUILD%", build)}`,
+          { mode: 0o755 },
+        );
+      if (operation === "retirement")
+        mkdirSync(join(chromeCache, "chrome", build), { recursive: true });
+      const cwd = process.cwd();
+      const saved = { ...process.env };
+      process.chdir(dir);
+      process.env.PATH = [
+        join(dir, "bin"),
+        ...(operation === "launch" ? [] : ["/bin", "/usr/bin"]),
+      ].join(delimiter);
+      process.env.PUPPETEER_CACHE_DIR = chromeCache;
+      delete process.env.CHROME_BINARY;
+      try {
+        expect(() => chromeBinary()).toThrow(error);
+        expect(await rejection(chromeBinaryAsync())).toMatch(error);
+        const stages = readdirSync(chromeCache).filter((name) => name.startsWith(".install-"));
+        expect(stages).toHaveLength(operation === "cleanup" ? 2 : 0);
+      } finally {
+        if (operation === "cleanup")
+          for (const name of readdirSync(chromeCache).filter((name) =>
+            name.startsWith(".install-"),
+          ))
+            chmodSync(join(chromeCache, name), 0o700);
+        process.chdir(cwd);
+        process.env = saved;
+      }
+    },
+  );
+
   test("CHROME_BINARY wins, else the build puppeteer-core pins, else the newest cached build of this platform, the shell on request", async () => {
     const { cachedChrome, chromeBinary } = await import("../lib/chrome.ts");
     const cache = temp();

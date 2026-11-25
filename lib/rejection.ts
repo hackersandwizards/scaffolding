@@ -9,7 +9,16 @@ export const rejection = (promise: Promise<unknown>): Promise<string> => {
       let shown: string | undefined;
       try {
         shown = JSON.stringify(value);
-      } catch {} // a cycle or a BigInt, which JSON refuses
+      } catch (error) {
+        if (
+          !(error instanceof TypeError) ||
+          !/^(?:JSON\.stringify cannot serialize (?:BigInt|cyclic structures)|Do not know how to serialize a BigInt|Converting circular structure to JSON)/.test(
+            error.message,
+          )
+        )
+          throw error;
+        shown = String(value);
+      }
       shown ??= String(value);
       // A rendered page or mail runs to thousands of characters; its start names what resolved.
       if (shown.length > 200) shown = `${shown.slice(0, 200)}… (${shown.length} characters)`;

@@ -4,7 +4,7 @@ import prettier from "eslint-config-prettier/flat";
 import tseslint from "typescript-eslint";
 import { frontmatterBlock, frontmatterFiles } from "./eslint-astro-frontmatter.js";
 import { astroClientScript, astroTypePrograms } from "./eslint-astro-script.js";
-import base from "./eslint.js";
+import base, { scaffoldingPlugin } from "./eslint.js";
 import oxlint from "./oxlint.json" with { type: "json" };
 
 const astroFiles = ["**/*.astro"];
@@ -21,7 +21,11 @@ const componentRules = {
   ...js.configs.recommended.rules,
   ...tseslint.configs.recommended.find((config) => config.name === "typescript-eslint/recommended")
     .rules,
-  "no-empty": ["error", { allowEmptyCatch: true }],
+  "no-empty": oxlint.rules["no-empty"],
+  eqeqeq: oxlint.rules.eqeqeq,
+  "no-var": oxlint.rules["no-var"],
+  "prefer-const": oxlint.rules["prefer-const"],
+  "no-warning-comments": oxlint.rules["no-warning-comments"],
   "@typescript-eslint/no-unused-vars": "off",
 };
 const typedRules = Object.fromEntries(
@@ -121,9 +125,10 @@ export default [
   ),
   {
     files: astroFiles,
+    plugins: { scaffolding: scaffoldingPlugin },
     processor,
     languageOptions: { parserOptions: { parser: tseslint.parser } },
-    rules: componentRules,
+    rules: { ...componentRules, "scaffolding/no-empty-catch": "error" },
   },
   {
     files: scriptFiles,
