@@ -22,7 +22,7 @@ import skeleton from "../skeleton.json";
 import { brandProblem, browserTestProblem, placedSteps, vitestRun } from "../lib/gate-config.ts";
 import { help } from "../lib/help.ts";
 import { lintOverlaps } from "../lib/lint-disjoint.ts";
-import { oxlintConfig, oxlintConfiguration } from "../lib/oxlint.ts";
+import { oxlintConfig, oxlintConfiguration, oxlintRestrictionFindings } from "../lib/oxlint.ts";
 import {
   applyAllow,
   finish,
@@ -144,7 +144,8 @@ if (lintEnabled) {
     );
   else {
     try {
-      oxlintConfiguration(root);
+      for (const { message, text } of oxlintRestrictionFindings(oxlintConfiguration(root)))
+        add(oxlintConfig, message, text);
     } catch (error) {
       add(oxlintConfig, (error as Error).message);
     }

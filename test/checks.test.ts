@@ -27,7 +27,7 @@ import { pathToFileURL } from "node:url";
 import { brandFallbacks } from "../catalog/fallbacks.ts";
 import { catalogPath } from "../catalog/path.ts";
 import { loadRoute, rewriteRoute } from "../catalog/route.ts";
-import { runOxlint } from "../lib/oxlint.ts";
+import { oxlintConfiguration, oxlintRestrictionFindings, runOxlint } from "../lib/oxlint.ts";
 import { rejection } from "../lib/rejection.ts";
 import { gitShellShebangs, shellInput } from "../lib/shell-inputs.ts";
 import { shellcheckBinary } from "../lib/shellcheck.ts";
@@ -1133,6 +1133,74 @@ describe("scaffold and check-structure", () => {
       expect(result.code).toBe(1);
       expect(result.out).toContain(`${name}: ${Object.keys(broken)[0]}`);
     }
+  });
+
+  test("Oxlint restrictions need a message in the root rules and every override", () => {
+    const file = ".oxlintrc.json";
+    const other = fixture("oxlint-restriction-messages", {});
+    const config = (withMessages: boolean, withSyntax: boolean) => {
+      const importMessage = withMessages ? { message: "Put command code in bin." } : {};
+      const syntaxMessage = withMessages ? "Use an explicit error." : "  ";
+      return JSON.stringify({
+        ...oxlintTemplate,
+        rules: {
+          "no-restricted-imports": [
+            "error",
+            { paths: [{ name: "root-private", ...importMessage }] },
+          ],
+          ...(withSyntax && {
+            "no-restricted-syntax": [
+              "error",
+              { selector: "ThrowStatement", message: syntaxMessage },
+            ],
+          }),
+        },
+        overrides: [
+          {
+            files: ["src/**"],
+            rules: {
+              "no-restricted-imports": [
+                "error",
+                { patterns: [{ regex: "^private/", ...importMessage }] },
+              ],
+            },
+          },
+          {
+            files: ["test/**"],
+            rules: {
+              ...(withSyntax && {
+                "no-restricted-syntax": [
+                  "error",
+                  {
+                    selector: "DebuggerStatement",
+                    ...(withMessages ? { message: "Use a breakpoint." } : {}),
+                  },
+                ],
+              }),
+            },
+          },
+        ],
+      });
+    };
+    write(other, { [file]: config(true, false) });
+    expect(run(other, "check-structure")).toEqual({ code: 0, out: "" });
+
+    // The pinned Oxlint rejects no-restricted-syntax before running its rules.
+    write(other, { [file]: config(true, true) });
+    expect([...oxlintRestrictionFindings(oxlintConfiguration(other))]).toEqual([]);
+
+    write(other, { [file]: config(false, false) });
+    expect(run(other, "check-structure").code).toBe(1);
+
+    write(other, { [file]: config(false, true) });
+    const result = run(other, "check-structure");
+    expect(result.code).toBe(1);
+    expect(lines(result.out, "check-structure")).toEqual([
+      '[check-structure] .oxlintrc.json: rules.no-restricted-imports.paths[0] needs a message saying where code that needs this import belongs ("root-private")',
+      '[check-structure] .oxlintrc.json: rules.no-restricted-syntax needs a message saying what to write instead ("ThrowStatement")',
+      '[check-structure] .oxlintrc.json: overrides[0].rules.no-restricted-imports.patterns[0] needs a message saying where code that needs this import belongs ("^private/")',
+      '[check-structure] .oxlintrc.json: overrides[1].rules.no-restricted-syntax needs a message saying what to write instead ("DebuggerStatement")',
+    ]);
   });
 
   test(

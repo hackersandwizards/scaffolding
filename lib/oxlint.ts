@@ -3,7 +3,7 @@ import { existsSync, lstatSync, readFileSync, statSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import template from "../template/.oxlintrc.json";
-import { isObject, isStrings, jsonObject, submodulePaths } from "./repo.ts";
+import { isObject, isReason, isStrings, jsonObject, submodulePaths } from "./repo.ts";
 
 export const oxlintConfig = ".oxlintrc.json";
 export const oxlintSource = /\.(?:[cm]?[jt]s|[jt]sx|astro)$/;
@@ -31,6 +31,56 @@ export function oxlintConfiguration(root: string) {
   if (!isStrings(config.extends) || config.extends.length !== 1 || config.extends[0] !== expected)
     throw new Error(`extends must list "${expected}"`);
   return config;
+}
+
+export function* oxlintRestrictionFindings(config: Record<string, unknown>) {
+  const overrides: unknown[] = Array.isArray(config.overrides) ? config.overrides : [];
+  const blocks: [string, unknown][] = [["rules", config.rules]];
+  for (const [index, override] of overrides.entries()) {
+    if (isObject(override)) blocks.push([`overrides[${index}].rules`, override.rules]);
+  }
+  for (const [block, rules] of blocks) {
+    if (!isObject(rules)) continue;
+    for (const [rule, setting] of Object.entries(rules)) {
+      const options: unknown[] = Array.isArray(setting) ? setting.slice(1) : [];
+      const location = `${block}.${rule}`;
+      switch (rule.replace(/^eslint\//, "")) {
+        case "no-restricted-imports":
+          for (const option of options) {
+            if (!isObject(option)) continue;
+            for (const key of ["paths", "patterns"]) {
+              const restrictions: unknown = option[key];
+              const entries: unknown[] = Array.isArray(restrictions) ? restrictions : [];
+              for (const [index, item] of entries.entries()) {
+                if (isObject(item) && isReason(item.message)) continue;
+                const pattern = isObject(item)
+                  ? (item.name ?? item.regex ?? item.group ?? item)
+                  : item;
+                yield {
+                  message: `${location}.${key}[${index}] needs a message saying where code that needs this import belongs`,
+                  text: JSON.stringify(pattern),
+                };
+              }
+            }
+          }
+          break;
+        case "no-restricted-syntax":
+          for (const option of options) {
+            if (
+              !isObject(option) ||
+              typeof option.selector !== "string" ||
+              isReason(option.message)
+            )
+              continue;
+            yield {
+              message: `${location} needs a message saying what to write instead`,
+              text: JSON.stringify(option.selector),
+            };
+          }
+          break;
+      }
+    }
+  }
 }
 
 export function runOxlint(root: string, args: string[], capture = false) {
