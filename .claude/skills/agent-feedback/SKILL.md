@@ -72,7 +72,8 @@ A failure that costs a second time in one session names its owner:
   the other file does not state itself means the owner is wrong, not the caller.
 - Finish a split by having an agent with no context walk one whole job through the new files,
   given the skill directory rather than one file: a walker confined to one file reports as missing
-  what sits next door by design.
+  what sits next door by design. The walk reports a step it cannot carry out or a
+  contradiction; a case the text leaves open is the model's call in the moment, never a line to add.
 - A rule that fires on a minority of turns gets `paths:` frontmatter or becomes a skill. Reference
   material is never always-on. A `paths:` rule loads on a Read, `cat` or Write of a matching file,
   never on a grep or the Skill tool, so a clause that must fire before any Read stays always-on.
