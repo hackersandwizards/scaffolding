@@ -1,5 +1,5 @@
 # This `describe` block defines the same lifecycle hook more than once.
 
-Check which tests need each setup first. If every test needs both, merge them into one hook in order. If different tests need different setups, split them into separate `describe` blocks, each with its own hook.
+Remove one hook's body temporarily to see which tests fail and need it. Split tests needing different setup into separate `describe` blocks. When every test needs both, merge them keeping `before` order. The later-defined `afterEach` ran first until now, so its body goes first in the merged hook.
 
-No fix: concatenating unrelated setups into one hook for all tests.
+No fix: merging unrelated setups, or nesting a `describe` only for the second hook while every test still runs both.

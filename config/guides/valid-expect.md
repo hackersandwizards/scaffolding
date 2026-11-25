@@ -1,5 +1,5 @@
-# This `expect` call has invalid arguments, no matcher, or an unawaited async assertion.
+# This `expect` call has no matcher, wrong arguments, or an unawaited promise assertion.
 
-Pass a value, chain a matcher stating the expected value, and `await` or return async assertions. A second argument to `expect` is the message printed when the assertion fails. Break the behaviour once to confirm it fails.
+Chain a matcher stating the expected value from the specification or fixture, never copied from current output, and `await` or return promise assertions. A second argument to `expect` prints on failure. The linter's help line suggests `toBeDefined()`, which does not fix it.
 
-No fix: a matcher passing for nearly any value, such as `toBeDefined()` (despite the help line) or `toBeTruthy()`.
+No fix: any matcher that passes for a wrong result, such as `toBeDefined()`, `toBeTruthy()`, or `.toBe(result)`.
