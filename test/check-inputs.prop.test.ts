@@ -20,16 +20,29 @@ test.prop([word, fc.constantFrom("a", "code", "span"), fc.nat(8)])(
   "indentation preserves inline boundaries while an explicit space fixes them",
   (text, tag, spaces) => {
     const next = `${" ".repeat(spaces)}<${tag}>`;
-    expect(lostSpaceTag(text, next, "", false)).toBe(tag);
-    expect(lostSpaceTag(`${text}{" "}`, next, "", false)).toBeFalsy();
-    expect(lostSpaceTag(`{name}`, next, "", false)).toBeFalsy();
-    expect(lostSpaceTag(`${text} {name}`, next, "", false)).toBe(tag);
     const expression = `{<${tag} />}`;
-    expect(lostSpaceTag(text, expression, "", false)).toBeFalsy();
-    expect(lostSpaceTag(text, expression, "", true)).toBe(tag);
-    expect(lostSpaceTag(`</${tag}>`, expression, "", true)).toBe(tag);
-    expect(lostSpaceTag(`</${tag}>`, `${" ".repeat(spaces)}${text}`, "", false)).toBe(tag);
-    expect(lostSpaceTag(">", `${" ".repeat(spaces)}${text}`, `</${tag}`, false)).toBe(tag);
+    const indentedText = `${" ".repeat(spaces)}${text}`;
+    for (const [left, right, previous, kept] of [
+      [text, next, "", false],
+      [`${text} {name}`, next, "", false],
+      [text, expression, "", true],
+      [`</${tag}>`, expression, "", true],
+      [`</${tag}>`, indentedText, "", false],
+      [">", indentedText, `</${tag}`, false],
+    ] as const)
+      expect(
+        lostSpaceTag(left, right, previous, kept),
+        JSON.stringify([left, right, previous, kept]),
+      ).toBe(tag);
+    for (const [left, right, previous, kept] of [
+      [`${text}{" "}`, next, "", false],
+      [`{name}`, next, "", false],
+      [text, expression, "", false],
+    ] as const)
+      expect(
+        lostSpaceTag(left, right, previous, kept),
+        JSON.stringify([left, right, previous, kept]),
+      ).toBeFalsy();
   },
 );
 
@@ -55,36 +68,67 @@ test.prop([fc.array(word), word, fc.constantFrom("script", "style", "pre", "text
   },
 );
 
-test.prop([unicodeString, fc.array(word), fc.array(word), fc.integer({ min: 1, max: 6 })])(
-  "term lists preserve valid fields and reject invalid token bounds and hash values",
+const termFields = [
+  unicodeString,
+  fc.array(word),
+  fc.array(word),
+  fc.integer({ min: 1, max: 6 }),
+] as const;
+
+test.prop([...termFields])(
+  "purged lists retain the salt and hashes and discard term metadata",
   (salt, hashes, never, maxTokens) => {
     const list = { salt, hashes, maxTokens, never, built: salt };
     expect(parsePurgedList(JSON.stringify(list))).toEqual({ salt, hashes });
-    expect(() => parsePurgedList(JSON.stringify({ salt: maxTokens, hashes }))).toThrow(
-      "expected a salt and a list of hashes",
-    );
-    expect(() => parsePurgedList(JSON.stringify({ salt, hashes: [...hashes, 1] }))).toThrow(
-      "expected a salt and a list of hashes",
-    );
+  },
+);
+
+test.prop([...termFields])(
+  "purged lists reject non-string salts and hashes",
+  (salt, hashes, _never, maxTokens) => {
+    for (const invalid of [
+      { salt: maxTokens, hashes },
+      { salt, hashes: [...hashes, 1] },
+    ])
+      expect(() => parsePurgedList(JSON.stringify(invalid))).toThrow(
+        "expected a salt and a list of hashes",
+      );
+  },
+);
+
+test.prop([...termFields])(
+  "term lists preserve valid fields and normalize optional metadata",
+  (salt, hashes, never, maxTokens) => {
+    const list = { salt, hashes, maxTokens, never, built: salt };
     expect(parseTermList(JSON.stringify(list))).toEqual(list);
     expect(parseTermList(JSON.stringify({ ...list, never: undefined, built: 1 }))).toEqual({
       ...list,
       never: undefined,
       built: undefined,
     });
-    expect(parseTermList(JSON.stringify({ ...list, salt: 1 }))).toBeUndefined();
-    expect(
-      parseTermList(JSON.stringify({ ...list, maxTokens: String(maxTokens) })),
-    ).toBeUndefined();
-    expect(parseTermList("{")).toBeUndefined();
-    expect(parseTermList(JSON.stringify({ salt, hashes }))).toBeUndefined();
-    expect(parseTermList(JSON.stringify({ maxTokens, hashes }))).toBeUndefined();
-    expect(parseTermList(JSON.stringify({ salt, maxTokens }))).toBeUndefined();
-    expect(parseTermList(JSON.stringify({ ...list, maxTokens: maxTokens + 6 }))).toBeUndefined();
-    expect(parseTermList(JSON.stringify({ ...list, maxTokens: maxTokens - 6 }))).toBeUndefined();
-    expect(parseTermList(JSON.stringify({ ...list, maxTokens: maxTokens - 0.5 }))).toBeUndefined();
-    expect(parseTermList(JSON.stringify({ ...list, hashes: [...hashes, 1] }))).toBeUndefined();
-    expect(parseTermList(JSON.stringify({ ...list, never: [...never, 1] }))).toBeUndefined();
+  },
+);
+
+test.prop([...termFields])(
+  "term lists reject malformed text and invalid required fields",
+  (salt, hashes, never, maxTokens) => {
+    const list = { salt, hashes, maxTokens, never, built: salt };
+    for (const invalid of [
+      "{",
+      ...[
+        { ...list, salt: 1 },
+        { ...list, maxTokens: String(maxTokens) },
+        { salt, hashes },
+        { maxTokens, hashes },
+        { salt, maxTokens },
+        { ...list, maxTokens: maxTokens + 6 },
+        { ...list, maxTokens: maxTokens - 6 },
+        { ...list, maxTokens: maxTokens - 0.5 },
+        { ...list, hashes: [...hashes, 1] },
+        { ...list, never: [...never, 1] },
+      ].map((entry) => JSON.stringify(entry)),
+    ])
+      expect(parseTermList(invalid), invalid).toBeUndefined();
   },
 );
 

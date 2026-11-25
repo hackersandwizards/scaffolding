@@ -96,21 +96,30 @@ const licence = fc.letrec<{ expression: Expression }>((tie) => ({
   ),
 })).expression;
 
-test.prop([licence], {
-  examples: [
-    [{ source: "MIT OR MIT AND GPL-3.0-only", allowed: true, precedence: 1 }],
-    [{ source: "MIT WITH Classpath-exception-2.0", allowed: true, precedence: 3 }],
-  ],
-})(
-  "SPDX boolean expressions follow their tree and reject unmatched parentheses and trailing tokens",
+const licenceExamples: [Expression][] = [
+  [{ source: "MIT OR MIT AND GPL-3.0-only", allowed: true, precedence: 1 }],
+  [{ source: "MIT WITH Classpath-exception-2.0", allowed: true, precedence: 3 }],
+];
+
+test.prop([licence], { examples: licenceExamples })(
+  "SPDX boolean expressions follow their tree",
   ({ source, allowed }) => {
     expect(licenceAllowed(source)).toBe(allowed);
-    expect(licenceAllowed(`(${source}`)).toBe(false);
-    expect(licenceAllowed(`${source} MIT`)).toBe(false);
-    expect(licenceAllowed(`${source})`)).toBe(false);
-    expect(licenceAllowed(`MIT OR ${source} WITH`)).toBe(false);
-    expect(licenceAllowed(`MIT OR ${source} WITH AND`)).toBe(false);
-    expect(licenceAllowed(`(MIT ${source}`)).toBe(false);
+  },
+);
+
+test.prop([licence], { examples: licenceExamples })(
+  "SPDX expressions reject unmatched parentheses and trailing tokens",
+  ({ source }) => {
+    for (const malformed of [
+      `(${source}`,
+      `${source} MIT`,
+      `${source})`,
+      `MIT OR ${source} WITH`,
+      `MIT OR ${source} WITH AND`,
+      `(MIT ${source}`,
+    ])
+      expect(licenceAllowed(malformed), malformed).toBe(false);
   },
 );
 
@@ -148,12 +157,15 @@ test.prop([
   segment,
   fc.constantFrom("https://example.test/", "ssh://example.test/", "git@example.test:"),
 ])("an owned git URL uses the organization segment and ignores its ref", (repo, ref, base) => {
-  expect(ourRepository(`${base}hackersandwizards/${repo}.git#${ref}`)).toBe(true);
-  expect(ourRepository(`${base}other-hackersandwizards/${repo}.git#${ref}`)).toBe(false);
-  expect(ourRepository(`${base}hackersandwizards/${repo}/nested.git`)).toBe(false);
-  expect(ourRepository(`${base}hackersandwizards/`)).toBe(false);
-  expect(ourRepository(`${base}hackersandwizards/#${ref}`)).toBe(false);
-  expect(ourRepository(`${base}unrelated/${repo}.git#${ref}/hackersandwizards/other`)).toBe(false);
+  for (const [url, owned] of [
+    [`${base}hackersandwizards/${repo}.git#${ref}`, true],
+    [`${base}other-hackersandwizards/${repo}.git#${ref}`, false],
+    [`${base}hackersandwizards/${repo}/nested.git`, false],
+    [`${base}hackersandwizards/`, false],
+    [`${base}hackersandwizards/#${ref}`, false],
+    [`${base}unrelated/${repo}.git#${ref}/hackersandwizards/other`, false],
+  ] as const)
+    expect(ourRepository(url), url).toBe(owned);
 });
 
 test.prop([segment, fc.constantFrom("astro", "css")])(

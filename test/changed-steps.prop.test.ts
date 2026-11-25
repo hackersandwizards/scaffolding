@@ -83,17 +83,20 @@ test.prop([fc.constantFrom("src/package.json", "docs/yarn.lock", ".githooks/pre-
 test.prop([fc.array(name, { minLength: 1 }), name, name, fc.constantFrom("", ".", "..")])(
   "changed globs accept braces and classes and reject malformed patterns and segments",
   (segments, first, second, invalid) => {
-    expect(validGlob(segments.join("/"))).toBe(true);
     const base = segments.join("/");
-    expect(validGlob(`${base}/{${first},${second}}/[ab]*`)).toBe(true);
-    expect(validGlob(`${base}/{${first},${second}`)).toBe(false);
-    expect(validGlob(`${base}/${first},${second}}`)).toBe(false);
-    expect(validGlob(`${base}/[ab`)).toBe(false);
-    expect(validGlob(`${base}/}{`)).toBe(false);
-    expect(validGlob(`${base}/a\0b`)).toBe(false);
-    expect(validGlob(" ")).toBe(false);
-    expect(validGlob(`${base}/[{]\\}`)).toBe(true);
-    expect(validGlob(`${base}/a\\`)).toBe(false);
-    expect(validGlob(`${base}/${invalid}/${first}`)).toBe(false);
+    for (const [glob, accepted] of [
+      [base, true],
+      [`${base}/{${first},${second}}/[ab]*`, true],
+      [`${base}/{${first},${second}`, false],
+      [`${base}/${first},${second}}`, false],
+      [`${base}/[ab`, false],
+      [`${base}/}{`, false],
+      [`${base}/a\0b`, false],
+      [" ", false],
+      [`${base}/[{]\\}`, true],
+      [`${base}/a\\`, false],
+      [`${base}/${invalid}/${first}`, false],
+    ] as const)
+      expect(validGlob(glob), glob).toBe(accepted);
   },
 );

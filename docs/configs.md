@@ -33,6 +33,13 @@ file path and does not inherit the plugins, environment or ignore patterns. Keep
 existing source and generated-file scopes in both configs where applicable. A submodule is skipped
 by the gate using `.gitmodules`.
 
+To exclude a path from one rule, add an override to the repository's own `.oxlintrc.json` with
+its `files` glob and the rule set to `"off"`. Put the reason in a comment on the line above the
+override, and list the plugin in that override if the shared config enables it only inside an
+inherited override. A file containing values and no functions is a case for an exception to a
+file-length rule. Name the one rule so the other rules and the `names` check still see the file,
+since `ignorePatterns` excludes it from all of them.
+
 Oxlint rejects empty blocks, coercive equality except for null comparisons, duplicate imports
 except for a separate type import, warning comments containing `todo`, `fixme`, `xxx` or `hack`,
 `var`, never-reassigned `let` declarations and redundant TypeScript annotations for inferred
@@ -81,10 +88,10 @@ tests and imports from `node:test`. It applies these rules to JavaScript and Typ
 using the same file globs as the shared ESLint config. Oxlint 1.94.0 recognises `test`, `it` and
 `describe` imported from `vitest` or used as globals. Tests declared through a wrapper imported
 from a local module or from `@playwright/test` fall outside these rules. This also applies to the
-shared `test.prop` wrapper for `expect-expect`, `no-conditional-expect` and
+curried `test.prop` blocks from the shared wrapper or `@fast-check/vitest` for `expect-expect`, `no-conditional-expect` and
 `no-conditional-in-test`. When enabled, `max-expects` also counts `expect` calls inside callbacks
-declared through that wrapper, since it counts them in any function. ESLint checks assertions in
-callbacks declared through the wrapper.
+declared through that wrapper, since it counts them in any function. ESLint's
+`scaffolding/property` rule checks property tests using the shared API.
 
 Scaffolding supplies Vitest 5.1.0 and Stryker core and its Vitest runner at 10.1.1.
 Use a Scaffolding pin of v5.33.0 or later for the setup below. The shared configs and their

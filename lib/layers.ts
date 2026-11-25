@@ -1,8 +1,13 @@
 import { lstatSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { activeSeverity } from "./lint-rule-overlaps.ts";
-import { oxlintConfig, restrictionRuleName, restrictedImports } from "./oxlint-restrictions.ts";
-import { isObject, isStrings, jsonObject } from "./repo.ts";
+import {
+  oxlintConfig,
+  parseOxlintConfig,
+  restrictionRuleName,
+  restrictedImports,
+} from "./oxlint-restrictions.ts";
+import { isObject, isStrings } from "./repo.ts";
 
 export const layerMapPath = "docs/architecture/layers.md";
 
@@ -24,10 +29,10 @@ function declaredLayers(root: string): DeclaredLayer[] {
   const stat = lstatSync(path, { throwIfNoEntry: false });
   if (!stat) return [];
   if (!stat.isFile()) throw new Error(`${oxlintConfig} must be a regular file`);
-  const config = readFileSync(path);
+  const config = readFileSync(path, "utf8");
   let overrides: unknown;
   try {
-    ({ overrides } = jsonObject(config));
+    ({ overrides } = parseOxlintConfig(config));
   } catch (error) {
     throw new Error(
       `${oxlintConfig}: cannot parse the config (${(error as Error).message}). Fix the config so it is a valid JSON object.`,

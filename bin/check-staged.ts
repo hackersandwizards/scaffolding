@@ -22,7 +22,12 @@ import { renderGuides } from "../lib/guides.ts";
 import { help } from "../lib/help.ts";
 import { otherScript } from "../lib/shell-inputs.ts";
 import { inNodeModules } from "../lib/tracked-inputs.ts";
-import { oxlintConfig, oxlintExtends, runOxlintWithGuides } from "../lib/oxlint.ts";
+import {
+  oxlintConfig,
+  oxlintExtends,
+  parseOxlintConfig,
+  runOxlintWithGuides,
+} from "../lib/oxlint.ts";
 import {
   isReason,
   isObject,
@@ -290,7 +295,7 @@ if (oxlintPaths.length && !isReason(skip.lint)) {
       throw new Error(
         `${oxlintConfig} must be a regular file: replace the symlink or directory at ${oxlintConfig} with the repository's regular file (run \`check-structure --fix\` to restore the template) and stage it`,
       );
-    const config = jsonObject(readFileSync(configPath));
+    const config = parseOxlintConfig(readFileSync(configPath, "utf8"));
     if (!isObject(config.options) || config.options.typeAware !== true)
       throw new Error(
         `${oxlintConfig}: options.typeAware must be true — set "options": { "typeAware": true } in ${oxlintConfig} and stage it; do not turn type-aware linting off`,

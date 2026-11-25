@@ -476,14 +476,11 @@ test.each([
   expect(green.stdout).not.toContain("[guide]");
 });
 
-test("Oxlint accepts fc.assert in property tests and scopes Vitest rules to test globs", () => {
+test("Oxlint enforces expect-expect in test folders and stays out of non-test files", () => {
+  const file = "tests/nested/example.js";
   const dir = repo({
     ".oxlintrc.json": JSON.stringify(oxlintTemplate),
-    "test/property.prop.test.js": `
-      import { fc, test } from "@hackersandwizards/scaffolding/property";
-      test.prop([fc.integer()])("integer", () => fc.assert(fc.property(fc.integer(), Number.isInteger)));
-    `,
-    "tests/nested/example.js": `
+    [file]: `
       import { test } from "vitest";
       import * as fc from "fast-check";
       test("integer", () => fc.assert(fc.property(fc.integer(), Number.isInteger)));
@@ -494,6 +491,10 @@ test("Oxlint accepts fc.assert in property tests and scopes Vitest rules to test
   install(dir);
   const result = runOxlint(dir, ["."], true);
   expect(result.status, result.stdout + result.stderr).toBe(0);
+  write(dir, { [file]: 'import { test } from "vitest";\ntest("missing assertion", () => {});' });
+  const missing = runOxlint(dir, ["."], true);
+  expect(missing.status, missing.stdout + missing.stderr).toBe(1);
+  expect(missing.stdout).toMatch(/^tests\/nested\/example\.js:.*vitest\(expect-expect\)/m);
 });
 
 test(
@@ -1233,10 +1234,19 @@ describe("scaffold and check-structure", () => {
         "src/utils/a.ts": "export {};\n",
         "src/utils/b.ts": "export {};\n",
         "src/Core/b.ts": "export {};\n",
+        "src/corex/c.ts": "export {};\n",
+        "utils/untracked.ts": "export {};\n",
       },
     );
     expect(
-      sh(other, ["add", "--", "src/utils/a.ts", "src/utils/b.ts", "src/Core/b.ts"]).status,
+      sh(other, [
+        "add",
+        "--",
+        "src/utils/a.ts",
+        "src/utils/b.ts",
+        "src/Core/b.ts",
+        "src/corex/c.ts",
+      ]).status,
     ).toBe(0);
     const red = run(other, "check-structure");
     expect(red.code, red.out).toBe(1);
@@ -1246,6 +1256,102 @@ describe("scaffold and check-structure", () => {
     ]);
     expectGuideAfter(red.out, "generic-folder", "folder named `utils`");
     expect(red.out).toMatch(/^\[check-structure\] 2 findings, \d+ ms$/m);
+  });
+
+  describe("commented Oxlint overrides", () => {
+    const exercises = "tests/exercises/example.js";
+    const comment = JSON.stringify(oxlintTemplate, null, 2).replace(
+      /\n}$/,
+      `,\n  "overrides": [
+    // The exercises deliberately run with node --test.
+    {
+      "files": ["tests/exercises/**"],
+      "plugins": ["vitest"],
+      "rules": { "vitest/no-import-node-test": "off" }
+    }
+  ]\n}`,
+    );
+    let other: string;
+    const tsconfig = JSON.stringify({
+      extends: "@hackersandwizards/scaffolding/tsconfig/bun.json",
+      compilerOptions: { allowJs: true, types: [] },
+      include: ["catalog/**/*.ts", "src/**/*.ts", "tests/**/*.js"],
+    });
+    beforeAll(() => {
+      other = fixture(
+        "commented-oxlint",
+        {},
+        {
+          ".oxlintrc.json": comment,
+          "tsconfig.json": tsconfig,
+          [exercises]: 'import "node:test";\n',
+        },
+      );
+    });
+
+    test.each([
+      ["check-structure", []],
+      ["check-names", []],
+      ["check-layers", ["--check"]],
+    ] as const)("%s accepts a commented Oxlint override", (command, args) => {
+      const result = run(other, command, [...args]);
+      expect(result.code, result.out).toBe(0);
+    });
+
+    const lint = (dir: string) => {
+      symlinkSync(
+        join(import.meta.dirname, "../node_modules/astro"),
+        join(dir, "node_modules/astro"),
+      );
+      return spawnSync(
+        process.execPath,
+        ["--no-env-file", join(import.meta.dirname, "../lib/oxlint.ts")],
+        {
+          cwd: dir,
+          encoding: "utf8",
+        },
+      );
+    };
+
+    test("Oxlint applies the one-rule override only in the exercise folder", () => {
+      const accepted = lint(other);
+      expect(accepted.status, accepted.stderr + accepted.stdout).toBe(0);
+
+      const outside = fixture(
+        "commented-oxlint-outside",
+        {},
+        {
+          ".oxlintrc.json": comment,
+          "tsconfig.json": tsconfig,
+          [exercises]: 'import "node:test";\n',
+          "tests/regular.js": 'import "node:test";\n',
+        },
+      );
+      const refused = lint(outside);
+      expect(refused.status, refused.stderr + refused.stdout).toBe(1);
+      expect(refused.stdout).toContain("vitest(no-import-node-test)");
+      expect(refused.stdout).toContain("tests/regular.js");
+      expect(refused.stdout).not.toContain(exercises);
+    });
+
+    test.each([
+      ["missing severity", '"vitest/no-import-node-test":'],
+      ["trailing comma", '"vitest/no-import-node-test": "off",'],
+    ])("check-structure still reports malformed Oxlint configuration with %s", (name, rule) => {
+      const malformed = fixture(
+        `malformed-commented-oxlint-${name}`,
+        {},
+        {
+          ".oxlintrc.json": comment.replace('"vitest/no-import-node-test": "off"', rule),
+        },
+      );
+      const result = run(malformed, "check-structure");
+      expect(result.code).toBe(1);
+      expect(result.out).toMatch(/^\[check-structure\] \.oxlintrc\.json: .+/m);
+      expect(run(malformed, "check-layers", ["--check"]).out).toContain(
+        ".oxlintrc.json: cannot parse the config",
+      );
+    });
   });
 
   test("scaffold sets the Claude defaults and omits the skills link without skills", () => {
@@ -3830,7 +3936,7 @@ describe("scaffolding check", () => {
   });
 
   test("layers name the Oxlint config and the remedy when parsing fails", () => {
-    const dir = repo({ ".oxlintrc.json": '{ /* comment */ "overrides": [] }\n' });
+    const dir = repo({ ".oxlintrc.json": '{ /* comment */ "overrides": [ }\n' });
     const result = run(dir, "scaffolding", ["layers"]);
     expect(result.code).toBe(1);
     expect(result.out).toContain("[layers] .oxlintrc.json: cannot parse the config");

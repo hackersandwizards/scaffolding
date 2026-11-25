@@ -15,10 +15,15 @@ import { fileURLToPath } from "node:url";
 import template from "../template/.oxlintrc.json";
 import { renderGuides } from "./guides.ts";
 import { activeSeverity } from "./lint-rule-overlaps.ts";
-import { oxlintConfig, restrictionRuleName, restrictedImports } from "./oxlint-restrictions.ts";
+import {
+  oxlintConfig,
+  parseOxlintConfig,
+  restrictionRuleName,
+  restrictedImports,
+} from "./oxlint-restrictions.ts";
 import { isObject, isReason, isStrings, jsonObject, submodulePaths } from "./repo.ts";
 
-export { oxlintConfig } from "./oxlint-restrictions.ts";
+export { oxlintConfig, parseOxlintConfig } from "./oxlint-restrictions.ts";
 export const oxlintSource = /\.(?:[cm]?[jt]s|[jt]sx|astro)$/;
 
 export function oxlintExtends(root: string) {
@@ -29,7 +34,7 @@ export function oxlintExtends(root: string) {
 export function oxlintConfiguration(root: string) {
   const file = join(root, oxlintConfig);
   if (!lstatSync(file).isFile()) throw new Error("must be a regular file");
-  const config = jsonObject(readFileSync(file));
+  const config = parseOxlintConfig(readFileSync(file, "utf8"));
   if (!isObject(config.options) || config.options.typeAware !== true)
     throw new Error("options.typeAware must be true");
   const ignores = config.ignorePatterns;

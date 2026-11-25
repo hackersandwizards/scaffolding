@@ -4,7 +4,10 @@ import { join } from "node:path";
 import { expect, test } from "vitest";
 import { runTimed } from "../lib/run-timed.ts";
 
-test.each([true, false])("runTimed times out a child with exit on SIGTERM = %s", async (exits) => {
+test.each([
+  [true, 490],
+  [false, 590],
+])("runTimed times out a child with exit on SIGTERM = %s", async (exits, minimumElapsed) => {
   const dir = mkdtempSync(join(tmpdir(), "polish-codex-run-timed-"));
   const marker = join(dir, "term");
   const options = {
@@ -28,7 +31,7 @@ test.each([true, false])("runTimed times out a child with exit on SIGTERM = %s",
     const elapsed = performance.now() - started;
     expect(status).toBe(124);
     expect(readFileSync(marker, "utf8")).toBe("SIGTERM");
-    expect(elapsed).toBeGreaterThanOrEqual(options.limitMs + (exits ? 0 : options.graceMs) - 10);
+    expect(elapsed).toBeGreaterThanOrEqual(minimumElapsed);
   } finally {
     rmSync(dir, { recursive: true, force: true });
   }

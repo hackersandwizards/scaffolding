@@ -85,8 +85,7 @@
         "vitest/expect-expect": [
           "error",
           {
-            "assertFunctionNames": ["expect", "assert", "expect*", "assert*", "fc.assert"],
-            "additionalTestBlockFunctions": ["test.prop", "it.prop"]
+            "assertFunctionNames": ["expect", "assert", "expect*", "assert*", "fc.assert"]
           }
         ],
         "vitest/no-conditional-expect": "error",

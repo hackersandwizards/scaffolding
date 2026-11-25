@@ -90,23 +90,24 @@ test.each([
   expect(spaceTemplateLines(visible)).toEqual(visible.split("\n"));
 });
 
+const noTag = [false, undefined, ""];
 test.each([
-  ["42{name}", "<a>", false, "a"],
-  ["値{name}", "<a>", false, "a"],
-  ["!{name}", "<a>", false, false],
-  ["<strong>{name}", "<a>", false, false],
-  ["} word {name}", "<a>", false, false],
-  ["text", "  {<a />}", true, "a"],
-  ["text", "{<div />}", true, false],
-  ["text", "{name}", true, false],
-  ["text", "prefix {<a />}", true, false],
-  ["text", "{<a />} tail", true, false],
-  ["</a>", "<div>", true, false],
-  ["</a>", "", false, false],
-  ["> ", "text", false, "a"],
-  ["> extra", "text", false, false],
+  ["42{name}", "<a>", false, ["a"]],
+  ["値{name}", "<a>", false, ["a"]],
+  ["!{name}", "<a>", false, noTag],
+  ["<strong>{name}", "<a>", false, noTag],
+  ["} word {name}", "<a>", false, noTag],
+  ["text", "  {<a />}", true, ["a"]],
+  ["text", "{<div />}", true, noTag],
+  ["text", "{name}", true, noTag],
+  ["text", "prefix {<a />}", true, noTag],
+  ["text", "{<a />} tail", true, noTag],
+  ["</a>", "<div>", true, noTag],
+  ["</a>", "", false, noTag],
+  ["> ", "text", false, ["a"]],
+  ["> extra", "text", false, noTag],
 ])("detects inline whitespace between %j and %j with kept=%j", (line, next, kept, tag) => {
-  expect(lostSpaceTag(line, next, "</a", kept) || false).toBe(tag);
+  expect(tag).toContain(lostSpaceTag(line, next, "</a", kept));
 });
 
 test.each([

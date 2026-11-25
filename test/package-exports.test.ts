@@ -40,17 +40,22 @@ test.each([
   expect(exported(value, path)).toBe(expected);
 });
 
-test("targets match normalized exact paths or a single wildcard across every condition", () => {
-  const value = {
-    "./a": { import: "./dist/./a.js", require: "./dist/a.cjs" },
-    "./x": "./dist/p*.js",
-    "./overlap": "./dist/bc*bc.js",
-  };
-  expect(targeted(value, "dist/a.js")).toBe(true);
-  expect(targeted(value, "dist/a.cjs")).toBe(true);
-  expect(targeted(value, "dist/b.js")).toBe(false);
-  expect(targeted(value, "dist/p.js")).toBe(true);
-  expect(targeted(value, "dist/.js")).toBe(false);
-  expect(targeted(value, "dist/p")).toBe(false);
-  expect(targeted(value, "dist/bc.js")).toBe(false);
-});
+test.each([
+  ["dist/a.js", true],
+  ["dist/a.cjs", true],
+  ["dist/b.js", false],
+  ["dist/p.js", true],
+  ["dist/.js", false],
+  ["dist/p", false],
+  ["dist/bc.js", false],
+] as const)(
+  "matches normalized conditional and wildcard export targets for %s",
+  (path, expected) => {
+    const value = {
+      "./a": { import: "./dist/./a.js", require: "./dist/a.cjs" },
+      "./x": "./dist/p*.js",
+      "./overlap": "./dist/bc*bc.js",
+    };
+    expect(targeted(value, path)).toBe(expected);
+  },
+);

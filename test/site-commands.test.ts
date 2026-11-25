@@ -1,7 +1,7 @@
 import { once } from "node:events";
-import { createServer } from "node:http";
+import { createServer, type IncomingMessage, type ServerResponse } from "node:http";
 import { join } from "node:path";
-import { expect, test } from "vitest";
+import { assert, expect, test } from "vitest";
 
 function runSiteCommand(name: string, args: string[], preload?: string, load = "0") {
   const bin = join(import.meta.dirname, "..", "bin", `${name}.ts`);
@@ -31,9 +31,12 @@ const serverCommand = bunServer(
   'console.error("server stderr"); Bun.serve({ hostname: process.env.HOST, port: Number(process.env.PORT), fetch: () => new Response(String(process.pid)) });',
 );
 
-test.each([0, 37])(
-  "with-server substitutes every URL, returns status %i and stops the server",
-  async (code) => {
+test.each([
+  { code: 0, flags: ["--timeout", "120"], output: "" },
+  { code: 37, flags: ["--stderr"], output: "server stderr\n" },
+])(
+  "with-server substitutes every URL, returns status $code and stops the server",
+  async ({ code, flags, output }) => {
     const check = `
     const [url, repeated] = process.argv.slice(1);
       console.log(url);
@@ -42,7 +45,7 @@ test.each([0, 37])(
     process.exit(${code});
   `;
     const [status, stdout, stderr] = await runSiteCommand("with-server", [
-      ...(code === 37 ? ["--stderr"] : ["--timeout", "120"]),
+      ...flags,
       serverCommand,
       "--",
       process.execPath,
@@ -53,7 +56,7 @@ test.each([0, 37])(
       "a={url}&b={url}",
     ]);
     expect(status, stderr).toBe(code);
-    expect(stderr).toBe(code === 37 ? "server stderr\n" : "");
+    expect(stderr).toBe(output);
     const [url, repeated, serverPid] = stdout.trimEnd().split("\n");
     const pid = Number(serverPid);
     expect(url).toMatch(/^http:\/\/127\.0\.0\.1:\d+$/);
@@ -87,39 +90,39 @@ test("with-server fails when the server never answers within the readiness timeo
   expect(stdout).toBe("");
 });
 
-test.each(["inherited", "redirected"])(
-  "with-server kills a server that ignores SIGTERM with %s stderr",
-  async (stderrMode) => {
-    const command = bunServer(`
+const slowServer = bunServer(`
       process.on("SIGTERM", () => {});
       setTimeout(() => process.exit(0), 4500);
       Bun.serve({ hostname: process.env.HOST, port: Number(process.env.PORT), fetch: () => new Response(String(process.pid)) });
-    `);
-    const started = performance.now();
-    const [status, stdout, stderr] = await runSiteCommand("with-server", [
-      stderrMode === "inherited" ? command : `{ ${command}; } 2>/dev/null`,
-      "--",
-      process.execPath,
-      "-e",
-      "console.log(await (await fetch(process.argv[1])).text());",
-      "--",
-      "{url}",
-    ]);
-    expect(status, stderr).toBe(0);
-    expect(performance.now() - started).toBeLessThan(3200);
-    const pid = Number(stdout.trim());
-    expect(pid).toBeGreaterThan(0);
-    await expect
-      .poll(() => {
-        try {
-          return process.kill(pid, 0);
-        } catch {
-          return false;
-        }
-      })
-      .toBe(false);
-  },
-);
+`);
+test.each([
+  ["inherited", slowServer],
+  ["redirected", `{ ${slowServer}; } 2>/dev/null`],
+])("with-server kills a server that ignores SIGTERM with %s stderr", async (_, command) => {
+  const started = performance.now();
+  const [status, stdout, stderr] = await runSiteCommand("with-server", [
+    command,
+    "--",
+    process.execPath,
+    "-e",
+    "console.log(await (await fetch(process.argv[1])).text());",
+    "--",
+    "{url}",
+  ]);
+  expect(status, stderr).toBe(0);
+  expect(performance.now() - started).toBeLessThan(3200);
+  const pid = Number(stdout.trim());
+  expect(pid).toBeGreaterThan(0);
+  await expect
+    .poll(() => {
+      try {
+        return process.kill(pid, 0);
+      } catch {
+        return false;
+      }
+    })
+    .toBe(false);
+});
 
 test("with-server returns 1 when the check dies on a signal", async () => {
   const [status, stdout, stderr] = await runSiteCommand("with-server", [
@@ -198,8 +201,9 @@ function html(body: string) {
 }
 
 async function crawlFixture(
-  handler: (url: URL) => Response | Promise<Response>,
+  routes: Record<string, (url: URL) => Response | Promise<Response>>,
   args: string[] = [],
+  missingStatus = 404,
 ) {
   const requests: string[] = [];
   const server = Bun.serve({
@@ -207,8 +211,10 @@ async function crawlFixture(
     port: 0,
     fetch(request) {
       const url = new URL(request.url);
-      requests.push(url.pathname + url.search);
-      return handler(url);
+      const target = url.pathname + url.search;
+      requests.push(target);
+      const reply = routes[target] ?? routes[url.pathname];
+      return reply?.(url) ?? new Response(null, { status: missingStatus });
     },
   });
   try {
@@ -223,21 +229,20 @@ async function crawlFixture(
 }
 
 test("check-links reports broken targets with the pages carrying their links, including redirects", async () => {
-  const result = await crawlFixture(({ pathname }) => {
-    switch (pathname) {
-      case "/":
-        return html('<a href="/sub/page">subpage</a><a href="/sub/dead">dead</a>');
-      case "/sub/page":
-        return html(`<a href='dead'>dead</a><a href=/redirect>redirect</a>`);
-      case "/redirect":
-        return new Response(null, {
+  const result = await crawlFixture(
+    {
+      "/": () => html('<a href="/sub/page">subpage</a><a href="/sub/dead">dead</a>'),
+      "/sub/page": () => html(`<a href='dead'>dead</a><a href=/redirect>redirect</a>`),
+      "/redirect": () =>
+        new Response(null, {
           status: 302,
           headers: { location: "/lost?source=redirect#top" },
-        });
-      default:
-        return new Response(null, { status: pathname === "/lost" ? 500 : 400 });
-    }
-  });
+        }),
+      "/lost": () => new Response(null, { status: 500 }),
+    },
+    [],
+    400,
+  );
   expect(result.status).toBe(1);
   expect(result.requests).toContain("/lost?source=redirect");
   expect(result.stderr).toContain("/sub/dead (400) <- / /sub/page");
@@ -248,26 +253,26 @@ test("check-links reports broken targets with the pages carrying their links, in
 });
 
 test("check-links preserves the query required by a preloaded server island", async () => {
-  const result = await crawlFixture(({ pathname, search }) =>
-    pathname === "/"
-      ? html('<link rel="preload" as="fetch" href="/_server-islands/Widget?props=value">')
-      : new Response(null, {
-          status: pathname === "/_server-islands/Widget" && search === "?props=value" ? 200 : 400,
-        }),
+  const result = await crawlFixture(
+    {
+      "/": () => html('<link rel="preload" as="fetch" href="/_server-islands/Widget?props=value">'),
+      "/_server-islands/Widget?props=value": () => new Response(null, { status: 200 }),
+    },
+    [],
+    400,
   );
   expect(result.status, result.stderr).toBe(0);
   expect(result.requests).toEqual(["/", "/_server-islands/Widget?props=value"]);
 });
 
 test("check-links fetches and counts a path once across query strings and fragments", async () => {
-  const result = await crawlFixture(({ origin, pathname }) => {
-    if (pathname === "/") {
-      return html(`
-        <A HREF="${origin}/item?x=1&amp;y=2#details">item</A>
-        <a href="/item?x=2#top">item</a>
-      `);
-    }
-    return new Response(null, { status: pathname === "/item" ? 204 : 404 });
+  const result = await crawlFixture({
+    "/": ({ origin }) =>
+      html(`
+      <A HREF="${origin}/item?x=1&amp;y=2#details">item</A>
+      <a href="/item?x=2#top">item</a>
+    `),
+    "/item": () => new Response(null, { status: 204 }),
   });
   expect(result.status, result.stderr).toBe(0);
   expect(result.requests).toEqual(["/", "/item?x=1&y=2"]);
@@ -275,54 +280,52 @@ test("check-links fetches and counts a path once across query strings and fragme
 });
 
 test("check-links resolves hrefs against the page base and skips the base href itself", async () => {
-  const result = await crawlFixture(({ pathname }) => {
-    switch (pathname) {
-      case "/":
-        return html('<a href="/docs/a">page</a>');
-      case "/docs/a":
-        return html('<base href="/assets/"><a href="b">target</a>');
-      default:
-        return new Response(null, { status: pathname === "/assets/b" ? 204 : 404 });
-    }
+  const result = await crawlFixture({
+    "/": () => html('<a href="/docs/a">page</a>'),
+    "/docs/a": () => html('<base href="/assets/"><a href="b">target</a>'),
+    "/assets/b": () => new Response(null, { status: 204 }),
   });
   expect(result.status, result.stderr).toBe(0);
   expect(result.requests).toEqual(["/", "/docs/a", "/assets/b"]);
 });
 
 test("check-links decodes ampersands in href paths", async () => {
-  const result = await crawlFixture(({ pathname }) =>
-    pathname === "/"
-      ? html('<a href="/a&amp;b">target</a>')
-      : new Response(null, { status: pathname === "/a&b" ? 204 : 404 }),
-  );
+  const result = await crawlFixture({
+    "/": () => html('<a href="/a&amp;b">target</a>'),
+    "/a&b": () => new Response(null, { status: 204 }),
+  });
   expect(result.status, result.stderr).toBe(0);
   expect(result.requests).toEqual(["/", "/a&b"]);
 });
 
+type HttpRoute = (request: IncomingMessage, response: ServerResponse) => void;
+
+function httpFixture(routes: Record<string, HttpRoute>) {
+  return createServer((request, response) => {
+    const route = routes[String(request.url)];
+    if (route) route(request, response);
+    else response.writeHead(404).end();
+  });
+}
+
 test("check-links reports a rejected fetch with its referrer and continues crawling", async () => {
-  const server = createServer((request, response) => {
-    switch (request.url) {
-      case "/":
-        response.writeHead(200, { "content-type": "text/html" });
-        response.end('<a href="/page">page</a>');
-        break;
-      case "/page":
-        response.writeHead(200, { "content-type": "text/html" });
-        response.end('<a href="/reset">reset</a><a href="/next">next</a>');
-        break;
-      case "/reset":
-        request.socket.destroy();
-        break;
-      case undefined:
-      default:
-        response.writeHead(404).end();
-    }
+  const server = httpFixture({
+    "/": (_, response) => {
+      response.writeHead(200, { "content-type": "text/html" });
+      response.end('<a href="/page">page</a>');
+    },
+    "/page": (_, response) => {
+      response.writeHead(200, { "content-type": "text/html" });
+      response.end('<a href="/reset">reset</a><a href="/next">next</a>');
+    },
+    "/reset": (request) => request.socket.destroy(),
   });
   server.listen(0, "127.0.0.1");
   try {
     await once(server, "listening");
     const address = server.address();
-    if (!address || typeof address === "string") throw new Error("expected a TCP listener");
+    assert(address, "expected a TCP listener");
+    assert(typeof address === "object", "expected a TCP listener address");
     const url = `http://127.0.0.1:${address.port}`;
     const [status, stdout, stderr] = await runSiteCommand("check-links", [
       url,
@@ -341,12 +344,9 @@ test("check-links reports a rejected fetch with its referrer and continues crawl
 
 test("check-links skips every specified prefix, including redirect targets", async () => {
   const result = await crawlFixture(
-    ({ pathname }) => {
-      if (pathname === "/") return html('<a href="/catalog/item">skip</a><a href="/go">go</a>');
-      if (pathname === "/go") {
-        return new Response(null, { status: 302, headers: { location: "/draft/item" } });
-      }
-      return new Response(null, { status: 404 });
+    {
+      "/": () => html('<a href="/catalog/item">skip</a><a href="/go">go</a>'),
+      "/go": () => new Response(null, { status: 302, headers: { location: "/draft/item" } }),
     },
     ["--skip", "/catalog", "--skip", "/draft"],
   );
@@ -365,19 +365,15 @@ test("check-links ignores external hrefs and redirects and hrefs inside scripts"
     },
   });
   try {
-    const result = await crawlFixture(({ origin, pathname }) => {
-      if (pathname === "/") {
-        return html(`
-          <a href="${external.url}">external</a>
-          <a href="blob:${origin}/from-blob">blob URL</a>
-          <script>const template = '<a href="/from-script">fake</a>';</script>
-          <a href="/exit">external redirect</a>
-        `);
-      }
-      if (pathname === "/exit") {
-        return new Response(null, { status: 302, headers: { location: external.url.href } });
-      }
-      return new Response(null, { status: 404 });
+    const result = await crawlFixture({
+      "/": ({ origin }) =>
+        html(`
+        <a href="${external.url}">external</a>
+        <a href="blob:${origin}/from-blob">blob URL</a>
+        <script>const template = '<a href="/from-script">fake</a>';</script>
+        <a href="/exit">external redirect</a>
+      `),
+      "/exit": () => new Response(null, { status: 302, headers: { location: external.url.href } }),
     });
     expect(result.status, result.stderr).toBe(0);
     expect(result.requests).toEqual(["/", "/exit"]);
@@ -388,7 +384,7 @@ test("check-links ignores external hrefs and redirects and hrefs inside scripts"
 });
 
 test("check-links fails a site with zero internal links", async () => {
-  const result = await crawlFixture(() => html("<p>No links here.</p>"));
+  const result = await crawlFixture({ "/": () => html("<p>No links here.</p>") });
   expect(result.status).toBe(1);
   expect(result.requests).toEqual(["/"]);
   expect(result.stderr).toBe(
@@ -406,13 +402,17 @@ test("check-links fails when it cannot fetch the start page", async () => {
 test.each([1, 2])("check-links honors --concurrency %i", async (concurrency) => {
   let active = 0;
   let peak = 0;
+  const readTarget = async () => {
+    peak = Math.max(peak, ++active);
+    await Bun.sleep(100);
+    active--;
+    return new Response(null, { status: 204 });
+  };
   const result = await crawlFixture(
-    async ({ pathname }) => {
-      if (pathname === "/") return html('<a href="/a">a</a><a href="/b">b</a>');
-      peak = Math.max(peak, ++active);
-      await Bun.sleep(100);
-      active--;
-      return new Response(null, { status: 204 });
+    {
+      "/": () => html('<a href="/a">a</a><a href="/b">b</a>'),
+      "/a": readTarget,
+      "/b": readTarget,
     },
     ["--concurrency", String(concurrency)],
   );
