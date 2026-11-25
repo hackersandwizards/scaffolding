@@ -2,6 +2,7 @@
 // 2>/dev/null; exec bun --no-env-file "$0" "$@"
 import { lstatSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
+import { renderGuides } from "../lib/guides.ts";
 import { layerMapPath, renderLayers } from "../lib/layers.ts";
 import { repoRoot } from "../lib/repo.ts";
 
@@ -25,9 +26,11 @@ try {
       mkdirSync(dirname(path), { recursive: true });
       writeFileSync(path, generated);
     } else if (!stat?.isFile() || readFileSync(path, "utf8") !== generated) {
-      throw new Error(
-        `${layerMapPath} is stale: run \`bun run scaffolding layers --write\` and commit the file with this change.`,
+      console.error(
+        `[layers] ${layerMapPath} is stale: run \`bun run scaffolding layers --write\` and commit the file with this change.`,
       );
+      process.stderr.write(renderGuides(["layers"]));
+      process.exitCode = 1;
     }
   }
 } catch (error) {

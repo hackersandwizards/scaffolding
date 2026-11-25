@@ -91,7 +91,7 @@ type VisitImports = (
   imports: ResolvedImport[],
   sourceCode?: string,
 ) => void;
-type GraphResult = { complete: boolean; findings: Finding[] };
+type GraphResult = { complete: boolean; findings: Finding[]; hasRuntimeCycle?: boolean };
 
 async function checkImports(
   root: string,
@@ -175,7 +175,7 @@ async function checkImports(
     }
     if (visit && imports.length) visit(path, join(baseDir, source), imports);
   }
-  return { complete: true, findings };
+  return { complete: true, findings, hasRuntimeCycle: seen.size > 0 };
 }
 
 function astroFrontmatterCode(source: string, ast: unknown) {

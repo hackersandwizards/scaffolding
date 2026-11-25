@@ -5,7 +5,7 @@
 // lines neither pass nor block this commit. The skill validator reads skill files from the working
 // tree.
 import { stagedDiff, stagedPaths } from "../lib/staged-paths.ts";
-import { spawn, spawnSync } from "node:child_process";
+import { spawn, spawnSync, type ChildProcessWithoutNullStreams } from "node:child_process";
 import {
   existsSync,
   lstatSync,
@@ -18,13 +18,15 @@ import {
 } from "node:fs";
 import { availableParallelism } from "node:os";
 import { join } from "node:path";
+import { renderGuides } from "../lib/guides.ts";
 import { help } from "../lib/help.ts";
 import { otherScript } from "../lib/shell-inputs.ts";
 import { inNodeModules } from "../lib/tracked-inputs.ts";
-import { oxlintConfig, oxlintExtends, runOxlint } from "../lib/oxlint.ts";
+import { oxlintConfig, oxlintExtends, runOxlintWithGuides } from "../lib/oxlint.ts";
 import {
   isReason,
   isObject,
+  isStrings,
   jsonObject,
   pathChunks,
   readPackage,
@@ -132,7 +134,12 @@ const mine = (tool: string, paths: string[]) =>
 // One list per tool for a staged file read whole and one read from stdin, so both judge alike.
 const flags: Record<string, string[]> = {
   prettier: ["--ignore-unknown", "--log-level", "warn"],
-  eslint: ["--cache", "--no-warn-ignored"],
+  eslint: [
+    "--cache",
+    "--no-warn-ignored",
+    "-f",
+    join(import.meta.dir, "../lib/eslint-formatter.ts"),
+  ],
   stylelint: stylelintFlags("."),
 };
 const tools: Record<string, string[]> = {
@@ -152,7 +159,7 @@ const chunks = pathChunks(whole);
 // Bounded to the core count: unbounded, 400 partly staged files started 400 processes on 16 cores.
 let free = availableParallelism();
 const waiting: (() => void)[] = [];
-type ToolRun = { out: string; code: number; stdout: Buffer };
+type ToolRun = { out: string; code: number; stdout: Buffer; rules?: string[] };
 
 async function runStagedTool(
   bin: string,
@@ -163,7 +170,11 @@ async function runStagedTool(
   if (free === 0) await new Promise<void>((go) => waiting.push(go));
   else free--;
   const result = await new Promise<ToolRun>((done) => {
-    const child = spawn(bin, args, { stdio: "pipe", env: { ...process.env, ...env } });
+    const stagedEslint = env.SCAFFOLDING_STAGED_ESLINT === "1";
+    const child = spawn(bin, args, {
+      stdio: ["pipe", "pipe", "pipe", stagedEslint ? "pipe" : "ignore"],
+      env: { ...process.env, ...env },
+    }) as ChildProcessWithoutNullStreams;
     // A child that exits before reading stdin raises EPIPE: caught so it cannot crash the check, and
     // counted as a failure so an unread file never passes.
     let unread = false;
@@ -171,14 +182,35 @@ async function runStagedTool(
     child.stdin.end(stdin);
     let out = "";
     const stdout: Buffer[] = [];
+    const metadata: Buffer[] = [];
     child.stdout.on("data", (data: Buffer) => stdout.push(data));
     child.stderr.on("data", (data) => (out += data));
+    child.stdio[3]?.on("data", (data: Buffer) => metadata.push(data));
     child.on("error", (error) =>
       done({ out: `${String(error)}\n`, code: 1, stdout: Buffer.alloc(0) }),
     );
     child.on("close", (code) => {
       const output = Buffer.concat(stdout);
-      done({ out: `${output}${out}`, code: unread ? code || 1 : (code ?? 1), stdout: output });
+      const run = {
+        out: `${output}${out}`,
+        code: unread ? code || 1 : (code ?? 1),
+        stdout: output,
+      };
+      if (!metadata.length) {
+        done(run);
+        return;
+      }
+      try {
+        const { rules } = jsonObject(Buffer.concat(metadata));
+        if (!isStrings(rules)) throw new Error("invalid rule IDs");
+        done({ ...run, rules });
+      } catch (error) {
+        done({
+          ...run,
+          out: `${run.out}[check:staged] eslint: could not read formatter rule IDs: ${(error as Error).message}\n`,
+          code: 1,
+        });
+      }
     });
   });
   const next = waiting.shift();
@@ -209,6 +241,14 @@ async function prettierPasses(bin: string, path: string, input: Buffer, r: ToolR
   return !info.code && jsonObject(info.stdout).inferredParser === null;
 }
 
+function runStagedLint(tool: string, args: string[], stdin?: Buffer) {
+  const bin = `node_modules/.bin/${tool}`;
+  if (tool !== "eslint") return runStagedTool(bin, args, stdin);
+  return runStagedTool(process.execPath, ["--no-env-file", "--bun", bin, ...args], stdin, {
+    SCAFFOLDING_STAGED_ESLINT: "1",
+  });
+}
+
 // Run what the gate runs: each tool unless scaffolding.skip gives its gate step a reason, declared
 // or not. Every install is checked before any run starts, so a refusal leaves no tool running.
 const gateStep: Record<string, string> = {
@@ -233,7 +273,7 @@ if (oxlintPaths.length && !isReason(skip.lint)) {
   const cache = join(root, "node_modules/.cache/scaffolding");
   mkdirSync(cache, { recursive: true });
   const snapshot = mkdtempSync(join(cache, "staged-oxlint-"));
-  let code = 1;
+  let code: number;
   try {
     const checkout = spawnSync(
       "git",
@@ -260,18 +300,16 @@ if (oxlintPaths.length && !isReason(skip.lint)) {
     symlinkSync(join(root, "node_modules"), join(snapshot, "node_modules"), "dir");
     code = 0;
     for (const paths of pathChunks(oxlintPaths)) {
-      const run = runOxlint(snapshot, [
+      code = runOxlintWithGuides(snapshot, [
         "--no-ignore",
         "--no-error-on-unmatched-pattern",
         "--",
         ...paths,
       ]);
-      if (run.status !== 0) {
-        code = run.status ?? 1;
-        break;
-      }
+      if (code) break;
     }
   } catch (error) {
+    code = 1;
     console.error(`[check:staged] oxlint: ${(error as Error).message}`);
   } finally {
     rmSync(snapshot, { recursive: true, force: true });
@@ -289,16 +327,21 @@ const runs = active.flatMap(([tool, args]) => {
       .map((paths) => mine(tool, paths))
       .filter((paths) => paths.length)
       // A staged name starting with `-` would read as an option.
-      .map((paths) => runStagedTool(bin, [...args, "--", ...paths])),
-    ...mine(tool, partial).map(async (path) => {
+      .map((paths) => runStagedLint(tool, [...args, "--", ...paths])),
+    ...mine(tool, partial).map(async (path): Promise<ToolRun> => {
       const input = stagedContent(path);
-      const r = await runStagedTool(bin, stdinFlags[tool](path), input);
-      if (tool === "prettier" ? await prettierPasses(bin, path, input, r) : !r.code)
-        return { out: "", code: 0 };
+      const r = await runStagedLint(tool, stdinFlags[tool](path), input);
+      if (
+        tool === "prettier"
+          ? await prettierPasses(bin, path, input, r)
+          : !r.code && !r.rules?.length
+      )
+        return { ...r, out: "", code: 0 };
       const why = tool === "prettier" && !r.code ? "not formatted\n" : r.out;
       return {
+        ...r,
         out: `[check:staged] ${tool}: ${path} as staged\n${why}`,
-        code: r.code || 1,
+        code: tool === "prettier" ? r.code || 1 : r.code,
       };
     }),
   ];
@@ -348,8 +391,11 @@ async function checkStagedItems(): Promise<ToolRun> {
 
 // Concurrent for speed, reported in a fixed order so the output reads the same on every run.
 let failed = false;
-for (const { out, code } of await Promise.all(runs)) {
+const rules = new Set<string>();
+for (const { out, code, rules: fired } of await Promise.all(runs)) {
   process.stderr.write(out);
   failed ||= code !== 0;
+  for (const rule of fired ?? []) rules.add(rule);
 }
+process.stderr.write(renderGuides(rules));
 process.exit(failed ? 1 : 0);

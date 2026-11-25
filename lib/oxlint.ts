@@ -3,6 +3,7 @@ import { existsSync, lstatSync, readFileSync, statSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import template from "../template/.oxlintrc.json";
+import { renderGuides } from "./guides.ts";
 import { activeSeverity } from "./lint-rule-overlaps.ts";
 import { oxlintConfig, restrictionRuleName, restrictedImports } from "./oxlint-restrictions.ts";
 import { isObject, isReason, isStrings, jsonObject, submodulePaths } from "./repo.ts";
@@ -91,6 +92,29 @@ export function runOxlint(root: string, args: string[], capture = false) {
   );
 }
 
+export function runOxlintWithGuides(root: string, args: string[]) {
+  const status = runOxlint(root, args).status ?? 1;
+  if (status !== 0) {
+    const separator = args.indexOf("--");
+    const formatAt = separator < 0 ? args.length : separator;
+    const result = runOxlint(
+      root,
+      [...args.slice(0, formatAt), "-f", "json", ...args.slice(formatAt)],
+      true,
+    );
+    if (result.stdout) {
+      const diagnostics = jsonObject(result.stdout).diagnostics;
+      if (!Array.isArray(diagnostics)) throw new Error("could not read Oxlint's JSON diagnostics");
+      const entries: unknown[] = diagnostics;
+      const rules = entries.flatMap((entry) =>
+        isObject(entry) && typeof entry.code === "string" ? [entry.code] : [],
+      );
+      process.stdout.write(renderGuides(rules));
+    }
+  }
+  return status;
+}
+
 export function oxlintOutput(root: string, args: string[]) {
   const result = runOxlint(root, args, true);
   if (result.status !== 0) throw new Error(result.stderr || result.stdout || String(result.error));
@@ -156,7 +180,12 @@ if (import.meta.main) {
     oxlintConfiguration(root);
     const args = oxlintTargets(root);
     await requireTypeScriptProjects(root, oxlintFiles(root, args));
-    process.exitCode = runOxlint(root, [...process.argv.slice(2), ...args]).status ?? 1;
+    const options = process.argv.slice(2);
+    const command = [...options, ...args];
+    // Callers that ask for a particular format can consume its output directly.
+    process.exitCode = options.some((arg) => arg.startsWith("-f") || arg.startsWith("--format"))
+      ? (runOxlint(root, command).status ?? 1)
+      : runOxlintWithGuides(root, command);
   } catch (error) {
     console.error(`[oxlint] ${(error as Error).message}`);
     process.exitCode = 1;

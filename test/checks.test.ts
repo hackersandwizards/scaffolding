@@ -483,6 +483,12 @@ function run(
 const lines = (out: string, check: string) =>
   out.split("\n").filter((l) => l.startsWith(`[${check}]`) && !/ findings, \d+ ms$/.test(l));
 
+function expectGuide(out: string, id: string) {
+  const guide = readFileSync(join(import.meta.dirname, "../config/guides", `${id}.md`), "utf8");
+  expect(out).toContain(`\n\n${guide.replace(/^# /, `[guide] ${id}: `)}`);
+  expect(out.match(/^\[guide\] [^:]+/gm)).toEqual([`[guide] ${id}`]);
+}
+
 const fixturePackage = {
   name: "fx",
   type: "module",
@@ -3476,6 +3482,7 @@ describe("scaffolding check", () => {
     const r = run(dir, "scaffolding", ["check"], { CHECK_LOCK: join(dir, ".lock") });
     expect(r.code).toBe(1);
     expect(r.out).toMatch(/failed in [\d.]+ s: cycles/);
+    expectGuide(r.out.slice(r.out.indexOf("runtime import cycle")), "import-cycle");
   });
 
   const layerMap = "docs/architecture/layers.md";
@@ -3543,12 +3550,14 @@ describe("scaffolding check", () => {
     const missing = check();
     expect(missing.code).toBe(1);
     expect(missing.out).toContain(stale);
+    expectGuide(missing.out.slice(missing.out.indexOf(stale)), "layers");
     expect(run(dir, "scaffolding", ["layers"])).toEqual({ code: 0, out: layerFixture });
     expect(existsSync(join(dir, layerMap))).toBe(false);
     write(dir, { [layerMap]: layerFixture.replace("L0 -->|2| L1", "L0 -->|1| L1") });
     const outdated = check();
     expect(outdated.code).toBe(1);
     expect(outdated.out).toContain(stale);
+    expectGuide(outdated.out.slice(outdated.out.indexOf(stale)), "layers");
     expect(run(dir, "scaffolding", ["layers", "--write"]).code).toBe(0);
     expect(readFileSync(join(dir, layerMap), "utf8")).toBe(layerFixture);
     expect(sh(dir, ["add", "--", layerMap]).status).toBe(0);
@@ -3556,6 +3565,7 @@ describe("scaffolding check", () => {
     const fresh = check();
     expect(fresh.code).toBe(0);
     expect(fresh.out).toContain("ok   layers");
+    expect(fresh.out).not.toContain("[guide] ");
   });
 
   test("layers step requires a repository without layer overrides to have no map", () => {
@@ -3854,6 +3864,37 @@ describe("scaffolding check", () => {
     expect(r.out).toContain("ok   lint");
     expect(r.out).toContain("ok   oxlint");
     expect(r.code).toBe(0);
+  });
+
+  test.each([
+    ["oxlint", "no-self-assign", "let value = 0;\nvalue = value;\nconsole.log(value);\n"],
+    ["lint", "no-useless-assignment", "let value = 0;\nvalue = 1;\nconsole.log(value);\n"],
+  ])("rule guides follow %s findings once and stay quiet on a pass", (step, id, broken) => {
+    const { lint: _l, ...rest } = skip;
+    const dir = gate({ skip: rest });
+    write(dir, {
+      ".oxlintrc.json": JSON.stringify(oxlintTemplate),
+      "eslint.config.js": 'export { default } from "@hackersandwizards/scaffolding/eslint";\n',
+      "a.js": broken,
+    });
+    install(dir);
+    symlinkSync(join(import.meta.dirname, "../node_modules/.bin"), join(dir, "node_modules/.bin"));
+    const check = () => run(dir, "scaffolding", ["check"], { CHECK_LOCK: join(dir, ".lock") });
+    const finding = step === "oxlint" ? `eslint(${id})` : id;
+    const single = check();
+    expect(single.code, single.out).toBe(1);
+    expect(single.out).toContain(finding);
+    expectGuide(single.out.slice(single.out.indexOf(finding)), id);
+    write(dir, { "b.js": broken });
+    const double = check();
+    expect(double.code, double.out).toBe(1);
+    expect(double.out.slice(0, double.out.indexOf("[guide]")).split(finding)).toHaveLength(3);
+    expectGuide(double.out, id);
+    const clean = "console.log(1);\n";
+    write(dir, { "a.js": clean, "b.js": clean });
+    const green = check();
+    expect(green.code, green.out).toBe(0);
+    expect(green.out).not.toContain("[guide] ");
   });
 
   test("runs the repository's steps in order and passes", () => {
@@ -7925,6 +7966,42 @@ describe("check-staged", () => {
     },
   );
 
+  test.each([
+    ["no-self-assign", "let value = 0;\nvalue = value;\nconsole.log(value);\n"],
+    ["no-useless-assignment", "let value = 0;\nvalue = 1;\nconsole.log(value);\n"],
+  ])("staged rule guides print %s once across whole and partial files", (id, broken) => {
+    const clean = "console.log(1);\n";
+    const dir = repo({
+      "package.json": JSON.stringify({
+        type: "module",
+        scaffolding: { private: true, skip: { format: "fixture" } },
+      }),
+      ".oxlintrc.json": JSON.stringify(oxlintTemplate),
+      "eslint.config.js": 'export { default } from "@hackersandwizards/scaffolding/eslint";\n',
+      "a.js": clean,
+      "b.js": clean,
+    });
+    install(dir);
+    symlinkSync(join(import.meta.dirname, "../node_modules/.bin"), join(dir, "node_modules/.bin"));
+    write(dir, { "a.js": broken });
+    expect(sh(dir, ["add", "--", "a.js"]).status).toBe(0);
+    const single = run(dir, "check-staged");
+    expect(single.code, single.out).toBe(1);
+    expectGuide(single.out, id);
+    write(dir, { "b.js": broken });
+    expect(sh(dir, ["add", "--", "b.js"]).status).toBe(0);
+    write(dir, { "b.js": "console.log(2);\n" });
+    const double = run(dir, "check-staged");
+    expect(double.code, double.out).toBe(1);
+    expect(double.out.slice(0, double.out.indexOf("[guide]"))).toContain("b.js");
+    expectGuide(double.out, id);
+    write(dir, { "a.js": "console.log(2);\n" });
+    expect(sh(dir, ["add", "--", "a.js", "b.js"]).status).toBe(0);
+    const green = run(dir, "check-staged");
+    expect(green.code, green.out).toBe(0);
+    expect(green.out).not.toContain("[guide] ");
+  });
+
   test("a coupling or licence step the gate skips with a reason is skipped here too", () => {
     const staged = (skip: object) => {
       const dir = repo({
@@ -8612,6 +8689,7 @@ describe("check-cycles", () => {
     copyFileSync(bin("check-cycles"), entry);
     const lib = join(import.meta.dirname, "..", "lib");
     mkdirSync(join(installation, "lib"));
+    symlinkSync(join(lib, "guides.ts"), join(installation, "lib", "guides.ts"));
     copyFileSync(join(lib, "import-graph.ts"), join(installation, "lib", "import-graph.ts"));
     symlinkSync(join(lib, "repo.ts"), join(installation, "lib", "repo.ts"));
     const modules = join(installation, "node_modules");

@@ -5,6 +5,7 @@ Public package `@hackersandwizards/scaffolding`: the repository skeleton (`templ
 elsewhere), the gate commands in `bin/` (check-lock in `template/.githooks/`, as a skeleton file), the shared configs in `config/` and the catalog
 shell with its preset in `catalog/`. Repositories install it by Git tag and run the
 commands through `bun run`. docs/commands.md says what each command checks.
+Rule guides live in `config/guides/`, and the gate prints them after matching findings.
 
 This repository is public. No client, deal, invoice, person record, term list or Company OS
 screenshot goes in, and `check-confidential` runs in its own hooks.

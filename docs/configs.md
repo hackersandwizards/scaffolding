@@ -59,6 +59,10 @@ to Astro client scripts, use `**/*.astro/*.ts`.
 Remove `baseUrl` from a TypeScript project that uses it and write each path target relative to
 `tsconfig.json`, for example `"@/*": ["./src/*"]`. Oxlint's TypeScript companion rejects `baseUrl`.
 
+### Rule guides
+
+Rule guides live in `config/guides/`. In the gate, Oxlint prints each matching guide once after failures and ESLint after its findings. The layer and cycle checks do the same for stale or missing layer maps and runtime import cycles. The package test fails if the shared Oxlint or ESLint config enforces a rule without a guide.
+
 ## Vitest and Stryker
 
 Scaffolding supplies Vitest 5.1.0 and Stryker core and its Vitest runner at 10.1.1.

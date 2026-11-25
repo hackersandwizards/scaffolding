@@ -364,11 +364,12 @@ export function applyAllow(
   return left;
 }
 
-export function finish(check: string, findings: Finding[], started: number): never {
+export function finish(check: string, findings: Finding[], started: number, footer = ""): never {
   for (const f of findings)
     console.error(`[${check}] ${f.path}: ${f.message}${f.text ? ` (${f.text})` : ""}`);
   const ms = Math.round(performance.now() - started);
   if (findings.length) console.error(`[${check}] ${findings.length} findings, ${ms} ms`);
+  if (footer) process.stderr.write(footer);
   process.exit(findings.length ? 1 : 0);
 }
 
