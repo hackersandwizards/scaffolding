@@ -93,9 +93,10 @@ line it folds into, and show the wordings before committing, or name them in the
 a length cap and asks for the removal-first diff. A rule the person states for every session goes
 into a hub rule or skill, never memory or one repository's rule. The remedy for an agent behaviour
 is a line in the artifact that owns it, never a hook, a validator or other automated block, and
-rule text never says "guardrail". A lesson an existing linter or test can catch goes there
-first, as a rule whose message says what to do instead or as a test, in the shared configuration where
-it reaches several repositories; never a new hook or gate step. A fix to a skill driving a person-facing UI is a sentence telling
+rule text never says "guardrail". A lesson an existing linter or test can catch
+deterministically, where the check is worth its upkeep, goes there as a rule whose message says what to
+do instead or as a test, in the shared configuration where it reaches several repositories; never a
+new hook or gate step. A fix to a skill driving a person-facing UI is a sentence telling
 the agent to use the site's own control, not script logic or stub tests. A rule for a person's
 writing voice says when a practice helps and when not, from fetched research where it borrows a
 best practice: an absolute is a defect. Before reporting a fix, walk the person's own example
