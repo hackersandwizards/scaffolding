@@ -63,11 +63,16 @@ interface Holder {
 
 const sleep = (ms: number): Promise<void> => new Promise((done) => setTimeout(done, ms));
 
-function readLock(): string | undefined {
+function readLock(forReclaim = false): string | undefined {
   try {
     return readFileSync(LOCK, "utf8");
-  } catch {
-    return undefined;
+  } catch (error) {
+    const { code } = error as NodeJS.ErrnoException;
+    if (code === "ENOENT") return undefined;
+    // A directory or an unreadable holder must still go through the wait deadline.
+    if (forReclaim && (code === "EISDIR" || code === "EACCES" || code === "EPERM"))
+      return undefined;
+    throw error;
   }
 }
 
@@ -125,8 +130,9 @@ function create(path: string, contents: string): boolean {
   try {
     linkSync(staging, path);
     return true;
-  } catch {
-    return false;
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === "EEXIST") return false;
+    throw error;
   } finally {
     rmSync(staging, { force: true });
   }
@@ -136,7 +142,7 @@ const acquire = (): boolean =>
   create(LOCK, JSON.stringify({ pid: process.pid, startedAt: Date.now(), command }));
 
 function dropIfStale(): void {
-  const raw = readLock();
+  const raw = readLock(true);
   if (!stale(raw, parseHolder(raw))) return;
   // Deleting by name after the read deleted a fresh lock another waiter wrote in between. A claim,
   // named for these exact contents, lets one waiter delete them, and while they sit at the lock path
@@ -151,15 +157,16 @@ function dropIfStale(): void {
     let owner: number;
     try {
       owner = Number.parseInt(readFileSync(`${base}.${slot}`, "utf8"), 10);
-    } catch {
-      return; // cleared by the waiter that reclaimed these contents: the next poll reads afresh
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code === "ENOENT") return;
+      throw error;
     }
     // create() writes the pid before the name appears, so a claim without one is no live waiter's.
     if (Number.isInteger(owner) && running(owner)) return;
     slot++;
   }
   try {
-    if (readLock() === raw) rmSync(LOCK, { force: true });
+    if (readLock(true) === raw) rmSync(LOCK, { force: true });
   } finally {
     // These contents are gone from the lock path for good (each lock carries its pid and start), so
     // no re-read under any of these claims can match again, and deleting them reopens nothing.
@@ -175,6 +182,7 @@ function dropIfStale(): void {
 const QUEUE = `${LOCK}.queue`;
 const TICKET_MS = 3 * POLL_MS;
 let ticket: string | undefined;
+let wroteTicket = false;
 function removeTicket(path: string) {
   try {
     unlinkSync(path);
@@ -183,28 +191,16 @@ function removeTicket(path: string) {
     if (code !== "ENOENT" && code !== "ENOTDIR") throw error;
   }
 }
-// process.exit skips a finally, so each exit while waiting hands the ticket back itself.
-const leave = () => {
-  if (ticket) removeTicket(`${QUEUE}/${ticket}`);
-};
 // The queue only orders the waiters; the lock keeps the commands apart. So a queue that fails, its
-// folder removed or a ticket that cannot be removed, costs the order, never the lock: an error here
-// had run the command beside the holder.
+// folder removed or a ticket that cannot be removed, costs the order, never the lock.
 function first(): boolean {
   try {
     mkdirSync(QUEUE, { recursive: true });
     writeFileSync(`${QUEUE}/${ticket}`, "");
+    wroteTicket = true;
   } catch (error) {
     const { code } = error as NodeJS.ErrnoException;
-    if (
-      code === "EEXIST" ||
-      code === "ENOENT" ||
-      code === "ENOTDIR" ||
-      code === "EACCES" ||
-      code === "EPERM" ||
-      code === "EROFS"
-    )
-      return true;
+    if (code === "EEXIST" || code === "ENOENT" || code === "ENOTDIR") return true;
     throw error;
   }
   let names: string[];
@@ -230,6 +226,33 @@ function first(): boolean {
   return tickets.sort()[0] === ticket;
 }
 
+let queueFailed = false;
+function queueFailure(error: unknown): void {
+  queueFailed = true;
+  lockWarning("queue failed", error, "continuing without queue order");
+}
+
+function turn(): boolean {
+  if (queueFailed) return true;
+  try {
+    return first();
+  } catch (error) {
+    queueFailure(error);
+    return true;
+  }
+}
+
+// process.exit skips a finally, so each exit while waiting hands the ticket back itself.
+function leave(): void {
+  if (!ticket || !wroteTicket) return;
+  wroteTicket = false;
+  try {
+    removeTicket(`${QUEUE}/${ticket}`);
+  } catch (error) {
+    queueFailure(error);
+  }
+}
+
 async function waitForLock(): Promise<boolean> {
   ticket = `${String(Date.now()).padStart(15, "0")}-${process.pid}`;
   try {
@@ -251,15 +274,19 @@ async function queueForLock(): Promise<boolean> {
     let stat;
     try {
       stat = statSync(LOCK);
-    } catch {
-      return free;
+    } catch (error) {
+      const { code } = error as NodeJS.ErrnoException;
+      if (code === "ENOENT" || code === "ENOTDIR") return free;
+      throw error;
     }
     let raw: string | undefined;
     try {
       if (stat.isFile()) raw = readFileSync(LOCK, "utf8");
     } catch (error) {
       // Released between the two reads: free, not a path no waiter can reclaim.
-      if ((error as { code?: string }).code === "ENOENT") return free;
+      const { code } = error as NodeJS.ErrnoException;
+      if (code === "ENOENT") return free;
+      if (code !== "EACCES" && code !== "EPERM") throw error;
     }
     const read = parseHolder(raw);
     return {
@@ -271,7 +298,7 @@ async function queueForLock(): Promise<boolean> {
   };
   let holder = look().id;
   for (;;) {
-    if (first()) {
+    if (turn()) {
       if (acquire()) return true;
       dropIfStale();
       if (acquire()) return true;
@@ -311,6 +338,11 @@ async function queueForLock(): Promise<boolean> {
 }
 
 const command = process.argv.slice(2);
+function lockWarning(phase: string, error: unknown, consequence: string): void {
+  const detail = String(error).replace(/\s*\r?\n\s*/g, " ");
+  console.warn(`[check-lock] ${phase} (${detail}); ${consequence}`);
+}
+
 // A skeleton file runs without the package beside it, so its help names where the rest stands.
 const USAGE = "usage: check-lock <command> [args...]";
 if (command[0] === "--help") {
@@ -332,10 +364,13 @@ if (command.length === 0) {
 const SIGNALS = ["SIGINT", "SIGTERM", "SIGHUP", "SIGQUIT"] as const;
 let child: ChildProcess | undefined = undefined;
 const killGroup = (signal: NodeJS.Signals) => {
+  const pid = child?.pid;
+  if (!pid) return;
   try {
-    process.kill(-child!.pid!, signal);
+    process.kill(-pid, signal);
   } catch (error) {
-    if ((error as NodeJS.ErrnoException).code !== "ESRCH") throw error;
+    const { code } = error as NodeJS.ErrnoException;
+    if (code !== "ESRCH" && code !== "EPERM") throw error;
   }
 };
 let received: NodeJS.Signals | undefined;
@@ -371,19 +406,7 @@ let held = false;
 try {
   if (process.env.SCAFFOLDING_LOCKED !== LOCK) held = await waitForLock();
 } catch (error) {
-  const { code, path } = error as NodeJS.ErrnoException;
-  if (
-    path !== `${LOCK}.${process.pid}` ||
-    (code !== "ENOENT" &&
-      code !== "ENOTDIR" &&
-      code !== "EACCES" &&
-      code !== "EPERM" &&
-      code !== "EROFS")
-  )
-    throw error;
-  console.warn(
-    `[check-lock] lock unusable (${String(error)}); running "${command.join(" ")}" unserialised`,
-  );
+  lockWarning("lock unusable", error, `running "${command.join(" ")}" unserialised`);
 }
 
 /** Rewrites this run's lock with `fields`, whole through a rename, as create() writes it. */
@@ -398,18 +421,24 @@ function annotate(fields: Partial<Holder>): void {
   }
 }
 
-let annotationFailure: { error: unknown } | undefined;
+let annotationFailed = false;
 function updateAnnotation(fields: Partial<Holder>): void {
+  if (annotationFailed) return;
   try {
     annotate(fields);
   } catch (error) {
-    annotationFailure = { error };
-    killGroup("SIGKILL");
+    annotationFailed = true;
+    lockWarning("lock annotation failed", error, "the command continues with the last lock record");
   }
 }
 
 function release(): void {
-  if (held && readHolder()?.pid === process.pid) rmSync(LOCK, { force: true });
+  try {
+    if (held && readHolder()?.pid === process.pid) rmSync(LOCK, { force: true });
+  } catch (error) {
+    // The next waiter can reclaim this lock once its holder is gone.
+    lockWarning("lock release failed", error, "the command ran and keeps its exit status");
+  }
 }
 
 // Passing the signal to the command alone was not enough: `sh -c 'cd catalog && astro build'` died
@@ -436,18 +465,17 @@ clearTimeout(bound);
 // A command killed by a signal sent to it alone, not to check-lock, left its steps running in its
 // group while the lock was released; so the rest of the group gets the same signal. Only after a
 // signal: a command that exits on its own may leave a process behind on purpose.
-if (result.signal && !received && !annotationFailure) {
+if (result.signal && !received) {
   updateAnnotation({ signalled: true });
   killGroup(result.signal);
 }
 const stoppedAt = Date.now();
-while ((received || result.signal || annotationFailure) && running(-child.pid!)) {
+while (child.pid && (received || result.signal) && running(-child.pid)) {
   // After a signal the command took alone, nobody sends the second one that kills: KILL_MS do.
   if (!received && Date.now() - stoppedAt > KILL_MS) killGroup("SIGKILL");
   await sleep(100);
 }
 release();
-if (annotationFailure) throw annotationFailure.error;
 if (result.error)
   console.log(`[check-lock] ${command.join(" ")} did not start: ${result.error.message}`);
 else if (result.status !== 0) {

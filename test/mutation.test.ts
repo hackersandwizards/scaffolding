@@ -14,6 +14,7 @@ import { delimiter, join } from "node:path";
 import type { MutationTestResult } from "mutation-testing-report-schema";
 import { expect, test, vi } from "vitest";
 import { runMutation } from "../bin/scaffolding-mutation.ts";
+import { limit } from "./test-timeout.ts";
 
 function linkMutationDependencies(dir: string) {
   const root = join(import.meta.dirname, "..");
@@ -143,7 +144,7 @@ export default {
 test(
   "the mutation command reports static survivors separately from its adjusted score",
   {
-    timeout: (30_000 * Number(process.env.SCAFFOLDING_TEST_TIMEOUT_MS || 5000)) / 5000,
+    timeout: limit(30_000),
   },
   () => {
     const dir = mkdtempSync(join(tmpdir(), "scaffolding-mutation-test-"));

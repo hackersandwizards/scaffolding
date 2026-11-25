@@ -148,6 +148,7 @@ function place(staged: string, output: string): string | undefined {
   // A build folder with no archive and no executable is an unpack that threw: @puppeteer/browsers
   // deletes the archive either way.
   const state = existsSync(join(folder, build)) ? stateOf(folder, build) : undefined;
+  if (state === "unpacking") return undefined;
   const path = join(cache(), rel);
   const died = state === "died" || (state === "whole" && !existsSync(path));
   for (const name of archivesOf(build, readdirSync(folder)))
@@ -162,7 +163,10 @@ function place(staged: string, output: string): string | undefined {
     renameSync(join(staged, kind, build), join(folder, build));
   } catch (error) {
     const { code } = error as NodeJS.ErrnoException;
-    if ((code !== "EEXIST" && code !== "ENOTEMPTY") || !existsSync(path)) throw error;
+    if (code !== "EEXIST" && code !== "ENOTEMPTY") throw error;
+    // A competing unpack can start after the first look at the destination.
+    if (stateOf(folder, build) === "unpacking") return undefined;
+    if (!existsSync(path)) throw error;
   }
   return existsSync(path) && stateOf(folder, build) === "whole" ? path : undefined;
 }
@@ -185,13 +189,12 @@ export function chromeBinary(options: Options = {}): string | undefined {
   const staged = stage();
   if (!staged) return undefined;
   try {
+    const args = install(options.shell, staged);
     let output: string;
     try {
-      output = execFileSync("bunx", install(options.shell, staged), { encoding: "utf-8" });
-    } catch (error) {
-      if (isObject(error) && typeof error.status === "number" && error.status !== 0)
-        return undefined;
-      throw error;
+      output = execFileSync("bunx", args, { encoding: "utf-8" });
+    } catch {
+      return undefined;
     }
     const installed = place(staged, output);
     if (installed) known.set(key, installed);
@@ -202,7 +205,7 @@ export function chromeBinary(options: Options = {}): string | undefined {
 }
 
 /** The same without blocking the process, for a server answering a request meanwhile. Concurrent
- * calls share one install, since two downloads into the same folder collide. */
+ * calls share one install to avoid downloading the same build twice. */
 export async function chromeBinaryAsync(options: Options = {}): Promise<string | undefined> {
   if (process.env.CHROME_BINARY) return process.env.CHROME_BINARY;
   let found = lookup(options);
@@ -219,14 +222,14 @@ export async function chromeBinaryAsync(options: Options = {}): Promise<string |
   if (running) return running;
   const staged = stage();
   if (!staged) return undefined;
-  const started = promisify(execFile)("bunx", install(options.shell, staged), { encoding: "utf-8" })
-    .then(
-      ({ stdout }) => place(staged, stdout),
-      (error: unknown) => {
-        if (isObject(error) && typeof error.code === "number" && error.code !== 0) return undefined;
-        throw error;
-      },
-    )
+  const started = Promise.resolve()
+    .then(() => {
+      const args = install(options.shell, staged);
+      return promisify(execFile)("bunx", args, { encoding: "utf-8" }).then(
+        ({ stdout }) => place(staged, stdout),
+        () => undefined,
+      );
+    })
     .then((installed) => {
       if (installed) known.set(key, installed);
       return installed;

@@ -431,6 +431,11 @@ const running = new Map<string, { out: string }>();
 const line = (r: Result) =>
   `[scaffolding] ${r.code ? "FAIL" : "ok  "} ${r.name} ${(r.ms / 1000).toFixed(1)} s`;
 
+function reportStopped(name: string, out: string, signal: NodeJS.Signals): void {
+  process.stderr.write(out);
+  console.error(`[scaffolding] stopped ${name} by ${signal}`);
+}
+
 // A step is reported the moment it ends, its output ahead of its line, so a red step shows at once
 // rather than after its slowest sibling, and a gate cut off still shows every step that ended.
 function run(name: string, command: string, buffered: boolean): Promise<Result> {
@@ -445,11 +450,15 @@ function run(name: string, command: string, buffered: boolean): Promise<Result> 
     });
     child.stdout?.on("data", (d) => (step.out += d));
     child.stderr?.on("data", (d) => (step.out += d));
-    child.on("close", (code) => {
+    child.on("close", (code, signal) => {
       running.delete(name);
       const r = { name, code: code ?? 1, ms: performance.now() - begun };
-      process.stderr.write(step.out);
-      console.error(line(r));
+      // In a group interrupt a child's close can arrive before the gate's own signal handler.
+      if (signal) reportStopped(name, step.out, signal);
+      else {
+        process.stderr.write(step.out);
+        console.error(line(r));
+      }
       results.push(r);
       done(r);
     });
@@ -460,10 +469,7 @@ function run(name: string, command: string, buffered: boolean): Promise<Result> 
 // running ones said so far and names them, then dies by the same signal.
 for (const signal of SIGNALS)
   process.on(signal, () => {
-    for (const [name, step] of running) {
-      process.stderr.write(step.out);
-      console.error(`[scaffolding] stopped ${name} by ${signal}`);
-    }
+    for (const [name, step] of running) reportStopped(name, step.out, signal);
     process.removeAllListeners(signal);
     process.kill(process.pid, signal);
   });

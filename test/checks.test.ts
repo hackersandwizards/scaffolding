@@ -55,6 +55,7 @@ import ownPackage from "../package.json";
 import oxlintTemplate from "../template/.oxlintrc.json";
 import templateMcp from "../template/.mcp.json";
 import templateSettings from "../template/.claude/settings.json";
+import { limit } from "./test-timeout.ts";
 
 /** The member of parsed JSON at `path`, undefined where a step meets no object or list. */
 const member = (value: unknown, ...path: (string | number)[]): unknown =>
@@ -63,10 +64,6 @@ const member = (value: unknown, ...path: (string | number)[]): unknown =>
     const list: unknown[] = Array.isArray(v) ? v : [];
     return list[Number(key)];
   }, value);
-
-// A test's own limit stretches with load as the runner's default does: the gate sets
-// SCAFFOLDING_TEST_TIMEOUT_MS from the machine's load, 5000 on an idle machine.
-const limit = (ms: number) => (ms * Number(process.env.SCAFFOLDING_TEST_TIMEOUT_MS || 5000)) / 5000;
 
 const bin = (name: string) => join(import.meta.dirname, "..", "bin", `${name}.ts`);
 const PREVIEW = 'ASTRO_PREVIEW_BACKGROUND=1 bun --bun astro preview --root "$PWD/catalog"';
@@ -1693,8 +1690,17 @@ describe("scaffold and check-structure", () => {
         SessionStart: [...templateSettings.hooks.SessionStart, { matcher: "resume", hooks: [] }],
       },
     });
-    // A file whose value in the way is no object is a finding, never a crash.
-    write(other, { ".claude/settings.json": '{ "hooks": "x" }\n', ".mcp.json": "null\n" });
+  });
+
+  test("--fix reports malformed parents of skeleton MCP and SessionStart blocks", () => {
+    const other = fixture(
+      "malformed-entries",
+      {},
+      {
+        ".claude/settings.json": '{ "hooks": "x" }\n',
+        ".mcp.json": "null\n",
+      },
+    );
     expect(lines(run(other, "check-structure", ["--fix"]).out, "check-structure")).toEqual([
       "[check-structure] .mcp.json: mcpServers.chrome-devtools sits in no JSON object: repair the JSON syntax in this file so every parent of mcpServers.chrome-devtools is an object ({}), then run check-structure --fix",
       "[check-structure] .claude/settings.json: hooks.SessionStart sits in no JSON object: repair the JSON syntax in this file so every parent of hooks.SessionStart is an object ({}), then run check-structure --fix",
@@ -4587,6 +4593,16 @@ describe("scaffolding check", () => {
     },
     limit(40_000),
   );
+
+  test("names a step stopped by SIGINT even when the runner receives no signal", () => {
+    const step = 'kill -s INT "$$"';
+    const dir = gate({ skip, check: [step] });
+    const result = run(dir, "scaffolding", ["check"], { CHECK_LOCK: join(dir, ".lock") });
+    expect(result.code).toBe(1);
+    expect(result.out.match(/^\[scaffolding\] stopped .+ by SIGINT$/gm)).toEqual([
+      `[scaffolding] stopped ${step} by SIGINT`,
+    ]);
+  });
 
   test("a repository pinning puppeteer-core gets Chrome installed once, before the steps", () => {
     const dir = gate(
@@ -9557,7 +9573,76 @@ describe("check-licenses", () => {
 
 describe("chrome", () => {
   test.each([
-    ["launch", "", /ENOENT|Executable not found/],
+    ["cannot start", undefined],
+    ["is killed", 'kill -TERM "$$"'],
+    ["exceeds its output buffer", "head -c 4194304 /dev/zero"],
+  ])("Chrome returns undefined when the installer %s", async (_, script) => {
+    const { chromeBinary, chromeBinaryAsync } = await import("../lib/chrome.ts");
+    const dir = temp();
+    const cache = join(dir, "cache");
+    const tools = join(dir, "bin");
+    mkdirSync(tools);
+    if (script) writeFileSync(join(tools, "bunx"), `#!/bin/sh\n${script}\n`, { mode: 0o755 });
+    const cwd = process.cwd();
+    const saved = { ...process.env };
+    process.chdir(dir);
+    process.env.PATH = [tools, ...(script ? ["/bin", "/usr/bin"] : [])].join(delimiter);
+    process.env.PUPPETEER_CACHE_DIR = cache;
+    delete process.env.CHROME_BINARY;
+    try {
+      expect(chromeBinary()).toBeUndefined();
+      expect(await chromeBinaryAsync()).toBeUndefined();
+      expect(readdirSync(cache)).toEqual([]);
+    } finally {
+      process.chdir(cwd);
+      process.env = saved;
+    }
+  });
+
+  test("Chrome leaves a competing unpack alone when it starts after cache lookup", async () => {
+    const { chromeBinary, chromeBinaryAsync } = await import("../lib/chrome.ts");
+    const dir = temp();
+    const platform =
+      process.platform === "darwin" ? (process.arch === "arm64" ? "mac_arm" : "mac") : "linux";
+    const build = `${platform}-11.0.1`;
+    const tools = join(dir, "bin");
+    mkdirSync(tools);
+    writeFileSync(
+      join(tools, "bunx"),
+      `#!/bin/sh
+while [ "$1" != --path ]; do shift; done
+mkdir -p "$2/chrome/${build}/chrome-x" "$PUPPETEER_CACHE_DIR/chrome/${build}"
+: > "$PUPPETEER_CACHE_DIR/chrome/11.0.1-chrome-x.zip"
+: > "$PUPPETEER_CACHE_DIR/chrome/${build}/unpacking"
+: > "$2/chrome/${build}/chrome-x/chrome"
+printf '%s\\n' "$2/chrome/${build}/chrome-x/chrome"
+`,
+      { mode: 0o755 },
+    );
+    const cwd = process.cwd();
+    const saved = { ...process.env };
+    process.chdir(dir);
+    process.env.PATH = [tools, "/bin", "/usr/bin"].join(delimiter);
+    delete process.env.CHROME_BINARY;
+    try {
+      for (const [kind, binary] of [
+        ["sync", chromeBinary],
+        ["async", chromeBinaryAsync],
+      ] as const) {
+        const cache = join(dir, kind);
+        process.env.PUPPETEER_CACHE_DIR = cache;
+        expect(await binary()).toBeUndefined();
+        expect(readdirSync(cache)).toEqual(["chrome"]);
+        expect(readdirSync(join(cache, "chrome", build))).toEqual(["unpacking"]);
+        expect(existsSync(join(cache, "chrome", "11.0.1-chrome-x.zip"))).toBe(true);
+      }
+    } finally {
+      process.chdir(cwd);
+      process.env = saved;
+    }
+  });
+
+  test.each([
     ["placement", 'printf "%s\\n" "$2/chrome/build/chrome-x/chrome"\n', /ENOENT/],
     [
       "retirement",
@@ -9575,21 +9660,17 @@ describe("chrome", () => {
         process.platform === "darwin" ? (process.arch === "arm64" ? "mac_arm" : "mac") : "linux";
       const build = `${platform}-1.2.3`;
       mkdirSync(join(dir, "bin"));
-      if (script)
-        writeFileSync(
-          join(dir, "bin/bunx"),
-          `#!/bin/sh\nwhile [ "$1" != --path ]; do shift; done\n${script.replace("%BUILD%", build)}`,
-          { mode: 0o755 },
-        );
+      writeFileSync(
+        join(dir, "bin/bunx"),
+        `#!/bin/sh\nwhile [ "$1" != --path ]; do shift; done\n${script.replace("%BUILD%", build)}`,
+        { mode: 0o755 },
+      );
       if (operation === "retirement")
         mkdirSync(join(chromeCache, "chrome", build), { recursive: true });
       const cwd = process.cwd();
       const saved = { ...process.env };
       process.chdir(dir);
-      process.env.PATH = [
-        join(dir, "bin"),
-        ...(operation === "launch" ? [] : ["/bin", "/usr/bin"]),
-      ].join(delimiter);
+      process.env.PATH = [join(dir, "bin"), "/bin", "/usr/bin"].join(delimiter);
       process.env.PUPPETEER_CACHE_DIR = chromeCache;
       delete process.env.CHROME_BINARY;
       try {

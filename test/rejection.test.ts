@@ -11,13 +11,15 @@ test("rejection can describe a resolved BigInt", async () => {
   );
 });
 
-test("rejection propagates a serializer's unexpected TypeError", async () => {
+test("rejection gives the resolved value as text when its serializer throws", async () => {
   const value = {
     toJSON() {
       throw new TypeError("broken serializer");
     },
   };
-  expect(await rejection(rejection(Promise.resolve(value)))).toBe("TypeError: broken serializer");
+  expect(await rejection(rejection(Promise.resolve(value)))).toBe(
+    "Error: expected a rejection, resolved with [object Object]",
+  );
 });
 
 test("rejection can describe a resolved undefined", async () => {

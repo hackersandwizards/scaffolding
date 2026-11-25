@@ -22,10 +22,7 @@ import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { afterAll, describe, expect, it } from "vitest";
 import { jsonObject } from "../lib/json.ts";
-
-// A test's own limit stretches with load as the runner's default does: the gate sets
-// SCAFFOLDING_TEST_TIMEOUT_MS from the machine's load, 5000 on an idle machine.
-const limit = (ms: number) => (ms * Number(process.env.SCAFFOLDING_TEST_TIMEOUT_MS || 5000)) / 5000;
+import { limit } from "./test-timeout.ts";
 
 const SCRIPT = resolve(import.meta.dirname, "../template/.githooks/check-lock.ts");
 
@@ -42,20 +39,33 @@ const lockPath = (): string => {
 
 interface Run {
   status: number;
+  signal: NodeJS.Signals | null;
   stdout: string;
   stderr: string;
 }
 
-const run = (lock: string, args: string[], env: Record<string, string> = {}): Run => {
-  const { status, stdout, stderr } = spawnSync("bun", [SCRIPT, ...args], {
+const run = (
+  lock: string,
+  args: string[],
+  env: Record<string, string> = {},
+  preload?: string,
+): Run => {
+  const options = preload ? ["--preload", preload] : [];
+  const { status, signal, stdout, stderr } = spawnSync("bun", [...options, SCRIPT, ...args], {
     encoding: "utf-8",
     stdio: ["ignore", "pipe", "pipe"],
     env: { ...process.env, CHECK_LOCK: lock, ...env },
     // A wait that never ends would otherwise hang the test past the runner's own timeout.
     timeout: 20_000,
   });
-  return { status: status ?? -1, stdout, stderr };
+  return { status: status ?? -1, signal, stdout, stderr };
 };
+
+function hookPreload(lock: string, source: string): string {
+  const path = `${lock}.preload.ts`;
+  writeFileSync(path, source);
+  return path;
+}
 
 const heldBy = (lock: string, pid: number): void =>
   writeFileSync(lock, JSON.stringify({ pid, startedAt: Date.now() }));
@@ -900,6 +910,41 @@ describe("check-lock wraps a consumer's build", () => {
     expect(result.stdout).toContain("not found");
     expect(result.stdout).not.toContain("output above");
   });
+
+  it.each([
+    ["without a child pid", ["no-such-command-here"], /did not start/],
+    ["when signalling the group is forbidden", ["sh", "-c", "echo ran; exit 7"], /^ran\n/],
+  ] as const)("forwards the hook's interrupt %s", (_, args, output) => {
+    const lock = lockPath();
+    const preload = hookPreload(
+      lock,
+      `
+      import * as cp from "node:child_process";
+      import { mock } from "bun:test";
+      const { spawn } = cp;
+      const kill = process.kill.bind(process);
+      process.kill = (pid, signal) => {
+        if (Number.isNaN(pid)) throw new TypeError("no process group to signal");
+        if (pid < 0 && signal === "SIGTERM")
+          throw Object.assign(new Error("group is owned by another user"), { code: "EPERM" });
+        return kill(pid, signal);
+      };
+      mock.module("node:child_process", () => ({
+        ...cp,
+        spawn(...args) {
+          const child = spawn(...args);
+          queueMicrotask(() => process.emit("SIGTERM", "SIGTERM"));
+          return child;
+        },
+      }));
+    `,
+    );
+    const result = run(lock, [...args], {}, preload);
+    expect(result.signal).toBe("SIGTERM");
+    expect(result.stderr).toBe("");
+    expect(result.stdout).toMatch(output);
+    expect(existsSync(lock)).toBe(false);
+  });
 });
 
 describe("check-lock fails open", () => {
@@ -951,76 +996,106 @@ describe("check-lock fails open", () => {
     expect(run(lock, ["echo", "ran"]).stdout).toContain("ran");
   });
 
-  it("propagates a queue ticket lookup error", () => {
+  it("reports a queue ticket lookup error and still takes the lock", () => {
     const lock = lockPath();
     const queue = `${lock}.queue`;
     mkdirSync(queue);
     const name = "000000000000001-999999";
     symlinkSync(name, join(queue, name));
-    const result = run(lock, ["echo", "ran"]);
-    expect(result.status).toBe(1);
-    expect(result.stderr).toContain("ELOOP");
-    expect(result.stdout).toBe("");
+    const result = run(lock, ["sh", "-c", 'test -f "$1" && echo ran', "sh", lock]);
+    expect(result.status).toBe(0);
+    expect(result.stderr.trim().split("\n")).toEqual([
+      expect.stringMatching(/\[check-lock\] queue failed .*ELOOP.*continuing without queue order/),
+    ]);
+    expect(result.stdout).toBe("ran\n");
   });
 
   it(
-    "propagates a queue ticket cleanup error",
-    async () => {
+    "reports a queue ticket cleanup error and preserves the status under the lock",
+    () => {
       const lock = lockPath();
-      heldBy(lock, process.pid);
-      const waiter = spawn("bun", [SCRIPT, "echo", "ran"], {
-        stdio: ["ignore", "pipe", "pipe"],
-        env: { ...process.env, CHECK_LOCK: lock },
-      });
-      let stdout = "";
-      let stderr = "";
-      waiter.stdout.on("data", (chunk: Buffer) => (stdout += chunk));
-      waiter.stderr.on("data", (chunk: Buffer) => (stderr += chunk));
-      const status = new Promise<number | null>((done) => waiter.on("close", done));
-      const queue = `${lock}.queue`;
-      await until(() => existsSync(queue) && readdirSync(queue).length > 0, "the waiter's ticket");
-      const ticket = join(queue, readdirSync(queue)[0]);
-      rmSync(ticket);
-      mkdirSync(ticket);
-      waiter.kill("SIGTERM");
-      expect(await status, stdout + stderr).toBe(1);
-      expect(stderr).toMatch(/EISDIR|EPERM/);
-      expect(stdout).toBe("");
-    },
-    limit(30_000),
-  );
-
-  it(
-    "stops the command and propagates an annotation write failure",
-    async () => {
-      const lock = lockPath();
-      const holder = spawn("bun", [SCRIPT, "sleep", "60"], {
-        stdio: ["ignore", "ignore", "pipe"],
-        env: { ...process.env, CHECK_LOCK: lock },
-      });
-      let stderr = "";
-      holder.stderr.on("data", (chunk: Buffer) => (stderr += chunk));
-      const status = new Promise<number | null>((done) => holder.on("close", done));
-      await until(
-        () => existsSync(lock) && typeof jsonObject(readFileSync(lock)).group === "number",
-        "the command group",
+      const preload = hookPreload(
+        lock,
+        `
+        import * as fs from "node:fs";
+        import { mock } from "bun:test";
+        const { unlinkSync } = fs;
+        mock.module("node:fs", () => ({
+          ...fs,
+          unlinkSync(path) {
+            unlinkSync(path);
+            fs.mkdirSync(path);
+            unlinkSync(path);
+          },
+        }));
+      `,
       );
-      mkdirSync(`${lock}.${holder.pid}`);
-      holder.kill("SIGTERM");
-      expect(await status).toBe(1);
-      expect(stderr).toContain("EISDIR");
+      const result = run(
+        lock,
+        ["sh", "-c", 'test -f "$1" && echo ran; exit 7', "sh", lock],
+        {},
+        preload,
+      );
+      expect(result.status).toBe(7);
+      expect(result.stderr.trim().split("\n")).toEqual([
+        expect.stringMatching(
+          /\[check-lock\] queue failed .*(EISDIR|EPERM).*continuing without queue order/,
+        ),
+      ]);
+      expect(result.stdout).toMatch(/^ran\n.*failed \(exit 7\)/);
       expect(existsSync(lock)).toBe(false);
     },
     limit(30_000),
   );
 
-  it("propagates a lock release permission error", () => {
+  it(
+    "reports an annotation write failure and lets the child finish under the lock",
+    () => {
+      const lock = lockPath();
+      const preload = hookPreload(
+        lock,
+        `
+        import * as cp from "node:child_process";
+        import { mkdirSync } from "node:fs";
+        import { mock } from "bun:test";
+        const { spawn } = cp;
+        mock.module("node:child_process", () => ({
+          ...cp,
+          spawn(...args) {
+            mkdirSync(process.env.CHECK_LOCK + "." + process.pid);
+            return spawn(...args);
+          },
+        }));
+      `,
+      );
+      const result = run(
+        lock,
+        ["sh", "-c", 'sleep 0.2; test -f "$1" && echo ran; exit 7', "sh", lock],
+        {},
+        preload,
+      );
+      expect(result.status).toBe(7);
+      expect(result.stderr.trim().split("\n")).toEqual([
+        expect.stringMatching(/\[check-lock\] lock annotation failed .*EISDIR.*command continues/),
+      ]);
+      expect(result.stdout).toMatch(/^ran\n.*failed \(exit 7\)/);
+      expect(existsSync(lock)).toBe(false);
+    },
+    limit(30_000),
+  );
+
+  it("reports a lock release permission error and keeps the command's success", () => {
     const lock = lockPath();
     const folder = dirname(lock);
     try {
-      const result = run(lock, ["chmod", "a-w", folder]);
-      expect(result.status).toBe(1);
-      expect(result.stderr).toMatch(/EACCES|EPERM/);
+      const result = run(lock, ["sh", "-c", 'chmod a-w "$1" && echo ran', "sh", folder]);
+      expect(result.status).toBe(0);
+      expect(result.stderr.trim().split("\n")).toEqual([
+        expect.stringMatching(
+          /\[check-lock\] lock release failed .*(EACCES|EPERM).*keeps its exit status/,
+        ),
+      ]);
+      expect(result.stdout).toBe("ran\n");
       expect(existsSync(lock)).toBe(true);
     } finally {
       chmodSync(folder, 0o700);
@@ -1030,7 +1105,20 @@ describe("check-lock fails open", () => {
   it("runs immediately when the lock path is unusable", () => {
     const started = Date.now();
     const result = run("/nonexistent-directory/impossible.lock", ["echo", "ran"]);
-    expect(result.stdout).toContain("ran");
+    expect(result.status).toBe(0);
+    expect(result.stdout).toBe("ran\n");
+    expect(result.stderr).toMatch(/\[check-lock\] lock unusable .*running "echo ran" unserialised/);
     expect(Date.now() - started).toBeLessThan(30_000);
+  });
+
+  it("reports an unexpected acquisition error and runs without the lock", () => {
+    const loop = join(dirname(lockPath()), "loop");
+    symlinkSync("loop", loop);
+    const result = run(join(loop, "check.lock"), ["sh", "-c", "echo ran; exit 7"]);
+    expect(result.status).toBe(7);
+    expect(result.stderr.trim().split("\n")).toEqual([
+      expect.stringMatching(/\[check-lock\] lock unusable .*ELOOP.*unserialised/),
+    ]);
+    expect(result.stdout).toMatch(/^ran\n.*failed \(exit 7\)/);
   });
 });

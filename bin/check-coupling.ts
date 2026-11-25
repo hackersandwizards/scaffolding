@@ -109,6 +109,14 @@ const ours = (name: string) => name.startsWith("@hackersandwizards") || pinnedOu
 const leaves = "path leaves the repository; take it from the package its owner publishes";
 const isOutsideCheckout = (target: string, base = root) =>
   target !== base && !target.startsWith(`${base}/`);
+function keepQuotedText(comment: string, kept = "", at: number, all: string): string {
+  // A line mark after an unclosed quote (`x//y`) sits in a string: code follows.
+  let open = "";
+  for (const c of all.slice(all.lastIndexOf("\n", at) + 1, at) + kept)
+    if (open ? c === open : "\"'`".includes(c)) open = open ? "" : c;
+  return open && !comment.startsWith("/*", kept.length) ? comment : kept;
+}
+
 for (const path of listFiles(root, staged)) {
   if (!SCANNED.test(path) || SKIPPED.test(path)) continue;
   // An allow entry names the path it excuses; no rule reads it.
@@ -147,17 +155,7 @@ for (const path of listFiles(root, staged)) {
   // without using it.
   if (text.includes("node_modules"))
     for (const line of (path.endsWith(".py") ? text.replace(DOCSTRING, "$1") : text)
-      .replace(
-        commentSyntax(path),
-        (comment: string, captured: unknown, at: number, all: string) => {
-          // A line mark after an unclosed quote (`x//y`) sits in a string: code follows.
-          const kept = typeof captured === "string" ? captured : "";
-          let open = "";
-          for (const c of all.slice(all.lastIndexOf("\n", at) + 1, at) + kept)
-            if (open ? c === open : "\"'`".includes(c)) open = open ? "" : c;
-          return open && !comment.startsWith("/*", kept.length) ? comment : kept;
-        },
-      )
+      .replace(commentSyntax(path), keepQuotedText)
       .split("\n"))
       for (const m of line.matchAll(INSTALLED)) {
         if (!ours(m[1]!) || m[1] === own || line.slice(0, m.index).includes("@source")) continue;
