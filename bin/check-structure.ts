@@ -16,10 +16,9 @@ import {
   writeFileSync,
 } from "node:fs";
 import { basename, dirname, join, posix } from "node:path";
-import type { Node } from "typescript";
 import own from "../package.json";
 import skeleton from "../skeleton.json";
-import { brandProblem, browserTestProblem, placedSteps, vitestRun } from "../lib/gate-config.ts";
+import { brandProblem, browserTestProblem, vitestRun } from "../lib/gate-config.ts";
 import { renderGuides } from "../lib/guides.ts";
 import { help } from "../lib/help.ts";
 import { lintOverlaps } from "../lib/lint-disjoint.ts";
@@ -29,7 +28,6 @@ import {
   finish,
   git,
   installedCommit,
-  isObject,
   isReason,
   jsonObject,
   listFiles,
@@ -38,6 +36,7 @@ import {
   tagCommit,
   type Finding,
 } from "../lib/repo.ts";
+import * as structureConfig from "../lib/structure-config.ts";
 
 help("check-structure");
 const started = performance.now();
@@ -47,10 +46,10 @@ const home = join(import.meta.dir, "..");
 const findings: Finding[] = [];
 // Repairs run after applyAllow, so --fix never writes a path an allow entry keeps.
 const repairs = new Map<Finding, () => unknown>();
-const add = (path: string, message: string, text = "", repair?: () => unknown) => {
+const add = (path: string, message: string, text = ""): Finding => {
   const finding: Finding = { check: "structure", path, text, message };
   findings.push(finding);
-  if (repair) repairs.set(finding, repair);
+  return finding;
 };
 const at = (path: string) => join(root, path);
 const exists = (path: string) => {
@@ -74,33 +73,29 @@ const exempt: { absent: string[]; optional: string[] } =
   pkg.scaffolding?.private === true ? skeleton.private : { absent: [], optional: [] };
 for (const path of exempt.absent)
   if (exists(path))
-    add(path, "not kept in a private repository (check-structure --fix)", "", () =>
+    repairs.set(add(path, "not kept in a private repository (check-structure --fix)"), () =>
       rmSync(at(path)),
     );
 for (const path of skeleton.same.filter((p) => !exempt.absent.includes(p))) {
   const template = join(home, "template", path);
   if (exists(path) && readFileSync(at(path)).equals(readFileSync(template))) continue;
-  add(
-    path,
-    exists(path)
-      ? "differs from the skeleton (check-structure --fix)"
-      : "missing (check-structure --fix)",
-    "",
-    () => {
-      mkdirSync(dirname(at(path)), { recursive: true });
-      copyFileSync(template, at(path));
-    },
-  );
+  const message = exists(path)
+    ? "differs from the skeleton (check-structure --fix)"
+    : "missing (check-structure --fix)";
+  repairs.set(add(path, message), () => {
+    mkdirSync(dirname(at(path)), { recursive: true });
+    copyFileSync(template, at(path));
+  });
 }
 // Git skips a hook that is not executable, with a hint, and commits unchecked: the same bytes stored
 // or checked out 100644 passed as equal.
 for (const path of skeleton.same.filter((p) => p.startsWith(".githooks/"))) {
   if (!exists(path)) continue;
-  const [, mode, blob] = /^(\d+) (\S+)/.exec(
+  const { mode, blob } = structureConfig.hookIndexMode(
     git(["ls-files", "-s", "--", `:(literal)${path}`], root).toString(),
-  ) ?? [undefined, undefined, undefined];
+  );
   if (statSync(at(path)).mode & 0o100 && mode !== "100644") continue;
-  add(path, "a hook is executable (check-structure --fix)", mode ?? "", () => {
+  repairs.set(add(path, "a hook is executable (check-structure --fix)", mode ?? ""), () => {
     chmodSync(at(path), 0o755);
     // The mode alone, as for a bin file: --chmod would stage the file's uncommitted content too.
     if (mode === "100644") git(["update-index", "--cacheinfo", `100755,${blob},${path}`], root);
@@ -119,29 +114,15 @@ for (const path of skeleton.owned) {
     add(path, "no installed commit to pin: install the package from its Git tag");
     continue;
   }
-  const [before = "", after = ""] = template.split("{{commit}}");
-  const text = readFileSync(at(path), "utf8");
-  const pinned = text.slice(before.length, text.length - after.length);
-  if (
-    text.startsWith(before) &&
-    text.endsWith(after) &&
-    /^[0-9a-f]{40}$/.test(pinned) &&
-    pinned.startsWith(commit)
-  )
+  if (structureConfig.ownedTemplateMatches(readFileSync(at(path), "utf8"), template, commit))
     continue;
-  add(path, "differs from the skeleton (check-structure --fix)", "", () =>
+  repairs.set(add(path, "differs from the skeleton (check-structure --fix)"), () =>
     writeFileSync(at(path), template.replace("{{commit}}", tagCommit(own.version, commit))),
   );
 }
 for (const path of skeleton.present)
   if (!exists(path) && !exempt.optional.includes(path))
-    add(
-      path,
-      "missing: create this required skeleton file (see @hackersandwizards/scaffolding skeleton.json)" +
-        (path === "LICENSE"
-          ? ", or if this is a private repository and LICENSE is missing, set scaffolding.private: true in package.json"
-          : ""),
-    );
+    add(path, structureConfig.missingSkeletonFileMessage(path));
 for (const path of skeleton.absent)
   if (exists(path))
     add(
@@ -152,7 +133,7 @@ for (const path of skeleton.absent)
 const lintEnabled = !isReason(pkg.scaffolding?.skip?.lint);
 if (lintEnabled) {
   if (!exists(oxlintConfig))
-    add(oxlintConfig, "missing (check-structure --fix)", "", () =>
+    repairs.set(add(oxlintConfig, "missing (check-structure --fix)"), () =>
       copyFileSync(join(home, "template", oxlintConfig), at(oxlintConfig)),
     );
   else {
@@ -169,46 +150,29 @@ for (const [path, target] of Object.entries(skeleton.symlinks)) {
   if (!exists(path) && !exists(posix.join(posix.dirname(path), target))) continue;
   if (exists(path) && lstatSync(at(path)).isSymbolicLink() && readlinkSync(at(path)) === target)
     continue;
-  add(
+  const finding = add(
     path,
     `must be a symlink to ${target}: if missing, run check-structure --fix; if a regular file or wrong target exists there, remove it and create the symlink with \`ln -s ${target} ${path}\``,
-    "",
-    exists(path)
-      ? undefined
-      : () => {
-          mkdirSync(dirname(at(path)), { recursive: true });
-          symlinkSync(target, at(path));
-        },
   );
+  if (!exists(path))
+    repairs.set(finding, () => {
+      mkdirSync(dirname(at(path)), { recursive: true });
+      symlinkSync(target, at(path));
+    });
 }
 
-// Prettier's own resolution, so the rules count from any config form, the shared one included.
-const prettierEntry = join(root, "node_modules/prettier/index.mjs");
-const loaded: unknown = await import(existsSync(prettierEntry) ? prettierEntry : "prettier").catch(
-  () => undefined,
-);
-const isPrettier = (module: unknown): module is typeof import("prettier") =>
-  isObject(module) &&
-  typeof module.resolveConfig === "function" &&
-  typeof module.format === "function";
-const prettier = isPrettier(loaded) ? loaded : undefined;
+const prettier = await structureConfig.loadPrettier(root);
 if (!prettier) add("prettier config", "prettier not installed: bun install");
 else {
   const rc: Record<string, unknown> = (await prettier.resolveConfig(at("package.json"))) ?? {};
-  for (const [key, value] of Object.entries(skeleton.prettier))
-    if (rc[key] !== value)
-      add(
-        "prettier config",
-        `${key} must be ${JSON.stringify(value)}: update prettier.config.js (or re-export @hackersandwizards/scaffolding/prettier) so ${key} is ${JSON.stringify(value)}`,
-        `${key}: ${JSON.stringify(rc[key])}`,
-      );
+  for (const hit of structureConfig.prettierConfigFindings(rc, skeleton.prettier))
+    add(hit.path, hit.message, hit.text);
 }
 
 // A block every repository keeps alike inside a file that is otherwise its own: the skeleton's value
 // at each key path; where that value is a list, each of its items, beside the repository's own,
 // an item with the same `matcher` as one of the skeleton's being an older copy of it. --fix writes
 // them in, formatted as the repository's prettier would.
-const same = (a: unknown, b: unknown) => JSON.stringify(a) === JSON.stringify(b);
 for (const [path, keys] of Object.entries(skeleton.entries)) {
   if (!exists(path)) continue;
   const template = jsonObject(readFileSync(join(home, "template", path)));
@@ -218,134 +182,46 @@ for (const [path, keys] of Object.entries(skeleton.entries)) {
   } catch {
     file = undefined;
   }
-  const differ: string[] = [];
-  for (const key of keys) {
-    // The object holding the key, created on the way where missing; none where a value in the way
-    // is no object, which no repair can mend.
-    let holder: unknown = file;
-    for (const k of key.slice(0, -1)) holder = isObject(holder) ? (holder[k] ??= {}) : undefined;
-    const want = key.reduce<unknown>((v, k) => (v as Record<string, unknown>)[k], template);
-    if (!isObject(holder)) {
-      add(
-        path,
-        `${key.join(".")} sits in no JSON object: repair the JSON syntax in this file so every parent of ${key.join(".")} is an object ({}), then run check-structure --fix`,
-      );
-      continue;
-    }
-    const has = holder[key.at(-1)!];
-    if (Array.isArray(want)) {
-      const wanted: unknown[] = want;
-      const ours = (o: unknown) =>
-        wanted.some(
-          (item) => same(o, item) || (isObject(o) && isObject(item) && o.matcher === item.matcher),
-        );
-      const kept: unknown[] = Array.isArray(has) ? has : [];
-      const merged = [...wanted, ...kept.filter((o) => !ours(o))];
-      if (same(has, merged)) continue;
-      holder[key.at(-1)!] = merged;
-    } else if (same(has, want)) continue;
-    else holder[key.at(-1)!] = want;
-    differ.push(key.join("."));
-  }
+  const { invalidParents, differ } = structureConfig.mergeSkeletonEntries(file, template, keys);
+  for (const key of invalidParents)
+    add(
+      path,
+      `${key} sits in no JSON object: repair the JSON syntax in this file so every parent of ${key} is an object ({}), then run check-structure --fix`,
+    );
   if (differ.length)
-    add(path, "differs from the skeleton (check-structure --fix)", differ.join(", "), async () => {
-      const text = `${JSON.stringify(file, null, 2)}\n`;
-      const options = { ...(await prettier?.resolveConfig(at(path))), filepath: at(path) };
-      writeFileSync(at(path), prettier ? await prettier.format(text, options) : text);
-    });
-}
-function usesSharedVitest(config: string): boolean {
-  const specifier = "@hackersandwizards/scaffolding/vitest";
-  if (!config.includes(specifier)) return false;
-  // Read the static export forms after Bun strips comments and TypeScript syntax.
-  let js: string;
-  try {
-    js = new Bun.Transpiler({ loader: "ts" }).transformSync(config);
-  } catch {
-    return false;
-  }
-  if (/^export \{ default \} from "@hackersandwizards\/scaffolding\/vitest";$/m.test(js))
-    return true;
-  const imported = js.match(
-    /^import ([\w$]+) from "@hackersandwizards\/scaffolding\/vitest";$/m,
-  )?.[1];
-  const used = js.match(/^export default (?:mergeConfig\(([\w$]+),|([\w$]+);$)/m);
-  return imported !== undefined && imported === (used?.[1] ?? used?.[2]);
-}
-
-function runsMutationWrapper(script: unknown): boolean {
-  if (typeof script !== "string") return false;
-  const command = script.match(
-    /^\s*(?:env\s+)?(?:[a-zA-Z_]\w*=(?:'[^']*'|"[^"]*"|[^\s'";&|<>])*\s+)*(?:bun\s+(?:(?:run|--bun|--no-env-file)\s+)*)?(['"]?)([^\s'";&|<>]+)\1(?=$|[\s;&|<>])/,
-  )?.[2];
-  return (
-    command === "scaffolding-mutation" ||
-    (root === home && command === own.bin["scaffolding-mutation"])
-  );
-}
-
-async function checkMutationRanges(path: string) {
-  const ts = await import("typescript");
-  const text = readFileSync(at(path), "utf8");
-  const config = path.endsWith(".json")
-    ? ts.parseJsonText(path, text)
-    : ts.createSourceFile(path, text, ts.ScriptTarget.Latest);
-  const visit = (node: Node) => {
-    if (
-      ts.isPropertyAssignment(node) &&
-      (ts.isIdentifier(node.name) || ts.isStringLiteral(node.name)) &&
-      node.name.text === "mutate" &&
-      ts.isArrayLiteralExpression(node.initializer)
-    )
-      for (const entry of node.initializer.elements)
-        if (ts.isStringLiteralLike(entry) && /:\d+(?::\d+)?-\d+(?::\d+)?$/.test(entry.text))
-          add(
-            path,
-            "mutate must select whole files, without line ranges: remove the :start-end suffix from the mutate entry in the Stryker config so the entire file is mutated",
-            entry.text,
-          );
-    ts.forEachChild(node, visit);
-  };
-  visit(config);
+    repairs.set(
+      add(path, "differs from the skeleton (check-structure --fix)", differ.join(", ")),
+      async () => {
+        const text = `${JSON.stringify(file, null, 2)}\n`;
+        const options = { ...(await prettier?.resolveConfig(at(path))), filepath: at(path) };
+        writeFileSync(at(path), prettier ? await prettier.format(text, options) : text);
+      },
+    );
 }
 
 if (existsSync(at("package.json"))) {
-  if (pkg.type !== skeleton.package.type)
-    add(
-      "package.json",
-      `type must be ${skeleton.package.type}: set "type": ${JSON.stringify(skeleton.package.type)} in package.json`,
-    );
-  if (pkg.engines?.npm !== skeleton.package["engines.npm"])
-    add(
-      "package.json",
-      `engines.npm must be ${skeleton.package["engines.npm"]}: set "engines": { "npm": ${JSON.stringify(skeleton.package["engines.npm"])} } in package.json`,
-    );
-  if (pkg.packageManager !== own.packageManager)
-    add(
-      "package.json",
-      `packageManager must be ${own.packageManager}: set "packageManager": ${JSON.stringify(own.packageManager)} in package.json`,
-      String(pkg.packageManager),
-    );
-  const surface = !isReason(pkg.scaffolding?.skip?.catalog);
-  const scripts = [...skeleton.package.scripts, ...(surface ? skeleton.catalog.scripts : [])];
-  for (const script of scripts)
-    if (!pkg.scripts?.[script])
-      add(
-        "package.json",
-        `script ${script} missing: add "${script}" under "scripts" in package.json (or if this is a catalog script and the repo has no catalog, set scaffolding.skip.catalog with a reason)`,
-        script,
-      );
-  const strykerConfigs = listFiles(root, false).filter((path) =>
-    /^(?:stryker\.config\..+|\.?stryker\.(?:conf|config)\.(?:[cm]?js|json))$/.test(basename(path)),
-  );
-  const hasStryker =
-    [pkg.dependencies, pkg.devDependencies, pkg.optionalDependencies, pkg.peerDependencies].some(
-      (deps) =>
-        isObject(deps) && Object.keys(deps).some((name) => name.startsWith("@stryker-mutator/")),
-    ) || strykerConfigs.length > 0;
-  if (hasStryker && !runsMutationWrapper(pkg.scripts?.mutation))
+  const expectedPkg = {
+    ...skeleton.package,
+    packageManager: own.packageManager,
+    catalogScripts: skeleton.catalog.scripts,
+  };
+  for (const hit of structureConfig.packageManifestFindings(pkg, expectedPkg))
+    add(hit.path, hit.message, hit.text);
+  const strykerConfigs = listFiles(root, false).filter(structureConfig.isStrykerConfigPath);
+  const hasStryker = structureConfig.hasStrykerDependency(pkg) || strykerConfigs.length > 0;
+  const ownMutationBin = root === home ? own.bin["scaffolding-mutation"] : undefined;
+  if (hasStryker && !structureConfig.runsMutationWrapper(pkg.scripts?.mutation, ownMutationBin))
     add("package.json", 'set scripts.mutation to "mutation": "scaffolding-mutation"');
-  for (const path of strykerConfigs) await checkMutationRanges(path);
+  for (const path of strykerConfigs)
+    for (const entry of await structureConfig.mutationLineRangeEntries(
+      path,
+      readFileSync(at(path), "utf8"),
+    ))
+      add(
+        path,
+        "mutate must select whole files, without line ranges: remove the :start-end suffix from the mutate entry in the Stryker config so the entire file is mutated",
+        entry,
+      );
   // The gate stretches a test's limit under load only through this variable, and no runner reads it
   // unasked: bun takes it as a flag, vitest from its config.
   const config = pkg.scaffolding ?? {};
@@ -356,20 +232,8 @@ if (existsSync(at("package.json"))) {
   const test = browser ? `bun ${vitestRun.join(" ")}` : config.test;
   if (test && (browserEnabled || !isReason(config.skip?.test))) {
     const configs = readdirSync(root).filter((p) => /^vite(?:st)?\.config\.[cm]?[jt]s$/.test(p));
-    // The command, and each script it runs, at any depth: the value itself where it names one, as
-    // the gate runs it, and each `run <name>` (`bun run test` naming `test:unit`). `bun test` is
-    // bun's runner, never the script named test.
-    const scripts: Record<string, string> = pkg.scripts ?? {};
-    const script = (name: string) => (Object.hasOwn(scripts, name) ? [scripts[name]] : []);
-    const read = [test, ...script(test)];
-    for (const text of read)
-      for (const [, name] of text.matchAll(/\brun\s+(?:--?\S+\s+)*([^\s;&|]+)/g))
-        for (const found of script(name)) if (!read.includes(found)) read.push(found);
     const configTexts = configs.map((p) => readFileSync(at(p), "utf8"));
-    if (
-      ![...read, ...configTexts].some((text) => text.includes("SCAFFOLDING_TEST_TIMEOUT_MS")) &&
-      !configTexts.some(usesSharedVitest)
-    )
+    if (!structureConfig.testTimeoutConfigured(test, pkg.scripts ?? {}, configTexts))
       add(
         "package.json",
         "scaffolding.test passes no SCAFFOLDING_TEST_TIMEOUT_MS on: bun test --timeout ${SCAFFOLDING_TEST_TIMEOUT_MS:-5000}, vitest's testTimeout read from it, or the shared Vitest base",
@@ -378,43 +242,26 @@ if (existsSync(at("package.json"))) {
   }
   const brand = brandProblem(pkg);
   if (brand) add("package.json", brand);
-  for (const step of (pkg.scaffolding?.check ?? []).flat())
-    if (!placedSteps.has(step) && (!/^check:[a-z0-9][\w:-]*$/.test(step) || !pkg.scripts?.[step]))
-      add(
-        "package.json",
-        "a step of scaffolding.check is a script named check:<what>: rename the step and its package.json script to check:<what>, or use a built-in placed step (colours, copies, retired, elements, links, browser-test)",
-        step,
-      );
+  for (const hit of structureConfig.checkStepFindings(pkg)) add(hit.path, hit.message, hit.text);
   // bun marks a `bin` file executable only as it installs the package, so one stored 100644 is not
   // executable in the checkout, in a copy or behind a link.
-  const bins = new Set(
-    (typeof pkg.bin === "string" ? [pkg.bin] : Object.values(pkg.bin ?? {})).map((p) =>
-      posix.normalize(String(p)),
-    ),
-  );
-  const listed = bins.size
-    ? git(["ls-files", "-s", "-z", "--", ...[...bins].map((p) => `:(literal)${p}`)], root)
+  const bins = structureConfig.normalizedBinPaths(pkg);
+  const listed = bins.length
+    ? git(["ls-files", "-s", "-z", "--", ...bins.map((p) => `:(literal)${p}`)], root)
     : "";
-  for (const entry of listed.toString().split("\0").filter(Boolean)) {
-    const [, mode, blob, stage, path] = /^(\d+) (\S+) (\d)\t(.*)$/s.exec(entry)!;
-    // An unmerged path waits for its merge.
-    if (mode === "100644" && stage === "0")
-      add(path, "a bin file is stored executable (check-structure --fix)", mode, () => {
-        chmodSync(at(path), 0o755);
-        // --chmod would stage the file's uncommitted content too.
-        git(["update-index", "--cacheinfo", `100755,${blob},${path}`], root);
-      });
-  }
-  if (surface) {
+  for (const { mode, blob, path } of structureConfig.nonExecutableIndexEntries(listed.toString()))
+    repairs.set(add(path, "a bin file is stored executable (check-structure --fix)", mode), () => {
+      chmodSync(at(path), 0o755);
+      // --chmod would stage the file's uncommitted content too.
+      git(["update-index", "--cacheinfo", `100755,${blob},${path}`], root);
+    });
+  if (!isReason(pkg.scaffolding?.skip?.catalog)) {
     // An Astro app in any folder, rooted at its config's folder.
     const { configs, preset } = skeleton.catalog;
-    const uses = new RegExp(`from\\s*["']${preset.replace(/[/.]/g, "\\$&")}["']`);
     const found = listFiles(root, false).filter((p) => configs.includes(basename(p)));
-    if (!found.some((path) => uses.test(readFileSync(at(path), "utf8"))))
-      add(
-        found[0] ?? `catalog/${configs[0]}`,
-        `the Astro config must use the catalog preset from ${preset}: import { catalog } from "${preset}" and add catalog(...) to integrations in the Astro config, or set scaffolding.skip.catalog with a reason in package.json if this repo has no UI catalog`,
-      );
+    const texts = found.map((path) => readFileSync(at(path), "utf8"));
+    if (!structureConfig.hasCatalogPresetImport(texts, preset))
+      add(found[0] ?? `catalog/${configs[0]}`, structureConfig.catalogPresetMissingMessage(preset));
   }
 }
 
@@ -423,10 +270,12 @@ const hooks = spawnSync("git", ["config", "core.hooksPath"], {
   encoding: "utf8",
 }).stdout.trim();
 if (hooks !== skeleton.hooksPath)
-  add(
-    ".git/config",
-    `core.hooksPath must be ${skeleton.hooksPath} (bun install runs prepare)`,
-    hooks,
+  repairs.set(
+    add(
+      ".git/config",
+      `core.hooksPath must be ${skeleton.hooksPath} (bun install runs prepare)`,
+      hooks,
+    ),
     () => git(["config", "core.hooksPath", skeleton.hooksPath], root),
   );
 
@@ -452,14 +301,10 @@ if (lintEnabled && exists(oxlintConfig) && !remaining.some(({ path }) => path ==
     });
   }
 }
-const genericFolders = new Set<string>();
-for (const path of git(["ls-files", "--cached", "--deduplicate", "-z"], root)
-  .toString()
-  .split("\0"))
-  for (let folder = posix.dirname(path); folder !== "."; folder = posix.dirname(folder))
-    if (/^(?:utils|helpers|common|shared|core)$/i.test(posix.basename(folder)))
-      genericFolders.add(folder);
-for (const folder of [...genericFolders].sort())
+const genericFolders = structureConfig.findGenericFolders(
+  git(["ls-files", "--cached", "--deduplicate", "-z"], root).toString().split("\0"),
+);
+for (const folder of genericFolders)
   remaining.push({
     check: "structure",
     prefix: "structure",
@@ -471,5 +316,5 @@ finish(
   "check-structure",
   remaining,
   started,
-  genericFolders.size ? renderGuides(["generic-folder"]) : "",
+  genericFolders.length ? renderGuides(["generic-folder"]) : "",
 );
