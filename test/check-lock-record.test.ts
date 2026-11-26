@@ -1,3 +1,5 @@
+import { failParsingInput } from "./json-parse-fault.ts";
+import { readHolder as readHookHolder } from "../.githooks/check-lock-record.ts";
 import { createHash } from "node:crypto";
 import { existsSync, mkdirSync, readFileSync, statSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
@@ -101,3 +103,16 @@ test.each([{ code: "EPERM", expected: true }])(
     expect(kill).toHaveBeenCalledWith(17, 0);
   },
 );
+
+test.each([
+  ["hook", readHookHolder],
+  ["template", readHolder],
+] as const)("the %s holder parser propagates unexpected parser failures", (_copy, read) => {
+  using fixture = testDirectory();
+  const path = join(fixture.folder, "check.lock");
+  const value = '{"pid":109,"startedAt":2}';
+  writeFileSync(path, value);
+  const failure = new RangeError("holder parser failed");
+  using _parse = failParsingInput(value, failure);
+  expect(() => read(path)).toThrow(failure);
+});

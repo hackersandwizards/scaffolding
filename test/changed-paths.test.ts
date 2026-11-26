@@ -1,3 +1,5 @@
+import { entry, runTool, writeToolFixture, fixtureGit } from "./preloaded-check.ts";
+import { testDirectory } from "./test-directory.ts";
 import { spawnSync } from "node:child_process";
 import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -203,4 +205,65 @@ test("collectWorkingTreeChangesWithShell includes shell inputs for changed worki
       since: "HEAD",
     });
   });
+});
+
+function writeChangedShellFixture(folder: string) {
+  writeToolFixture(folder, {
+    "package.json": JSON.stringify({
+      scaffolding: {
+        skip: { test: "Fixture has no test script", admin: "Fixture has no admin items" },
+      },
+    }),
+    "tool.sh": "#!/bin/sh\ntrue\n",
+  });
+  writeFileSync(join(folder, "tool.sh"), "#!/bin/sh\nfalse\n");
+  fixtureGit(folder, "commit", "-qam", "change shell input");
+  writeFileSync(join(folder, "tool.sh"), "#!/bin/sh\ntrue\n");
+}
+
+test.each([
+  { mode: "working tree", range: [] },
+  { mode: "push range", range: ["HEAD^..HEAD"] },
+])("unexpected shell input failure surfaces for the $mode", ({ range }) => {
+  using dir = testDirectory();
+  writeChangedShellFixture(dir.folder);
+  const shell = JSON.stringify(join(import.meta.dirname, "..", "lib", "shell-inputs.ts"));
+  const result = runTool(
+    dir.folder,
+    `import * as cp from "node:child_process";
+import { mock } from "bun:test";
+mock.module("node:child_process", () => ({ ...cp, spawn() {
+  throw new Error("fixture should stop before starting checks");
+} }));
+const shell = await import(${shell});
+mock.module(${shell}, () => ({ ...shell, gitShellScripts() {
+  throw new Error("shell input fault");
+} }));`,
+    [entry("scaffolding"), "check", "--changed", ...range, "--locked"],
+  );
+  expect(result.stderr).toContain("shell input fault");
+  expect(result.status).toBe(1);
+});
+
+test("a Git launch failure with a filesystem error code surfaces during shell discovery", () => {
+  using dir = testDirectory();
+  writeChangedShellFixture(dir.folder);
+  const result = runTool(
+    dir.folder,
+    `import * as cp from "node:child_process";
+import { mock } from "bun:test";
+const { spawnSync } = cp;
+mock.module("node:child_process", () => ({
+  ...cp,
+  spawn() { throw new Error("fixture should stop before starting checks"); },
+  spawnSync(command, args, options) {
+    if (command === "git" && args[0] === "ls-tree")
+      return { status: null, error: Object.assign(new Error("Git launch fault"), { code: "EACCES" }) };
+    return spawnSync(command, args, options);
+  },
+}));`,
+    [entry("scaffolding"), "check", "--changed", "--locked"],
+  );
+  expect(result.stderr).toContain("Git launch fault");
+  expect(result.status).toBe(1);
 });

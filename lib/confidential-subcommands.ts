@@ -9,7 +9,7 @@ import {
   parsePrepushRefs,
   type PurgedHashList,
 } from "./confidential-git.ts";
-import { parsePurgedList } from "./confidential-input.ts";
+import { parsePurgedList, PurgedListFormatError } from "./confidential-input.ts";
 import {
   collectPublishedGrams,
   createTermHasher,
@@ -75,10 +75,11 @@ export function parsePurgedHashEntry(
 ): { entry?: PurgedHashList; finding?: Finding } {
   // `purged <sha> > .confidential-purged.json` leaves the file empty where it fails.
   if (!raw.trim()) return {};
+  let list: ReturnType<typeof parsePurgedList>;
   try {
-    const { salt, hashes } = parsePurgedList(raw);
-    return { entry: { bad: new Set(hashes), hash: createTermHasher(salt) } };
-  } catch {
+    list = parsePurgedList(raw);
+  } catch (error) {
+    if (!(error instanceof SyntaxError || error instanceof PurgedListFormatError)) throw error;
     return {
       finding: {
         check: "confidential",
@@ -88,6 +89,7 @@ export function parsePurgedHashEntry(
       },
     };
   }
+  return { entry: { bad: new Set(list.hashes), hash: createTermHasher(list.salt) } };
 }
 
 export function hasLfsTrackedChanges(

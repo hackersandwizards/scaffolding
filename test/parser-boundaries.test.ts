@@ -151,3 +151,22 @@ test("export targets do not follow properties on a callable value", () => {
   const callable = Object.assign(() => undefined, { import: "./example.js" });
   expect(exportTargets(callable)).toEqual([]);
 });
+
+function failLicenceLookup(failure: Error) {
+  const has = Set.prototype.has;
+  return vi.spyOn(Set.prototype, "has").mockImplementation(function (this: Set<unknown>, key) {
+    if (key === "MIT") throw failure;
+    return has.call(this, key);
+  });
+}
+
+test("licence expressions propagate unexpected allow-set failures", () => {
+  const failure = new RangeError("licence lookup failed");
+  using _find = failLicenceLookup(failure);
+  expect(() => licenceAllowed("MIT")).toThrow(failure);
+});
+
+test("licence expressions reject deeply nested unclosed groups", () => {
+  const expression = "(".repeat(100_000) + "MIT";
+  expect(licenceAllowed(expression)).toBe(false);
+});

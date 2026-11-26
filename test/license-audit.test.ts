@@ -1,3 +1,4 @@
+import { failParsingInput } from "./json-parse-fault.ts";
 import { expect, test } from "vitest";
 import {
   auditPackageLicenses,
@@ -250,4 +251,13 @@ test("auditPackageLicenses reports invalid, disallowed, then unused findings in 
   expect(ordered[1]).toContain("bad-pkg@1.0.0");
   expect(ordered[2]).toContain('scaffolding.licenses["invalid"] matches no installed package');
   expect(ordered[3]).toContain('scaffolding.licenses["absent"] matches no installed package');
+});
+
+test("licence command output propagates unexpected parser failures", () => {
+  const stdout = '{"MIT":[{"name":"example","license":"MIT"}]}';
+  const failure = new RangeError("licence output parser failed");
+  using _parse = failParsingInput(stdout, failure);
+  expect(() => parseLicenseCommandOutput({ status: 0, stdout, stderr: "" }, () => [])).toThrow(
+    failure,
+  );
 });

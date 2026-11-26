@@ -432,3 +432,33 @@ test.each([1, 2])("check-links honors --concurrency %i", async (concurrency) => 
   expect(result.status, result.stderr).toBe(0);
   expect(peak).toBe(concurrency);
 });
+
+test("serve surfaces an unexpected error signalling its server", () => {
+  const serveModule = join(import.meta.dirname, "../lib/serve.ts");
+  const source = `
+    import * as childProcess from "node:child_process";
+    import { EventEmitter } from "node:events";
+    import { mock } from "bun:test";
+    mock.module("node:child_process", () => ({
+      ...childProcess,
+      spawn: () => Object.assign(new EventEmitter(), { pid: 99, kill: () => true }),
+    }));
+    globalThis.fetch = async () => new Response();
+    const unexpected = new Error("unexpected signal error");
+    process.kill = () => {
+      console.log("signal probe invoked");
+      throw unexpected;
+    };
+    const { serve } = await import(${JSON.stringify(serveModule)});
+    const { stop } = await serve(["fixture-server"]);
+    try {
+      stop();
+    } catch (error) {
+      if (error === unexpected) console.error("same signal error surfaced");
+      throw error;
+    }`;
+  const result = Bun.spawnSync([process.execPath, "--no-env-file", "-e", source]);
+  expect(result.stdout.toString()).toBe("signal probe invoked\n");
+  expect(result.exitCode, result.stderr.toString()).toBe(1);
+  expect(result.stderr.toString()).toMatch(/^same signal error surfaced$/m);
+});

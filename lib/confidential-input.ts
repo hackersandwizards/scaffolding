@@ -1,9 +1,13 @@
-import { isObject, isStrings, jsonObject } from "./json.ts";
+import { isObject, isStrings } from "./json.ts";
+
+export class PurgedListFormatError extends Error {}
 
 export function parsePurgedList(text: string) {
-  const { salt, hashes } = jsonObject(text);
+  const parsed: unknown = JSON.parse(text);
+  if (!isObject(parsed)) throw new PurgedListFormatError("the JSON holds no object");
+  const { salt, hashes } = parsed;
   if (typeof salt !== "string" || !isStrings(hashes))
-    throw new Error("expected a salt and a list of hashes");
+    throw new PurgedListFormatError("expected a salt and a list of hashes");
   return { salt, hashes };
 }
 

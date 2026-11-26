@@ -1,5 +1,8 @@
+import { mkdirSync, writeFileSync } from "node:fs";
+import { rejection } from "../lib/rejection.ts";
+import { testDirectory } from "./test-directory.ts";
 import { join } from "node:path";
-import { expect, test } from "vitest";
+import { expect, test, vi } from "vitest";
 import skeleton from "../skeleton.json";
 import {
   catalogPresetMissingMessage,
@@ -388,4 +391,24 @@ test.each([
 
 test("catalogPresetMissingMessage names the preset and skip escape hatch", () => {
   expect(catalogPresetMissingMessage("@pkg/catalog")).toContain('from "@pkg/catalog"');
+});
+
+test("unexpected Vitest transpiler failure surfaces", () => {
+  const malformed =
+    "// @hackersandwizards/scaffolding/vitest\nexport type A = ;\ninterface X { ??? }";
+  expect(usesSharedVitest(malformed)).toBe(false);
+  using transform = vi.spyOn(Bun.Transpiler.prototype, "transformSync").mockImplementation(() => {
+    throw new Error("Vitest transpiler fault");
+  });
+  const config = 'export { default } from "@hackersandwizards/scaffolding/vitest";';
+  expect(() => usesSharedVitest(config)).toThrow("Vitest transpiler fault");
+  expect(transform).toHaveBeenCalledWith(config);
+});
+
+test("unexpected Prettier loader failure surfaces", async () => {
+  using dir = testDirectory();
+  const prettier = join(dir.folder, "node_modules", "prettier");
+  mkdirSync(prettier, { recursive: true });
+  writeFileSync(join(prettier, "index.mjs"), 'throw new Error("Prettier loader fault");');
+  expect(await rejection(loadPrettier(dir.folder))).toContain("Prettier loader fault");
 });

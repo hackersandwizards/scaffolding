@@ -33,3 +33,12 @@ test("rejection names the call site in the trace", async () => {
   expect(failure).toBeInstanceOf(Error);
   expect((failure as Error).stack).toContain("rejection.test.ts");
 });
+
+test("rejection propagates an unexpected serialization failure", async () => {
+  const value = {
+    toJSON() {
+      throw new RangeError("serializer failed");
+    },
+  };
+  expect(await rejection(rejection(Promise.resolve(value)))).toBe("RangeError: serializer failed");
+});

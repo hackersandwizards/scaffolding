@@ -16,6 +16,7 @@ import {
   validateNeverBuildNames,
 } from "../lib/confidential-subcommands.ts";
 import { createTermHasher } from "../lib/confidential-terms.ts";
+import { failParsingInput } from "./json-parse-fault.ts";
 import { defined } from "../lib/defined.ts";
 import { installCleanGitEnvHooks } from "./git-env.ts";
 
@@ -259,4 +260,12 @@ test("check-confidential never --staged --list-optional warns without fetching a
   } finally {
     rmSync(dir, { recursive: true, force: true });
   }
+});
+
+test("purged hash parsing surfaces an unexpected parser error", () => {
+  const raw = '{"salt":"s","hashes":["h1"]}';
+  const error = new RangeError("purged hash parser fault");
+  using parse = failParsingInput(raw, error);
+  expect(() => parsePurgedHashEntry(raw, "checkout")).toThrow(error);
+  expect(parse).toHaveBeenCalledWith(raw);
 });
