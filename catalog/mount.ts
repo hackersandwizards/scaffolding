@@ -2,7 +2,7 @@ import type { AstroIntegration } from "astro";
 import { existsSync, globSync, readdirSync, statSync } from "node:fs";
 import { basename, dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { catalogPath, decodeCatalogPath } from "./path.ts";
+import { catalogPath, decodeCatalogPath, storiesDir } from "./path.ts";
 import { SUBPATHS } from "./route.ts";
 
 export type CatalogSetupEvent = Parameters<
@@ -37,21 +37,16 @@ export function catalogForwardLink(base: string, home: string, pages: string): s
     : home;
 }
 
-type CatalogRedirectLocation = { root: string; publicDir: string; pagesBase: string; dev: boolean };
-
-export function catalogRedirects(
-  site: Pick<CatalogMount, "atRoot" | "pageRoutes">,
-  location: CatalogRedirectLocation,
-) {
-  const { root, publicDir, pagesBase, dev } = location;
+export function catalogRedirects(mount: CatalogMount) {
+  const { root, publicDir, pagesBase, dev } = mount;
   const strip = (p: string, prefix: string) =>
     prefix && (p === prefix || p.startsWith(`${prefix}/`)) ? p.slice(prefix.length) || "/" : p;
   return (path: string) => {
     const unbased = strip(path, dev ? pagesBase : "");
     // Only the catalog's own former pages move, as in the build: a site's page under
     // /catalog/, at /catalog/ itself too, stays.
-    const own = site.pageRoutes.has(decodeCatalogPath(unbased).replace(/(.)\/$/, "$1"));
-    const now = site.atRoot && !own && FORMER.test(unbased) ? strip(unbased, "/catalog") : unbased;
+    const own = mount.pageRoutes.has(decodeCatalogPath(unbased).replace(/(.)\/$/, "$1"));
+    const now = mount.atRoot && !own && FORMER.test(unbased) ? strip(unbased, "/catalog") : unbased;
     // A file Vite serves, a module under the root such as catalog/Head.astro or a public
     // file, is not a page.
     const file = decodeCatalogPath(path);
@@ -69,6 +64,13 @@ export function catalogRedirects(
 }
 
 export class CatalogMount {
+  root = "";
+  publicDir = "";
+  pagesBase = "";
+  dev = false;
+  own = false;
+  link = "";
+  stories = "";
   repo = "";
   base = "";
   atRoot = false;
@@ -83,7 +85,7 @@ export class CatalogMount {
   // where the catalog moved to the root; undefined for a current path.
   moved = (_: string): string | undefined => undefined;
 
-  configureMount(inParams: CatalogSetupEvent) {
+  configureMount(inParams: CatalogSetupEvent): CatalogSetupEvent {
     // `base` exists for the Pages host only (https://<owner>.github.io/<repo>/): dev serves at
     // the root.
     const dev = inParams.command === "dev";
@@ -107,7 +109,14 @@ export class CatalogMount {
       throw new Error(
         'catalog: the catalog is the site\'s home, so `redirects` leaves out "/"; its former /catalog/ pages forward by themselves',
       );
-    this.moved = catalogRedirects(this, { root, publicDir, pagesBase, dev });
-    return { params, root, own, dev, base, link, mounted: this.mounted, onDisk: this.onDisk };
+    this.root = root;
+    this.publicDir = publicDir;
+    this.pagesBase = pagesBase;
+    this.dev = dev;
+    this.own = own;
+    this.link = link;
+    this.moved = catalogRedirects(this);
+    this.stories = storiesDir(root);
+    return params;
   }
 }

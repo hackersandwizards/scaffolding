@@ -3,7 +3,7 @@ import { join } from "node:path";
 import { pathToFileURL } from "node:url";
 import { expect, test, vi } from "vitest";
 import { rejection } from "@hackersandwizards/scaffolding/rejection";
-import { CatalogAstroHooks } from "../catalog/index.ts";
+import { CatalogAstroHooks } from "../catalog/hooks.ts";
 import { catalogSetupEvent, sampleCatalog } from "./catalog-fixtures.ts";
 import { testDirectory } from "./test-directory.ts";
 
