@@ -127,6 +127,8 @@ codes and the gate follows findings with a repair guide.
 | `dockerfile` | Hadolint at every severity on `Dockerfile`, `Dockerfile.*`, `*.Dockerfile` and `Containerfile`, regardless of case.                             | Root `.hadolint.yaml` or `.hadolint.yml`.                                                                            |
 | `workflows`  | actionlint with pinned ShellCheck on `.github/workflows/*.yml` and `*.yaml`. Pyflakes is disabled.                                              | `.github/actionlint.yaml` or `.github/actionlint.yml`.                                                               |
 
+The workflows check adds `ubuntu-26.04` and `ubuntu-26.04-arm` to a temporary actionlint config that preserves any repository settings.
+
 Run `bun run scaffolding <step>` on demand for `python`, `terraform`, `dockerfile` and
 `workflows`. The gate and pre-push hook run all four where selected. Pre-commit continues to
 run Stylelint on staged CSS and Astro. Ruff, Terraform, TFLint, Hadolint and actionlint run

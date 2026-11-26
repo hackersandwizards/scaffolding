@@ -1,5 +1,5 @@
 import { spawnSync } from "node:child_process";
-import { existsSync, mkdirSync, symlinkSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, symlinkSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { beforeAll, describe, expect, test } from "vitest";
 import {
@@ -68,14 +68,12 @@ type LintFixture = {
   guide: string;
 };
 
-const workflow = (runner: string) => `name: Test
-on: push
-jobs:
-  test:
+const workflowJob = (name: string, runner: string) => `  ${name}:
     runs-on: ${runner}
     steps:
       - run: echo ok
 `;
+const workflow = (runner: string) => `name: Test\non: push\njobs:\n${workflowJob("test", runner)}`;
 
 const lintFixtures: LintFixture[] = [
   {
@@ -187,5 +185,52 @@ describe.each(lintFixtures)("$step", (fixture) => {
       output: `[${fixture.step}] no tracked ${fixture.description}\n`,
     });
     expect(existsSync(join(repo.folder, "node_modules"))).toBe(false);
+  });
+});
+
+describe("workflows runner labels", () => {
+  const file = ".github/workflows/test.yaml";
+  const repoConfig = "self-hosted-runner:\n  labels: [local-arm]\nconfig-variables: []\n";
+  let binaries: Record<string, string>;
+
+  beforeAll(async () => {
+    binaries = {
+      actionlint: await pinnedBinary(root, "actionlint", actionlintPin),
+      shellcheck: await pinnedBinary(root, "shellcheck", shellcheckPin),
+    };
+  }, 90_000);
+
+  test.each(["ubuntu-26.04", "ubuntu-26.04-arm"])("accepts %s", (label) => {
+    using repo = testDirectory();
+    lintFixtureGit(repo.folder, ["init", "-q"]);
+    addLintFixture(repo.folder, file, workflow(label));
+    const result = runLintFixture(repo.folder, "workflows", binaries);
+    expect(result.code, result.output).toBe(0);
+  });
+
+  test("rejects an unknown hosted runner label", () => {
+    using repo = testDirectory();
+    lintFixtureGit(repo.folder, ["init", "-q"]);
+    addLintFixture(repo.folder, file, workflow("ubuntu-99.04"));
+    const result = runLintFixture(repo.folder, "workflows", binaries);
+    expect(result.code, result.output).not.toBe(0);
+    expect(result.output).toMatch(/ubuntu-99\.04[^\n]*\[runner-label\]/);
+  });
+
+  test.each(["yaml", "yml"])("merges repository labels and settings from actionlint.%s", (ext) => {
+    using repo = testDirectory();
+    lintFixtureGit(repo.folder, ["init", "-q"]);
+    const config = `.github/actionlint.${ext}`;
+    addLintFixture(repo.folder, config, repoConfig);
+    const jobs = workflow("ubuntu-26.04-arm") + workflowJob("local", "[self-hosted, local-arm]");
+    addLintFixture(repo.folder, file, jobs);
+    const valid = runLintFixture(repo.folder, "workflows", binaries);
+    expect(valid.code, valid.output).toBe(0);
+    expect(readFileSync(join(repo.folder, config), "utf8")).toBe(repoConfig);
+
+    addLintFixture(repo.folder, file, jobs.replace("echo ok", "echo ${{ vars.UNDECLARED }}"));
+    const invalid = runLintFixture(repo.folder, "workflows", binaries);
+    expect(invalid.code, invalid.output).not.toBe(0);
+    expect(invalid.output).toMatch(/no configuration variable is allowed[^\n]*\[expression\]/);
   });
 });
