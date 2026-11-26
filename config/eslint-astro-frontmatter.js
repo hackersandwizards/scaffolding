@@ -8,6 +8,79 @@ import ts from "typescript";
 export const frontmatterBlock = "frontmatter.tsx";
 export const frontmatterFiles = [`**/*.astro/*_${frontmatterBlock}`];
 
+export function resolveAstroPackage(folder) {
+  const read = createRequire(join(folder, "package.json"));
+  let astro;
+  try {
+    astro = read.resolve("astro/package.json");
+  } catch (error) {
+    if (error.code !== "MODULE_NOT_FOUND") throw error;
+    astro = createRequire(import.meta.url).resolve("astro/package.json");
+  }
+  return astro;
+}
+
+export const astroSnapshot = (text) =>
+  text === undefined ? undefined : ts.ScriptSnapshot.fromString(text);
+
+export function createAstroLanguage(host, convert) {
+  const loaded = new Set();
+  const language = createLanguage(
+    [
+      {
+        getLanguageId: (file) => (file.endsWith(".astro") ? "astro" : undefined),
+        createVirtualCode(file, _languageId, snapshot) {
+          const { code } = convert(file, snapshot.getText(0, snapshot.getLength()));
+          return {
+            id: "tsx",
+            languageId: "typescriptreact",
+            snapshot: astroSnapshot(code),
+            mappings: [],
+          };
+        },
+        typescript: {
+          extraFileExtensions: [
+            { extension: "astro", isMixedContent: true, scriptKind: ts.ScriptKind.Deferred },
+          ],
+          getServiceScript: (code) => ({
+            code,
+            extension: ".tsx",
+            scriptKind: ts.ScriptKind.TSX,
+            preventLeadingOffset: true,
+          }),
+        },
+      },
+    ],
+    new Map(),
+    (file) => {
+      if (!file.endsWith(".astro") || loaded.has(file)) return;
+      const source = host.readFile(file);
+      if (source !== undefined) {
+        loaded.add(file);
+        language.scripts.set(file, astroSnapshot(source));
+      }
+    },
+  );
+  return language;
+}
+
+export function installAstroSourceFiles(host) {
+  const getSourceFile = host.getSourceFile;
+  host.getSourceFile = (file, version, ...args) => {
+    if (!file.endsWith(".astro")) return getSourceFile(file, version, ...args);
+    const snapshot = host.getScriptSnapshot(file);
+    if (snapshot)
+      return ts.createSourceFile(
+        file,
+        snapshot.getText(0, snapshot.getLength()),
+        version,
+        true,
+        ts.ScriptKind.TSX,
+      );
+    return undefined;
+  };
+}
+
 export function astroFrontmatter() {
   const components = new Map();
 
@@ -30,53 +103,8 @@ export function astroFrontmatter() {
   return {
     convert,
     host(host, options, folder) {
-      const read = createRequire(join(folder, "package.json"));
-      let astro;
-      try {
-        astro = read.resolve("astro/package.json");
-      } catch (error) {
-        if (error.code !== "MODULE_NOT_FOUND") throw error;
-        astro = createRequire(import.meta.url).resolve("astro/package.json");
-      }
-      const getSnapshot = (text) =>
-        text === undefined ? undefined : ts.ScriptSnapshot.fromString(text);
-      const loaded = new Set();
-      const language = createLanguage(
-        [
-          {
-            getLanguageId: (file) => (file.endsWith(".astro") ? "astro" : undefined),
-            createVirtualCode(file, _languageId, snapshot) {
-              const { code } = convert(file, snapshot.getText(0, snapshot.getLength()));
-              return {
-                id: "tsx",
-                languageId: "typescriptreact",
-                snapshot: getSnapshot(code),
-                mappings: [],
-              };
-            },
-            typescript: {
-              extraFileExtensions: [
-                { extension: "astro", isMixedContent: true, scriptKind: ts.ScriptKind.Deferred },
-              ],
-              getServiceScript: (code) => ({
-                code,
-                extension: ".tsx",
-                scriptKind: ts.ScriptKind.TSX,
-                preventLeadingOffset: true,
-              }),
-            },
-          },
-        ],
-        new Map(),
-        (file) => {
-          if (!file.endsWith(".astro") || loaded.has(file)) return;
-          const source = host.readFile(file);
-          if (source !== undefined) {
-            loaded.add(file);
-            language.scripts.set(file, getSnapshot(source));
-          }
-        },
-      );
+      const astro = resolveAstroPackage(folder);
+      const language = createAstroLanguage(host, convert);
       const resolutionCache = ts.createModuleResolutionCache(
         folder,
         host.getCanonicalFileName,
@@ -84,26 +112,13 @@ export function astroFrontmatter() {
       );
       Object.assign(host, {
         getScriptVersion: () => "0",
-        getScriptSnapshot: (file) => getSnapshot(host.readFile(file)),
+        getScriptSnapshot: (file) => astroSnapshot(host.readFile(file)),
         getModuleResolutionCache: () => resolutionCache,
         // Install Volar's literal resolver for aliases, package exports and resolution modes.
         resolveModuleNameLiterals: () => [],
       });
       decorateLanguageServiceHost(ts, language, host);
-      const getSourceFile = host.getSourceFile;
-      host.getSourceFile = (file, version, ...args) => {
-        if (!file.endsWith(".astro")) return getSourceFile(file, version, ...args);
-        const snapshot = host.getScriptSnapshot(file);
-        if (snapshot)
-          return ts.createSourceFile(
-            file,
-            snapshot.getText(0, snapshot.getLength()),
-            version,
-            true,
-            ts.ScriptKind.TSX,
-          );
-        return undefined;
-      };
+      installAstroSourceFiles(host);
       return ["env.d.ts", "astro-jsx.d.ts"].map((name) => join(dirname(astro), name));
     },
   };

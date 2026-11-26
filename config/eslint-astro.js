@@ -39,6 +39,22 @@ function reportsInOxlintRegion(ruleId) {
   return !Object.hasOwn(componentRules, ruleId) || retained.has(ruleId);
 }
 
+export function javascriptScriptRange(node) {
+  if (node.openingElement.end >= node.closingElement.start) return;
+  const type = node.openingElement.attributes.find(
+    (attr) => typeof attr.name?.name === "string" && attr.name.name.toLowerCase() === "type",
+  )?.value;
+  if (
+    type &&
+    (type.type !== "Literal" ||
+      !/^(?:module|(?:text|application)\/(?:java|ecma)script)?$/i.test(
+        String(type.value).split(";")[0].trim(),
+      ))
+  )
+    return;
+  return [node.openingElement.end, node.closingElement.start];
+}
+
 function oxlintRegions(code, template) {
   const ranges = [];
   const scripts = new Set();
@@ -59,19 +75,9 @@ function oxlintRegions(code, template) {
     )
       return;
     const extracted = astroClientScript(node) ? ++index : undefined;
-    if (node.openingElement.end >= node.closingElement.start) return;
-    const type = node.openingElement.attributes.find(
-      (attr) => typeof attr.name?.name === "string" && attr.name.name.toLowerCase() === "type",
-    )?.value;
-    if (
-      type &&
-      (type.type !== "Literal" ||
-        !/^(?:module|(?:text|application)\/(?:java|ecma)script)?$/i.test(
-          String(type.value).split(";")[0].trim(),
-        ))
-    )
-      return;
-    ranges.push([node.openingElement.end, node.closingElement.start]);
+    const range = javascriptScriptRange(node);
+    if (!range) return;
+    ranges.push(range);
     if (extracted !== undefined) scripts.add(extracted);
   });
   return {

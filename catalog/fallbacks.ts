@@ -8,18 +8,7 @@ export function brandFallbacks(
   tokens: Record<string, string>,
   seen: string[] = [],
 ): string {
-  if (!seen.length) {
-    css = css.replace(/brand-value\(\s*(--[\w-]+)\s*\)/g, (_, name: string) => {
-      const value = tokens[name];
-      if (!Object.hasOwn(tokens, name) || value === undefined) return `var(${name})`;
-      if (value.includes("var("))
-        throw new Error(`catalog: brand-value(${name}) is ${value}, no fixed value`);
-      return value;
-    });
-    // The browser drops a declaration holding one silently.
-    if (css.includes("brand-value("))
-      throw new Error("catalog: brand-value() takes one custom property name");
-  }
+  if (!seen.length) css = resolveBrandLiterals(css, tokens);
   let out = "";
   let at = 0;
   for (const m of css.matchAll(/var\(\s*(--[\w-]+)\s*([,)])/g)) {
@@ -27,10 +16,7 @@ export function brandFallbacks(
     if (m.index < at || !Object.hasOwn(tokens, name) || seen.includes(name)) continue;
     let end = m.index + m[0].length;
     if (m[2] === ",") {
-      let depth = 1;
-      for (; depth && end < css.length; end++)
-        depth += css[end] === "(" ? 1 : css[end] === ")" ? -1 : 0;
-      if (depth) throw new Error(`catalog: var(${name}, …) has no closing parenthesis`);
+      end = cssFallbackEnd(css, end, name);
       if (seen.length) {
         out += css.slice(at, end);
         at = end;
@@ -41,4 +27,26 @@ export function brandFallbacks(
     at = end;
   }
   return out + css.slice(at);
+}
+export function resolveBrandLiterals(css: string, tokens: Record<string, string>): string {
+  const resolved = css.replace(/brand-value\(\s*(--[\w-]+)\s*\)/g, (_, name: string) => {
+    const value = tokens[name];
+    if (!Object.hasOwn(tokens, name) || value === undefined) return `var(${name})`;
+    if (value.includes("var("))
+      throw new Error(`catalog: brand-value(${name}) is ${value}, no fixed value`);
+    return value;
+  });
+  // The browser drops a declaration holding one silently.
+  if (resolved.includes("brand-value("))
+    throw new Error("catalog: brand-value() takes one custom property name");
+  return resolved;
+}
+
+/** The first index after a var() whose first comma was already consumed. */
+export function cssFallbackEnd(css: string, end: number, name: string): number {
+  let depth = 1;
+  for (; depth && end < css.length; end++)
+    depth += css[end] === "(" ? 1 : css[end] === ")" ? -1 : 0;
+  if (depth) throw new Error(`catalog: var(${name}, …) has no closing parenthesis`);
+  return end;
 }

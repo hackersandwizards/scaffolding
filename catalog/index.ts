@@ -2,26 +2,15 @@
 // repository resolves.
 import astrobook from "astrobook";
 import type { AstroIntegration } from "astro";
-import {
-  cpSync,
-  createReadStream,
-  existsSync,
-  globSync,
-  mkdirSync,
-  readdirSync,
-  readFileSync,
-  statSync,
-  writeFileSync,
-} from "node:fs";
-import { spawnSync } from "node:child_process";
-import { createRequire } from "node:module";
-import { basename, dirname, join, matchesGlob, posix, relative } from "node:path";
-import { fileURLToPath, pathToFileURL } from "node:url";
-import { isObject, jsonObject } from "../lib/json.ts";
-import { ownEntry } from "../lib/own-entry.ts";
-import { brandFallbacks } from "./fallbacks.ts";
-import { catalogPath, storiesDir } from "./path.ts";
-import { CSS, loadRoute, retitleLayout } from "./route.ts";
+import { join, relative } from "node:path";
+import { fileURLToPath } from "node:url";
+import { rewriteCatalogOutput, writeCatalogForwarders } from "./build-output.ts";
+import { CatalogCopies, readCatalogPackage } from "./copy-assets.ts";
+import { catalogAssetMiddleware, configureCatalogVite } from "./dev.ts";
+import { CatalogMount, type CatalogSetupEvent } from "./mount.ts";
+import { CatalogPageModules } from "./page-modules.ts";
+import { storiesDir } from "./path.ts";
+import { SUBPATHS } from "./route.ts";
 
 export { renderCatalog } from "./render.ts";
 export type { CatalogData, CatalogGroup, CatalogItem } from "./render.ts";
@@ -129,540 +118,80 @@ export type CatalogRuntimeConfig = Required<
     admin?: string;
   };
 
-const BRAND_HEADER = {
-  component: "@hackersandwizards/brand/expert/components/AppHeader.astro",
-  // night.css turns the header under the data-hw-night that Head.astro sets.
-  css: ["@hackersandwizards/brand/header.css", "@hackersandwizards/brand/night.css"],
-};
-const OPTIONS = "virtual:scaffolding/catalog";
-const HEADER = "virtual:scaffolding/catalog-header";
-const HEAD = "virtual:scaffolding/catalog-head";
-const AROUND = "virtual:scaffolding/catalog-around";
-const ICON = "virtual:scaffolding/catalog-icon";
-const BRAND_ICON = "@hackersandwizards/brand/logos/favicon.svg";
-// Astrobook's URL folders for a state's page and a state alone, passed so its defaults cannot move
-// under the dev redirect and the forwarding pages.
-const SUBPATHS = { dashboardSubpath: "dashboard", previewSubpath: "stories" };
-// The catalog's former pages under /catalog/, as the dev redirect reads them.
-const FORMER = new RegExp(`^/catalog(/(${Object.values(SUBPATHS).join("|")})(/|$)|/?$)`);
-// The cascade layer order alone, exported since brand v1.52.0.
-const BRAND_LAYERS = "@hackersandwizards/brand/layers.css";
-const BRAND_FOCUS = "@hackersandwizards/brand/elements/focus.css";
-const BRAND_TOGGLE = "@hackersandwizards/brand/expert/components/ThemeToggle.astro";
-const TOGGLE = "virtual:scaffolding/catalog-toggle";
+export class CatalogAstroHooks {
+  readonly mount = new CatalogMount();
+  readonly copies = new CatalogCopies();
+  inner: AstroIntegration | undefined;
 
-/** The nearest folder at or above `from` holding a package.json. */
-function packageDir(from: string): string {
-  for (let dir = from; ; dir = dirname(dir)) {
-    if (existsSync(join(dir, "package.json"))) return dir;
-    if (dirname(dir) === dir) return from;
+  private readonly options: CatalogOptions;
+
+  constructor(options: CatalogOptions) {
+    this.options = options;
   }
-}
 
-/** The repository's name as the admin hub keys it: its checkout's folder, a worktree's main
- * checkout (the worktree's own folder names a branch), else the package folder outside Git. */
-function checkout(dir: string): string {
-  const [top, common] =
-    spawnSync(
-      "git",
-      ["rev-parse", "--path-format=absolute", "--show-toplevel", "--git-common-dir"],
-      { cwd: dir, encoding: "utf8" },
-    ).stdout?.split("\n") ?? [];
-  return basename(common?.endsWith("/.git") ? dirname(common) : top || dir);
-}
+  async configureCatalog(inParams: CatalogSetupEvent) {
+    const { options } = this;
+    const mount = this.mount.configureMount(inParams);
+    const { params, root } = mount;
+    const stories = storiesDir(root);
+    const project = readCatalogPackage(this.mount.repo);
+    this.copies.resolve(options.copy ?? [], project);
+    configureCatalogVite(mount, new CatalogPageModules(options, mount, project), stories);
+    this.inner = astrobook({
+      directory: relative(root, stories),
+      subpath: this.mount.atRoot ? "" : "/catalog",
+      ...SUBPATHS,
+      title: `${options.product} catalog`,
+      css: [],
+      head: join(import.meta.dirname, "Head.astro"),
+      home: options.home ?? join(import.meta.dirname, "Home.astro"),
+    });
+    await this.inner.hooks["astro:config:setup"]?.(params);
+  }
 
-/** The installed version of a package, read from the nearest node_modules holding it. */
-function installed(name: string, from: string): string | undefined {
-  for (let dir = from; ; dir = dirname(dir)) {
-    const file = join(dir, "node_modules", name, "package.json");
-    if (existsSync(file)) {
-      const { version } = jsonObject(readFileSync(file));
-      return typeof version === "string" ? version : undefined;
+  catalogRoutes({
+    routes,
+  }: Parameters<NonNullable<AstroIntegration["hooks"]["astro:routes:resolved"]>>[0]) {
+    const { pageRoutes } = this.mount;
+    pageRoutes.clear();
+    for (const route of routes) {
+      if (route.type === "page") pageRoutes.add(route.pattern);
     }
-    if (dirname(dir) === dir) return undefined;
+  }
+
+  catalogServer({
+    server,
+  }: Parameters<NonNullable<AstroIntegration["hooks"]["astro:server:setup"]>>[0]) {
+    catalogAssetMiddleware(server, this.options, this);
+  }
+
+  async startCatalogServer(
+    params: Parameters<NonNullable<AstroIntegration["hooks"]["astro:server:start"]>>[0],
+  ) {
+    await this.inner?.hooks["astro:server:start"]?.(params);
+  }
+
+  finishCatalogBuild({
+    dir,
+    assets,
+  }: Parameters<NonNullable<AstroIntegration["hooks"]["astro:build:done"]>>[0]) {
+    const out = fileURLToPath(dir);
+    if (this.mount.forwards) writeCatalogForwarders(out, this.mount.base);
+    this.copies.build(out, this.options.copy ?? []);
+    if (this.mount.onDisk) rewriteCatalogOutput(assets, out, this.mount);
   }
 }
-
-/** What `read` takes from brand; undefined only where brand is missing. Every brand the shell
- * accepts (v2.5.0 and later) exports each path read here, so an export it drops fails the build. */
-function fromBrand(read: () => unknown): unknown {
-  try {
-    return read();
-  } catch (e) {
-    if ((e as { code?: string }).code === "MODULE_NOT_FOUND") return undefined;
-    throw e;
-  }
-}
-
-/** brand's list of catalogs as the header's nav, the one named `product` current; none where the
- * repository cannot resolve it. */
-function brandNav(
-  require: ReturnType<typeof createRequire>,
-  product: string,
-): CatalogOptions["nav"] {
-  const listed = fromBrand(() => require("@hackersandwizards/brand/catalogs.json"));
-  if (listed === undefined) return undefined;
-  const isItem = (item: unknown): item is { name: string; href: string } =>
-    isObject(item) && typeof item.name === "string" && typeof item.href === "string";
-  if (!Array.isArray(listed) || !listed.every(isItem))
-    throw new Error("@hackersandwizards/brand/catalogs.json lists no { name, href } items");
-  return {
-    items: listed,
-    current: listed.some(({ name }) => name === product) ? product : undefined,
-  };
-}
-
-const POINTER = "version https://git-lfs.github.com/spec/";
-// A pointer file is under 200 bytes, so a larger file is read no further.
-const isPointer = (file: string) => {
-  if (statSync(file).size > 1024) return false;
-  return readFileSync(file).subarray(0, POINTER.length).toString() === POINTER;
-};
-
-// A stylesheet or font served without its type is refused by the browser.
-const TYPES = new Map(
-  Object.entries({
-    css: "text/css",
-    js: "text/javascript",
-    json: "application/json",
-    svg: "image/svg+xml",
-    png: "image/png",
-    jpg: "image/jpeg",
-    webp: "image/webp",
-    ico: "image/x-icon",
-    woff2: "font/woff2",
-    pdf: "application/pdf",
-  }),
-);
-const mime = (file: string) =>
-  TYPES.get(file.split(".").pop()!.toLowerCase()) ?? "application/octet-stream";
-
-const decoded = (s: string) => {
-  try {
-    return decodeURIComponent(s);
-  } catch {
-    return "";
-  }
-};
-
-const packageOf = (spec: string) =>
-  spec.startsWith(".") || spec.startsWith("/")
-    ? undefined
-    : spec
-        .split("/")
-        .slice(0, spec.startsWith("@") ? 2 : 1)
-        .join("/");
-
-// Astrobook's layout loads Astro's client router; found only when the first page loads, these
-// modules make Vite optimise again and print it after every start whose lockfile has changed.
-const ROUTER = ["events", "router", "swap-functions", "types"].map(
-  (m) => `astro/virtual-modules/transitions-${m}.js`,
-);
 
 export function catalog(options: CatalogOptions): AstroIntegration {
-  let inner: AstroIntegration | undefined;
-  let repo = "";
-  // Each `copy` entry naming a package path, with the file the package's exports give it.
-  const resolved = new Map<string, string>();
-  let base = "";
-  let atRoot = false;
-  let mounted = false;
-  // A build writes forwarding pages at /catalog/ for a catalog at the site's root.
-  let forwards = false;
-  const pageRoutes = new Set<string>();
-  // A build whose assetsPrefix is a file URL is opened from disk, where a root-relative link
-  // resolves to the disk's root.
-  let onDisk = false;
-  // Where an old link points, as dev serves it now: without the Pages base, and without /catalog
-  // where the catalog moved to the root; undefined for a current path.
-  let moved = (_: string): string | undefined => undefined;
-  /** A `copy` entry as [path in the build, file or folder it copies]: a package path once, a glob
-   * once per match, globbed again only when `fresh` (a glob under ** walks node_modules). */
-  const globbed = new Map<string, [string, string][]>();
-  const copied = (pattern: string, fresh = false): [string, string][] => {
-    const file = resolved.get(pattern);
-    if (file) return [[pattern, file]];
-    if (fresh || !globbed.has(pattern))
-      globbed.set(
-        pattern,
-        globSync(pattern, { cwd: repo }).map((match) => [match, join(repo, match)]),
-      );
-    return globbed.get(pattern)!;
-  };
+  const hooks = new CatalogAstroHooks(options);
   return {
     name: "@hackersandwizards/scaffolding/catalog",
     hooks: {
-      "astro:config:setup": async (inParams) => {
-        // `base` exists for the Pages host only (https://<owner>.github.io/<repo>/): dev serves at
-        // the root.
-        const dev = inParams.command === "dev";
-        const pagesBase = inParams.config.base.replace(/\/$/, "");
-        // A base ending in /catalog mounts the catalog under a host with its own home, which serves
-        // public/ itself and never had the catalog at its root.
-        mounted = pagesBase.endsWith("/catalog");
-        const params = dev
-          ? { ...inParams, config: inParams.updateConfig({ base: "/" }) }
-          : inParams;
-        const root = fileURLToPath(params.config.root);
-        const publicDir = fileURLToPath(params.config.publicDir);
-        const own = basename(root) === "catalog";
-        repo = packageDir(root);
-        base = params.config.base.replace(/\/$/, "");
-        const prefix = params.config.build.assetsPrefix;
-        onDisk =
-          !dev &&
-          (typeof prefix === "string" ? [prefix] : Object.values(prefix ?? {})).some((p) =>
-            p.startsWith("file:"),
-          );
-        const pages = join(fileURLToPath(params.config.srcDir), "pages");
-        const home = catalogPath({ base, pages: existsSync(pages) ? readdirSync(pages) : [] });
-        atRoot = home === `${base}/`;
-        forwards = atRoot && !mounted && !onDisk;
-        // Every link to the catalog reads /catalog/: a mounted catalog's home already does, a
-        // build opened from disk forwards nothing, and a site's own page there keeps its place.
-        const link =
-          forwards && !globSync(["catalog.*", "catalog/index.*"], { cwd: pages }).length
-            ? `${base}/catalog/`
-            : home;
-        if (atRoot && params.config.redirects["/"])
-          throw new Error(
-            'catalog: the catalog is the site\'s home, so `redirects` leaves out "/"; its former /catalog/ pages forward by themselves',
-          );
-        const strip = (p: string, prefix: string) =>
-          prefix && (p === prefix || p.startsWith(`${prefix}/`))
-            ? p.slice(prefix.length) || "/"
-            : p;
-        moved = (path) => {
-          const unbased = strip(path, dev ? pagesBase : "");
-          // Only the catalog's own former pages move, as in the build: a site's page under
-          // /catalog/, at /catalog/ itself too, stays.
-          const own = pageRoutes.has(decoded(unbased).replace(/(.)\/$/, "$1"));
-          const now = atRoot && !own && FORMER.test(unbased) ? strip(unbased, "/catalog") : unbased;
-          // A file Vite serves, a module under the root such as catalog/Head.astro or a public
-          // file, is not a page.
-          const file = decoded(path);
-          if (
-            now === path ||
-            (!file.split("/").includes("..") &&
-              [root, publicDir].some((dir) =>
-                statSync(join(dir, file), { throwIfNoEntry: false })?.isFile(),
-              ))
-          )
-            return undefined;
-          // "//host" in a Location header leaves the site.
-          return now.replace(/^\/+/, "/");
-        };
-        const stories = storiesDir(root);
-        const pkgFile = join(repo, "package.json");
-        const pkg = existsSync(pkgFile) ? jsonObject(readFileSync(pkgFile)) : {};
-        const names = (field: unknown) => (isObject(field) ? Object.keys(field) : []);
-        const name = String(pkg.name ?? basename(repo)).replace(/^@[^/]+\//, "");
-        // A package the repository declares, or its own, unless a folder of the repository has
-        // that name.
-        const declared = new Set([
-          pkg.name,
-          ...names(pkg.dependencies),
-          ...names(pkg.devDependencies),
-          ...names(pkg.peerDependencies),
-          ...names(pkg.optionalDependencies),
-        ]);
-        const require = createRequire(pkgFile);
-        for (const pattern of options.copy ?? []) {
-          const owner = packageOf(pattern);
-          if (!owner || !declared.has(owner) || existsSync(join(repo, owner))) continue;
-          try {
-            resolved.set(pattern, require.resolve(pattern));
-          } catch {
-            throw new Error(`catalog copy: ${pattern} is no file in the exports of ${owner}`);
-          }
-        }
-        // The shell's type steps are brand's tokens.json --text-* names (brand v2.5.0) and the focus
-        // ring's room is brand's --hw-focus-room (v2.10.0): an older brand leaves them bare, the text
-        // at inherited sizes and a ring cut at <main>'s edge, with no error of its own.
-        const brand = installed("@hackersandwizards/brand", root)?.split(".").map(Number);
-        if (brand && (brand[0] ?? 0) * 1000 + (brand[1] ?? 0) < 2010)
-          throw new Error(
-            `catalog: the shell needs @hackersandwizards/brand v2.10.0 or later, installed is v${brand.join(".")}`,
-          );
-        // brand's hw-focus-ring draws nothing without its focus.css, which a slim list leaves out.
-        // First, so the lists' own sheets, brand's elements.css among them, still follow it.
-        const focus = fromBrand(() => require.resolve(BRAND_FOCUS));
-        const htmlClass = options.htmlClass ?? (focus ? ["hw-focus-ring"] : []);
-        const ring = htmlClass.includes("hw-focus-ring") && focus ? [BRAND_FOCUS] : [];
-        const themeToggle = options.themeToggle ?? true;
-        const toggle = themeToggle && !!fromBrand(() => require.resolve(BRAND_TOGGLE));
-        const withRing = (list: string[]) => [...new Set([...ring, ...list])];
-        const lists = {
-          home: withRing(options.homeCss ?? options.css),
-          dashboard: withRing(options.dashboardCss ?? options.css),
-          stories: withRing(options.css),
-        };
-        const sheets = Object.values(lists).flat();
-        const versions = [...new Set(sheets.map(packageOf).filter((p) => p !== undefined))]
-          .map((p) => `${p} v${installed(p, root) ?? "?"}`)
-          .join(" · ");
-        const provenance = [`${name} ${relative(repo, stories)}`, versions]
-          .filter(Boolean)
-          .join(" · ");
-        const header = options.header ?? BRAND_HEADER;
-        // A relative specifier counts from the Astro root, as Astrobook reads `head` and `home`.
-        const spec = (s: string) => JSON.stringify(s.startsWith(".") ? join(root, s) : s);
-        const nav = options.nav ?? brandNav(require, options.product);
-        const brandTokens = fromBrand(() => require("@hackersandwizards/brand/tokens.json"));
-        const tokens = Object.fromEntries(
-          Object.entries(
-            isObject(brandTokens) && isObject(brandTokens.tokens) ? brandTokens.tokens : {},
-          ).filter((entry): entry is [string, string] => typeof entry[1] === "string"),
-        );
-        const around = [
-          join(import.meta.dirname, "ground.css"),
-          ...(header.css ?? []),
-          join(import.meta.dirname, "chrome.css"),
-        ];
-        const imports = (list: string[]) => list.map((c) => `import ${spec(c)};`).join("");
-        // classList.add throws on one of these, in the head of every page.
-        if (htmlClass.some((c) => !/^\S+$/.test(c)))
-          throw new Error("catalog htmlClass: one class per entry, without spaces");
-        // A misspelt or renamed `current` would link this catalog's entry to the published site.
-        if (nav?.current !== undefined && !nav.items.some(({ name }) => name === nav.current))
-          throw new Error(`catalog nav: current "${nav.current}" names no item`);
-        const shared: CatalogRuntimeConfig = {
-          product: options.product,
-          href: options.href ?? `${base}/`,
-          nav: nav?.items.map(({ name, href }) =>
-            name === nav.current
-              ? { name, href: link, current: true }
-              : { name, href: /^\/(?!\/)/.test(href) ? `${base}${href}` : href },
-          ),
-          link,
-          title: options.title ?? "Catalog",
-          lead: options.lead,
-          previews: options.previews ?? true,
-          previewSize: options.previewSize,
-          themeToggle,
-          // brand's switch in the header, where a state's page draws one too: the bar then offers none.
-          headerToggle: toggle && !!nav,
-          onDisk,
-          storyScale: options.storyScale,
-          htmlClass,
-          groupOrder: options.groupOrder ?? [],
-          previewStates: options.previewStates ?? [],
-          provenance,
-          // Ahead of every stylesheet, which the build puts at the head's end. A state alone in the
-          // window, not in a tile's frame, gets the focus ring's room (brand v2.10.0's
-          // --hw-focus-room, elements/focus.css) inside Astrobook's <main>, whose scroll box cut a
-          // ring at x = 0.
-          layers:
-            "@layer hw-catalog-ground;" +
-            (fromBrand(() => readFileSync(require.resolve(BRAND_LAYERS), "utf8").trim()) ?? "") +
-            "@layer hw-catalog-ground{[data-hw-alone] main{padding:var(--hw-focus-room)}}",
-          // A story link ends in a slash where the site asks for one, or leaves it open and Astro
-          // writes each page as a folder's index.html, which a static host serves only there.
-          slash:
-            params.config.trailingSlash === "always" ||
-            (params.config.trailingSlash === "ignore" && params.config.build.format === "directory")
-              ? "/"
-              : "",
-          // The hub serves only on this machine, so a published page carries no link to it.
-          admin:
-            dev && options.admin
-              ? `http://admin.localhost:4329/${encodeURIComponent(isObject(pkg.admin) && typeof pkg.admin.name === "string" ? pkg.admin.name : checkout(repo))}/dashboard`
-              : undefined,
-        };
-        const modules: Record<string, string> = {
-          [OPTIONS]: `export default ${JSON.stringify(shared)};`,
-          [HEADER]: `export { default } from ${spec(header.component)};`,
-          [HEAD]: `export { default } from ${spec(options.head ?? "astrobook/components/head.astro")};`,
-          [TOGGLE]: toggle
-            ? `export { default } from ${spec(BRAND_TOGGLE)};`
-            : "export default undefined;",
-          [ICON]: fromBrand(() => require.resolve(BRAND_ICON))
-            ? `export { default } from ${spec(`${BRAND_ICON}?url&no-inline`)};`
-            : "export default undefined;",
-          // Inlined on the home and a state's page: linked, one more render-blocking request.
-          [AROUND]: `${around.map((c, i) => `import c${i} from ${spec(`${c}?inline`)};`).join("")}export default ${around.map((_, i) => `c${i}`).join("+")};`,
-          [`${CSS}home`]: imports(lists.home),
-          [`${CSS}dashboard`]: imports(lists.dashboard),
-          [`${CSS}stories`]: imports(lists.stories),
-        };
-        const codegen = fileURLToPath(params.createCodegenDir());
-        params.updateConfig({
-          // Astro's own default only: an outDir the config sets stays.
-          ...(own &&
-            params.config.outDir.href === new URL("dist/", params.config.root).href && {
-              outDir: new URL("../dist/", params.config.root),
-            }),
-          vite: {
-            ...(mounted && !dev && { publicDir: false as const }),
-            optimizeDeps: {
-              entries: [`${relative(root, stories)}/**/*.stories.*`],
-              include: ROUTER,
-            },
-            plugins: [
-              {
-                // Ahead of Vite's CSS plugin, which reads the file's text.
-                name: "scaffolding-catalog-fallbacks",
-                enforce: "pre" as const,
-                // Astrobook's layout and the routes it writes into this integration's codegen
-                // folder, one per state, as loaded, before Astro compiles them: each page gets its
-                // own title, each route its CSS. The bare file only: its <style> blocks come as
-                // queries on the same path.
-                load: (id: string) => {
-                  if (id.endsWith("/@astrobook/ui/dist/components/layout.astro"))
-                    return retitleLayout(
-                      readFileSync(id, "utf8"),
-                      join(import.meta.dirname, "words.ts"),
-                    );
-                  const file = relative(codegen, id);
-                  return id.endsWith(".astro") && !file.startsWith("..")
-                    ? loadRoute(id, file, options.serverOnly ?? false)
-                    : undefined;
-                },
-                // Every stylesheet beside this file is the shell's.
-                transform: (code: string, id: string) => {
-                  const file = id.split("?")[0]!;
-                  return dirname(file) === import.meta.dirname && file.endsWith(".css")
-                    ? brandFallbacks(code, tokens)
-                    : undefined;
-                },
-              },
-              {
-                name: "scaffolding-catalog",
-                resolveId: (id: string) => (Object.hasOwn(modules, id) ? `\0${id}` : undefined),
-                load: (id: string) =>
-                  id.startsWith("\0") ? ownEntry(modules, id.slice(1)) : undefined,
-              },
-            ],
-          },
-        });
-        inner = astrobook({
-          directory: relative(root, stories),
-          subpath: atRoot ? "" : "/catalog",
-          ...SUBPATHS,
-          title: `${options.product} catalog`,
-          css: [],
-          head: join(import.meta.dirname, "Head.astro"),
-          home: options.home ?? join(import.meta.dirname, "Home.astro"),
-        });
-        await inner.hooks["astro:config:setup"]?.(params);
-      },
-      "astro:routes:resolved": ({ routes }) => {
-        pageRoutes.clear();
-        for (const route of routes) {
-          if (route.type === "page") pageRoutes.add(route.pattern);
-        }
-      },
-      "astro:server:setup": ({ server }) => {
-        // Each `copy` entry with the folder every match lies in: the segments before its first
-        // wildcard.
-        const fixed = (options.copy ?? []).map((pattern) => [
-          pattern,
-          posix.normalize(pattern.replace(/(?:^|\/)[^/]*[*?[{].*$/, "")).replace(/^\.$|\/$/, ""),
-        ]);
-        server.middlewares.use((req, res, next) => {
-          const url = URL.parse(req.url ?? "", "http://x");
-          const to = moved(url?.pathname ?? "");
-          const path = decoded(url?.pathname ?? "");
-          if (to) {
-            // Temporary: dev ports pass between repositories, and a browser keeps a 301 for the port.
-            res.writeHead(307, { Location: `${to}${url!.search}` });
-            return res.end();
-          }
-          const file = path.startsWith(`${base}/`) ? path.slice(base.length + 1) : "";
-          if (!file || !fixed.length) return next();
-          // A file added since the last glob is found on a second pass, which globs only a pattern
-          // the path or a folder above it matches: every other request misses without a glob.
-          const matched = (pattern: string) => {
-            for (let at = file; at !== "." && at !== "/"; at = posix.dirname(at))
-              if (matchesGlob(at, pattern)) return true;
-            return false;
-          };
-          const find = (fresh: boolean) =>
-            fixed
-              .filter(([, prefix]) => !prefix || file === prefix || file.startsWith(`${prefix}/`))
-              .filter(([pattern]) => !fresh || resolved.has(pattern) || matched(pattern))
-              .flatMap(([pattern]) => copied(pattern, fresh))
-              .find(([at]) => file === at || file.startsWith(`${at}/`));
-          const match = find(false) ?? find(true);
-          const full = match && join(match[1], file.slice(match[0].length));
-          if (
-            !full ||
-            file.split("/").includes("..") ||
-            !statSync(full, { throwIfNoEntry: false })?.isFile()
-          )
-            return next();
-          res.setHeader("Content-Type", mime(file));
-          createReadStream(full).pipe(res);
-        });
-      },
-      "astro:server:start": async (params) => {
-        await inner?.hooks["astro:server:start"]?.(params);
-      },
-      "astro:build:done": ({ dir, assets }) => {
-        const out = fileURLToPath(dir);
-        // The catalog lived under /catalog/ until v2.0.0: each of its published pages forwards. A
-        // build opened from disk was never published there.
-        if (forwards)
-          for (const page of globSync(
-            ["index.html", `{${Object.values(SUBPATHS).join(",")}}/**/index.html`],
-            {
-              cwd: out,
-            },
-          )) {
-            const to = encodeURI(`${base}/${dirname(page) === "." ? "" : `${dirname(page)}/`}`);
-            const stub = join(out, "catalog", page);
-            if (existsSync(stub)) continue;
-            mkdirSync(dirname(stub), { recursive: true });
-            writeFileSync(
-              stub,
-              `<!doctype html><meta charset="utf-8"><title>Moved</title><link rel="canonical" href="${to}"><meta http-equiv="refresh" content="0; url=${to}"><script>location.replace(${JSON.stringify(to)}+location.search+location.hash)</script><a href="${to}">${to}</a>\n`,
-            );
-          }
-        const pointers: string[] = [];
-        for (const pattern of options.copy ?? []) {
-          const found = copied(pattern, true);
-          if (found.length === 0) throw new Error(`catalog copy: ${pattern} matches nothing`);
-          for (const [file, source] of found) {
-            const target = join(out, file);
-            cpSync(source, target, { recursive: true, dereference: true });
-            // Only in CI: locally a pointer may be a file .lfsconfig leaves out.
-            if (process.env.CI !== "true") continue;
-            const files = statSync(target).isDirectory()
-              ? readdirSync(target, { recursive: true, encoding: "utf8" }).map((f) => join(file, f))
-              : [file];
-            for (const f of files)
-              if (statSync(join(out, f)).isFile() && isPointer(join(out, f))) pointers.push(f);
-          }
-        }
-        if (pointers.length)
-          throw new Error(`catalog copy: still Git LFS pointers: ${pointers.join(", ")}`);
-        // Opened from disk, each link to a page or file of the build, a state menu's option included,
-        // names its file by file URL, as Astro names the assets, since a folder there opens as a
-        // listing, not its index.html. Last, once every `copy` entry is in place.
-        if (onDisk)
-          for (const [pattern, urls] of assets) {
-            if (!pageRoutes.has(pattern)) continue;
-            for (const url of urls) {
-              if (!url.pathname.endsWith(".html")) continue;
-              const file = fileURLToPath(url);
-              const html = readFileSync(file, "utf8");
-              const linked = html.replace(
-                /(\s(?:href|src|data-src|value)=")(\/(?!\/)[^"?#]*)([^"]*")/g,
-                (all, attr: string, path: string, rest: string) => {
-                  if (path !== base && !path.startsWith(`${base}/`)) return all;
-                  const at = decoded(path.slice(base.length + 1));
-                  const target = at.split("/").includes("..")
-                    ? undefined
-                    : [at, join(at, "index.html"), `${at.replace(/\/$/, "")}.html`]
-                        .map((f) => join(out, f))
-                        .find((f) => statSync(f, { throwIfNoEntry: false })?.isFile());
-                  return target ? `${attr}${pathToFileURL(target).href}${rest}` : all;
-                },
-              );
-              if (linked !== html) writeFileSync(file, linked);
-            }
-          }
-      },
+      "astro:config:setup": (params) => hooks.configureCatalog(params),
+      "astro:routes:resolved": (params) => hooks.catalogRoutes(params),
+      "astro:server:setup": (params) => hooks.catalogServer(params),
+      "astro:server:start": (params) => hooks.startCatalogServer(params),
+      "astro:build:done": (params) => hooks.finishCatalogBuild(params),
     },
   };
 }
