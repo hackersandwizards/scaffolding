@@ -86,13 +86,26 @@
   "overrides": [
     {
       "files": [
+        "**/*.test.*",
+        "**/*.spec.*",
+        "**/*.prop.test.*",
+        "**/__tests__/**",
+        "**/test/**",
+        "**/tests/**",
+        "**/e2e/**"
+      ],
+      "rules": {
+        "max-lines-per-function": "off",
+        "max-lines": "off"
+      }
+    },
+    {
+      "files": [
         "**/{__tests__,test,tests,e2e}/**/*.{js,jsx,ts,tsx,mjs,cjs,mts,cts}",
         "**/*.{test,spec}.{js,jsx,ts,tsx,mjs,cjs,mts,cts}"
       ],
       "plugins": ["vitest"],
       "rules": {
-        "max-lines-per-function": "off",
-        "max-lines": "off",
         "vitest/expect-expect": [
           "error",
           {

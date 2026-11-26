@@ -88,8 +88,9 @@ Remove `baseUrl` from a TypeScript project that uses it and write each path targ
 
 The shared Oxlint config limits cyclomatic complexity to 10, nesting to four levels, and
 function parameters to three. It also limits production functions to 50 lines and production
-files to 300 lines. Both length rules skip blank lines and comments. The Vitest file globs
-turn off both length rules.
+files to 300 lines. Both length rules skip blank lines and comments. Both length rules are off for linted
+files under `test/`, `tests/`, `__tests__/`, and `e2e/`, and for names matching `*.test.*` or
+`*.spec.*`.
 
 ### Rule guides
 

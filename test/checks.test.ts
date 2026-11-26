@@ -596,12 +596,12 @@ const expectedValueCases = `${vitestImports}
 const identity = (value) => value;
 const numeric = (value) => Number([value].join(""));
 test.each([
-  [identity, 1, 1],
-  [identity, 0, 0],
-  [identity, null, null],
-  [identity, undefined, undefined],
-  [numeric, undefined, 0],
-])("uses the expected value for case %#", (resolve, input, expected) => {
+  { name: "a positive input", resolve: identity, input: 1, expected: 1 },
+  { name: "zero", resolve: identity, input: 0, expected: 0 },
+  { name: "null", resolve: identity, input: null, expected: null },
+  { name: "undefined", resolve: identity, input: undefined, expected: undefined },
+  { name: "the numeric fallback", resolve: numeric, input: undefined, expected: 0 },
+])("uses the expected value for $name", ({ resolve, input, expected }) => {
   expect(resolve(input)).toBe(expected);
 });`;
 test.each([
@@ -735,6 +735,18 @@ test.each<{ rule: string; failing: string; passing: Record<string, string> }>([
   const green = check();
   expect(green.status, green.stdout + green.stderr).toBe(0);
   expect(green.stdout).not.toContain("[guide]");
+});
+
+test("Oxlint exempts Astro test fixtures from both length limits", () => {
+  const source = `---\n${functionLines(49)}${fileLines(301)}---\n`;
+  const dir = repo({
+    ".oxlintrc.json": JSON.stringify(oxlintTemplate),
+    "test/nested/example.astro": source,
+    "example.spec.astro": source,
+  });
+  install(dir);
+  const result = runOxlint(dir, ["."], true);
+  expect(result.status, result.stdout + result.stderr).toBe(0);
 });
 
 test("Oxlint enforces expect-expect in test folders and stays out of non-test files", () => {
@@ -7791,6 +7803,7 @@ describe("shared eslint config", () => {
 
   test("Oxlint prints one guide for a diagnostic stream larger than one megabyte", () => {
     const findings = 4000;
+    // The test glob keeps max-lines from adding a 4,001st diagnostic and a second guide.
     const probe = "probe.test.js";
     const dir = repo({
       ".oxlintrc.json": JSON.stringify(oxlintTemplate),
