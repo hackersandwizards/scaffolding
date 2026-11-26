@@ -216,6 +216,7 @@ Corporate buzzwords, with the replacement:
 | Proven / Proved | "tested", "validated", "established" |
 | Insatiable | "relentless" |
 | Expert / Expertise | "mentor", "practitioner", "knowledge" |
+| Externe / Berater / consultants, for the people h&w puts into a client's teams | "Praktiker" / "practitioners", who build software agentically every day |
 | Individual (redundant qualifier) | drop it |
 | Maintain / Maintaining in business contexts (technical contexts stay: "maintaining code") | "preserve", "sustain", "keep" |
 | Turn (as overused action) | "convert", "empower" |

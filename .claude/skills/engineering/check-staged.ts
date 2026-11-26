@@ -216,14 +216,14 @@ const runs = active.flatMap(([tool, flags]) => {
 });
 if (checkSkills) {
   // An inherited scope could narrow validation to none. Deletions can break links too.
-  const all = spawnSync("git", ["diff", "--cached", "--no-renames", "--name-only"], {
+  const all = spawnSync("git", ["diff", "--cached", "--no-renames", "--name-only", "-z"], {
     encoding: "utf8",
   });
   if (all.status !== 0) refuseCommit("git diff --cached failed");
   runs.push(
     runStagedTool(process.execPath, ["run", "check:skills"], undefined, {
       ...process.env,
-      VALIDATE_SKILLS_PATHS: all.stdout.trim(),
+      VALIDATE_SKILLS_PATHS: all.stdout.split("\0").filter(Boolean).join("\n"),
     }),
   );
 }
