@@ -190,15 +190,20 @@ test("loads the module without checking the value", async () => {
 export default { ...base, incremental: false, mutate: ["sample.ts"]`;
     writeFileSync(configFile, `${config} };`);
     const run = (...args: string[]): Run => {
-      const result = spawnSync(
-        process.execPath,
-        ["--no-env-file", join(import.meta.dirname, "../bin/scaffolding-mutation.ts"), ...args],
-        {
-          cwd: dir,
-          encoding: "utf8",
-          env: { ...process.env, PATH: "/usr/bin:/bin", SCAFFOLDING_MUTATION_BUN: "1" },
-        },
-      );
+      const command = [
+        "--no-env-file",
+        join(import.meta.dirname, "../bin/scaffolding-mutation.ts"),
+        ...args,
+      ];
+      const result = spawnSync(process.execPath, command, {
+        cwd: dir,
+        encoding: "utf8",
+        env: { ...process.env, PATH: "/usr/bin:/bin", SCAFFOLDING_MUTATION_BUN: "1" },
+      });
+      if (result.status !== 0)
+        throw new Error(
+          `${process.execPath} ${command.join(" ")} failed in ${dir}: ${result.error ?? result.status}\n${result.stdout}${result.stderr}`,
+        );
       return result;
     };
     const initialMutant = () => {
@@ -209,13 +214,10 @@ export default { ...base, incremental: false, mutate: ["sample.ts"]`;
     };
 
     limited = run();
-    expect(limited.status, limited.stdout + limited.stderr).toBe(0);
     staticSurvivor = initialMutant();
     dryRun = run("--dryRunOnly");
-    expect(dryRun.status, dryRun.stdout + dryRun.stderr).toBe(0);
     writeFileSync(configFile, `${config}, ignoreStatic: false };`);
     full = run();
-    expect(full.status, full.stdout + full.stderr).toBe(0);
     staticKill = initialMutant();
   }, limit(30_000));
 

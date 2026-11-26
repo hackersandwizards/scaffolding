@@ -438,24 +438,37 @@ test("Vitest assertion lint accepts property callbacks with both assertion rules
 const vitestImports = 'import { expect, test } from "vitest";\n';
 const vitestExample = `${vitestImports}test("example", () => expect(1).toBe(1));`;
 const thrownError = '() => { throw new Error("text"); }';
-const vitestCases = [
+describe.each([
   [
     "expect-expect",
+    ["expect-expect"],
     'import { test } from "vitest";\ntest("example", () => {});',
     `${vitestImports}function expectSomething() { expect(1).toBe(1); }\ntest("example", () => expectSomething());`,
   ],
   [
     "no-conditional-expect in catch",
+    ["no-conditional-expect"],
     `${vitestImports}test("bad JSON", () => {
       try { JSON.parse("bad"); } catch (error) { expect(error).toBeInstanceOf(SyntaxError); }
     });`,
     `${vitestImports}test("bad JSON", () => expect(() => JSON.parse("bad")).toThrow(SyntaxError));`,
   ],
-  ["no-focused-tests", vitestExample.replace("test(", "test.only("), vitestExample],
-  ["no-disabled-tests", vitestExample.replace("test(", "test.skip("), vitestExample],
-  ["no-commented-out-tests", "// it (something)\n", vitestExample],
+  [
+    "no-focused-tests",
+    ["no-focused-tests"],
+    vitestExample.replace("test(", "test.only("),
+    vitestExample,
+  ],
+  [
+    "no-disabled-tests",
+    ["no-disabled-tests"],
+    vitestExample.replace("test(", "test.skip("),
+    vitestExample,
+  ],
+  ["no-commented-out-tests", ["no-commented-out-tests"], "// it (something)\n", vitestExample],
   [
     "no-identical-title",
+    ["no-identical-title"],
     `import { describe, expect, test } from "vitest";
     describe("group", () => { test("first", () => expect(1).toBe(1)); test("first", () => expect(2).toBe(2)); });`,
     `import { describe, expect, test } from "vitest";
@@ -463,38 +476,33 @@ const vitestCases = [
   ],
   [
     "valid-expect",
+    ["valid-expect"],
     `${vitestImports}test("example", () => { expect(1); });`,
     `${vitestImports}test("example", () => expect(1, "message").toBe(1));`,
   ],
   [
     "require-to-throw-message",
+    ["require-to-throw-message"],
     `${vitestImports}test("error", () => expect(${thrownError}).toThrow());`,
     `${vitestImports}test("error", () => expect(${thrownError}).toThrow("text"));`,
   ],
-  ["valid-title", vitestExample.replace('"example"', '""'), vitestExample],
+  ["valid-title", ["valid-title"], vitestExample.replace('"example"', '""'), vitestExample],
   [
     "no-duplicate-hooks",
+    ["no-duplicate-hooks"],
     `import { beforeEach, describe, expect, test } from "vitest";
     describe("group", () => { beforeEach(() => {}); beforeEach(() => {}); test("example", () => expect(1).toBe(1)); });`,
     `import { beforeEach, describe, expect, test } from "vitest";
     describe("group", () => { beforeEach(() => {}); test("example", () => expect(1).toBe(1)); });`,
   ],
-  ["no-import-node-test", 'import "node:test";', vitestExample],
-] as const;
-describe.each([
-  ...vitestCases.map(([name, failing, passing]) => ({
-    name,
-    failing,
-    passing,
-    rules: [name.split(" ")[0]],
-  })),
-  {
-    name: "no-conditional-expect in if",
-    failing: `${vitestImports}test("example", () => { expect(1).toBe(1); if (Number("1")) expect(1).toBe(1); });`,
-    passing: vitestExample,
-    rules: ["no-conditional-in-test", "no-conditional-expect"],
-  },
-])("Oxlint Vitest: $name", ({ failing, passing, rules }) => {
+  ["no-import-node-test", ["no-import-node-test"], 'import "node:test";', vitestExample],
+  [
+    "no-conditional-expect in if",
+    ["no-conditional-in-test", "no-conditional-expect"],
+    `${vitestImports}test("example", () => { expect(1).toBe(1); if (Number("1")) expect(1).toBe(1); });`,
+    vitestExample,
+  ],
+] as const)("Oxlint Vitest: %s", (_, rules, failing, passing) => {
   let dir: string;
   beforeAll(() => {
     dir = repo({ ".oxlintrc.json": JSON.stringify(oxlintTemplate), "example.test.js": passing });
@@ -2118,10 +2126,14 @@ describe("scaffold and check-structure", () => {
           SCAFFOLDING_GIT_BASE: "/nonexistent/",
         },
       );
-      expect(r.code).toBe(0);
+      requireFixtureSuccess(
+        "scaffold minimal --catalog-in acme-private --admin-in acme-private",
+        r.code,
+        r.out,
+      );
       install(minimal);
       write(minimal, { "bun.lock": "" });
-      sh(minimal, ["config", "core.hooksPath", ".githooks"]);
+      prepareGit(minimal, ["config", "core.hooksPath", ".githooks"]);
     });
     test("name the remote catalog and admin in the gate skips", () => {
       const pkg = scaffolded(minimal);
@@ -2558,10 +2570,11 @@ export default {
     let pkg: ReturnType<typeof scaffolded>;
     beforeAll(() => {
       other = join(parent, "timeout");
-      run(parent, "scaffold", ["timeout", "--catalog-in", "x", "--admin-in", "x"]);
+      const setup = run(parent, "scaffold", ["timeout", "--catalog-in", "x", "--admin-in", "x"]);
+      requireFixtureSuccess("scaffold timeout --catalog-in x --admin-in x", setup.code, setup.out);
       install(other);
       write(other, { "bun.lock": "" });
-      sh(other, ["config", "core.hooksPath", ".githooks"]);
+      prepareGit(other, ["config", "core.hooksPath", ".githooks"]);
       pkg = scaffolded(other);
       pkg.scaffolding.skip.lint = "fixture checks the test runner timeout";
     });
@@ -4052,11 +4065,14 @@ describe("check-confidential never", () => {
     expect(never(body).code).toBe(code);
   });
 
-  test.each([
-    [["met Brennwald", "AG today"], false],
-    [["met Brennwald AG today"], true],
-  ])("adjacent strings never combine into a name (input %j)", (body, complete) => {
-    expect(never({ deck: body }).out.includes("(Brennwald AG)")).toBe(complete);
+  test("does not combine adjacent strings into an unmentioned name", () => {
+    const { out } = never({ deck: ["met Brennwald", "AG today"] });
+    expect(out, out).not.toContain("(Brennwald AG)");
+  });
+
+  test("reports a complete name in one string", () => {
+    const { out } = never({ deck: ["met Brennwald AG today"] });
+    expect(out, out).toContain("(Brennwald AG)");
   });
 
   test("a name in several strings of one value gives one finding", () => {
@@ -6798,8 +6814,14 @@ exec "${process.execPath}" "$@"
   });
 
   describe("an install under a held gate lock", () => {
-    const dir = consumer();
-    const lock = join(realpathSync(dir), "node_modules/.check.lock");
+    let dir: string;
+    let lock: string;
+    const inherited: Record<string, string> = {};
+    beforeAll(() => {
+      dir = consumer();
+      lock = join(realpathSync(dir), "node_modules/.check.lock");
+      inherited.SCAFFOLDING_LOCKED = lock;
+    });
     beforeEach(() => {
       mkdirSync(join(dir, "node_modules"), { recursive: true });
       writeFileSync(
@@ -6814,7 +6836,7 @@ exec "${process.execPath}" "$@"
     afterEach(() => rmSync(lock, { force: true }));
     const invocations: [string, Record<string, string>][] = [
       ["ordinary invocation", {}],
-      ["an invocation inheriting the gate lock", { SCAFFOLDING_LOCKED: lock }],
+      ["an invocation inheriting the gate lock", inherited],
     ];
     test.each(invocations)("refuses to install after %s", (_, overrides) => {
       const bun = fakeBun();
@@ -7237,7 +7259,7 @@ describe("skeleton SessionStart hook", () => {
       cpSync(single, restart, { recursive: true });
       // The prerequisite start discovers main. The second starts without the local branch again.
       const entered = start(restart, cloud);
-      assert(entered.status === 0, entered.stdout + entered.stderr);
+      requireFixtureSuccess(`/bin/sh ${hook}`, entered.status, entered.stdout + entered.stderr);
       prepareGit(restart, ["switch", "-q", "work"]);
       prepareGit(restart, ["branch", "-q", "-D", "main"]);
       expect(start(restart, cloud).stdout).toBe("");
@@ -8368,8 +8390,7 @@ describe("catalog", () => {
     describe("shared default build", () => {
       let home: string;
       beforeAll(() => {
-        const result = build();
-        expect(result.status, result.stdout + result.stderr).toBe(0);
+        prepareBuild();
         home = page("");
       }, limit(60_000));
       test("the catalog is the site's home, with its header and provenance", () => {
@@ -8422,14 +8443,21 @@ describe("catalog", () => {
       });
 
       test.each([
-        ["", '{"hwScale":"dense","hwNight":""}', true],
-        [statePath, '{"hwScale":"screen","hwNight":""}', true],
-        [alonePath, '{"hwScale":"screen"}', false],
-      ] as const)("sets the scale, theme and CSS for /%s", (path, dataset, shell) => {
+        ["", '{"hwScale":"dense","hwNight":""}'],
+        [statePath, '{"hwScale":"screen","hwNight":""}'],
+        [alonePath, '{"hwScale":"screen"}'],
+      ] as const)("sets the scale, theme and root classes for /%s", (path, dataset) => {
         const html = page(path);
         expect(root(html)).toBe(dataset);
         expect(html).toContain('document.documentElement.classList.add(...["fx-root","fx-two"]);');
-        expect(html.includes("#astrobook-sidebar")).toBe(shell);
+      });
+
+      test.each(["", statePath])("adds the sidebar CSS to the shell at /%s", (path) => {
+        expect(page(path)).toContain("#astrobook-sidebar");
+      });
+
+      test.each([alonePath])("omits the sidebar CSS from the standalone page at /%s", (path) => {
+        expect(page(path)).not.toContain("#astrobook-sidebar");
       });
 
       test.each(["", statePath, alonePath, "catalog", "catalog/dashboard/Parts/box-parts/two"])(
@@ -9267,7 +9295,7 @@ describe("catalog", () => {
       describe("using the brand header", () => {
         let branded: string, brandedState: string, sheets: string;
         beforeAll(() => {
-          expect(build(["--config", "navless.config.mjs"]).status).toBe(0);
+          prepareBuild(["--config", "navless.config.mjs"]);
           branded = readFileSync(join(dist, "index.html"), "utf8");
           sheets = [
             branded,
@@ -9405,8 +9433,7 @@ describe("catalog", () => {
         ["ringed", 'htmlClass: ["hw-focus-ring"]', containingText(ring)],
       ] as const)("%s focus styling", (name, options, expected) => {
         beforeAll(() => {
-          const result = variant(name, options);
-          assert(result.status === 0, result.stdout + result.stderr);
+          prepareVariant(name, options);
         }, limit(60_000));
         test.each([[""], [statePath], [alonePath]])("applies to /%s", (path) => {
           expect(styles(page(path))).toEqual(expected);
@@ -9429,8 +9456,7 @@ describe("catalog", () => {
 
       describe("brand's favicon", () => {
         beforeAll(() => {
-          const result = build();
-          expect(result.status, result.stdout + result.stderr).toBe(0);
+          prepareBuild();
         }, limit(60_000));
 
         test.each([[""], [alonePath]])(
@@ -9493,8 +9519,7 @@ describe("catalog", () => {
       });
       describe("robots policy in a build with its own pages and endpoints", () => {
         beforeAll(() => {
-          const result = build();
-          assert(result.status === 0, result.stdout + result.stderr);
+          prepareBuild();
         }, limit(60_000));
 
         test("a regular page keeps its head without a robots tag", () => {
@@ -9550,8 +9575,7 @@ describe("catalog", () => {
           // A site with a home page of its own keeps the catalog at /catalog/; no page gets a robots tag.
           writeFileSync(join(pages, "index.astro"), head("<p>site home</p>"));
           writeFileSync(join(pages, "catalog", "extra.astro"), head(""));
-          const result = build();
-          assert(result.status === 0, result.stdout + result.stderr);
+          prepareBuild();
         }, limit(60_000));
         afterAll(() => {
           rmSync(join(pages, "index.astro"), { force: true });
@@ -11153,7 +11177,7 @@ describe("raise-pins", () => {
     const pkg = { name: "c", private: true, scripts, dependencies };
     const dir = repo({ "package.json": `${JSON.stringify(pkg, null, 2)}\n` }, false);
     const env = { ...process.env, BUN_INSTALL_CACHE_DIR: cacheDir };
-    expect(spawnSync("bun", ["install"], { cwd: dir, env }).status).toBe(0);
+    prepareCommand(dir, "bun", ["install"], env);
     sh(dir, ["add", "-A"]);
     sh(dir, ["commit", "-qm", "init"]);
     return dir;
@@ -11977,8 +12001,7 @@ describe("check-licenses", () => {
       ...files,
       "package.json": JSON.stringify({ name: "fx", dependencies, scaffolding }),
     });
-    const install = spawnSync(process.execPath, ["install"], { cwd: dir, encoding: "utf8" });
-    expect(install.status).toBe(0);
+    prepareCommand(dir, process.execPath, ["install"]);
     return dir;
   }
   const license = (l: string) => ({ license: l });
@@ -12115,22 +12138,24 @@ describe("check-licenses", () => {
           overrides: { b: "file:./b-1.0.0.tgz" },
         }),
       });
-      for (const p of ["a", "b", "c"])
-        spawnSync(process.execPath, ["pm", "pack", "--destination", dir], {
-          cwd: join(dir, "src", p),
-        });
-      expect(spawnSync(process.execPath, ["install"], { cwd: dir }).status).toBe(0);
+      for (const name of ["a", "b", "c"])
+        prepareCommand(join(dir, "src", name), process.execPath, [
+          "pm",
+          "pack",
+          "--destination",
+          dir,
+        ]);
+      prepareCommand(dir, process.execPath, ["install"]);
       lock = join(dir, "bun.lock");
       pinned = readFileSync(lock, "utf8").replace(
         /("c": \["c@[^"]*", \{ "dependencies": \{ "b": "1\.0\.0" \})/,
         '$1, "os": "none"',
       );
-      expect(pinned).toContain('"os": "none"');
+      if (!pinned.includes('"os": "none"'))
+        throw new Error(`Could not mark the optional dependency as skipped in ${lock}:\n${pinned}`);
       writeFileSync(lock, pinned);
       rmSync(join(dir, "node_modules"), { recursive: true });
-      expect(
-        spawnSync(process.execPath, ["install", "--frozen-lockfile"], { cwd: dir }).status,
-      ).toBe(0);
+      prepareCommand(dir, process.execPath, ["install", "--frozen-lockfile"]);
     });
     test("passes when no installed package needs the skipped entry", () => {
       expect(existsSync(join(dir, "node_modules/b"))).toBe(false);
