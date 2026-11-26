@@ -3,6 +3,7 @@
 import { readFileSync, statSync } from "node:fs";
 import type { MutationTestResult } from "mutation-testing-report-schema";
 import { help } from "../lib/help.ts";
+import { formatMutationSummary } from "../lib/mutation-summary.ts";
 import { runTimed } from "../lib/run-timed.ts";
 
 const reportPath = ".stryker-reports/mutation.json";
@@ -13,30 +14,8 @@ function mutationReportStamp() {
 
 function printMutationSummary() {
   const report = JSON.parse(readFileSync(reportPath, "utf8")) as MutationTestResult;
-  if (!report.config || !("ignoreStatic" in report.config) || report.config.ignoreStatic !== true)
-    return;
-
-  const survivors: string[] = [];
-  let detected = 0;
-  let undetected = 0;
-  for (const [file, { mutants }] of Object.entries(report.files)) {
-    for (const mutant of mutants) {
-      if (mutant.status === "Killed" || mutant.status === "Timeout") detected++;
-      if (mutant.status === "Survived" || mutant.status === "NoCoverage") undetected++;
-      if (mutant.status === "Survived" && mutant.static === true)
-        survivors.push(`  ${file}:${mutant.location.start.line} ${mutant.mutatorName}`);
-    }
-  }
-
-  const total = detected + undetected;
-  const score = (count: number) => (count ? `${((detected / count) * 100).toFixed(2)}%` : "n/a");
-  console.log(
-    [
-      `\nNot tested against the full suite (module-level code): ${survivors.length}`,
-      ...survivors,
-      `Mutation score excluding these survivors: ${score(total - survivors.length)} (Stryker: ${score(total)})`,
-    ].join("\n"),
-  );
+  const summary = formatMutationSummary(report);
+  if (summary !== undefined) console.log(summary);
 }
 
 export function runMutation(

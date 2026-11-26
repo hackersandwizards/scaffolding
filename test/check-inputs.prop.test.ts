@@ -93,16 +93,19 @@ test.prop([fc.array(word), word, fc.constantFrom("script", "style", "pre", "text
   },
 );
 
-const termFields = [
-  unicodeString,
-  fc.array(word),
-  fc.array(word),
-  fc.integer({ min: 1, max: 6 }),
-] as const;
+const termFields = fc.record(
+  {
+    salt: unicodeString,
+    hashes: fc.array(word),
+    never: fc.array(word),
+    maxTokens: fc.integer({ min: 1, max: 6 }),
+  },
+  { noNullPrototype: true },
+);
 
-test.prop([...termFields])(
+test.prop([termFields])(
   "purged lists retain the salt and hashes and discard term metadata",
-  (salt, hashes, never, maxTokens) => {
+  ({ salt, hashes, never, maxTokens }) => {
     const list = { salt, hashes, maxTokens, never, built: salt };
     expect(parsePurgedList(JSON.stringify(list))).toEqual({ salt, hashes });
   },
@@ -115,16 +118,16 @@ const invalidPurgedInputs: [string, PurgedInput][] = [
 ];
 
 describe.each(invalidPurgedInputs)("purged list with %s", (_, input) => {
-  test.prop([...termFields])("rejects the generated list", (salt, hashes, _never, maxTokens) => {
+  test.prop([termFields])("rejects the generated list", ({ salt, hashes, maxTokens }) => {
     expect(() => parsePurgedList(JSON.stringify(input(salt, hashes, maxTokens)))).toThrow(
       "expected a salt and a list of hashes",
     );
   });
 });
 
-test.prop([...termFields])(
+test.prop([termFields])(
   "term lists preserve valid fields and normalize optional metadata",
-  (salt, hashes, never, maxTokens) => {
+  ({ salt, hashes, never, maxTokens }) => {
     const list = { salt, hashes, maxTokens, never, built: salt };
     expect(parseTermList(JSON.stringify(list))).toEqual(list);
     expect(parseTermList(JSON.stringify({ ...list, never: undefined, built: 1 }))).toEqual({
@@ -156,7 +159,7 @@ const invalidTermInputs: [string, (list: TermInput) => object][] = [
 ];
 
 describe.each(invalidTermInputs)("term list with %s", (_, input) => {
-  test.prop([...termFields])("rejects the generated list", (salt, hashes, never, maxTokens) => {
+  test.prop([termFields])("rejects the generated list", ({ salt, hashes, never, maxTokens }) => {
     const invalid = JSON.stringify(input({ salt, hashes, never, maxTokens, built: salt }));
     expect(parseTermList(invalid), invalid).toBeUndefined();
   });

@@ -5,6 +5,7 @@ import { basename, join } from "node:path";
 import ts from "typescript";
 import skeleton from "../skeleton.json";
 import { renderGuides } from "../lib/guides.ts";
+import { moduleFunctionNames } from "../lib/module-function-names.ts";
 import { oxlintConfig, oxlintFiles } from "../lib/oxlint.ts";
 import { finish, repoRoot, TEST, type Finding } from "../lib/repo.ts";
 
@@ -35,37 +36,6 @@ const verbatimCopies = new Set(skeleton.same);
 const home = realpathSync(join(import.meta.dir, ".."));
 const root = realpathSync(repoRoot());
 const started = performance.now();
-
-function* moduleFunctionNames(source: ts.SourceFile) {
-  const bindings: ts.VariableDeclaration[] = [];
-  function collectHoisted(node: ts.Node): void {
-    if (ts.isFunctionLike(node) || ts.isClassLike(node) || ts.isModuleDeclaration(node)) return;
-    if (ts.isVariableDeclarationList(node)) {
-      if (!(node.flags & ts.NodeFlags.BlockScoped)) bindings.push(...node.declarations);
-      return;
-    }
-    ts.forEachChild(node, collectHoisted);
-  }
-  for (const statement of source.statements) {
-    if (ts.isFunctionDeclaration(statement) && statement.body && statement.name)
-      yield statement.name.text;
-    if (ts.isVariableStatement(statement)) bindings.push(...statement.declarationList.declarations);
-    else collectHoisted(statement);
-  }
-  for (const { name, initializer } of bindings) {
-    if (!ts.isIdentifier(name) || !initializer) continue;
-    let expression = initializer;
-    while (
-      ts.isParenthesizedExpression(expression) ||
-      ts.isAsExpression(expression) ||
-      ts.isTypeAssertionExpression(expression) ||
-      ts.isSatisfiesExpression(expression) ||
-      ts.isNonNullExpression(expression)
-    )
-      expression = expression.expression;
-    if (ts.isArrowFunction(expression) || ts.isFunctionExpression(expression)) yield name.text;
-  }
-}
 
 const files = lstatSync(join(root, oxlintConfig), { throwIfNoEntry: false })
   ? oxlintFiles(root)

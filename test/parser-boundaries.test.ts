@@ -90,22 +90,27 @@ test.each([
   expect(spaceTemplateLines(visible)).toEqual(visible.split("\n"));
 });
 
-test.each([
-  ["42{name}", "<a>", false, "a"],
-  ["値{name}", "<a>", false, "a"],
-  ["!{name}", "<a>", false, false],
-  ["<strong>{name}", "<a>", false, false],
-  ["} word {name}", "<a>", false, false],
-  ["text", "  {<a />}", true, "a"],
-  ["text", "{<div />}", true, undefined],
-  ["text", "{name}", true, undefined],
-  ["text", "prefix {<a />}", true, undefined],
-  ["text", "{<a />} tail", true, undefined],
-  ["</a>", "<div>", true, undefined],
-  ["</a>", "", false, false],
-  ["> ", "text", false, "a"],
-  ["> extra", "text", false, undefined],
-])("detects inline whitespace between %j and %j with kept=%j", (line, next, kept, tag) => {
+test.each(
+  [
+    { line: "42{name}", next: "<a>", kept: false, tag: "a" },
+    { line: "値{name}", next: "<a>", kept: false, tag: "a" },
+    { line: "!{name}", next: "<a>", kept: false, tag: false },
+    { line: "<strong>{name}", next: "<a>", kept: false, tag: false },
+    { line: "} word {name}", next: "<a>", kept: false, tag: false },
+    { line: "text", next: "  {<a />}", kept: true, tag: "a" },
+    { line: "text", next: "{<div />}", kept: true, tag: undefined },
+    { line: "text", next: "{name}", kept: true, tag: undefined },
+    { line: "text", next: "prefix {<a />}", kept: true, tag: undefined },
+    { line: "text", next: "{<a />} tail", kept: true, tag: undefined },
+    { line: "</a>", next: "<div>", kept: true, tag: undefined },
+    { line: "</a>", next: "", kept: false, tag: false },
+    { line: "> ", next: "text", kept: false, tag: "a" },
+    { line: "> extra", next: "text", kept: false, tag: undefined },
+  ].map((row) => ({
+    ...row,
+    name: `${JSON.stringify(row.line)} and ${JSON.stringify(row.next)} with kept=${row.kept}`,
+  })),
+)("detects inline whitespace between $name", ({ line, next, kept, tag }) => {
   expect(lostSpaceTag(line, next, "</a", kept)).toBe(tag);
 });
 

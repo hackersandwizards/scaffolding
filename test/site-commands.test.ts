@@ -3,14 +3,7 @@ import { createServer, type IncomingMessage, type ServerResponse } from "node:ht
 import { join } from "node:path";
 import { assert, expect, test } from "vitest";
 
-function runSiteCommand(name: string, args: string[], preload?: string, load = "0") {
-  const bin = join(import.meta.dirname, "..", "bin", `${name}.ts`);
-  const entry = preload
-    ? [
-        "-e",
-        `${preload}\nprocess.argv = [process.execPath, ...${JSON.stringify([bin, ...args])}]; await import(${JSON.stringify(bin)});`,
-      ]
-    : [bin, ...args];
+function runSiteCommand(entry: string[], load = "0") {
   const child = Bun.spawn([process.execPath, "--no-env-file", ...entry], {
     env: { ...process.env, SCAFFOLDING_LOAD: load },
     stdout: "pipe",
@@ -44,7 +37,8 @@ test.each([
       console.log(await (await fetch(url)).text());
     process.exit(${code});
   `;
-    const [status, stdout, stderr] = await runSiteCommand("with-server", [
+    const [status, stdout, stderr] = await runSiteCommand([
+      join(import.meta.dirname, "../bin/with-server.ts"),
       ...flags,
       serverCommand,
       "--",
@@ -74,7 +68,8 @@ test.each([
 );
 
 test("with-server fails when the server never answers within the readiness timeout", async () => {
-  const [status, stdout, stderr] = await runSiteCommand("with-server", [
+  const [status, stdout, stderr] = await runSiteCommand([
+    join(import.meta.dirname, "../bin/with-server.ts"),
     "--timeout",
     "0.1",
     bunServer(
@@ -100,7 +95,8 @@ test.each([
   ["redirected", `{ ${slowServer}; } 2>/dev/null`],
 ])("with-server kills a server that ignores SIGTERM with %s stderr", async (_, command) => {
   const started = performance.now();
-  const [status, stdout, stderr] = await runSiteCommand("with-server", [
+  const [status, stdout, stderr] = await runSiteCommand([
+    join(import.meta.dirname, "../bin/with-server.ts"),
     command,
     "--",
     process.execPath,
@@ -125,7 +121,8 @@ test.each([
 });
 
 test("with-server returns 1 when the check dies on a signal", async () => {
-  const [status, stdout, stderr] = await runSiteCommand("with-server", [
+  const [status, stdout, stderr] = await runSiteCommand([
+    join(import.meta.dirname, "../bin/with-server.ts"),
     serverCommand,
     "--",
     process.execPath,
@@ -140,11 +137,15 @@ test.each([
   ["0", 120],
   ["99999", 1200],
 ])("with-server uses the default wall limit scaled for load %s", async (load, seconds) => {
+  const withServer = join(import.meta.dirname, "../bin/with-server.ts");
+  const argv = [withServer, serverCommand, "--", process.execPath, "-e", "await Bun.sleep(1000);"];
   const [status, , stderr] = await runSiteCommand(
-    "with-server",
-    [serverCommand, "--", process.execPath, "-e", "await Bun.sleep(1000);"],
-    `const original = setTimeout;
-     globalThis.setTimeout = (fn, ms, ...args) => original(fn, ms === 120_000 || ms === 1_200_000 ? 50 : ms, ...args);`,
+    [
+      "-e",
+      `const original = setTimeout;
+     globalThis.setTimeout = (fn, ms, ...args) => original(fn, ms === 120_000 || ms === 1_200_000 ? 50 : ms, ...args);
+process.argv = [process.execPath, ...${JSON.stringify(argv)}]; await import(${JSON.stringify(withServer)});`,
+    ],
     load,
   );
   expect(status, stderr).toBe(124);
@@ -152,18 +153,19 @@ test.each([
   expect(stderr).toContain("--limit");
 });
 
-test.each([
-  [
-    "0.05",
-    124,
-    "",
-    expect.stringMatching(/check reached the 0\.05-second wall limit[^\n]*--limit/),
-  ],
-  ["3", 0, "check finished\n", ""],
-] as const)(
-  "with-server runs the same check with --limit %s",
-  async (limit, expected, output, error) => {
-    const [status, stdout, stderr] = await runSiteCommand("with-server", [
+test.each<{ limit: string; expected: number; output: string; error: unknown }>([
+  {
+    limit: "0.05",
+    expected: 124,
+    output: "",
+    error: expect.stringMatching(/check reached the 0\.05-second wall limit[^\n]*--limit/),
+  },
+  { limit: "3", expected: 0, output: "check finished\n", error: "" },
+])(
+  "with-server runs the same check with --limit $limit",
+  async ({ limit, expected, output, error }) => {
+    const [status, stdout, stderr] = await runSiteCommand([
+      join(import.meta.dirname, "../bin/with-server.ts"),
       "--limit",
       limit,
       serverCommand,
@@ -190,7 +192,10 @@ test.each([
   ["check-links", ["http://127.0.0.1:0/sub/"], "usage: check-links"],
   ["check-links", ["http://127.0.0.1", "--concurrency", "0"], "usage: check-links"],
 ] as const)("%s rejects invalid usage with status 2", async (name, args, diagnostic) => {
-  const [status, , stderr] = await runSiteCommand(name, [...args]);
+  const [status, , stderr] = await runSiteCommand([
+    join(import.meta.dirname, `../bin/${name}.ts`),
+    ...args,
+  ]);
   expect(status).toBe(2);
   expect(stderr).toContain(`usage: ${name}`);
   expect(stderr).toContain(diagnostic);
@@ -218,7 +223,8 @@ async function crawlFixture(
     },
   });
   try {
-    const [status, stdout, stderr] = await runSiteCommand("check-links", [
+    const [status, stdout, stderr] = await runSiteCommand([
+      join(import.meta.dirname, "../bin/check-links.ts"),
       server.url.href,
       ...args,
     ]);
@@ -327,7 +333,8 @@ test("check-links reports a rejected fetch with its referrer and continues crawl
     assert(address, "expected a TCP listener");
     assert(typeof address === "object", "expected a TCP listener address");
     const url = `http://127.0.0.1:${address.port}`;
-    const [status, stdout, stderr] = await runSiteCommand("check-links", [
+    const [status, stdout, stderr] = await runSiteCommand([
+      join(import.meta.dirname, "../bin/check-links.ts"),
       url,
       "--concurrency",
       "1",
@@ -393,7 +400,10 @@ test("check-links fails a site with zero internal links", async () => {
 });
 
 test("check-links fails when it cannot fetch the start page", async () => {
-  const [status, stdout, stderr] = await runSiteCommand("check-links", ["http://127.0.0.1:0"]);
+  const [status, stdout, stderr] = await runSiteCommand([
+    join(import.meta.dirname, "../bin/check-links.ts"),
+    "http://127.0.0.1:0",
+  ]);
   expect(status).toBe(1);
   expect(stdout).toContain("1 paths crawled, 1 broken");
   expect(stderr).toMatch(/http:\/\/127\.0\.0\.1:0\/ .* <- start URL/);
