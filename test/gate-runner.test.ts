@@ -1,5 +1,6 @@
 import { spawn } from "node:child_process";
 import { expect, test, vi } from "vitest";
+import { defined } from "../lib/defined.ts";
 import {
   formatStepLine,
   GateStepRunner,
@@ -107,6 +108,14 @@ test("GateStepRunner.runStep flushes buffered output ahead of its status line an
   }
 });
 
+function terminateProcessGroup(pid: number): void {
+  try {
+    process.kill(-pid, "SIGTERM");
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code !== "ESRCH") throw error;
+  }
+}
+
 test("GateStepRunner.installSignalHandlers reports running steps and re-raises SIGTERM", async () => {
   const script = [
     'import { GateStepRunner } from "./lib/gate-runner.ts";',
@@ -118,16 +127,24 @@ test("GateStepRunner.installSignalHandlers reports running steps and re-raises S
   const child = spawn(process.execPath, ["-e", script], {
     cwd: process.cwd(),
     stdio: ["ignore", "pipe", "pipe"],
+    detached: true,
   });
+  const pid = defined(child.pid, "child pid");
   let stderr = "";
   child.stderr.on("data", (chunk: Buffer) => (stderr += chunk.toString()));
-  await new Promise<void>((ready) => {
-    child.stdout.once("data", () => ready());
-  });
-  child.kill("SIGTERM");
-  const exit = await new Promise<{ code: number | null; signal: NodeJS.Signals | null }>((done) => {
-    child.on("close", (code, signal) => done({ code, signal }));
-  });
-  expect(exit.signal).toBe("SIGTERM");
-  expect(stderr).toContain("[scaffolding] stopped nap by SIGTERM");
+  try {
+    await new Promise<void>((ready) => {
+      child.stdout.once("data", () => ready());
+    });
+    child.kill("SIGTERM");
+    const exit = await new Promise<{ code: number | null; signal: NodeJS.Signals | null }>(
+      (done) => {
+        child.on("close", (code, signal) => done({ code, signal }));
+      },
+    );
+    expect(exit.signal).toBe("SIGTERM");
+    expect(stderr).toContain("[scaffolding] stopped nap by SIGTERM");
+  } finally {
+    terminateProcessGroup(pid);
+  }
 });

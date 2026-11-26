@@ -119,8 +119,8 @@ export class LinkCrawl {
       this.status.set(path, res.status);
       const location = res.headers.get("location");
       if (res.status >= 300 && res.status < 400 && location) {
-        await res.body?.cancel();
         this.recordRedirect(path, pageUrl, location);
+        await res.body?.cancel();
         return;
       }
       if (!res.ok || !isHtmlResponse(res)) {

@@ -2,7 +2,7 @@ import { spawnSync } from "node:child_process";
 import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { afterEach, beforeEach, expect, test } from "vitest";
+import { expect, test } from "vitest";
 import {
   collectRangeChanges,
   collectRangeChangesWithShell,
@@ -11,26 +11,12 @@ import {
   parseNulPaths,
   readShellTreeInputs,
   readWorkingTreeShellInputs,
+  resolveRangePaths,
   verifyCommitRange,
 } from "../lib/changed-paths.ts";
+import { installCleanGitEnvHooks } from "./git-env.ts";
 
-let savedGitEnv: [string, string | undefined][] = [];
-
-function clearGitEnv(): void {
-  savedGitEnv = Object.entries(process.env).filter(([key]) => key.startsWith("GIT_"));
-  for (const [key] of savedGitEnv) delete process.env[key];
-}
-
-function restoreGitEnv(): void {
-  for (const [key, value] of savedGitEnv) {
-    if (value === undefined) delete process.env[key];
-    else process.env[key] = value;
-  }
-  savedGitEnv = [];
-}
-
-beforeEach(clearGitEnv);
-afterEach(restoreGitEnv);
+installCleanGitEnvHooks();
 
 function runGit(cwd: string, args: string[]): string {
   const res = spawnSync("git", args, { cwd, env: process.env, encoding: "utf8" });
@@ -111,6 +97,33 @@ test("collectRangeChangesWithShell lists changed paths and shell trees across pu
       shellShebangs: new Set(),
       sourcedPaths: new Set(["helper.env"]),
       since: firstSha.slice(0, 9),
+    });
+  });
+});
+
+test("resolveRangePaths verifies a single range and returns its touched paths", () => {
+  withTempGitRepo((dir, firstSha, secondSha) => {
+    expect(resolveRangePaths(dir, `${firstSha}..${secondSha}`)).toEqual({
+      base: firstSha,
+      head: secondSha,
+      touched: ["app.ts"],
+    });
+    expect(resolveRangePaths(dir, `0000000..${secondSha}`)).toEqual({
+      fallback: `0000000..${secondSha} starts a new branch`,
+    });
+  });
+});
+
+test("collectRangeChangesWithShell surfaces an earlier range shell-read fallback before a later range fallback", () => {
+  withTempGitRepo((dir, firstSha, secondSha) => {
+    const blobSha = runGit(dir, ["rev-parse", `${firstSha}:base.sh`]);
+    rmSync(join(dir, ".git/objects", blobSha.slice(0, 2), blobSha.slice(2)));
+    const result = collectRangeChangesWithShell(dir, [
+      `${firstSha}..${secondSha}`,
+      `0000000..${secondSha}`,
+    ]);
+    expect(result).toEqual({
+      fallback: "git could not read shell inputs in the pushed ranges",
     });
   });
 });

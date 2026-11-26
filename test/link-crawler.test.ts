@@ -1,5 +1,5 @@
 import { createServer } from "node:net";
-import { expect, test } from "vitest";
+import { expect, test, vi } from "vitest";
 import {
   brokenLinkLines,
   extractHtmlUrls,
@@ -81,6 +81,15 @@ test.each([
     expectedLinks: 0,
   },
   {
+    label: "redirect with unparseable location",
+    path: "/bad-redir",
+    handler: () => new Response(null, { status: 302, headers: { location: "http://[" } }),
+    expectedStatus: 302,
+    expectedRedirect: undefined,
+    expectedQueued: false,
+    expectedLinks: 0,
+  },
+  {
     label: "non-HTML 200 response",
     path: "/data.json",
     handler: () => new Response('{"ok":true}', { headers: { "content-type": "application/json" } }),
@@ -122,6 +131,25 @@ test("LinkCrawl.visitPage records an error status when fetch rejects", async () 
   const crawl = new LinkCrawl(site, []);
   await crawl.visitPage("/unreachable", "http://127.0.0.1:0/unreachable");
   expect(typeof crawl.status.get("/unreachable")).toBe("string");
+});
+
+test("LinkCrawl.visitPage records and queues a redirect before cancelling the response body", async () => {
+  const stream = new ReadableStream({
+    cancel() {
+      return Promise.reject(new Error("cancel failed"));
+    },
+  });
+  const response = new Response(stream, { status: 302, headers: { location: "/next" } });
+  const fetchSpy = vi.spyOn(globalThis, "fetch").mockResolvedValueOnce(response);
+  try {
+    const crawl = new LinkCrawl(site, []);
+    await crawl.visitPage("/redir", new URL("/redir", site).href);
+    expect(crawl.status.get("/redir")).toBe("cancel failed");
+    expect(crawl.redirects.get("/redir")).toBe("/next");
+    expect(crawl.queue.has("/next")).toBe(true);
+  } finally {
+    fetchSpy.mockRestore();
+  }
 });
 
 test("LinkCrawl.visitPage keeps links streamed before a mid-body socket reset", async () => {

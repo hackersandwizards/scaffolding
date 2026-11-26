@@ -64,33 +64,50 @@ function diffNameOnly(root: string, revs: readonly string[]) {
   ]);
 }
 
-function collectResolvedRanges(
+export function resolveRangePaths(
   root: string,
-  ranges: readonly string[],
-): { paths: Set<string>; touchedRefs: string[]; since: string } | { fallback: string } {
-  const paths = new Set<string>();
-  const touchedRefs: string[] = [];
-  for (const range of ranges) {
-    const resolved = verifyCommitRange(root, range);
-    if ("fallback" in resolved) return resolved;
-    const diff = diffNameOnly(root, [resolved.base, resolved.head]);
-    if (diff.status !== 0) return { fallback: "git could not list the changes" };
-    const touched = parseNulPaths(diff.stdout);
-    for (const path of touched) paths.add(path);
-    if (touched.length) touchedRefs.push(resolved.base, resolved.head);
+  range: string,
+): { base: string; head: string; touched: string[] } | { fallback: string } {
+  const resolved = verifyCommitRange(root, range);
+  if ("fallback" in resolved) return resolved;
+  const diff = diffNameOnly(root, [resolved.base, resolved.head]);
+  if (diff.status !== 0) return { fallback: "git could not list the changes" };
+  return { base: resolved.base, head: resolved.head, touched: parseNulPaths(diff.stdout) };
+}
+
+function formatSince(ranges: readonly string[]): string {
+  return ranges.map((r) => r.split("..")[0].slice(0, 9)).join(", ");
+}
+
+function collectShellRefs(
+  root: string,
+  refs: readonly string[],
+  seenRefs: Set<string>,
+): { shebangs: string[]; sourced: string[] } {
+  const shebangs: string[] = [];
+  const sourced: string[] = [];
+  for (const ref of refs) {
+    if (seenRefs.has(ref)) continue;
+    seenRefs.add(ref);
+    const inputs = readShellTreeInputs(root, ref);
+    shebangs.push(...inputs.shebangs);
+    sourced.push(...inputs.sourced);
   }
-  const since = ranges.map((r) => r.split("..")[0].slice(0, 9)).join(", ");
-  return { paths, touchedRefs, since };
+  return { shebangs, sourced };
 }
 
 export function collectRangeChanges(root: string, ranges: readonly string[]): ChangedFilesResult {
-  const collected = collectResolvedRanges(root, ranges);
-  if ("fallback" in collected) return collected;
+  const paths = new Set<string>();
+  for (const range of ranges) {
+    const resolved = resolveRangePaths(root, range);
+    if ("fallback" in resolved) return resolved;
+    for (const path of resolved.touched) paths.add(path);
+  }
   return {
-    paths: collected.paths,
+    paths,
     shellShebangs: new Set(),
     sourcedPaths: new Set(),
-    since: collected.since,
+    since: formatSince(ranges),
   };
 }
 
@@ -98,20 +115,24 @@ export function collectRangeChangesWithShell(
   root: string,
   ranges: readonly string[],
 ): ChangedFilesResult {
-  const collected = collectResolvedRanges(root, ranges);
-  if ("fallback" in collected) return collected;
+  const paths = new Set<string>();
   const shellShebangs = new Set<string>();
   const sourcedPaths = new Set<string>();
-  try {
-    for (const ref of new Set(collected.touchedRefs)) {
-      const { shebangs, sourced } = readShellTreeInputs(root, ref);
-      for (const path of shebangs) shellShebangs.add(path);
-      for (const path of sourced) sourcedPaths.add(path);
+  const seenRefs = new Set<string>();
+  for (const range of ranges) {
+    const resolved = resolveRangePaths(root, range);
+    if ("fallback" in resolved) return resolved;
+    for (const path of resolved.touched) paths.add(path);
+    if (!resolved.touched.length) continue;
+    try {
+      const inputs = collectShellRefs(root, [resolved.base, resolved.head], seenRefs);
+      for (const path of inputs.shebangs) shellShebangs.add(path);
+      for (const path of inputs.sourced) sourcedPaths.add(path);
+    } catch {
+      return { fallback: "git could not read shell inputs in the pushed ranges" };
     }
-  } catch {
-    return { fallback: "git could not read shell inputs in the pushed ranges" };
   }
-  return { paths: collected.paths, shellShebangs, sourcedPaths, since: collected.since };
+  return { paths, shellShebangs, sourcedPaths, since: formatSince(ranges) };
 }
 
 export function readWorkingTreeShellInputs(

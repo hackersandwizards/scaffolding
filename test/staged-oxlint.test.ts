@@ -2,34 +2,15 @@ import { spawnSync } from "node:child_process";
 import { mkdtempSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { afterEach, beforeEach, expect, test, vi } from "vitest";
+import { expect, test, vi } from "vitest";
 import {
   prepareStagedOxlintConfig,
   runStagedOxlint,
   stagedOxlintInputs,
 } from "../lib/staged-oxlint.ts";
+import { installCleanGitEnvHooks } from "./git-env.ts";
 
-let savedGitEnv: [string, string | undefined][] = [];
-
-function clearGitEnv(): void {
-  savedGitEnv = Object.entries(process.env).filter(([key]) => key.startsWith("GIT_"));
-  for (const [key] of savedGitEnv) delete process.env[key];
-}
-
-function restoreGitEnv(): void {
-  for (const [key, value] of savedGitEnv) {
-    if (value === undefined) delete process.env[key];
-    else process.env[key] = value;
-  }
-  savedGitEnv = [];
-}
-
-beforeEach(clearGitEnv);
-afterEach(restoreGitEnv);
-
-function cleanGitEnv(): NodeJS.ProcessEnv {
-  return Object.fromEntries(Object.entries(process.env).filter(([key]) => !key.startsWith("GIT_")));
-}
+installCleanGitEnvHooks();
 
 test("prepareStagedOxlintConfig turns off typeAware and typeCheck while keeping other options", () => {
   const prepared = JSON.parse(
@@ -70,16 +51,18 @@ test.each([
 test("runStagedOxlint returns 1 when .oxlintrc.json is a symlink", () => {
   const dir = mkdtempSync(join(tmpdir(), "staged-oxlint-test-"));
   const stderr = vi.spyOn(console, "error").mockImplementation(() => undefined);
-  const env = cleanGitEnv();
   try {
-    spawnSync("git", ["init", "-q"], { cwd: dir, env });
+    spawnSync("git", ["init", "-q"], { cwd: dir, env: process.env });
     writeFileSync(
       join(dir, "target.json"),
       '{"extends":["./config/oxlint.json"],"options":{"typeAware":true}}',
     );
     symlinkSync("target.json", join(dir, ".oxlintrc.json"));
     writeFileSync(join(dir, "a.ts"), "export const x = 1;\n");
-    spawnSync("git", ["add", ".oxlintrc.json", "target.json", "a.ts"], { cwd: dir, env });
+    spawnSync("git", ["add", ".oxlintrc.json", "target.json", "a.ts"], {
+      cwd: dir,
+      env: process.env,
+    });
     const code = runStagedOxlint(dir, ["a.ts"]);
     expect(code).toBe(1);
     expect(stderr).toHaveBeenCalledWith(expect.stringContaining("must be a regular file"));

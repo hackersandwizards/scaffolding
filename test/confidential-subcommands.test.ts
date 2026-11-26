@@ -3,7 +3,7 @@ import { mkdirSync, mkdtempSync, realpathSync, rmSync, writeFileSync } from "nod
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { afterEach, beforeEach, expect, test } from "vitest";
+import { expect, test } from "vitest";
 import {
   buildPurgedListJson,
   buildTermListJson,
@@ -17,31 +17,12 @@ import {
 } from "../lib/confidential-subcommands.ts";
 import { createTermHasher } from "../lib/confidential-terms.ts";
 import { defined } from "../lib/defined.ts";
+import { installCleanGitEnvHooks } from "./git-env.ts";
 
-let savedGitEnv: [string, string | undefined][] = [];
-
-function clearGitEnv(): void {
-  savedGitEnv = Object.entries(process.env).filter(([key]) => key.startsWith("GIT_"));
-  for (const [key] of savedGitEnv) delete process.env[key];
-}
-
-function restoreGitEnv(): void {
-  for (const [key, value] of savedGitEnv) {
-    if (value === undefined) delete process.env[key];
-    else process.env[key] = value;
-  }
-  savedGitEnv = [];
-}
-
-beforeEach(clearGitEnv);
-afterEach(restoreGitEnv);
-
-function cleanGitEnv(): NodeJS.ProcessEnv {
-  return Object.fromEntries(Object.entries(process.env).filter(([key]) => !key.startsWith("GIT_")));
-}
+installCleanGitEnvHooks();
 
 function runGit(dir: string, args: string[]): string {
-  const result = spawnSync("git", args, { cwd: dir, env: cleanGitEnv(), encoding: "utf8" });
+  const result = spawnSync("git", args, { cwd: dir, env: process.env, encoding: "utf8" });
   if (result.status !== 0) throw new Error(`git ${args.join(" ")}: ${result.stderr}`);
   return result.stdout.trim();
 }
@@ -195,7 +176,7 @@ const CHECK_CONFIDENTIAL_BIN = fileURLToPath(
 );
 
 function runCheckConfidential(cwd: string, args: string[], pathPrefix?: string) {
-  const env = cleanGitEnv();
+  const env: NodeJS.ProcessEnv = { ...process.env };
   delete env.CI;
   delete env.SCAFFOLDING_CONFIDENTIAL_TERMS;
   if (pathPrefix) env.PATH = `${pathPrefix}:${env.PATH ?? ""}`;
