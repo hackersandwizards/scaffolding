@@ -3,21 +3,12 @@
 import { spawnSync } from "node:child_process";
 import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
-import { licenceAllowed } from "../lib/licence-expression.ts";
-import { isObject, isReason, readPackage, repoRoot } from "../lib/repo.ts";
-
-type Exception = { license?: unknown; reason?: unknown };
-const LIBVIPS =
-  "LGPL libvips, a shared library sharp loads at build or request time on our own machines; conveyed in nothing we hand out";
-const DEFAULTS: Record<string, Exception> = {
-  "@hackersandwizards/*": { reason: "our own packages, PolyForm Strict 1.0.0" },
-  "@img/sharp-libvips-*": { license: "LGPL-3.0-or-later", reason: LIBVIPS },
-  "@img/sharp-win32-*": { license: "Apache-2.0 AND LGPL-3.0-or-later", reason: LIBVIPS },
-  "@img/sharp-wasm32": { license: "Apache-2.0 AND LGPL-3.0-or-later AND MIT", reason: LIBVIPS },
-};
-
-const exceptionCovers = (pattern: string, name: string) =>
-  pattern.endsWith("*") ? name.startsWith(pattern.slice(0, -1)) : name === pattern;
+import {
+  auditPackageLicenses,
+  parseLicenseCommandOutput,
+  type LicenseException,
+} from "../lib/license-audit.ts";
+import { readPackage, repoRoot } from "../lib/repo.ts";
 
 type Deps = Record<string, string>;
 type Meta = { dependencies?: Deps; peerDependencies?: Deps; optionalPeers?: string[] };
@@ -69,8 +60,7 @@ function neededMissing(root: string): string[] | undefined {
 function checkLicenses() {
   const started = performance.now();
   const root = repoRoot();
-  const problems: string[] = [];
-  const done = () => {
+  const done = (problems: string[]): never => {
     for (const p of problems) console.error(`[check-licenses] ${p}`);
     const ms = Math.round(performance.now() - started);
     if (problems.length) console.error(`[check-licenses] ${problems.length} findings, ${ms} ms`);
@@ -82,72 +72,11 @@ function checkLicenses() {
     encoding: "utf8",
     maxBuffer: Infinity,
   });
-  let groups: Record<string, unknown> = {};
-  try {
-    if (run.status !== 0) throw new Error();
-    const listed: unknown = JSON.parse(run.stdout);
-    if (!isObject(listed)) throw new Error();
-    groups = listed;
-  } catch {
-    problems.push(
-      `bun pm licenses --json gave no package list (exit ${run.status}): ${`${run.stderr}`.trim()}; run bun install`,
-    );
-    done();
-  }
-  const listed: unknown[] = Object.values(groups).flat();
-  type Listed = { name: string; license: string; versions?: unknown[] };
-  const isListed = (p: unknown): p is Listed =>
-    isObject(p) &&
-    typeof p.name === "string" &&
-    typeof p.license === "string" &&
-    (p.versions === undefined || Array.isArray(p.versions));
-  const packages = listed.filter(isListed);
-  if (!listed.length) problems.push("bun pm licenses lists no package: run bun install");
-  if (/not installed/.test(run.stderr)) {
-    const needed = neededMissing(root);
-    if (needed?.length !== 0)
-      problems.push(
-        `${run.stderr.trim()}: ${needed ? `${needed.join(", ")} needed` : "bun.lock does not read"}, run bun install`,
-      );
-  }
-  if (packages.length < listed.length)
-    problems.push(
-      "bun pm licenses --json changed shape: an entry lacks a name or licence string. Check `bun --version` against packageManager in package.json, run `bun pm licenses --json` to inspect the malformed entry, and update check-licenses.ts if Bun changed its schema",
-    );
-  if (problems.length) done();
+  const { packages, problems } = parseLicenseCommandOutput(run, () => neededMissing(root));
+  if (problems.length) done(problems);
 
-  const own: Record<string, Exception> = readPackage(root).scaffolding?.licenses ?? {};
-  for (const [pattern, e] of Object.entries(own))
-    if (!isReason(e?.reason) || typeof e.license !== "string" || !e.license)
-      problems.push(
-        `scaffolding.licenses["${pattern}"] needs a license string and a reason: set { "license": "<SPDX>", "reason": "<conveyed or not, who decided>" } in package.json, or remove the entry if the package is not needed`,
-      );
-  // A repository's own entries first, so one never reads as stale behind a default.
-  const exceptions = [...Object.entries(own), ...Object.entries(DEFAULTS)];
-  const used = new Set<string>();
-
-  for (const p of packages) {
-    const kept = exceptions.find(
-      ([pattern, e]) => exceptionCovers(pattern, p.name) && (!e.license || e.license === p.license),
-    );
-    if (kept) used.add(kept[0]);
-    else if (!licenceAllowed(p.license))
-      problems.push(
-        `${p.name}@${p.versions?.join(",")}: licence "${p.license}" is not on the allow list. ` +
-          `Why it is installed: bun pm why ${p.name}. To keep it, add to package.json ` +
-          `scaffolding.licenses: "${p.name}": { "license": ${JSON.stringify(p.license)}, "reason": "<conveyed or not, who decided>" }`,
-      );
-  }
-  for (const [pattern, e] of Object.entries(own)) {
-    if (used.has(pattern)) continue;
-    const found = packages.filter((p) => exceptionCovers(pattern, p.name));
-    problems.push(
-      found.length
-        ? `scaffolding.licenses["${pattern}"] pins "${e?.license}", installed is "${[...new Set(found.map((p) => p.license))].join('", "')}": review the new licence with \`bun pm why ${pattern}\`, then either remove the stale entry (if the new licence is on the allow list), replace the package, or update the pinned "license" and "reason" in package.json`
-        : `scaffolding.licenses["${pattern}"] matches no installed package: remove it`,
-    );
-  }
-  done();
+  const own: Record<string, LicenseException> = readPackage(root).scaffolding?.licenses ?? {};
+  done(auditPackageLicenses(packages, own));
 }
 
 if (import.meta.main) checkLicenses();
