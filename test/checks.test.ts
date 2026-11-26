@@ -12157,6 +12157,68 @@ describe("check-names", () => {
   });
 });
 
+const exerciseNames = "src/**/exercises/**";
+const exerciseSource = "function exerciseEntry() {}\n";
+const namesSettings = (names: unknown) => ({ settings: { scaffolding: { names } } });
+const exerciseExemption = namesSettings({
+  [exerciseNames]: "The exercise and solution use the same names.",
+});
+
+test.each([
+  {
+    title: "skips both exercise copies and a name they share with an included file",
+    config: exerciseExemption,
+    expectedCode: 0,
+    expectedFindings: [],
+  },
+  {
+    title: "reports duplicates between included files even with an exemption",
+    config: exerciseExemption,
+    extraFiles: { "src/other.mjs": exerciseSource },
+    expectedCode: 1,
+    expectedFindings: [
+      "[names] src/live.mjs: function `exerciseEntry` is also declared in src/other.mjs",
+    ],
+  },
+  {
+    title: "reports the same exercise pair without an exemption",
+    config: {},
+    expectedCode: 1,
+    expectedFindings: [
+      "[names] src/exercises/solution/start.mjs: function `exerciseEntry` is also declared in src/exercises/start.mjs, src/live.mjs",
+    ],
+  },
+  {
+    title: "fails for an empty or non-string reason",
+    config: namesSettings({ [exerciseNames]: "", "src/live.mjs": false }),
+    expectedCode: 1,
+    expectedFindings: [
+      '[names] .oxlintrc.json: settings.scaffolding.names["src/**/exercises/**"] must be a non-blank reason string',
+      '[names] .oxlintrc.json: settings.scaffolding.names["src/live.mjs"] must be a non-blank reason string',
+    ],
+  },
+  {
+    title: "fails when names is not an object",
+    config: namesSettings([]),
+    expectedCode: 1,
+    expectedFindings: [
+      "[names] .oxlintrc.json: settings.scaffolding.names must be an object mapping repository-relative globs to non-blank reason strings",
+    ],
+  },
+])("check-names $title", ({ config, extraFiles, expectedCode, expectedFindings }) => {
+  const dir = repo({
+    ".oxlintrc.json": `// Repository lint settings\n${JSON.stringify({ ...oxlintTemplate, ...config })}\n`,
+    "src/exercises/start.mjs": exerciseSource,
+    "src/exercises/solution/start.mjs": exerciseSource,
+    "src/live.mjs": exerciseSource,
+    ...extraFiles,
+  });
+  install(dir);
+  const result = run(dir, [bin("check-names")]);
+  expect(result.code, result.out).toBe(expectedCode);
+  expect(lines(result.out, "names")).toEqual(expectedFindings);
+});
+
 describe("check-cycles", () => {
   const cycle = (files: Record<string, string>) => run(repo(files), [bin("check-cycles")]);
   const page = "src/pages/index.astro";

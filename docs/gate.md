@@ -72,6 +72,24 @@ declaration files, minified files, stories, submodules, and files under `dist`, 
 `node_modules`, or `public`. Framework entry points and verbatim skeleton files are exempt.
 Each finding lists every file declaring the name. The guide follows the findings.
 
+To exempt paths from `names`, add a `settings.scaffolding.names` object to the repository's
+`.oxlintrc.json`. Map each repository-relative glob to a non-blank reason.
+
+```json
+{
+  "settings": {
+    "scaffolding": {
+      "names": {
+        "src/content/trainings/**/exercises/**": "The exercise starting state and solution copy declare the same functions by design."
+      }
+    }
+  }
+}
+```
+
+The step leaves matching files out of the name collection. It reports a shared name only when
+two or more checked files declare it.
+
 **Layers.** The `layers` step compares `docs/architecture/layers.md` with the generated map. Each Oxlint override
 with an enabled `no-restricted-imports` rule contributes to a layer named for its file globs.
 The map joins the normalized globs, dropping each trailing `/**`, and combines restrictions

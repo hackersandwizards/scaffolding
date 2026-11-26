@@ -6,8 +6,39 @@ import ts from "typescript";
 import skeleton from "../skeleton.json";
 import { renderGuides } from "../lib/guides.ts";
 import { moduleFunctionNames } from "../lib/module-function-names.ts";
-import { oxlintConfig, oxlintFiles } from "../lib/oxlint.ts";
-import { printCheckFindings, repoRoot, TEST, type Finding } from "../lib/repo.ts";
+import { oxlintConfig, oxlintFiles, parseOxlintConfig } from "../lib/oxlint.ts";
+import { isObject, isReason, printCheckFindings, repoRoot, TEST, type Finding } from "../lib/repo.ts";
+
+const namesSetting = "settings.scaffolding.names";
+const namesConfigFinding = (message: string): Finding => ({
+  check: "names",
+  path: oxlintConfig,
+  text: "",
+  message,
+});
+
+function namesExemptions(settings: unknown, findings: Finding[]) {
+  const scaffolding = isObject(settings) ? settings.scaffolding : undefined;
+  const names = isObject(scaffolding) ? scaffolding.names : undefined;
+  if (names === undefined) return [];
+  if (!isObject(names)) {
+    findings.push(
+      namesConfigFinding(
+        `${namesSetting} must be an object mapping repository-relative globs to non-blank reason strings`,
+      ),
+    );
+    return [];
+  }
+  return Object.entries(names).flatMap(([pattern, reason]) => {
+    if (isReason(reason)) return [new Bun.Glob(pattern)];
+    findings.push(
+      namesConfigFinding(
+        `${namesSetting}[${JSON.stringify(pattern)}] must be a non-blank reason string`,
+      ),
+    );
+    return [];
+  });
+}
 
 const frameworkNames = new Set([
   "GET",
@@ -37,11 +68,15 @@ const home = realpathSync(join(import.meta.dir, ".."));
 const root = realpathSync(repoRoot());
 const started = performance.now();
 
-const files = lstatSync(join(root, oxlintConfig), { throwIfNoEntry: false })
-  ? oxlintFiles(root)
-  : [];
+const configPath = join(root, oxlintConfig);
+const findings: Finding[] = [];
+const hasConfig = lstatSync(configPath, { throwIfNoEntry: false }) !== undefined;
+const config = hasConfig ? parseOxlintConfig(readFileSync(configPath, "utf8")) : {};
+const exemptions = namesExemptions(config.settings, findings);
+const files = hasConfig && findings.length === 0 ? oxlintFiles(root) : [];
 const declared = new Map<string, [string, ...string[]]>();
 for (const file of files.sort()) {
+  if (exemptions.some((glob) => glob.match(file))) continue;
   if (
     !/\.(?:[cm]?[jt]s|[jt]sx)$/.test(file) ||
     TEST.test(file) ||
@@ -62,7 +97,6 @@ for (const file of files.sort()) {
     else declared.set(name, [file]);
   }
 }
-const findings: Finding[] = [];
 for (const [name, [path, ...others]] of declared)
   if (others.length)
     findings.push({
