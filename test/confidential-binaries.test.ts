@@ -145,3 +145,178 @@ test("BinaryContentScanner reuses pre-populated read cache without re-reading ra
     rmSync(dir, { recursive: true, force: true });
   }
 });
+
+function withIsolatedPath(binDir: string, run: () => void): void {
+  const originalPath = process.env.PATH;
+  process.env.PATH = binDir;
+  try {
+    run();
+  } finally {
+    process.env.PATH = originalPath;
+  }
+}
+
+function writeExecutableStub(filePath: string, body: string): void {
+  writeFileSync(filePath, body, { mode: 0o755 });
+}
+
+function setupOcrStub(dir: string, ocrSource: string, ocrText: string): void {
+  const digest = createHash("sha256").update(readFileSync(ocrSource)).digest("hex").slice(0, 12);
+  writeExecutableStub(
+    join(dir, `ocr-${digest}`),
+    `#!/bin/sh\nprintf '== %s\\n%s\\n' "$1" "${ocrText}"\n`,
+  );
+}
+
+test("BinaryContentScanner marks an image unread without caching when OCR is unavailable", () => {
+  const dir = mkdtempSync(join(tmpdir(), "bin-img-noocr-"));
+  try {
+    const src = join(dir, "reader.ts");
+    const ocr = join(dir, "ocr.swift");
+    writeFileSync(src, "v1");
+    writeFileSync(ocr, "// ocr");
+    const file = { where: "shot.png", data: Buffer.from("not-a-real-png") };
+    const [cachePath] = computeReaderCachePaths([file], dir, [src]);
+    const refused: string[] = [];
+    const missing: string[] = [];
+    const scanner = new BinaryContentScanner(
+      dir,
+      (where, entry, message) => refused.push(`${where}|${entry}|${message}`),
+      (where, entry, message) => missing.push(`${where}|${entry}|${message}`),
+    );
+    withIsolatedPath(dir, () => {
+      const texts = scanner.scanAll([file], [src], ocr);
+      expect(texts.has("shot.png")).toBe(false);
+    });
+    expect(refused).toEqual([]);
+    expect(missing).toEqual([
+      "shot.png||image not read: not a decodable image, or no OCR here (macOS only)",
+    ]);
+    expect(existsSync(cachePath)).toBe(false);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test("BinaryContentScanner collects OCR text and caches the read result when OCR succeeds", () => {
+  const dir = mkdtempSync(join(tmpdir(), "bin-img-ocr-"));
+  try {
+    const src = join(dir, "reader.ts");
+    const ocr = join(dir, "ocr.swift");
+    writeFileSync(src, "v1");
+    writeFileSync(ocr, "// ocr");
+    setupOcrStub(dir, ocr, "Detected slide text");
+    const file = { where: "shot.png", data: Buffer.from("fake-png") };
+    const [cachePath] = computeReaderCachePaths([file], dir, [src]);
+    const refused: string[] = [];
+    const missing: string[] = [];
+    const scanner = new BinaryContentScanner(
+      dir,
+      (where, entry, message) => refused.push(`${where}|${entry}|${message}`),
+      (where, entry, message) => missing.push(`${where}|${entry}|${message}`),
+    );
+    const texts = scanner.scanAll([file], [src], ocr);
+    expect(texts.get("shot.png")).toContain("Detected slide text");
+    expect(refused).toEqual([]);
+    expect(missing).toEqual([]);
+    expect(existsSync(cachePath)).toBe(true);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test("BinaryContentScanner marks a PDF unread without caching when pdftotext is missing", () => {
+  const dir = mkdtempSync(join(tmpdir(), "bin-pdf-notext-"));
+  try {
+    const src = join(dir, "reader.ts");
+    const ocr = join(dir, "ocr.swift");
+    writeFileSync(src, "v1");
+    writeFileSync(ocr, "// ocr");
+    const file = { where: "deck.pdf", data: Buffer.from("%PDF-1.4\n") };
+    const [cachePath] = computeReaderCachePaths([file], dir, [src]);
+    const refused: string[] = [];
+    const missing: string[] = [];
+    const scanner = new BinaryContentScanner(
+      dir,
+      (where, entry, message) => refused.push(`${where}|${entry}|${message}`),
+      (where, entry, message) => missing.push(`${where}|${entry}|${message}`),
+    );
+    withIsolatedPath(dir, () => {
+      scanner.scanAll([file], [src], ocr);
+    });
+    expect(refused).toEqual([]);
+    expect(missing).toEqual(["deck.pdf||PDF not read: install poppler for pdftotext"]);
+    expect(existsSync(cachePath)).toBe(false);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test("BinaryContentScanner skips read cache when a PDF has page 1 text but fails to render page 2", () => {
+  const dir = mkdtempSync(join(tmpdir(), "bin-pdf-partial-"));
+  try {
+    const src = join(dir, "reader.ts");
+    const ocr = join(dir, "ocr.swift");
+    writeFileSync(src, "v1");
+    writeFileSync(ocr, "// ocr");
+    writeExecutableStub(join(dir, "pdftotext"), "#!/bin/sh\nprintf 'Page one text\\f\\f'\n");
+    writeExecutableStub(join(dir, "pdfimages"), "#!/bin/sh\nprintf 'page num\\n---- ---\\n'\n");
+    const file = { where: "scan.pdf", data: Buffer.from("%PDF-1.4\n") };
+    const [cachePath] = computeReaderCachePaths([file], dir, [src]);
+    const refused: string[] = [];
+    const missing: string[] = [];
+    const scanner = new BinaryContentScanner(
+      dir,
+      (where, entry, message) => refused.push(`${where}|${entry}|${message}`),
+      (where, entry, message) => missing.push(`${where}|${entry}|${message}`),
+    );
+    withIsolatedPath(dir, () => {
+      const texts = scanner.scanAll([file], [src], ocr);
+      expect(texts.get("scan.pdf")).toContain("Page one text");
+    });
+    expect(refused).toEqual([]);
+    expect(missing).toEqual([
+      "scan.pdf||PDF page 2 holds a scan or an image and was not rendered: install poppler for pdftoppm",
+    ]);
+    expect(existsSync(cachePath)).toBe(false);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test("BinaryContentScanner renders a PDF image page through OCR and caches the result", () => {
+  const dir = mkdtempSync(join(tmpdir(), "bin-pdf-ocr-"));
+  try {
+    const src = join(dir, "reader.ts");
+    const ocr = join(dir, "ocr.swift");
+    writeFileSync(src, "v1");
+    writeFileSync(ocr, "// ocr");
+    setupOcrStub(dir, ocr, "Scanned chart text");
+    writeExecutableStub(join(dir, "pdftotext"), "#!/bin/sh\nprintf 'Page one text\\f'\n");
+    writeExecutableStub(
+      join(dir, "pdfimages"),
+      "#!/bin/sh\nprintf 'page num type\\n---- --- ----\\n   1   0 image\\n'\n",
+    );
+    writeExecutableStub(
+      join(dir, "pdftoppm"),
+      '#!/bin/sh\nfor last; do :; done\n: > "$last.png"\n',
+    );
+    const file = { where: "chart.pdf", data: Buffer.from("%PDF-1.4\n") };
+    const [cachePath] = computeReaderCachePaths([file], dir, [src]);
+    const missing: string[] = [];
+    const scanner = new BinaryContentScanner(
+      dir,
+      (where, entry, message) => missing.push(`${where}|${entry}|${message}`),
+      (where, entry, message) => missing.push(`${where}|${entry}|${message}`),
+    );
+    withIsolatedPath(dir, () => {
+      const texts = scanner.scanAll([file], [src], ocr);
+      expect(texts.get("chart.pdf")).toContain("Page one text");
+      expect(texts.get("chart.pdf")).toContain("Scanned chart text");
+    });
+    expect(missing).toEqual([]);
+    expect(existsSync(cachePath)).toBe(true);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});

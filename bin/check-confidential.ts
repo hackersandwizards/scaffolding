@@ -62,6 +62,7 @@ import {
 import {
   ConfidentialTermMatcher,
   neverBadTermSet,
+  neverPathFinding,
   neverTermFinding,
   parseNeverInput,
   publicBadTermSet,
@@ -165,7 +166,9 @@ const listProblem: Finding[] = [];
 if (skipped) warn("CI: term step skipped; the commit hook is the gate");
 else {
   const loaded = neverMode
-    ? listCache.loadNeverRequired(explicitList)
+    ? optional
+      ? listCache.loadNeverOptional(explicitList)
+      : listCache.loadNeverRequired(explicitList)
     : optional
       ? listCache.loadPublicOptional(explicitList)
       : listCache.loadPublicRequired(explicitList);
@@ -191,7 +194,8 @@ function scanText(where: string, texts: string | string[], inPath = false) {
   const items = [texts].flat();
   const found = neverMode ? matcher.matchNeverTexts(items) : matcher.matchPublicTexts(items);
   for (const name of found) {
-    if (neverMode) findings.push(neverTermFinding(where, name));
+    if (neverMode)
+      findings.push(inPath ? neverPathFinding(where, name) : neverTermFinding(where, name));
     else findings.push(inPath ? publicPathFinding(where, name) : publicTermFinding(where, name));
   }
 }

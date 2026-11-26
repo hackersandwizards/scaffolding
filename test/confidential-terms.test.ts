@@ -12,6 +12,7 @@ import {
   isCapitalisedWord,
   isNeverCacheStale,
   neverBadTermSet,
+  neverPathFinding,
   neverTermFinding,
   parseNeverInput,
   parseTermLines,
@@ -232,6 +233,18 @@ test("publicTermFinding, publicPathFinding, and neverTermFinding build expected 
     message:
       "a name h&w never shows from the company records: remove or anonymise the name with a generic or fictitious placeholder.",
     term: true,
+  });
+});
+
+test("neverPathFinding uses path wording and marks name true", () => {
+  expect(neverPathFinding("zetacorp-deck.md", "zetacorp")).toEqual({
+    check: "never-shown",
+    path: "zetacorp-deck.md",
+    text: "zetacorp",
+    message:
+      "a name h&w never shows from the company records in the file's path: rename the file to a generic or fictitious name.",
+    term: true,
+    name: true,
   });
 });
 

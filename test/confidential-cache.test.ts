@@ -78,6 +78,56 @@ test("ConfidentialListCache.loadNeverRequired warns when cached copy lacks a nev
   }
 });
 
+function withIsolatedPath(binDir: string, run: () => void): void {
+  const originalPath = process.env.PATH;
+  process.env.PATH = binDir;
+  try {
+    run();
+  } finally {
+    process.env.PATH = originalPath;
+  }
+}
+
+test("ConfidentialListCache.loadNeverOptional warns without fetching when no cache exists and attempt is recent", () => {
+  const dir = mkdtempSync(join(tmpdir(), "conf-never-opt-"));
+  try {
+    const warnings: string[] = [];
+    const cache = new ConfidentialListCache(dir, (msg) => warnings.push(msg));
+    const cacheFile = join(dir, "confidential-terms.json");
+    writeFileSync(`${cacheFile}.attempt`, "");
+
+    withIsolatedPath(dir, () => {
+      const loaded = cache.loadNeverOptional(undefined);
+      expect(loaded).toEqual({ problem: `no valid list at ${cacheFile}`, absent: true });
+    });
+    expect(warnings).toEqual([
+      "no copy; next fetch within the hour, or now by `check-confidential fetch`",
+    ]);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test("ConfidentialListCache required loaders fetch when cache is absent even after a recent attempt", () => {
+  const dir = mkdtempSync(join(tmpdir(), "conf-req-absent-"));
+  try {
+    const cache = new ConfidentialListCache(dir, () => undefined);
+    const cacheFile = join(dir, "confidential-terms.json");
+    writeFileSync(`${cacheFile}.attempt`, "");
+
+    withIsolatedPath(dir, () => {
+      const neverLoaded = cache.loadNeverRequired(undefined);
+      expect(neverLoaded.problem).toContain("gh:");
+      expect(neverLoaded.absent).toBe(true);
+      const publicLoaded = cache.loadPublicRequired(undefined);
+      expect(publicLoaded.problem).toContain("gh:");
+      expect(publicLoaded.absent).toBe(true);
+    });
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
 test("ConfidentialListCache.fetchList returns a gh error when gh is unavailable on PATH", () => {
   const dir = mkdtempSync(join(tmpdir(), "conf-fetch-"));
   const originalPath = process.env.PATH;

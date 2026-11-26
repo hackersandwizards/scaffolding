@@ -313,6 +313,18 @@ export function neverTermFinding(where: string, term: string): Finding {
   };
 }
 
+export function neverPathFinding(where: string, term: string): Finding {
+  return {
+    check: "never-shown",
+    path: where,
+    text: term,
+    message:
+      "a name h&w never shows from the company records in the file's path: rename the file to a generic or fictitious name.",
+    term: true,
+    name: true,
+  };
+}
+
 // A value may nest: its object keys and every string in it are its text, so a deck goes in whole.
 export function extractNestedStrings(value: unknown): string[] {
   if (typeof value === "string") return [value];

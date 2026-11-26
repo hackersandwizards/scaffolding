@@ -110,6 +110,11 @@ export class ConfidentialListCache {
     return this.readValidatedList(explicitFile ?? this.cacheFile, problem);
   }
 
+  loadNeverOptional(explicitFile: string | undefined): LoadedTermList {
+    const problem = explicitFile ? undefined : this.refreshNeverOptional();
+    return this.readValidatedList(explicitFile ?? this.cacheFile, problem);
+  }
+
   private fetchOrWarnFallback(): string | undefined {
     const problem = this.fetchList();
     if (problem && existsSync(this.cacheFile))
@@ -134,14 +139,27 @@ export class ConfidentialListCache {
     return undefined;
   }
 
-  private refreshNeverRequired(): string | undefined {
-    const cacheAge = fileAgeMs(this.cacheFile);
+  private isNeverStale(cacheAge: number): boolean {
+    if (isCachedListStale(cacheAge)) return true;
     const cached = existsSync(this.cacheFile)
       ? parseTermList(readFileSync(this.cacheFile, "utf8"))
       : undefined;
-    if (!isNeverCacheStale(cacheAge, cached)) return undefined;
+    return isNeverCacheStale(cacheAge, cached);
+  }
+
+  private refreshNeverRequired(): string | undefined {
+    const cacheAge = fileAgeMs(this.cacheFile);
+    if (!this.isNeverStale(cacheAge)) return undefined;
     if (fileAgeMs(this.attemptFile) >= HOUR || cacheAge === Infinity)
       return this.fetchOrWarnFallback();
+    this.onWarn(describeStaleCacheWarning(existsSync(this.cacheFile), cacheAge));
+    return undefined;
+  }
+
+  private refreshNeverOptional(): string | undefined {
+    const cacheAge = fileAgeMs(this.cacheFile);
+    if (!this.isNeverStale(cacheAge)) return undefined;
+    if (fileAgeMs(this.attemptFile) >= HOUR) return this.fetchOrWarnFallback();
     this.onWarn(describeStaleCacheWarning(existsSync(this.cacheFile), cacheAge));
     return undefined;
   }

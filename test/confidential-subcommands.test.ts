@@ -1,7 +1,8 @@
 import { spawnSync } from "node:child_process";
-import { mkdtempSync, realpathSync, rmSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, realpathSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { fileURLToPath } from "node:url";
 import { afterEach, beforeEach, expect, test } from "vitest";
 import {
   buildPurgedListJson,
@@ -184,6 +185,96 @@ test("hasLfsTrackedChanges and evaluatePrepush detect lockable attributes and pu
     );
     expect(result.invokeLfs).toBe(false);
     expect(result.findings.map((finding) => finding.text)).toEqual([second]);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+const CHECK_CONFIDENTIAL_BIN = fileURLToPath(
+  new URL("../bin/check-confidential.ts", import.meta.url),
+);
+
+function runCheckConfidential(cwd: string, args: string[], pathPrefix?: string) {
+  const env = cleanGitEnv();
+  delete env.CI;
+  delete env.SCAFFOLDING_CONFIDENTIAL_TERMS;
+  if (pathPrefix) env.PATH = `${pathPrefix}:${env.PATH ?? ""}`;
+  return spawnSync("bun", ["--no-env-file", CHECK_CONFIDENTIAL_BIN, ...args], {
+    cwd,
+    env,
+    encoding: "utf8",
+  });
+}
+
+test("check-confidential never --staged reports path wording and honours file names allow", () => {
+  const dir = initTempRepo("conf-never-staged-");
+  try {
+    const salt = "never-staged-salt";
+    const listFile = join(dir, "terms.json");
+    writeFileSync(
+      listFile,
+      JSON.stringify({
+        built: new Date().toISOString(),
+        salt,
+        maxTokens: 1,
+        hashes: [],
+        never: [createTermHasher(salt)("any:zetacorp")],
+      }),
+    );
+    writeFileSync(join(dir, "package.json"), JSON.stringify({ name: "demo" }));
+    writeFileSync(join(dir, "zetacorp-notes.txt"), "plain text\n");
+    runGit(dir, ["add", "package.json", "zetacorp-notes.txt"]);
+
+    const refused = runCheckConfidential(dir, ["never", "--staged", "--list", listFile]);
+    expect(refused.status).toBe(1);
+    expect(`${refused.stdout}${refused.stderr}`).toContain(
+      "a name h&w never shows from the company records in the file's path: rename the file to a generic or fictitious name.",
+    );
+
+    writeFileSync(
+      join(dir, "package.json"),
+      JSON.stringify({
+        name: "demo",
+        scaffolding: {
+          allow: [
+            {
+              check: "never-shown",
+              path: "file names",
+              text: "zetacorp",
+              reason: "test file-name allow",
+            },
+          ],
+        },
+      }),
+    );
+    runGit(dir, ["add", "package.json"]);
+    const allowed = runCheckConfidential(dir, ["never", "--staged", "--list", listFile]);
+    expect(allowed.status).toBe(0);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test("check-confidential never --staged --list-optional warns without fetching after a recent attempt", () => {
+  const dir = initTempRepo("conf-never-opt-cli-");
+  try {
+    const cacheDir = join(dir, "node_modules/.cache/scaffolding");
+    const fakeBin = join(dir, "fake-bin");
+    mkdirSync(cacheDir, { recursive: true });
+    mkdirSync(fakeBin, { recursive: true });
+    writeFileSync(join(cacheDir, "confidential-terms.json.attempt"), "");
+    writeFileSync(join(fakeBin, "gh"), '#!/bin/sh\necho "FAKE_GH_CALLED" >&2\nexit 1\n', {
+      mode: 0o755,
+    });
+    writeFileSync(join(dir, "package.json"), JSON.stringify({ name: "demo" }));
+    writeFileSync(join(dir, "hello.txt"), "plain text\n");
+    runGit(dir, ["add", "package.json", "hello.txt"]);
+
+    const run = runCheckConfidential(dir, ["never", "--staged", "--list-optional"], fakeBin);
+    expect(run.status).toBe(0);
+    expect(run.stderr).toContain("no copy; next fetch within the hour");
+    expect(run.stderr).toContain("--list-optional: terms not scanned");
+    expect(run.stderr).not.toContain("FAKE_GH_CALLED");
   } finally {
     rmSync(dir, { recursive: true, force: true });
   }
