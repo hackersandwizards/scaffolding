@@ -1,70 +1,27 @@
 #!/bin/sh
 // 2>/dev/null; exec bun --no-env-file "$0" "$@"
-import { spawn, spawnSync } from "node:child_process";
-import { existsSync, readFileSync } from "node:fs";
+import { spawnSync } from "node:child_process";
+import { existsSync } from "node:fs";
 import { join } from "node:path";
-import { allChangedSteps, fastSteps, selectChangedSteps, validGlob } from "../lib/changed-steps.ts";
-import {
-  brandProblem,
-  brandSteps,
-  browserTestProblem,
-  fullOnlySteps,
-  linksProblem,
-  placedSteps,
-  pinsPackage,
-  serverProblem,
-  vitestRun,
-} from "../lib/gate-config.ts";
+import { collectRangeChanges, collectWorkingTreeChanges } from "../lib/changed-paths.ts";
+import { allChangedSteps, fastSteps, selectChangedSteps } from "../lib/changed-steps.ts";
+import { browserTestProblem, pinsPackage, placedSteps, vitestRun } from "../lib/gate-config.ts";
+import * as gatePlan from "../lib/gate-plan.ts";
+import { GateStepRunner, stepConcurrencyLimit } from "../lib/gate-runner.ts";
 import { help } from "../lib/help.ts";
 import { ownEntry } from "../lib/own-entry.ts";
-import {
-  isReason,
-  isObject,
-  git as readGit,
-  readPackage,
-  repoRoot,
-  styleFiles,
-  stylelintFlags,
-  submodulePaths,
-  SIGNALS,
-  underLock,
-  withoutEnvFile,
-  type Package,
-} from "../lib/repo.ts";
+import { isReason, readPackage, repoRoot, underLock, withoutEnvFile } from "../lib/repo.ts";
 import { machineLoad } from "../lib/serve.ts";
-import {
-  gitShellScripts,
-  needsShellShebang,
-  shellInput,
-  shellSources,
-} from "../lib/shell-inputs.ts";
-import { inNodeModules, regularInput, trackedInputs, treeInputs } from "../lib/tracked-inputs.ts";
 
 const usage =
   "usage: scaffolding check [--changed [<from>..<to>...]] | scaffolding shell | scaffolding markdown [--fix] | scaffolding layers [--write] | scaffolding test [<vitest args>...] | scaffolding fix";
 help("scaffolding", usage);
 withoutEnvFile("scaffolding");
 
-// Every key of the Package type's scaffolding and no other, or typecheck fails.
-const KEYS = new Set(
-  Object.keys({
-    allow: 0,
-    private: 0,
-    typecheck: 0,
-    test: 0,
-    browserTest: 0,
-    markdown: 0,
-    brand: 0,
-    server: 0,
-    linkSkips: 0,
-    skip: 0,
-    check: 0,
-    styles: 0,
-    licenses: 0,
-    changed: 0,
-    fullOnly: 0,
-  } satisfies Record<keyof NonNullable<Package["scaffolding"]>, 0>),
-);
+function fail(message: string): never {
+  console.error(`[scaffolding] ${message}`);
+  process.exit(1);
+}
 
 const args = process.argv.slice(2).filter((a) => a !== "--locked");
 const changed = args[1] === "--changed";
@@ -125,123 +82,46 @@ await underLock(root, args);
 
 const pkg = readPackage(root);
 const config = pkg.scaffolding ?? {};
-function fail(message: string): never {
-  console.error(`[scaffolding] ${message}`);
-  process.exit(1);
-}
-for (const key of Object.keys(config)) if (!KEYS.has(key)) fail(`unknown key scaffolding.${key}`);
-// The checks that read scaffolding.allow: an entry naming any other is never read.
-const ALLOWS = new Set(["coupling", "confidential", "never-shown", "structure", "spaces"]);
-for (const entry of config.allow ?? [])
-  if (!ALLOWS.has(entry.check ?? ""))
-    fail(`scaffolding.allow names no check that reads it: ${entry.check}`);
+const configProblem =
+  gatePlan.validateConfigKeys(config) ??
+  gatePlan.validateRequiredGateFields(pkg) ??
+  gatePlan.validateGateIntegrations(pkg);
+if (configProblem) fail(configProblem);
 
-const script = (s: string) => (ownEntry(pkg.scripts, s) ? `bun run --silent ${s}` : s);
-// Quoted for `sh -c`: a package path holding a space failed every bin step.
-const quote = (s: string) => `'${s.replaceAll("'", `'\\''`)}'`;
-const bin = (name: string) => `bun ${quote(join(home, "bin", `${name}.ts`))}`;
-// A submodule is its own repository's to check: format, lint and styles walk past it.
-const submodules = submodulePaths(root).map((path) => quote(`${path}/**`));
-const ignored = submodules.map((p) => ` --ignore-pattern ${p}`).join("");
-const shared: Record<string, string> = {
-  // Ahead of lint, which waits for it where it runs Astro (below).
-  typecheck: `bun --bun ${config.typecheck ?? "tsc --noEmit"}`,
-  format: `bun --bun prettier --check --cache --log-level warn .${submodules.map((p) => ` '!'${p}`).join("")}`,
-  // No --cache: a typed rule's verdict on a file changes with the types it imports, which the
-  // cache, keyed by the file alone, would keep. One process: each worker builds the type program
-  // again, which took longer than linting in turn (30 s against 20 s over 540 files).
-  lint: `SCAFFOLDING_STAGED_ESLINT=0 bun --bun eslint .${ignored} -f ${quote(join(home, "lib", "eslint-formatter.ts"))}`,
-  oxlint: `bun ${quote(join(home, "lib", "oxlint.ts"))}`,
-  styles: `bun --bun stylelint "${styleFiles}" ${stylelintFlags(root).join(" ")}${ignored}`,
-  structure: bin("check-structure"),
-  coupling: bin("check-coupling"),
-  cycles: bin("check-cycles"),
-  names: bin("check-names"),
-  layers: `${bin("check-layers")} --check`,
-  shell: bin("check-shell"),
-  markdown: bin("check-markdown"),
-  spaces: bin("check-spaces"),
-  // The index: what the next commit holds, judged by its own allow list.
-  confidential: `${bin("check-confidential")} --index`,
-  licenses: bin("check-licenses"),
-  // Tests are shared too: a gate without them is a skip someone wrote down, not one that drifted.
-  test: config.browserTest
-    ? `bun ${vitestRun.join(" ")} --exclude ${quote(`${config.browserTest}/**`)}`
-    : script(config.test ?? ""),
-  // The catalog build, so a broken one goes red here rather than on the Pages run.
-  catalog: "bun run --silent build",
-  admin: "admin-check",
-};
-if (!config.test && !config.browserTest && !isReason(config.skip?.test))
-  fail("scaffolding.test is missing: name the tests, or skip.test with a reason");
-const declared = { ...pkg.dependencies, ...pkg.devDependencies };
-if (!("@hackersandwizards/admin" in declared) && !isReason(config.skip?.admin))
-  fail("@hackersandwizards/admin is not pinned: pin it, or skip.admin with a reason");
-for (const problem of [
-  brandProblem(pkg),
-  serverProblem(config.server),
-  linksProblem(config),
-  browserTestProblem(config),
-])
-  if (problem) fail(problem);
+const shared = gatePlan.buildSharedStepMap(pkg, root, home);
 const skip = { ...config.skip };
 const entries = (config.check ?? []).flat();
 const local = entries.filter((step) => !placedSteps.has(step));
 const full = new Map<string, string>();
 const replacements = new Map<string, string>();
-const replaced = (step: string) => {
-  const replacement = `check:${step}`;
-  if (!local.includes(replacement)) return false;
-  if (!isReason(ownEntry(pkg.scripts, replacement)))
-    fail(`scaffolding.check requires a script named ${replacement}`);
-  replacements.set(step, replacement);
-  return true;
+
+const brandErr = gatePlan.addBrandSteps(pkg, home, { shared, full, replacements });
+if (brandErr) fail(brandErr);
+
+const checkReplacement = (step: string) => {
+  const { replacement, problem } = gatePlan.resolveLocalReplacement(step, local, pkg.scripts);
+  if (problem) fail(problem);
+  if (replacement) replacements.set(step, replacement);
+  return Boolean(replacement);
 };
-const withServer = (command: string) => {
-  const server = config.server;
-  if (!server) fail("scaffolding.server is required for a server-backed check");
-  const flags = [
-    server.timeout === undefined ? "" : ` --timeout ${server.timeout}`,
-    server.stderr ? " --stderr" : "",
-  ].join("");
-  return `${bin("with-server")}${flags} ${quote(server.command)} -- ${command}`;
-};
-if (pinsPackage(pkg, "@hackersandwizards/brand")) {
-  const brand = config.brand;
-  const directory = brand?.directory ? `cd ${quote(brand.directory)} && ` : "";
-  for (const step of brandSteps) {
-    if (replaced(step)) continue;
-    if (step === "colours") shared[step] = `${directory}brand-colours`;
-    if (step === "copies") shared[step] = "brand-copies";
-    if (step === "retired")
-      full.set(step, `brand-retired ${(brand?.retired ?? []).map(quote).join(" ")}`);
-    if (step === "elements")
-      full.set(
-        step,
-        brand?.elements === "server" && !isReason(skip.elements)
-          ? withServer(
-              directory
-                ? `sh -c ${quote(`${directory}exec brand-elements --base "$1"`)} sh {url}`
-                : "brand-elements --base {url}",
-            )
-          : `${directory}brand-elements`,
-      );
-  }
-}
-if (pinsPackage(pkg, "@hackersandwizards/slides") && !replaced("pins")) shared.pins = "slides-pins";
-if (config.server && !replaced("links") && entries.includes("links"))
+if (pinsPackage(pkg, "@hackersandwizards/slides") && !checkReplacement("pins"))
+  shared.pins = "slides-pins";
+if (config.server && !checkReplacement("links") && entries.includes("links"))
   full.set(
     "links",
-    withServer(
+    gatePlan.withServerCommand(
+      home,
+      config.server,
       [
-        bin("check-links"),
+        gatePlan.scaffoldingBinCommand(home, "check-links"),
         "{url}",
-        ...(config.linkSkips ?? []).map((prefix) => `--skip ${quote(prefix)}`),
+        ...(config.linkSkips ?? []).map((prefix) => `--skip ${gatePlan.shellQuote(prefix)}`),
       ].join(" "),
     ),
   );
 if (config.browserTest)
-  full.set("browser-test", `bun ${vitestRun.join(" ")} ${quote(config.browserTest)}`);
+  full.set("browser-test", `bun ${vitestRun.join(" ")} ${gatePlan.shellQuote(config.browserTest)}`);
+
 const named = new Set([...Object.keys(shared), ...full.keys(), ...local]);
 for (const [step, reason] of Object.entries(skip)) {
   if (step === "oxlint" || !(Object.hasOwn(shared, step) || full.has(step)))
@@ -253,149 +133,44 @@ for (const [step, reason] of Object.entries(skip)) {
   if (step === "lint") delete shared.oxlint;
 }
 
-const serverElements = config.brand?.elements === "server" && full.has("elements");
-for (const [key, unused] of [
-  ["brand.retired", config.brand?.retired !== undefined && !full.has("retired")],
-  ["brand.elements", config.brand?.elements !== undefined && !serverElements],
-  [
-    "brand.directory",
-    config.brand?.directory !== undefined && !shared.colours && !full.has("elements"),
-  ],
-  ["linkSkips", config.linkSkips !== undefined && !full.has("links")],
-  [
-    "server",
-    config.server !== undefined &&
-      !full.has("links") &&
-      !replacements.has("links") &&
-      !serverElements,
-  ],
-] as const)
-  if (unused) fail(`scaffolding.${key} is unused`);
-
-for (const step of new Set(entries))
-  if (placedSteps.has(step) || [...replacements.values()].includes(step)) {
-    if (entries.filter((entry) => entry === step).length > 1)
-      fail(`scaffolding.check lists ${step} more than once`);
-    if (placedSteps.has(step) && !named.has(step))
-      fail(`scaffolding.check names no enabled shared step: ${step}`);
-  }
+const unusedKey = gatePlan.findUnusedConfigKey(config, { shared, full, replacements });
+if (unusedKey) fail(`scaffolding.${unusedKey} is unused`);
+const placedErr = gatePlan.validatePlacedStepEntries(entries, replacements, named);
+if (placedErr) fail(placedErr);
 for (const [step, replacement] of replacements)
   console.error(`[scaffolding] ${step} uses local ${replacement}`);
 
-const fullOnly = new Map([["catalog", "builds the catalog"], ...fullOnlySteps]);
-if (config.fullOnly !== undefined && !isObject(config.fullOnly))
-  fail("scaffolding.fullOnly must be a map of steps to reasons");
-for (const [step, reason] of Object.entries(config.fullOnly ?? {})) {
-  if (step !== "test" && !(step.startsWith("check:") && local.includes(step)))
-    fail(`scaffolding.fullOnly names no eligible step: ${step}`);
-  if (!isReason(reason)) fail(`scaffolding.fullOnly.${step} has no reason`);
-  fullOnly.set(step, reason);
-}
+const fullOnlyBuilt = gatePlan.buildFullOnlyMap(config, local);
+if (fullOnlyBuilt.problem) fail(fullOnlyBuilt.problem);
+const fullOnly = fullOnlyBuilt.fullOnly!;
 
-if (config.changed !== undefined && !isObject(config.changed))
-  fail("scaffolding.changed must be a map of paths to steps");
-const mappings = Object.entries(config.changed ?? {}).map(([glob, steps]) => {
-  if (!validGlob(glob)) fail(`scaffolding.changed["${glob}"] is no repository-relative glob`);
-  if (!Array.isArray(steps)) fail(`scaffolding.changed["${glob}"] is no list of steps`);
-  if (!steps.length) fail(`scaffolding.changed["${glob}"] is an empty list of steps`);
-  for (const step of steps)
-    if (!named.has(step)) fail(`scaffolding.changed["${glob}"] names no step: ${step}`);
-  return { glob: new Bun.Glob(glob), steps };
-});
+const mappingsBuilt = gatePlan.buildChangedMappings(config, named);
+if (mappingsBuilt.problem) fail(mappingsBuilt.problem);
+const mappings = mappingsBuilt.mappings!;
 
 const fast = fastSteps([...Object.keys(shared), ...local], fullOnly);
 
-function changedSteps(): Map<string, string> {
-  const fallback = (why: string) => {
-    console.error(`[scaffolding] --changed: ${why}: all fast steps run`);
-    return allChangedSteps(fast, why);
-  };
-  const git = (...a: string[]) => spawnSync("git", a, { cwd: root, encoding: "utf8" });
-  const diffPaths = (...revs: string[]) =>
-    git("diff", "--name-only", "--no-renames", "--ignore-submodules=none", "-z", ...revs, "--");
-  const pathsFrom = (names: string) => names.split("\0").filter(Boolean);
-  const paths = new Set<string>();
-  const shellShebangs = new Set<string>();
-  const sourcedPaths = new Set<string>();
-  const checkedShellTrees = new Set<string>();
-  const readShellTree = (ref: string) => {
-    if (checkedShellTrees.has(ref)) return;
-    const tracked = treeInputs(root, ref);
-    const scripts = gitShellScripts(root, tracked, ref);
-    for (const path of scripts.filter(needsShellShebang)) shellShebangs.add(path);
-    for (const path of shellSources(scripts, tracked, (path) =>
-      readGit(["show", `${ref}:${path}`], root),
-    ))
-      sourcedPaths.add(path);
-    checkedShellTrees.add(ref);
-  };
-  const shellCandidates = (paths: string[]) =>
-    fast.has("shell")
-      ? paths.filter((path) => !inNodeModules(path) && needsShellShebang(path))
-      : [];
-  let since = "HEAD";
-  if (ranges.length) {
-    for (const range of ranges) {
-      const [from, to] = range.split("..") as [string, string];
-      if (/^0+$/.test(from)) return fallback(`${range} starts a new branch`);
-      const tip = (rev: string) =>
-        git("rev-parse", "--verify", "--end-of-options", `${rev}^{commit}`);
-      const old = tip(from);
-      const next = tip(to);
-      if (old.status !== 0) return fallback(`${range} starts at a commit this clone lacks`);
-      if (next.status !== 0) return fallback(`${range} ends at a commit this clone lacks`);
-      const base = old.stdout.trim();
-      const head = next.stdout.trim();
-      const ancestor = git("merge-base", "--is-ancestor", base, head);
-      if (ancestor.status !== 0) return fallback(`${range} is not a verifiable fast-forward`);
-      const diff = diffPaths(base, head);
-      if (diff.status !== 0) return fallback("git could not list the changes");
-      const touched = pathsFrom(diff.stdout);
-      for (const path of touched) paths.add(path);
-      try {
-        if (fast.has("shell") && touched.length) {
-          readShellTree(base);
-          readShellTree(head);
-        }
-      } catch {
-        return fallback("git could not read shell inputs in the pushed ranges");
-      }
-    }
-    since = ranges.map((r) => r.split("..")[0]!.slice(0, 9)).join(", ");
-  } else {
-    const upstream = git("rev-parse", "--verify", "-q", "@{upstream}").stdout.trim();
-    const base = upstream ? git("merge-base", upstream, "HEAD").stdout.trim() : "HEAD";
-    const diff = diffPaths(base);
-    const untracked = git("ls-files", "--others", "--exclude-standard", "-z");
-    if (!base || diff.status !== 0 || untracked.status !== 0)
-      return fallback("git could not list the changes");
-    const touched = pathsFrom(diff.stdout);
-    for (const path of [...touched, ...pathsFrom(untracked.stdout)]) paths.add(path);
-    try {
-      if (fast.has("shell") && paths.size) {
-        readShellTree(base);
-        const tracked = trackedInputs(root);
-        const scripts = tracked.filter((path) => shellInput(path, join(root, path)));
-        for (const path of shellSources(scripts, tracked, (path) => readFileSync(join(root, path))))
-          sourcedPaths.add(path);
-      }
-      for (const path of shellCandidates([...paths]))
-        if (regularInput(root, path) && shellInput(path, join(root, path))) shellShebangs.add(path);
-    } catch {
-      return fallback("could not read shell inputs in the base commit or working tree");
-    }
-    if (upstream) since = upstream.slice(0, 9);
+function resolveChangedSteps(): Map<string, string> {
+  const collected = ranges.length
+    ? collectRangeChanges(root, ranges, fast.has("shell"))
+    : collectWorkingTreeChanges(root, fast.has("shell"));
+  if ("fallback" in collected) {
+    console.error(`[scaffolding] --changed: ${collected.fallback}: all fast steps run`);
+    return allChangedSteps(fast, collected.fallback);
   }
   const { steps, fallback: why } = selectChangedSteps(
-    [...paths],
+    [...collected.paths],
     fast,
     local,
     mappings,
-    shellShebangs,
-    sourcedPaths,
+    collected.shellShebangs,
+    collected.sourcedPaths,
   );
   if (why !== undefined) console.error(`[scaffolding] --changed: ${why}: all fast steps run`);
-  else console.error(`[scaffolding] --changed: ${paths.size} paths since ${since}`);
+  else
+    console.error(
+      `[scaffolding] --changed: ${collected.paths.size} paths since ${collected.since}`,
+    );
   return steps;
 }
 
@@ -412,98 +187,15 @@ const env = {
   SCAFFOLDING_EXPLORE_RUNS: undefined,
   STRYKER_MUTATOR_WORKER: undefined,
 };
-type Result = { name: string; code: number; ms: number };
-
-// Above one waiting process per core, the tests and the build run one after another once the quick
-// shared checks have run side by side: started all at once on a loaded machine, they starved each
-// other past every fixed limit inside them, and a correct tree went red. The repository's steps then
-// run `width` at a time: the cores times the share of a core each waiting process gets, at least 2.
-const loaded = load > cores;
-const width = loaded ? Math.max(2, Math.floor((cores * cores) / load)) : Infinity;
-if (loaded)
+const width = stepConcurrencyLimit(load, cores);
+if (Number.isFinite(width))
   console.error(
     `[scaffolding] load ${Math.round(load)} on ${cores} cores: ${changed ? "test runs after the other shared steps" : "test and catalog run one after another"}, the repository's steps ${width} at a time`,
   );
 
 const started = performance.now();
-const results: Result[] = [];
-const running = new Map<string, { out: string }>();
-const line = (r: Result) =>
-  `[scaffolding] ${r.code ? "FAIL" : "ok  "} ${r.name} ${(r.ms / 1000).toFixed(1)} s`;
-
-function reportStopped(name: string, out: string, signal: NodeJS.Signals): void {
-  process.stderr.write(out);
-  console.error(`[scaffolding] stopped ${name} by ${signal}`);
-}
-
-// A step is reported the moment it ends, its output ahead of its line, so a red step shows at once
-// rather than after its slowest sibling, and a gate cut off still shows every step that ended.
-function run(name: string, command: string, buffered: boolean): Promise<Result> {
-  const begun = performance.now();
-  const step = { out: "" };
-  running.set(name, step);
-  return new Promise((done) => {
-    const child = spawn("sh", ["-c", command], {
-      cwd: root,
-      env,
-      stdio: buffered ? ["ignore", "pipe", "pipe"] : "inherit",
-    });
-    child.stdout?.on("data", (d) => (step.out += d));
-    child.stderr?.on("data", (d) => (step.out += d));
-    child.on("close", (code, signal) => {
-      const r = { name, code: code ?? 1, ms: performance.now() - begun };
-      const finish = () => {
-        running.delete(name);
-        process.stderr.write(step.out);
-        console.error(line(r));
-        results.push(r);
-        done(r);
-      };
-      // A group interrupt can close the child before this process handles the same signal.
-      // Keep the step visible to the handler for one turn before treating its exit as a failure.
-      if (signal && SIGNALS.some((interrupt) => interrupt === signal)) setImmediate(finish);
-      else finish();
-    });
-  });
-}
-
-// A signal ends the steps through check-lock, which signals the whole group; this prints what the
-// running ones said so far and names them, then dies by the same signal.
-for (const signal of SIGNALS)
-  process.on(signal, () => {
-    for (const [name, step] of running) reportStopped(name, step.out, signal);
-    process.removeAllListeners(signal);
-    process.kill(process.pid, signal);
-  });
-
-// A step named in `after` starts once the step it names, listed before it, has finished, passed
-// or failed. Under load the steps named in `quick` still run side by side, and the others then run
-// `limit` at a time.
-async function group(
-  steps: [string, string][],
-  after: Record<string, string> = {},
-  quick = new Set<string>(),
-  limit = width,
-): Promise<boolean> {
-  const runs = new Map<string, Promise<Result>>();
-  const start = (n: string, c: string, buffered: boolean) => {
-    const first = runs.get(after[n] ?? "");
-    runs.set(n, first ? first.then(() => run(n, c, buffered)) : run(n, c, buffered));
-  };
-  const queue = loaded ? steps.filter(([n]) => !quick.has(n)) : [];
-  const beside = steps.filter((step) => !queue.includes(step));
-  for (const [n, c] of beside) start(n, c, steps.length > 1);
-  if (queue.length) await Promise.all(runs.values());
-  // One at a time, a step writes straight to the terminal.
-  const worker = async () => {
-    for (let step; (step = queue.shift());) {
-      start(step[0], step[1], limit > 1 && steps.length > 1);
-      await runs.get(step[0]);
-    }
-  };
-  await Promise.all(Array.from({ length: Math.min(limit, queue.length) }, worker));
-  return (await Promise.all(runs.values())).every((r) => r.code === 0);
-}
+const runner = new GateStepRunner(root, env, width);
+runner.installSignalHandlers();
 
 // A typecheck of `astro check` and the catalog's `astro build` both run Astro's sync, whose Vite
 // server optimizes dependencies into one folder (node_modules/.astro/vite-sync). On a cache an
@@ -511,12 +203,8 @@ async function group(
 // build waits for a typecheck that runs Astro. A plain tsc shares no folder with it. Lint waits
 // for it too: the sync writes the content types (.astro/), and without them the typed rules read
 // every content entry as `any` (1,724 findings against 899 in one fresh checkout).
-// `bun --bun <name>` runs a package script of that name before a binary.
-const typecheck = config.typecheck ?? "";
-const sync = /\bastro\b/.test(
-  [typecheck, ...typecheck.split(/\s+/).map((word) => pkg.scripts?.[word])].join(" "),
-);
-const selected = changed ? changedSteps() : undefined;
+const sync = gatePlan.usesAstroTypecheck(config.typecheck ?? "", pkg.scripts);
+const selected = changed ? resolveChangedSteps() : undefined;
 if (
   selected &&
   sync &&
@@ -551,7 +239,9 @@ const localGroups = (config.check ?? []).map((entry) =>
     .filter(runs)
     .map((s): [string, string] => [
       s,
-      full.get(s) ?? (placedSteps.has(s) ? ownEntry(shared, s) : undefined) ?? script(s),
+      full.get(s) ??
+        (placedSteps.has(s) ? ownEntry(shared, s) : undefined) ??
+        gatePlan.packageScriptCommand(pkg.scripts, s),
     ]),
 );
 localGroups.unshift([...full].filter(([name]) => !entries.includes(name) && runs(name)));
@@ -560,7 +250,7 @@ const order = unplacedShared.map(([name]) => name);
 
 // Install first: a tree a pin-raising merge left behind gets installed, and a lockfile out of step
 // fails under its own name, not a later step's.
-let ok = await group([["install", "bun install --frozen-lockfile"]]);
+let ok = await runner.runParallel([["install", "bun install --frozen-lockfile"]]);
 // An unclassified test or local command may launch Chrome. Prepare it once to avoid concurrent
 // downloads, but a changed run limited to shared static checks cannot reach those commands.
 const mayUseChrome =
@@ -575,19 +265,18 @@ if (
   if (!chromeBinary()) console.error(`[scaffolding] ${INSTALL_HINT}`);
 }
 if (ok)
-  ok = await group(
+  ok = await runner.runOrdered(
     sharedSteps,
     sync ? { catalog: "typecheck", lint: "typecheck", oxlint: "typecheck" } : {},
     new Set(Object.keys(shared).filter(quick)),
-    1,
   );
 for (const steps of localGroups) {
   if (!ok) break;
   order.push(...steps.map(([s]) => s));
-  ok = await group(steps);
+  ok = await runner.runParallel(steps);
 }
 // The red steps again, in the gate's own order, so the verdict reads the same on every run.
-const red = order.filter((name) => results.some((r) => r.name === name && r.code));
+const red = order.filter((name) => runner.results.some((r) => r.name === name && r.code));
 console.error(
   `[scaffolding] ${ok ? "passed" : "failed"} in ${((performance.now() - started) / 1000).toFixed(1)} s${red.length ? `: ${red.join(", ")}` : ""}`,
 );
