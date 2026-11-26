@@ -56,7 +56,7 @@ import oxlintTemplate from "../template/.oxlintrc.json";
 import templateMcp from "../template/.mcp.json";
 import templateSettings from "../template/.claude/settings.json";
 import { limit } from "@hackersandwizards/scaffolding/test-timeout";
-import { until, untilFile } from "./wait.ts";
+import { fileReady, until } from "./wait.ts";
 
 /** The member of parsed JSON at `path`, undefined where a step meets no object or list. */
 const member = (value: unknown, ...path: (string | number)[]): unknown =>
@@ -173,7 +173,7 @@ function prepareGit(dir: string, args: string[], input?: string) {
 ${result.stdout}${result.stderr}`);
 }
 
-function prepareCommand(cwd: string, command: string, args: string[], env?: NodeJS.ProcessEnv) {
+function prepareCommand(cwd: string, [command, ...args]: string[], env?: NodeJS.ProcessEnv) {
   const result = spawnSync(command, args, { cwd, env });
   if (result.status === 0) return result.stdout;
   throw new Error(
@@ -439,70 +439,85 @@ const vitestImports = 'import { expect, test } from "vitest";\n';
 const vitestExample = `${vitestImports}test("example", () => expect(1).toBe(1));`;
 const thrownError = '() => { throw new Error("text"); }';
 describe.each([
-  [
-    "expect-expect",
-    ["expect-expect"],
-    'import { test } from "vitest";\ntest("example", () => {});',
-    `${vitestImports}function expectSomething() { expect(1).toBe(1); }\ntest("example", () => expectSomething());`,
-  ],
-  [
-    "no-conditional-expect in catch",
-    ["no-conditional-expect"],
-    `${vitestImports}test("bad JSON", () => {
+  {
+    rule: "expect-expect",
+    rules: ["expect-expect"],
+    failing: 'import { test } from "vitest";\ntest("example", () => {});',
+    passing: `${vitestImports}function expectSomething() { expect(1).toBe(1); }\ntest("example", () => expectSomething());`,
+  },
+  {
+    rule: "no-conditional-expect in catch",
+    rules: ["no-conditional-expect"],
+    failing: `${vitestImports}test("bad JSON", () => {
       try { JSON.parse("bad"); } catch (error) { expect(error).toBeInstanceOf(SyntaxError); }
     });`,
-    `${vitestImports}test("bad JSON", () => expect(() => JSON.parse("bad")).toThrow(SyntaxError));`,
-  ],
-  [
-    "no-focused-tests",
-    ["no-focused-tests"],
-    vitestExample.replace("test(", "test.only("),
-    vitestExample,
-  ],
-  [
-    "no-disabled-tests",
-    ["no-disabled-tests"],
-    vitestExample.replace("test(", "test.skip("),
-    vitestExample,
-  ],
-  ["no-commented-out-tests", ["no-commented-out-tests"], "// it (something)\n", vitestExample],
-  [
-    "no-identical-title",
-    ["no-identical-title"],
-    `import { describe, expect, test } from "vitest";
+    passing: `${vitestImports}test("bad JSON", () => expect(() => JSON.parse("bad")).toThrow(SyntaxError));`,
+  },
+  {
+    rule: "no-focused-tests",
+    rules: ["no-focused-tests"],
+    failing: vitestExample.replace("test(", "test.only("),
+    passing: vitestExample,
+  },
+  {
+    rule: "no-disabled-tests",
+    rules: ["no-disabled-tests"],
+    failing: vitestExample.replace("test(", "test.skip("),
+    passing: vitestExample,
+  },
+  {
+    rule: "no-commented-out-tests",
+    rules: ["no-commented-out-tests"],
+    failing: "// it (something)\n",
+    passing: vitestExample,
+  },
+  {
+    rule: "no-identical-title",
+    rules: ["no-identical-title"],
+    failing: `import { describe, expect, test } from "vitest";
     describe("group", () => { test("first", () => expect(1).toBe(1)); test("first", () => expect(2).toBe(2)); });`,
-    `import { describe, expect, test } from "vitest";
+    passing: `import { describe, expect, test } from "vitest";
     describe("group", () => { test("first", () => expect(1).toBe(1)); test("second", () => expect(2).toBe(2)); });`,
-  ],
-  [
-    "valid-expect",
-    ["valid-expect"],
-    `${vitestImports}test("example", () => { expect(1); });`,
-    `${vitestImports}test("example", () => expect(1, "message").toBe(1));`,
-  ],
-  [
-    "require-to-throw-message",
-    ["require-to-throw-message"],
-    `${vitestImports}test("error", () => expect(${thrownError}).toThrow());`,
-    `${vitestImports}test("error", () => expect(${thrownError}).toThrow("text"));`,
-  ],
-  ["valid-title", ["valid-title"], vitestExample.replace('"example"', '""'), vitestExample],
-  [
-    "no-duplicate-hooks",
-    ["no-duplicate-hooks"],
-    `import { beforeEach, describe, expect, test } from "vitest";
+  },
+  {
+    rule: "valid-expect",
+    rules: ["valid-expect"],
+    failing: `${vitestImports}test("example", () => { expect(1); });`,
+    passing: `${vitestImports}test("example", () => expect(1, "message").toBe(1));`,
+  },
+  {
+    rule: "require-to-throw-message",
+    rules: ["require-to-throw-message"],
+    failing: `${vitestImports}test("error", () => expect(${thrownError}).toThrow());`,
+    passing: `${vitestImports}test("error", () => expect(${thrownError}).toThrow("text"));`,
+  },
+  {
+    rule: "valid-title",
+    rules: ["valid-title"],
+    failing: vitestExample.replace('"example"', '""'),
+    passing: vitestExample,
+  },
+  {
+    rule: "no-duplicate-hooks",
+    rules: ["no-duplicate-hooks"],
+    failing: `import { beforeEach, describe, expect, test } from "vitest";
     describe("group", () => { beforeEach(() => {}); beforeEach(() => {}); test("example", () => expect(1).toBe(1)); });`,
-    `import { beforeEach, describe, expect, test } from "vitest";
+    passing: `import { beforeEach, describe, expect, test } from "vitest";
     describe("group", () => { beforeEach(() => {}); test("example", () => expect(1).toBe(1)); });`,
-  ],
-  ["no-import-node-test", ["no-import-node-test"], 'import "node:test";', vitestExample],
-  [
-    "no-conditional-expect in if",
-    ["no-conditional-in-test", "no-conditional-expect"],
-    `${vitestImports}test("example", () => { expect(1).toBe(1); if (Number("1")) expect(1).toBe(1); });`,
-    vitestExample,
-  ],
-] as const)("Oxlint Vitest: %s", (_, rules, failing, passing) => {
+  },
+  {
+    rule: "no-import-node-test",
+    rules: ["no-import-node-test"],
+    failing: 'import "node:test";',
+    passing: vitestExample,
+  },
+  {
+    rule: "no-conditional-expect in if",
+    rules: ["no-conditional-in-test", "no-conditional-expect"],
+    failing: `${vitestImports}test("example", () => { expect(1).toBe(1); if (Number("1")) expect(1).toBe(1); });`,
+    passing: vitestExample,
+  },
+] as const)("Oxlint Vitest: $rule", ({ rules, failing, passing }) => {
   let dir: string;
   beforeAll(() => {
     dir = repo({ ".oxlintrc.json": JSON.stringify(oxlintTemplate), "example.test.js": passing });
@@ -733,18 +748,11 @@ import { expect } from "vitest";`;
   );
 });
 // SCAFFOLDING_LOAD 0: the gate runs its steps side by side whatever this machine's load is.
-function run(
-  cwd: string,
-  name: string,
-  args: string[] = [],
-  env: Record<string, string> = {},
-  input?: string,
-) {
-  const r = spawnSync(process.execPath, ["--no-env-file", bin(name), ...args], {
+function run(cwd: string, argv: string[], env: Record<string, string> = {}) {
+  const r = spawnSync(process.execPath, ["--no-env-file", ...argv], {
     cwd,
     env: { ...process.env, SCAFFOLDING_LOAD: "0", ...env },
     encoding: "utf8",
-    input,
   });
   return { code: r.status, out: `${r.stdout}${r.stderr}` };
 }
@@ -810,49 +818,49 @@ const rawFinding = (path: string, text: string, message = "m") => ({
   message,
 });
 test.each([
-  [
-    "root and nested matches",
-    [{ check: "x", path: "**/x.ts", reason: "r" }],
-    [
+  {
+    scenario: "root and nested matches",
+    entries: [{ check: "x", path: "**/x.ts", reason: "r" }],
+    findings: [
       ["x.ts", "t"],
       ["a/b/x.ts", "t"],
     ],
-    [],
-  ],
-  [
-    "zero intermediate folders",
-    [{ check: "x", path: "a/**/b.ts", reason: "r" }],
-    [["a/b.ts", "t"]],
-    [],
-  ],
-  [
-    "every list item used",
-    [allowPairs],
-    [
+    expected: [],
+  },
+  {
+    scenario: "zero intermediate folders",
+    entries: [{ check: "x", path: "a/**/b.ts", reason: "r" }],
+    findings: [["a/b.ts", "t"]],
+    expected: [],
+  },
+  {
+    scenario: "every list item used",
+    entries: [allowPairs],
+    findings: [
       ["a", "x"],
       ["b", "y"],
     ],
-    [],
-  ],
-  [
-    "unused list items",
-    [allowPairs],
-    [["a", "x"]],
-    [
+    expected: [],
+  },
+  {
+    scenario: "unused list items",
+    entries: [allowPairs],
+    findings: [["a", "x"]],
+    expected: [
       rawFinding("package.json", JSON.stringify({ ...allowPairs, path: "b" }), staleAllow),
       rawFinding("package.json", JSON.stringify({ ...allowPairs, text: "y" }), staleAllow),
     ],
-  ],
-  [
-    "non-string path",
-    [{ check: "x", path: 5, reason: "r" }],
-    [["a", "t"]],
-    [
+  },
+  {
+    scenario: "non-string path",
+    entries: [{ check: "x", path: 5, reason: "r" }],
+    findings: [["a", "t"]],
+    expected: [
       rawFinding("a", "t"),
       rawFinding("package.json", '{"check":"x","path":5,"reason":"r"}', malformedAllow),
     ],
-  ],
-] as const)("allow entries cover or explain %s", (_, entries, findings, expected) => {
+  },
+] as const)("allow entries cover or explain $scenario", ({ entries, findings, expected }) => {
   expect(
     applyAllow(
       { scaffolding: { allow: [...entries] } } as Parameters<typeof applyAllow>[0],
@@ -915,7 +923,7 @@ describe("check-coupling", () => {
   });
 
   test("finds each planted case and nothing in the controls", () => {
-    const r = run(fx, "check-coupling");
+    const r = run(fx, [bin("check-coupling")]);
     expect(r.code).toBe(1);
     const found = lines(r.out, "check-coupling");
     expect(found).toEqual([
@@ -939,31 +947,39 @@ describe("check-coupling", () => {
     "node_modules/@acme/pkg/package.json": JSON.stringify({ version }),
   });
   test.each([
-    ["installed", installedPin("1.2.0"), 0, []],
-    [
-      "out of date",
-      installedPin("1.1.0"),
-      1,
-      [containingText("node_modules holds 1.1.0, not the pinned 1.2.0")],
-    ],
-    ["missing", {}, 1, [containingText("node_modules holds nothing")]],
-  ])("check-coupling checks a Git pin with an %s install", (_, files, code, diagnostics) => {
-    const dir = repo({
-      "package.json": JSON.stringify({ dependencies: { "@acme/pkg": "github:acme/pkg#v1.2.0" } }),
-      ...files,
-    });
-    const result = run(dir, "check-coupling");
-    expect({ code: result.code, diagnostics: lines(result.out, "check-coupling") }).toEqual({
-      code,
-      diagnostics,
-    });
-  });
+    { installation: "installed", files: installedPin("1.2.0"), code: 0, diagnostics: [] },
+    {
+      installation: "out of date",
+      files: installedPin("1.1.0"),
+      code: 1,
+      diagnostics: [containingText("node_modules holds 1.1.0, not the pinned 1.2.0")],
+    },
+    {
+      installation: "missing",
+      files: {},
+      code: 1,
+      diagnostics: [containingText("node_modules holds nothing")],
+    },
+  ])(
+    "check-coupling checks a Git pin with an $installation install",
+    ({ files, code, diagnostics }) => {
+      const dir = repo({
+        "package.json": JSON.stringify({ dependencies: { "@acme/pkg": "github:acme/pkg#v1.2.0" } }),
+        ...files,
+      });
+      const result = run(dir, [bin("check-coupling")]);
+      expect({ code: result.code, diagnostics: lines(result.out, "check-coupling") }).toEqual({
+        code,
+        diagnostics,
+      });
+    },
+  );
 
   test("checks only staged files with --staged", () => {
     const dir = repo({ "package.json": "{}", "src/old.ts": 'import "../../x";\n' });
     write(dir, { "src/new.ts": 'import "../../y";\n' });
     sh(dir, ["add", "src/new.ts"]);
-    const found = lines(run(dir, "check-coupling", ["--staged"]).out, "check-coupling");
+    const found = lines(run(dir, [bin("check-coupling"), "--staged"]).out, "check-coupling");
     expect(found).toHaveLength(1);
     expect(found[0]).toContain("src/new.ts");
   });
@@ -975,9 +991,11 @@ describe("check-coupling", () => {
     const want = [
       "[check-coupling] catalog/Type.astro: path leaves the repository; take it from the package its owner publishes (../../node_modules/x)",
     ];
-    expect(lines(run(dir, "check-coupling").out, "check-coupling")).toEqual(want);
+    expect(lines(run(dir, [bin("check-coupling")]).out, "check-coupling")).toEqual(want);
     sh(dir, ["add", "catalog/Type.astro"]);
-    expect(lines(run(dir, "check-coupling", ["--staged"]).out, "check-coupling")).toEqual(want);
+    expect(lines(run(dir, [bin("check-coupling"), "--staged"]).out, "check-coupling")).toEqual(
+      want,
+    );
   });
 
   test("CSS from company packages comes only from brand's exports, the shell's only under catalog/", () => {
@@ -1021,7 +1039,7 @@ describe("check-coupling", () => {
         'export const sheet = "./node_modules/@hackersandwizards/slides/styles/slides.css";\n',
       "src/deck-other.css": '@import "@hackersandwizards/slides/styles/x.css";\n',
     });
-    const found = lines(run(dir, "check-coupling").out, "check-coupling");
+    const found = lines(run(dir, [bin("check-coupling")]).out, "check-coupling");
     expect(found.sort()).toEqual([
       "[check-coupling] catalog/astro.config.ts: styles come from brand's exports, an engine's scaffolding.styles or this repository: import the stylesheet from @hackersandwizards/brand, move the CSS into this repository, or use the owning engine's composer. If the composer cannot supply the styles, declare the stylesheet in the engine's package.json scaffolding.styles and exports (@hackersandwizards/documents/doc.css)",
       "[check-coupling] src/admin.ts: styles come from brand's exports, an engine's scaffolding.styles or this repository: import the stylesheet from @hackersandwizards/brand, move the CSS into this repository, or use the owning engine's composer. If the composer cannot supply the styles, declare the stylesheet in the engine's package.json scaffolding.styles and exports (@hackersandwizards/admin/site.css)",
@@ -1086,7 +1104,7 @@ describe("check-coupling", () => {
       ".github/workflows/ci.yml": "# node_modules/@hackersandwizards/brand\non: push\n",
       "docs/notes.md": "node_modules/@hackersandwizards/brand/logos\n",
     });
-    expect(lines(run(dir, "check-coupling").out, "check-coupling").sort()).toEqual([
+    expect(lines(run(dir, [bin("check-coupling")]).out, "check-coupling").sort()).toEqual([
       `[check-coupling] mails/brief.json: ${installed} (node_modules/@hackersandwizards/brand/logos/avatar.png)`,
       `[check-coupling] og/template.html: ${installed} (node_modules/@hackersandwizards/brand/logos/lockup.svg)`,
       `[check-coupling] og/template.html: ${installed} (node_modules/@hackersandwizards/brand/tokens/fonts.css)`,
@@ -1129,7 +1147,7 @@ describe("check-coupling", () => {
       "src/segments.ts": 'export const d = join(root, "node_modules", "practitioners");\n',
       "src/other.ts": 'export const o = "node_modules/lodash/lodash.js";\n',
     });
-    expect(lines(run(dir, "check-coupling").out, "check-coupling").sort()).toEqual([
+    expect(lines(run(dir, [bin("check-coupling")]).out, "check-coupling").sort()).toEqual([
       `[check-coupling] src/schema.ts: ${installed} (node_modules/practitioners/src/lib/schema.ts)`,
       `[check-coupling] src/segments.ts: ${installed} (node_modules", "practitioners)`,
     ]);
@@ -1154,7 +1172,7 @@ describe("check-coupling", () => {
       dir,
     );
     expect(
-      lines(run(dir, "check-coupling", [], { HOME: home }).out, "check-coupling")
+      lines(run(dir, [bin("check-coupling")], { HOME: home }).out, "check-coupling")
         .map((l) => l.replace(/: .*\(/, " ("))
         .sort(),
     ).toEqual([
@@ -1182,7 +1200,7 @@ describe("check-coupling", () => {
     const wt = join(home, "Library/Caches/claude-code-tmp/run/wt");
     sh(dir, ["worktree", "add", "-q", "--detach", wt]);
     expect(
-      lines(run(wt, "check-coupling", [], { HOME: home }).out, "check-coupling")
+      lines(run(wt, [bin("check-coupling")], { HOME: home }).out, "check-coupling")
         .map((l) => l.replace(/: .*\(/, " ("))
         .sort(),
     ).toEqual([
@@ -1198,7 +1216,7 @@ describe("check-coupling", () => {
       "src/b.ts":
         'const g = "src/*.ts";\nconst p = "node_modules/@hackersandwizards/brand/x.svg"; // */\n',
     });
-    expect(lines(run(dir, "check-coupling").out, "check-coupling")).toEqual([
+    expect(lines(run(dir, [bin("check-coupling")]).out, "check-coupling")).toEqual([
       `[check-coupling] src/b.ts: ${installed} (node_modules/@hackersandwizards/brand/x.svg)`,
     ]);
   });
@@ -1212,16 +1230,16 @@ describe("check-coupling", () => {
     // Its text names the path it excuses, and package.json is not flagged for it.
     const reasoned = { check: "coupling", path: "src/*.ts", text: "../../x", reason: "test" };
     test("accepts a reasoned entry", () => {
-      expect(run(allow([reasoned]), "check-coupling").code).toBe(0);
+      expect(run(allow([reasoned]), [bin("check-coupling")]).code).toBe(0);
     });
     test.each(["", true])("rejects reason %j", (reason) => {
-      expect(run(allow([{ ...reasoned, reason }]), "check-coupling").out).toContain(
+      expect(run(allow([{ ...reasoned, reason }]), [bin("check-coupling")]).out).toContain(
         'allow entry without a reason: fix the underlying finding and remove this package.json scaffolding.allow entry, or add a non-empty "reason" explaining why the exception is required',
       );
     });
     test("rejects a stale entry", () => {
       const stale = allow([reasoned, { check: "coupling", path: "src/gone.ts", reason: "old" }]);
-      expect(run(stale, "check-coupling").out).toContain(
+      expect(run(stale, [bin("check-coupling")]).out).toContain(
         "allow entry matches nothing: remove this stale entry (or unused path/text item) from package.json scaffolding.allow",
       );
     });
@@ -1289,19 +1307,19 @@ test("check-structure: a bin file is stored executable, and --fix makes it so", 
   chmodSync(join(dir, "bin/y.ts"), 0o755);
   sh(dir, ["update-index", "--chmod=+x", "bin/y.ts"]);
   const binLines = (args: string[] = []) =>
-    lines(run(dir, "check-structure", args).out, "check-structure").filter((l) =>
+    lines(run(dir, [bin("check-structure"), ...args]).out, "check-structure").filter((l) =>
       l.includes("bin file"),
     );
   expect(binLines()).toEqual([
     "[check-structure] bin/x.ts: a bin file is stored executable (check-structure --fix) (100644)",
   ]);
-  run(dir, "check-structure", ["--fix"]);
+  run(dir, [bin("check-structure"), "--fix"]);
   expect(binLines()).toEqual([]);
   expect(sh(dir, ["ls-files", "-s", "bin/x.ts"]).stdout.toString().startsWith("100755")).toBe(true);
   // --fix stages the mode alone, never an uncommitted edit.
   sh(dir, ["update-index", "--chmod=-x", "bin/x.ts"]);
   writeFileSync(join(dir, "bin/x.ts"), "#!/usr/bin/env bun\nedited;\n");
-  run(dir, "check-structure", ["--fix"]);
+  run(dir, [bin("check-structure"), "--fix"]);
   expect(
     sh(dir, ["ls-files", "-s", "bin/x.ts"])
       .stdout.toString()
@@ -1311,10 +1329,12 @@ test("check-structure: a bin file is stored executable, and --fix makes it so", 
 
 test("check-structure: a hook with the skeleton's bytes but no executable bit fails, and --fix sets it", () => {
   const dir = repo({ "package.json": "{}" });
-  run(dir, "check-structure", ["--fix"]);
+  run(dir, [bin("check-structure"), "--fix"]);
   sh(dir, ["add", "-A"]);
   const hookLines = () =>
-    lines(run(dir, "check-structure").out, "check-structure").filter((l) => l.includes("a hook"));
+    lines(run(dir, [bin("check-structure")]).out, "check-structure").filter((l) =>
+      l.includes("a hook"),
+    );
   expect(hookLines()).toEqual([]);
   chmodSync(join(dir, ".githooks/pre-commit"), 0o644);
   sh(dir, ["update-index", "--chmod=-x", ".githooks/post-merge"]);
@@ -1322,7 +1342,7 @@ test("check-structure: a hook with the skeleton's bytes but no executable bit fa
     "[check-structure] .githooks/pre-commit: a hook is executable (check-structure --fix) (100755)",
     "[check-structure] .githooks/post-merge: a hook is executable (check-structure --fix) (100644)",
   ]);
-  run(dir, "check-structure", ["--fix"]);
+  run(dir, [bin("check-structure"), "--fix"]);
   expect(hookLines()).toEqual([]);
   expect(
     sh(dir, ["ls-files", "-s", ".githooks/post-merge"]).stdout.toString().startsWith("100755"),
@@ -1395,7 +1415,7 @@ function scaffolded(dir: string) {
 describe("scaffold and check-structure", () => {
   const parent = temp();
   const dir = join(parent, "demo");
-  const made = run(parent, "scaffold", ["demo", "--port", "4655"]);
+  const made = run(parent, [bin("scaffold"), "demo", "--port", "4655"]);
   install(dir);
   write(dir, { "bun.lock": "" });
   sh(dir, ["config", "core.hooksPath", ".githooks"]);
@@ -1404,8 +1424,7 @@ describe("scaffold and check-structure", () => {
   const fixture = (
     name: string,
     config: Record<string, unknown>,
-    files: Record<string, string> = {},
-    gone: string[] = [],
+    files: Record<string, string | null> = {},
   ) => {
     const other = join(parent, name);
     cpSync(dir, other, {
@@ -1415,8 +1434,13 @@ describe("scaffold and check-structure", () => {
     });
     const pkg = scaffolded(other);
     Object.assign(pkg.scaffolding, config);
-    write(other, { "package.json": JSON.stringify(pkg, null, 2), ...files });
-    for (const path of gone) rmSync(join(other, path));
+    const manifest = JSON.stringify(pkg, null, 2);
+    const changes = Object.entries(files);
+    const present = changes.filter((entry): entry is [string, string] => entry[1] !== null);
+    write(other, { "package.json": manifest, ...Object.fromEntries(present) });
+    for (const [path, text] of changes) {
+      if (text === null) rmSync(join(other, path));
+    }
     install(other);
     return other;
   };
@@ -1445,7 +1469,7 @@ describe("scaffold and check-structure", () => {
   });
 
   test("a scaffolded repository passes check-structure", () => {
-    expect(run(dir, "check-structure")).toEqual({ code: 0, out: "" });
+    expect(run(dir, [bin("check-structure")])).toEqual({ code: 0, out: "" });
   });
 
   test("the generic folder check passes tracked lookalikes and untracked generic folders", () => {
@@ -1458,7 +1482,7 @@ describe("scaffold and check-structure", () => {
       },
     );
     prepareGit(other, ["add", "--", "src/corex/c.ts"]);
-    expect(run(other, "check-structure")).toEqual({ code: 0, out: "" });
+    expect(run(other, [bin("check-structure")])).toEqual({ code: 0, out: "" });
   });
 
   test("tracked generic folders are reported once each with one guide", () => {
@@ -1481,7 +1505,7 @@ describe("scaffold and check-structure", () => {
       "src/Core/b.ts",
       "src/corex/c.ts",
     ]);
-    const red = run(other, "check-structure");
+    const red = run(other, [bin("check-structure")]);
     expect(red.code, red.out).toBe(1);
     expect(lines(red.out, "structure")).toEqual([
       "[structure] src/Core: folder named `Core`",
@@ -1527,7 +1551,7 @@ describe("scaffold and check-structure", () => {
       ["check-names", []],
       ["check-layers", ["--check"]],
     ] as const)("%s accepts a commented Oxlint override", (command, args) => {
-      const result = run(other, command, [...args]);
+      const result = run(other, [bin(command), ...args]);
       expect(result.code, result.out).toBe(0);
     });
 
@@ -1591,12 +1615,12 @@ describe("scaffold and check-structure", () => {
             ".oxlintrc.json": comment.replace(disabledRule, rule),
           },
         );
-        const result = run(malformed, "check-structure");
+        const result = run(malformed, [bin("check-structure")]);
         expect(result.code).toBe(1);
         expect(lines(result.out, "check-structure")).toEqual([
           `[check-structure] .oxlintrc.json: ${reason}`,
         ]);
-        expect(run(malformed, "check-layers", ["--check"]).out).toContain(
+        expect(run(malformed, [bin("check-layers"), "--check"]).out).toContain(
           `.oxlintrc.json: cannot parse the config (${reason})`,
         );
       },
@@ -1636,7 +1660,14 @@ describe("scaffold and check-structure", () => {
       const servers = settings.mcpServers;
       assert(isObject(servers), `${changed}: missing mcpServers`);
       content = JSON.stringify({ ...settings, mcpServers: { ...servers, own: { command: "x" } } });
-      consumer = fixture("agent-configs", {}, { [changed]: content }, removed);
+      consumer = fixture(
+        "agent-configs",
+        {},
+        {
+          [changed]: content,
+          ...Object.fromEntries(removed.map((path) => [path, null])),
+        },
+      );
     });
     afterEach(() => {
       write(consumer, { [changed]: content });
@@ -1644,10 +1675,10 @@ describe("scaffold and check-structure", () => {
     });
 
     test("accepts the consumer's agent configuration", () => {
-      expect(run(consumer, "check-structure")).toEqual({ code: 0, out: "" });
+      expect(run(consumer, [bin("check-structure")])).toEqual({ code: 0, out: "" });
     });
     test("does not rewrite or restore optional agent configs in fix mode", () => {
-      expect(run(consumer, "check-structure", ["--fix"])).toEqual({ code: 0, out: "" });
+      expect(run(consumer, [bin("check-structure"), "--fix"])).toEqual({ code: 0, out: "" });
       expect(readFileSync(join(consumer, changed), "utf8"), changed).toBe(content);
       expect(removed.filter((path) => existsSync(join(consumer, path)))).toEqual([]);
     });
@@ -1666,19 +1697,19 @@ describe("scaffold and check-structure", () => {
     };
     let other: string;
     beforeAll(() => {
-      other = fixture("oxlint-structure", {}, {}, [name]);
+      other = fixture("oxlint-structure", {}, { [name]: null });
     });
     afterEach(() => rmSync(join(other, name), { force: true }));
 
     test("reports the missing configuration", () => {
-      expect(run(other, "check-structure").out).toContain(`${name}: missing`);
+      expect(run(other, [bin("check-structure")]).out).toContain(`${name}: missing`);
     });
     test("repairs the missing configuration", () => {
-      expect(run(other, "check-structure", ["--fix"]).code).toBe(0);
+      expect(run(other, [bin("check-structure"), "--fix"]).code).toBe(0);
     });
     test("preserves a local layer policy in fix mode", () => {
       write(other, { [name]: JSON.stringify(config) });
-      expect(run(other, "check-structure", ["--fix"]).code).toBe(0);
+      expect(run(other, [bin("check-structure"), "--fix"]).code).toBe(0);
       expect(jsonObject(readFileSync(join(other, name))).rules).toEqual(config.rules);
     });
     test.each([
@@ -1687,7 +1718,7 @@ describe("scaffold and check-structure", () => {
       ["ignorePatterns", { ignorePatterns: [] }],
     ])("rejects a malformed %s policy", (field, broken) => {
       write(other, { [name]: JSON.stringify({ ...config, ...broken }) });
-      const result = run(other, "check-structure");
+      const result = run(other, [bin("check-structure")]);
       expect(result.code).toBe(1);
       expect(result.out).toContain(`${name}: ${field}`);
     });
@@ -1752,7 +1783,7 @@ describe("scaffold and check-structure", () => {
           ".oxlintrc.json": restrictionOptions(message, {}, {}),
         },
       );
-      expect(run(other, "check-structure")).toEqual(expected);
+      expect(run(other, [bin("check-structure")])).toEqual(expected);
     },
   );
 
@@ -1798,7 +1829,7 @@ describe("scaffold and check-structure", () => {
         ),
       },
     );
-    const result = run(other, "check-structure");
+    const result = run(other, [bin("check-structure")]);
     expect(result.code).toBe(1);
     expect(lines(result.out, "check-structure")).toEqual([
       importMessages[0],
@@ -1835,7 +1866,7 @@ describe("scaffold and check-structure", () => {
         {},
         { ".oxlintrc.json": JSON.stringify({ ...oxlintTemplate, ...config }) },
       );
-      const result = run(other, "check-structure");
+      const result = run(other, [bin("check-structure")]);
       expect(result.code).toBe(1);
       expect(lines(result.out, "check-structure")).toEqual([
         `[check-structure] .oxlintrc.json: ${location}.${plugin}/no-restricted-imports.paths[0] needs a message saying where code that needs this import belongs ("fs")`,
@@ -1883,7 +1914,7 @@ describe("scaffold and check-structure", () => {
       const file = ".oxlintrc.json";
       const config = { ...oxlintTemplate, rules: { "no-restricted-imports": ["error", option] } };
       const other = fixture(`oxlint-imports-${name}`, {}, { [file]: JSON.stringify(config) });
-      const result = run(other, "check-structure");
+      const result = run(other, [bin("check-structure")]);
       expect(result.code).toBe(1);
       expect(lines(result.out, "check-structure")).toEqual([
         `[check-structure] ${file}: rules.no-restricted-imports${location} ${guidance} ("fs")`,
@@ -1900,7 +1931,7 @@ describe("scaffold and check-structure", () => {
         rules: { "no-restricted-imports": [severity, { paths: [{ name: "fs" }] }] },
       };
       const other = fixture(`oxlint-disabled-${severity}`, {}, { [file]: JSON.stringify(config) });
-      expect(run(other, "check-structure")).toEqual({ code: 0, out: "" });
+      expect(run(other, [bin("check-structure")])).toEqual({ code: 0, out: "" });
     },
   );
 
@@ -1911,7 +1942,7 @@ describe("scaffold and check-structure", () => {
       rules: { "no-restricted-syntax": ["error", "WithStatement"] },
     };
     const other = fixture("oxlint-syntax-string", {}, { [file]: JSON.stringify(config) });
-    const result = run(other, "check-structure");
+    const result = run(other, [bin("check-structure")]);
     expect(result.code).toBe(1);
     expect(lines(result.out, "check-structure")).toEqual([
       '[check-structure] .oxlintrc.json: rules.no-restricted-syntax replace the string with { "selector": ..., "message": ... } and say what to write instead ("WithStatement")',
@@ -1947,7 +1978,7 @@ describe("scaffold and check-structure", () => {
     test(
       "shared presets pass without a local rule",
       () => {
-        expect(run(other, "check-structure")).toEqual({ code: 0, out: "" });
+        expect(run(other, [bin("check-structure")])).toEqual({ code: 0, out: "" });
       },
       limit(10_000),
     );
@@ -1963,7 +1994,7 @@ describe("scaffold and check-structure", () => {
         { files: ["src/probe.test.ts"], rules: { "@typescript-eslint/no-unused-vars": "error" } },
       ];\n`,
         });
-        const localEslint = run(other, "check-structure");
+        const localEslint = run(other, [bin("check-structure")]);
         expect(localEslint.code).toBe(1);
         expect(lines(localEslint.out, "check-structure")).toEqual([
           matchingText(
@@ -1989,7 +2020,7 @@ describe("scaffold and check-structure", () => {
             config +
             'export default [...base, { files: ["src/Probe.astro/*_frontmatter.tsx"], rules: { "no-debugger": "error" } }];\n',
         });
-        const frontmatterOverlap = run(other, "check-structure");
+        const frontmatterOverlap = run(other, [bin("check-structure")]);
         expect(frontmatterOverlap.code).toBe(1);
         expect(lines(frontmatterOverlap.out, "check-structure")).toEqual([
           matchingText(
@@ -2009,7 +2040,7 @@ describe("scaffold and check-structure", () => {
             overrides: [{ files: ["src/*.astro"], rules: { "eslint/no-undef": "warn" } }],
           }),
         });
-        const localOxlint = run(other, "check-structure");
+        const localOxlint = run(other, [bin("check-structure")]);
         expect(localOxlint.code).toBe(1);
         expect(lines(localOxlint.out, "check-structure")).toEqual([
           containingText("src/Probe.astro: ESLint rule no-undef overlaps Oxlint rule no-undef"),
@@ -2076,7 +2107,7 @@ describe("scaffold and check-structure", () => {
 
   test("--name keeps the scope out of the Pages path and title", () => {
     const at = temp();
-    expect(run(at, "scaffold", ["scoped", "--name", "@acme/scoped"]).code).toBe(0);
+    expect(run(at, [bin("scaffold"), "scoped", "--name", "@acme/scoped"]).code).toBe(0);
     const config = readFileSync(join(at, "scoped/catalog/astro.config.ts"), "utf8");
     expect(config).toContain('base: "/scoped"');
     expect(config).toContain('product: "scoped"');
@@ -2092,12 +2123,12 @@ describe("scaffold and check-structure", () => {
       "[scaffold]   1. add inner to the hub's sync list",
       "[scaffold]   2. create hackersandwizards/inner on GitHub and push to it\n",
     ].join("\n");
-    expect(run(at, "scaffold", ["inner", "--catalog-in", "x"]).out.endsWith(next)).toBe(true);
+    expect(run(at, [bin("scaffold"), "inner", "--catalog-in", "x"]).out.endsWith(next)).toBe(true);
   });
 
   test.each(['a"b', "Upper"])("--name refuses %s before writing a repository", (name) => {
     const at = temp();
-    const bad = run(at, "scaffold", ["bad", "--name", name]);
+    const bad = run(at, [bin("scaffold"), "bad", "--name", name]);
     expect(bad.out).toContain("is no npm package name");
     expect(existsSync(join(at, "bad"))).toBe(false);
   });
@@ -2120,8 +2151,7 @@ describe("scaffold and check-structure", () => {
     beforeAll(() => {
       const r = run(
         parent,
-        "scaffold",
-        ["minimal", "--catalog-in", "acme-private", "--admin-in", "acme-private"],
+        [bin("scaffold"), "minimal", "--catalog-in", "acme-private", "--admin-in", "acme-private"],
         {
           SCAFFOLDING_GIT_BASE: "/nonexistent/",
         },
@@ -2160,12 +2190,14 @@ describe("scaffold and check-structure", () => {
     );
     test("leaves work items empty and passes structure", () => {
       expect(readdirSync(join(minimal, "docs/agent-work"))).toEqual([".gitkeep"]);
-      expect(run(minimal, "check-structure").code).toBe(0);
+      expect(run(minimal, [bin("check-structure")]).code).toBe(0);
     });
   });
 
   test("a remote without a version tag fails scaffold", () => {
-    const r = run(parent, "scaffold", ["untagged"], { SCAFFOLDING_GIT_BASE: remotes(["latest"]) });
+    const r = run(parent, [bin("scaffold"), "untagged"], {
+      SCAFFOLDING_GIT_BASE: remotes(["latest"]),
+    });
     expect(r.code).toBe(1);
     expect(r.out).toContain("no v<version> tag read from");
   });
@@ -2183,7 +2215,7 @@ describe("scaffold and check-structure", () => {
     test("reports an edited workflow", () => {
       edit();
       try {
-        expect(lines(run(dir, "check-structure").out, "check-structure")).toEqual([
+        expect(lines(run(dir, [bin("check-structure")]).out, "check-structure")).toEqual([
           "[check-structure] .github/workflows/pages.yml: differs from the skeleton (check-structure --fix)",
         ]);
       } finally {
@@ -2194,9 +2226,9 @@ describe("scaffold and check-structure", () => {
     test("--fix writes this version and the result passes", () => {
       edit();
       try {
-        run(dir, "check-structure", ["--fix"]);
+        run(dir, [bin("check-structure"), "--fix"]);
         expect(readFileSync(path, "utf8")).toBe(original);
-        expect(run(dir, "check-structure").code).toBe(0);
+        expect(run(dir, [bin("check-structure")]).code).toBe(0);
       } finally {
         writeFileSync(path, original);
       }
@@ -2205,7 +2237,7 @@ describe("scaffold and check-structure", () => {
     test("passes when the workflow is absent", () => {
       rmSync(path);
       try {
-        expect(run(dir, "check-structure").code).toBe(0);
+        expect(run(dir, [bin("check-structure")]).code).toBe(0);
       } finally {
         writeFileSync(path, original);
       }
@@ -2247,15 +2279,15 @@ describe("scaffold and check-structure", () => {
       { allow: [{ check: "structure", path, reason: "own workflow" }] },
       { [path]: "custom\n" },
     );
-    run(other, "check-structure", ["--fix"]);
+    run(other, [bin("check-structure"), "--fix"]);
     expect(readFileSync(join(other, path), "utf8")).toBe("custom\n");
-    expect(run(other, "check-structure").code).toBe(0);
+    expect(run(other, [bin("check-structure")]).code).toBe(0);
   });
 
   test("LICENSE is required where the repository is public; a private one may have none", () => {
     const missing = (config: Record<string, unknown>, name: string) =>
       lines(
-        run(fixture(name, config, {}, ["LICENSE"]), "check-structure").out,
+        run(fixture(name, config, { LICENSE: null }), [bin("check-structure")]).out,
         "check-structure",
       ).filter((l) => l.includes("LICENSE"));
     expect(missing({}, "public-no-license")).toEqual([
@@ -2269,22 +2301,22 @@ describe("scaffold and check-structure", () => {
 
   test("the .agents/skills link is optional when .claude/skills is absent", () => {
     const none = fixture("no-skills", {});
-    expect(lines(run(none, "check-structure").out, "check-structure")).toEqual([]);
+    expect(lines(run(none, [bin("check-structure")]).out, "check-structure")).toEqual([]);
   });
 
   test("check-structure reports and repairs a missing .agents/skills link", () => {
     const skills = fixture("skills", {}, { ".claude/skills/a/SKILL.md": "x\n" });
-    expect(lines(run(skills, "check-structure").out, "check-structure")).toEqual([
+    expect(lines(run(skills, [bin("check-structure")]).out, "check-structure")).toEqual([
       skillsLinkFinding,
     ]);
-    run(skills, "check-structure", ["--fix"]);
-    expect(run(skills, "check-structure").code).toBe(0);
+    run(skills, [bin("check-structure"), "--fix"]);
+    expect(run(skills, [bin("check-structure")]).code).toBe(0);
   });
 
   test("a wrong .agents/skills link is reported even when .claude/skills is absent", () => {
     const wrong = fixture("wrong-link", {}, { "keep/x": "x\n" });
     symlinkSync("../keep", join(wrong, ".agents/skills"));
-    expect(lines(run(wrong, "check-structure").out, "check-structure")).toEqual([
+    expect(lines(run(wrong, [bin("check-structure")]).out, "check-structure")).toEqual([
       skillsLinkFinding,
     ]);
   });
@@ -2300,12 +2332,12 @@ describe("scaffold and check-structure", () => {
           '{ "model": "x", "hooks": { "SessionStart": [{ "matcher": "startup", "hooks": [] }, { "matcher": "resume", "hooks": [] }] } }\n',
       },
     );
-    expect(lines(run(other, "check-structure").out, "check-structure")).toEqual([
+    expect(lines(run(other, [bin("check-structure")]).out, "check-structure")).toEqual([
       "[check-structure] .mcp.json: differs from the skeleton (check-structure --fix) (mcpServers.chrome-devtools)",
       "[check-structure] .claude/settings.json: differs from the skeleton (check-structure --fix) (hooks.SessionStart)",
     ]);
-    run(other, "check-structure", ["--fix"]);
-    expect(run(other, "check-structure").code).toBe(0);
+    run(other, [bin("check-structure"), "--fix"]);
+    expect(run(other, [bin("check-structure")]).code).toBe(0);
     const mcp = jsonObject(readFileSync(join(other, ".mcp.json")));
     expect(mcp.mcpServers).toEqual({
       own: { command: "x" },
@@ -2331,7 +2363,7 @@ describe("scaffold and check-structure", () => {
         ".mcp.json": "null\n",
       },
     );
-    expect(lines(run(other, "check-structure", ["--fix"]).out, "check-structure")).toEqual([
+    expect(lines(run(other, [bin("check-structure"), "--fix"]).out, "check-structure")).toEqual([
       "[check-structure] .mcp.json: mcpServers.chrome-devtools sits in no JSON object: repair the JSON syntax in this file so every parent of mcpServers.chrome-devtools is an object ({}), then run check-structure --fix",
       "[check-structure] .claude/settings.json: hooks.SessionStart sits in no JSON object: repair the JSON syntax in this file so every parent of hooks.SessionStart is an object ({}), then run check-structure --fix",
     ]);
@@ -2340,7 +2372,7 @@ describe("scaffold and check-structure", () => {
   test("the retired install guard goes red", () => {
     const guard = "scripts/repo/only-bun.cjs";
     const other = fixture("only-bun", {}, { [guard]: "\n" });
-    expect(lines(run(other, "check-structure").out, "check-structure")).toEqual([
+    expect(lines(run(other, [bin("check-structure")]).out, "check-structure")).toEqual([
       `[check-structure] ${guard}: not allowed by the skeleton: delete this retired file and move any needed configuration into the canonical file (.oxlintrc.json, eslint.config.js, prettier.config.js, vitest.config.ts, or bun.lock)`,
     ]);
   });
@@ -2373,16 +2405,20 @@ describe("scaffold and check-structure", () => {
           ".githooks/pre-commit": "#!/bin/sh\ncustom\n",
           "bin/x.ts": "export {};\n",
           ".claude/skills/a/SKILL.md": "x\n",
+          ".editorconfig": null,
+          ".npmrc": null,
+          "bunfig.toml": null,
+          ".githooks/commit-msg": null,
+          ".githooks/post-merge": null,
         },
-        [".editorconfig", ".npmrc", "bunfig.toml", ".githooks/commit-msg", ".githooks/post-merge"],
       );
       const pkg = scaffolded(other);
       write(other, { "package.json": JSON.stringify({ ...pkg, bin: { x: "bin/x.ts" } }) });
       sh(other, ["config", "--unset", "core.hooksPath"]);
       sh(other, ["add", "bin/x.ts"]);
       const before = state(other);
-      expect(run(other, "check-structure").code).toBe(1);
-      const fixed = run(other, "check-structure", ["--fix"]);
+      expect(run(other, [bin("check-structure")]).code).toBe(1);
+      const fixed = run(other, [bin("check-structure"), "--fix"]);
       expect(fixed.code).toBe(0);
       expect(fixed.out).toContain("--fix writes nothing: scaffolding.skip.structure");
       expect(state(other)).toEqual(before);
@@ -2397,11 +2433,14 @@ describe("scaffold and check-structure", () => {
         const other = fixture(
           `skip-private-${suffix}`,
           { skip: { structure: reason }, private: true },
-          { ".githooks/post-checkout": "#!/bin/sh\nolder\n", ".claude/skills/a/SKILL.md": "x\n" },
-          ["bunfig.toml"],
+          {
+            ".githooks/post-checkout": "#!/bin/sh\nolder\n",
+            ".claude/skills/a/SKILL.md": "x\n",
+            "bunfig.toml": null,
+          },
         );
         const before = state(other);
-        expect(run(other, "check-structure", ["--fix"]).code).toBe(0);
+        expect(run(other, [bin("check-structure"), "--fix"]).code).toBe(0);
         expect(state(other)).toEqual(before);
       },
     );
@@ -2416,10 +2455,13 @@ describe("scaffold and check-structure", () => {
         const other = fixture(
           `allow-${shape.replace(" ", "-")}`,
           { private: true, allow: [{ check: "structure", path, reason: "own hook" }] },
-          { ".githooks/pre-push": "#!/bin/sh\ncustom\n", ".editorconfig": "root = true\n" },
-          ["bunfig.toml"],
+          {
+            ".githooks/pre-push": "#!/bin/sh\ncustom\n",
+            ".editorconfig": "root = true\n",
+            "bunfig.toml": null,
+          },
         );
-        run(other, "check-structure", ["--fix"]);
+        run(other, [bin("check-structure"), "--fix"]);
         expect(readFileSync(join(other, ".githooks/pre-push"), "utf8")).toBe("#!/bin/sh\ncustom\n");
         expect(existsSync(join(other, "bunfig.toml"))).toBe(hasBunfig);
         expect(readFileSync(join(other, ".editorconfig"), "utf8")).not.toBe("root = true\n");
@@ -2437,19 +2479,21 @@ describe("scaffold and check-structure", () => {
     });
     afterEach(() => writeFileSync(file, original));
     test("reports the drift", () => {
-      expect(run(dir, "check-structure").out).toContain(".editorconfig: differs from the skeleton");
+      expect(run(dir, [bin("check-structure")]).out).toContain(
+        ".editorconfig: differs from the skeleton",
+      );
     });
     test("repairs the drift with --fix", () => {
-      const fix = run(dir, "check-structure", ["--fix"]);
+      const fix = run(dir, [bin("check-structure"), "--fix"]);
       expect(fix.code, fix.out).toBe(0);
       expect(readFileSync(file, "utf8")).toBe(original);
-      expect(run(dir, "check-structure").code).toBe(0);
+      expect(run(dir, [bin("check-structure")]).code).toBe(0);
     });
   });
 
   test("a forbidden file, a wrong width and the hooks path go red", () => {
     const other = join(parent, "other");
-    run(parent, "scaffold", ["other"]);
+    run(parent, [bin("scaffold"), "other"]);
     install(other);
     const { prettier: _prettier, ...pkg } = readPackage(other);
     write(other, {
@@ -2463,7 +2507,7 @@ describe("scaffold and check-structure", () => {
         printWidth: 80,
       }),
     });
-    const out = run(other, "check-structure").out;
+    const out = run(other, [bin("check-structure")]).out;
     expect(out).toContain(
       "eslint.config.mjs: not allowed by the skeleton: delete this retired file and move any needed configuration into the canonical file (.oxlintrc.json, eslint.config.js, prettier.config.js, vitest.config.ts, or bun.lock)",
     );
@@ -2528,7 +2572,7 @@ describe("scaffold and check-structure", () => {
           scripts: { ...pkg.scripts, mutation },
         }),
       });
-      const { code, out } = run(other, "check-structure");
+      const { code, out } = run(other, [bin("check-structure")]);
       expect({ code, findings: lines(out, "check-structure") }).toEqual(expected);
     });
   });
@@ -2555,10 +2599,10 @@ export default {
         scripts: { ...pkg.scripts, mutation: "scaffolding-mutation" },
       }),
     });
-    expect(run(other, "check-structure")).toEqual({ code: 0, out: "" });
+    expect(run(other, [bin("check-structure")])).toEqual({ code: 0, out: "" });
     const config = readFileSync(join(other, path), "utf8");
     write(other, { [path]: config.replace("lib/deck-edit.ts", "lib/deck-edit.ts:15-217") });
-    const result = run(other, "check-structure");
+    const result = run(other, [bin("check-structure")]);
     expect(result.code).toBe(1);
     expect(lines(result.out, "check-structure")).toEqual([
       "[check-structure] stryker.config.mjs: mutate must select whole files, without line ranges: remove the :start-end suffix from the mutate entry in the Stryker config so the entire file is mutated (lib/deck-edit.ts:15-217)",
@@ -2570,7 +2614,14 @@ export default {
     let pkg: ReturnType<typeof scaffolded>;
     beforeAll(() => {
       other = join(parent, "timeout");
-      const setup = run(parent, "scaffold", ["timeout", "--catalog-in", "x", "--admin-in", "x"]);
+      const setup = run(parent, [
+        bin("scaffold"),
+        "timeout",
+        "--catalog-in",
+        "x",
+        "--admin-in",
+        "x",
+      ]);
       requireFixtureSuccess("scaffold timeout --catalog-in x --admin-in x", setup.code, setup.out);
       install(other);
       write(other, { "bun.lock": "" });
@@ -2675,13 +2726,13 @@ export default {
         }),
         ...files,
       });
-      expect(lines(run(other, "check-structure").out, "check-structure")).toEqual(expected);
+      expect(lines(run(other, [bin("check-structure")]).out, "check-structure")).toEqual(expected);
     });
 
     test("skipping tests requires no configured test command", () => {
       rmSync(join(other, "vitest.config.ts"), { force: true });
       write(other, { "package.json": JSON.stringify(pkg) });
-      expect(lines(run(other, "check-structure").out, "check-structure")).toEqual([]);
+      expect(lines(run(other, [bin("check-structure")]).out, "check-structure")).toEqual([]);
     });
   });
 
@@ -2695,7 +2746,14 @@ export default {
       'import { catalog } from "@hackersandwizards/scaffolding/catalog";\nexport default { integrations: [catalog] };\n';
     beforeAll(() => {
       other = join(parent, "surface");
-      const setup = run(parent, "scaffold", ["surface", "--catalog-in", "x", "--admin-in", "x"]);
+      const setup = run(parent, [
+        bin("scaffold"),
+        "surface",
+        "--catalog-in",
+        "x",
+        "--admin-in",
+        "x",
+      ]);
       requireFixtureSuccess("scaffold surface", setup.code, setup.out);
       install(other);
       write(other, { "bun.lock": "" });
@@ -2718,7 +2776,7 @@ export default {
       "reports missing scripts, invalid local steps and an absent preset",
       () => {
         write(other, { "package.json": broken });
-        const found = lines(run(other, "check-structure").out, "check-structure");
+        const found = lines(run(other, [bin("check-structure")]).out, "check-structure");
         expect(found.sort()).toEqual([
           '[check-structure] catalog/astro.config.ts: the Astro config must use the catalog preset from @hackersandwizards/scaffolding/catalog: import { catalog } from "@hackersandwizards/scaffolding/catalog" and add catalog(...) to integrations in the Astro config, or set scaffolding.skip.catalog with a reason in package.json if this repo has no UI catalog',
           "[check-structure] package.json: a step of scaffolding.check is a script named check:<what>: rename the step and its package.json script to check:<what>, or use a built-in placed step (colours, copies, retired, elements, links, browser-test) (brand-colours)",
@@ -2738,7 +2796,7 @@ export default {
           "package.json": valid,
           [source]: "// @hackersandwizards/scaffolding/catalog\n",
         });
-        expect(lines(run(other, "check-structure").out, "check-structure")).toEqual([
+        expect(lines(run(other, [bin("check-structure")]).out, "check-structure")).toEqual([
           '[check-structure] catalog/astro.config.ts: the Astro config must use the catalog preset from @hackersandwizards/scaffolding/catalog: import { catalog } from "@hackersandwizards/scaffolding/catalog" and add catalog(...) to integrations in the Astro config, or set scaffolding.skip.catalog with a reason in package.json if this repo has no UI catalog',
         ]);
       },
@@ -2749,7 +2807,7 @@ export default {
       "accepts the preset in %s without a stories folder",
       (path) => {
         write(other, { "package.json": valid, [path]: preset });
-        expect(run(other, "check-structure")).toEqual({ code: 0, out: "" });
+        expect(run(other, [bin("check-structure")])).toEqual({ code: 0, out: "" });
       },
       limit(10_000),
     );
@@ -2757,16 +2815,16 @@ export default {
 
   test("a private repository keeps no commit-msg hook", () => {
     const other = fixture("private", { private: true });
-    expect(lines(run(other, "check-structure").out, "check-structure").sort()).toEqual([
+    expect(lines(run(other, [bin("check-structure")]).out, "check-structure").sort()).toEqual([
       "[check-structure] .githooks/commit-msg: not kept in a private repository (check-structure --fix)",
     ]);
-    run(other, "check-structure", ["--fix"]);
-    expect(run(other, "check-structure").code).toBe(0);
+    run(other, [bin("check-structure"), "--fix"]);
+    expect(run(other, [bin("check-structure")]).code).toBe(0);
     expect(existsSync(join(other, ".githooks/commit-msg"))).toBe(false);
   });
 
   test("a repository without package.json is reported, not a crash", () => {
-    const r = run(repo({ "a.md": "a\n" }), "check-structure");
+    const r = run(repo({ "a.md": "a\n" }), [bin("check-structure")]);
     expect(r.code).toBe(1);
     expect(lines(r.out, "check-structure")).toContain(
       "[check-structure] package.json: missing: create this required skeleton file (see @hackersandwizards/scaffolding skeleton.json)",
@@ -2774,7 +2832,7 @@ export default {
   });
 
   test("a scaffolded repository passes check-coupling but for the pins bun install fetches", () => {
-    expect(lines(run(dir, "check-coupling").out, "check-coupling")).toEqual([
+    expect(lines(run(dir, [bin("check-coupling")]).out, "check-coupling")).toEqual([
       "[check-coupling] package.json: node_modules holds nothing, not the pinned 0.10.0: bun install (@hackersandwizards/admin@git+https://github.com/hackersandwizards/admin.git#v0.10.0)",
       "[check-coupling] package.json: node_modules holds nothing, not the pinned 0.10.0: bun install (@hackersandwizards/brand@git+https://github.com/hackersandwizards/brand.git#v0.10.0)",
     ]);
@@ -2786,7 +2844,7 @@ describe("check-confidential", () => {
   writeFileSync(names, "Acme Widgets GmbH\nJane Q Doe\nZYX\nEvery\n");
   const list = join(temp(), "list.json");
   const buildStarted = Date.now();
-  writeFileSync(list, run(temp(), "check-confidential", ["build", names]).out);
+  writeFileSync(list, run(temp(), [bin("check-confidential"), "build", names]).out);
   const buildFinished = Date.now();
   const env = { SCAFFOLDING_CONFIDENTIAL_TERMS: list, CI: "" };
 
@@ -2818,13 +2876,13 @@ describe("check-confidential", () => {
     write(dir, { "a.md": "nothing\nWe met jane q doe and every ZYX team.\n" });
     sh(dir, ["add", "a.md"]);
     const found = lines(
-      run(dir, "check-confidential", ["--staged"], env).out,
+      run(dir, [bin("check-confidential"), "--staged"], env).out,
       "check-confidential",
     );
     expect(found.map((l) => l.replace(/.*\(/, "")).sort()).toEqual(["ZYX)", "jane q doe)"]);
     write(dir, { "a.md": "nothing\nzyx in lower case is a word here.\n" });
     sh(dir, ["add", "a.md"]);
-    expect(run(dir, "check-confidential", ["--staged"], env).code).toBe(0);
+    expect(run(dir, [bin("check-confidential"), "--staged"], env).code).toBe(0);
   });
 
   test("the tree audit reads every file, and a staged finding names a non-ASCII path as written", () => {
@@ -2835,7 +2893,7 @@ describe("check-confidential", () => {
       "c/d.md": "Every ZYX team.\n",
     });
     const audit = lines(
-      run(dir, "check-confidential", ["--tree", "HEAD"], env).out,
+      run(dir, [bin("check-confidential"), "--tree", "HEAD"], env).out,
       "check-confidential",
     );
     expect(audit.map((l) => l.replace(/:.*\(/, " (")).sort()).toEqual([
@@ -2845,7 +2903,7 @@ describe("check-confidential", () => {
     write(dir, { "café.md": "We met jane q doe.\n" });
     sh(dir, ["add", "café.md"]);
     sh(dir, ["config", "diff.mnemonicPrefix", "true"]);
-    expect(run(dir, "check-confidential", ["--staged"], env).out).toContain(
+    expect(run(dir, [bin("check-confidential"), "--staged"], env).out).toContain(
       "[check-confidential] café.md:",
     );
   });
@@ -2855,10 +2913,10 @@ describe("check-confidential", () => {
     const head = sh(dir, ["rev-parse", "HEAD"]).stdout.toString().trim();
     sh(dir, ["update-index", "--add", "--cacheinfo", `160000,${head},ZYX`]);
     sh(dir, ["commit", "-qm", "sub"]);
-    expect(run(dir, "check-confidential", ["--tree", "HEAD"], env).out).toContain("(ZYX)");
+    expect(run(dir, [bin("check-confidential"), "--tree", "HEAD"], env).out).toContain("(ZYX)");
     const sha = sh(dir, ["rev-parse", "HEAD:a.md"]).stdout.toString().trim();
     rmSync(join(dir, ".git/objects", sha.slice(0, 2), sha.slice(2)));
-    const broken = run(dir, "check-confidential", ["--tree", "HEAD"], env);
+    const broken = run(dir, [bin("check-confidential"), "--tree", "HEAD"], env);
     expect(broken.out).toContain("a.md not readable");
     expect(broken.code).not.toBe(0);
   });
@@ -2867,13 +2925,13 @@ describe("check-confidential", () => {
     const caps = join(temp(), "caps.txt");
     writeFileSync(caps, "QUUX\nBRIDGE\nWidgetco\n");
     const capsList = join(temp(), "caps.json");
-    writeFileSync(capsList, run(temp(), "check-confidential", ["build", caps]).out);
+    writeFileSync(capsList, run(temp(), [bin("check-confidential"), "build", caps]).out);
     const capsEnv = { SCAFFOLDING_CONFIDENTIAL_TERMS: capsList, CI: "" };
     const dir = repo({ "package.json": "{}", "a.md": "nothing\n" });
     write(dir, { "a.md": "nothing\nQUUX and BRIDGE ship, so does widgetco.\n" });
     sh(dir, ["add", "a.md"]);
     const found = lines(
-      run(dir, "check-confidential", ["--staged"], capsEnv).out,
+      run(dir, [bin("check-confidential"), "--staged"], capsEnv).out,
       "check-confidential",
     );
     expect(found.map((l) => l.replace(/.*\(/, "")).sort()).toEqual([
@@ -2883,11 +2941,11 @@ describe("check-confidential", () => {
     ]);
     write(dir, { "a.md": "nothing\nquux, Quux, the bridge and a Bridge stay ordinary words.\n" });
     sh(dir, ["add", "a.md"]);
-    expect(run(dir, "check-confidential", ["--staged"], capsEnv).code).toBe(0);
+    expect(run(dir, [bin("check-confidential"), "--staged"], capsEnv).code).toBe(0);
     write(dir, { "a.md": "nothing\nsee docs/quux-workshop/index.html\n" });
     sh(dir, ["add", "a.md"]);
     expect(
-      lines(run(dir, "check-confidential", ["--staged"], capsEnv).out, "check-confidential"),
+      lines(run(dir, [bin("check-confidential"), "--staged"], capsEnv).out, "check-confidential"),
     ).toHaveLength(1);
   });
 
@@ -2895,21 +2953,21 @@ describe("check-confidential", () => {
     const dir = repo({ "package.json": "{}", "a.md": "Acme Widgets GmbH\n" });
     write(dir, { "a.md": "Acme Widgets GmbH\nmore\n" });
     sh(dir, ["add", "a.md"]);
-    expect(run(dir, "check-confidential", ["--staged"], env).code).toBe(0);
+    expect(run(dir, [bin("check-confidential"), "--staged"], env).code).toBe(0);
   });
 
   test("the commit message is checked", () => {
     const dir = repo({ "package.json": "{}" });
     const msg = join(dir, "MSG");
     writeFileSync(msg, "fix: for Acme Widgets\n");
-    expect(run(dir, "check-confidential", ["--message-file", msg], env).out).toContain(
+    expect(run(dir, [bin("check-confidential"), "--message-file", msg], env).out).toContain(
       "(Acme Widgets)",
     );
     writeFileSync(
       msg,
       "fix\n# ------------------------ >8 ------------------------\n+Acme Widgets\n",
     );
-    expect(run(dir, "check-confidential", ["--message-file", msg], env).code).toBe(0);
+    expect(run(dir, [bin("check-confidential"), "--message-file", msg], env).code).toBe(0);
   });
 
   test("an image under docs/agent-work passes once read clean; one that cannot be read goes red", () => {
@@ -2917,10 +2975,10 @@ describe("check-confidential", () => {
     mkdirSync(join(dir, "docs/agent-work/review"), { recursive: true });
     writeFileSync(join(dir, "docs/agent-work/review/shot.png"), PNG);
     sh(dir, ["add", "docs/agent-work/review/shot.png"]);
-    expect(run(dir, "check-confidential", ["--staged"], { ...env, CI: "" }).code).toBe(0);
+    expect(run(dir, [bin("check-confidential"), "--staged"], { ...env, CI: "" }).code).toBe(0);
     write(dir, { "docs/agent-work/review/broken.png": "not really a png" });
     sh(dir, ["add", "docs/agent-work/review/broken.png"]);
-    const r = run(dir, "check-confidential", ["--staged"], { ...env, CI: "" });
+    const r = run(dir, [bin("check-confidential"), "--staged"], { ...env, CI: "" });
     expect(r.out).toContain("docs/agent-work/review/broken.png: image not read");
     expect(r.code).toBe(1);
   });
@@ -2929,14 +2987,14 @@ describe("check-confidential", () => {
     const dir = repo({ "package.json": "{}" });
     const msg = join(dir, "MSG");
     writeFileSync(msg, "# Acme Widgets deal\n");
-    expect(run(dir, "check-confidential", ["--message-file", msg], env).code).toBe(1);
+    expect(run(dir, [bin("check-confidential"), "--message-file", msg], env).code).toBe(1);
     write(dir, {
       "notes/acme-widgets.md": "x\n",
       "a.md": "Jane Q Doe".normalize("NFD") + "\n++ Acme Widgets\n",
     });
     sh(dir, ["add", "notes/acme-widgets.md", "a.md"]);
     const found = lines(
-      run(dir, "check-confidential", ["--staged"], env).out,
+      run(dir, [bin("check-confidential"), "--staged"], env).out,
       "check-confidential",
     );
     expect(found).toContain(
@@ -2963,7 +3021,7 @@ describe("check-confidential", () => {
     write(dir, { "notes.sql": "select 1;\n++ Acme Widgets\n", "docs/my notes.md": "ZYX\n" });
     sh(dir, ["add", "notes.sql", "docs/my notes.md"]);
     expect(
-      lines(run(dir, "check-confidential", ["--staged"], env).out, "check-confidential"),
+      lines(run(dir, [bin("check-confidential"), "--staged"], env).out, "check-confidential"),
     ).toEqual([
       "[check-confidential] notes.sql: confidential term from the company records: remove or anonymise the name with a generic or fictitious placeholder. Only if this is a verified public false positive, add an allow entry with its reason in package.json scaffolding.allow (Acme Widgets)",
     ]);
@@ -2974,25 +3032,24 @@ describe("check-confidential", () => {
     write(dir, { "a.md": "nothing\nAcme Widgets\n" });
     sh(dir, ["add", "a.md"]);
     const ci = { ...env, CI: "true" };
-    expect(run(dir, "check-confidential", ["--index"], ci).code).toBe(0);
-    expect(run(dir, "check-confidential", ["--staged"], ci).out).toContain("(Acme Widgets)");
+    expect(run(dir, [bin("check-confidential"), "--index"], ci).code).toBe(0);
+    expect(run(dir, [bin("check-confidential"), "--staged"], ci).out).toContain("(Acme Widgets)");
     const msg = join(dir, "MSG");
     writeFileSync(msg, "for Acme Widgets\n");
-    expect(run(dir, "check-confidential", ["--message-file", msg], ci).code).toBe(1);
+    expect(run(dir, [bin("check-confidential"), "--message-file", msg], ci).code).toBe(1);
   });
 
   test("terms the scan could not produce: seven words, two characters, a three-letter slug", () => {
     const terms = join(temp(), "short.txt");
     writeFileSync(terms, "Alpha Bravo Charlie Delta Echo Foxtrot Golfo\nK 2\nZYX\n");
     const shortList = join(temp(), "short.json");
-    writeFileSync(shortList, run(temp(), "check-confidential", ["build", terms]).out);
+    writeFileSync(shortList, run(temp(), [bin("check-confidential"), "build", terms]).out);
     const shortEnv = { SCAFFOLDING_CONFIDENTIAL_TERMS: shortList, CI: "" };
     const found = (text: string) =>
       lines(
         run(
           repo({ "package.json": "{}", "a.md": text }),
-          "check-confidential",
-          ["--index"],
+          [bin("check-confidential"), "--index"],
           shortEnv,
         ).out,
         "check-confidential",
@@ -3014,7 +3071,7 @@ describe("check-confidential", () => {
     let indexed: string[];
     let cached: string[];
     const findings = (mode: string) =>
-      lines(run(dir, "check-confidential", [mode], env).out, "check-confidential").sort();
+      lines(run(dir, [bin("check-confidential"), mode], env).out, "check-confidential").sort();
     beforeAll(() => {
       dir = repo({ "package.json": "{}" });
       // Word splits a sentence into runs, here inside a word and between two.
@@ -3023,7 +3080,7 @@ describe("check-confidential", () => {
         "d/word/document.xml":
           '<?xml version="1.0"?><w:document><w:p><w:r><w:t>We met Acme Wid</w:t></w:r><w:r><w:t>gets</w:t></w:r></w:p><w:p><w:r><w:t>and Jane Q</w:t></w:r><w:r><w:t xml:space="preserve"> Doe</w:t></w:r></w:p></w:document>',
       });
-      prepareCommand(join(dir, "d"), "zip", ["-qr", "../offer.docx", "word"]);
+      prepareCommand(join(dir, "d"), ["zip", "-qr", "../offer.docx", "word"]);
       rmSync(join(dir, "d"), { recursive: true });
       writeFileSync(join(dir, "font.woff2"), Buffer.from([0x77, 0x4f, 0x46, 0x32, 0, 1, 2]));
       writeFileSync(join(dir, "data.bin"), Buffer.from("x\0y ZYX"));
@@ -3052,7 +3109,7 @@ describe("check-confidential", () => {
   test("changing just the XML decoder invalidates cached document text", () => {
     const dir = repo({ "package.json": "{}" });
     write(dir, { "word/document.xml": "<w:t>Acme&nbsp;Widgets</w:t>" });
-    prepareCommand(dir, "zip", ["-qr", "document.docx", "word"]);
+    prepareCommand(dir, ["zip", "-qr", "document.docx", "word"]);
     prepareGit(dir, ["add", "document.docx"]);
     const copy = temp();
     const root = join(import.meta.dirname, "..");
@@ -3100,7 +3157,7 @@ describe("check-confidential", () => {
         new Map(
           modes.map((mode) => [
             mode,
-            lines(run(dir, "check-confidential", [mode], env).out, "check-confidential"),
+            lines(run(dir, [bin("check-confidential"), mode], env).out, "check-confidential"),
           ]),
         ),
       );
@@ -3113,7 +3170,7 @@ describe("check-confidential", () => {
       dir = repo({ "package.json": "{}" });
       mkdirSync(join(dir, "d/word"), { recursive: true });
       write(dir, { "d/word/document.xml": "<w:t>We met Acme Widgets</w:t>" });
-      prepareCommand(join(dir, "d"), "zip", ["-qr", "../offer.docx", "word"]);
+      prepareCommand(join(dir, "d"), ["zip", "-qr", "../offer.docx", "word"]);
       rmSync(join(dir, "d"), { recursive: true });
       const content = readFileSync(join(dir, "offer.docx"));
       const oid = createHash("sha256").update(content).digest("hex");
@@ -3189,7 +3246,7 @@ describe("check-confidential", () => {
       ".gitattributes": "*.docx diff=shown\n",
       "b.md": "for Jane Q Doe\n",
     });
-    prepareCommand(join(dir, "d"), "zip", ["-qr", "../offer.docx", "word"]);
+    prepareCommand(join(dir, "d"), ["zip", "-qr", "../offer.docx", "word"]);
     rmSync(join(dir, "d"), { recursive: true });
     // A picture under a font's name, and an archive whose directory points past its end.
     writeFileSync(join(dir, "logo.woff"), Buffer.from("\x89PNG\r\n\x1a\n\0\0\0\rIHDR", "latin1"));
@@ -3206,7 +3263,7 @@ describe("check-confidential", () => {
     sh(dir, ["update-index", "--add", "--cacheinfo", `160000,${sub},a-sub`]);
     sh(dir, ["add", ".gitattributes", "offer.docx", "b.md", "logo.woff", "broken.zip"]);
     expect(
-      lines(run(dir, "check-confidential", ["--staged"], env).out, "check-confidential")
+      lines(run(dir, [bin("check-confidential"), "--staged"], env).out, "check-confidential")
         .map((l) => l.replace(/ \([^()]*\)(?=\. |$)/, ""))
         .sort(),
     ).toEqual([
@@ -3221,7 +3278,7 @@ describe("check-confidential", () => {
     "OCR reads a transparent image, every page of a TIFF and a PDF page without text or with an image",
     () => {
       const dir = repo({ "package.json": "{}" });
-      const make = (args: string[]) => prepareCommand(dir, args[0], args.slice(1));
+      const make = (args: string[]) => prepareCommand(dir, args);
       const page = (text: string, name: string) => {
         writeFileSync(join(dir, `${name}.txt`), `${text}\n`);
         const pdf = spawnSync(
@@ -3296,7 +3353,10 @@ describe("check-confidential", () => {
       for (const f of ["blank.png", "jane.png", "blank.tiff", "jane.tiff"]) rmSync(join(dir, f));
       sh(dir, ["add", "clear.png", "scan.pdf", "pages.tiff", "figure.pdf"]);
       expect(
-        lines(run(dir, "check-confidential", ["--staged"], env).out, "check-confidential").sort(),
+        lines(
+          run(dir, [bin("check-confidential"), "--staged"], env).out,
+          "check-confidential",
+        ).sort(),
       ).toEqual([
         "[check-confidential] clear.png: confidential term from the company records: remove or anonymise the name with a generic or fictitious placeholder. Only if this is a verified public false positive, add an allow entry with its reason in package.json scaffolding.allow (Acme Widgets)",
         "[check-confidential] figure.pdf: confidential term from the company records: remove or anonymise the name with a generic or fictitious placeholder. Only if this is a verified public false positive, add an allow entry with its reason in package.json scaffolding.allow (Jane Q Doe)",
@@ -3315,7 +3375,7 @@ describe("check-confidential", () => {
     });
     write(dir, { "a.md": "x\n" });
     sh(dir, ["add", "a.md"]);
-    const r = run(dir, "check-confidential", ["--staged"], {
+    const r = run(dir, [bin("check-confidential"), "--staged"], {
       SCAFFOLDING_CONFIDENTIAL_TERMS: "/nonexistent",
       CI: "",
     });
@@ -3331,7 +3391,7 @@ describe("check-confidential", () => {
       "a.md": "We met jane q doe.\n",
     });
     const audit = lines(
-      run(dir, "check-confidential", ["--tree", "HEAD"], env).out,
+      run(dir, [bin("check-confidential"), "--tree", "HEAD"], env).out,
       "check-confidential",
     );
     expect(audit).toEqual([
@@ -3339,14 +3399,14 @@ describe("check-confidential", () => {
     ]);
     write(dir, { "b.md": "x\n" });
     sh(dir, ["add", "b.md"]);
-    expect(run(dir, "check-confidential", ["--staged"], env).code).toBe(0);
+    expect(run(dir, [bin("check-confidential"), "--staged"], env).code).toBe(0);
   });
 
   describe("a scan reads the allow list of its snapshot", () => {
     const entry = { check: "confidential", path: "people/jane/*", reason: "her own entry" };
     const pkg = (allow: object[]) => JSON.stringify({ scaffolding: { allow } });
     const audit = (dir: string, args = ["--index"]) =>
-      run(dir, "check-confidential", args, env).out;
+      run(dir, [bin("check-confidential"), ...args], env).out;
     const output = new Map<string, string>();
     let badRevision: ReturnType<typeof run>["code"];
     beforeAll(() => {
@@ -3378,7 +3438,7 @@ describe("check-confidential", () => {
       sh(named, ["add", "package.json"]);
       output.set("entry staged for committed file", audit(named));
       // A bad revision fails rather than read as a package without allow entries.
-      badRevision = run(named, "check-confidential", ["--tree", "nope"], env).code;
+      badRevision = run(named, [bin("check-confidential"), "--tree", "nope"], env).code;
       // An unmerged index has no single file to scan.
       sh(named, ["commit", "-qm", "entry"]);
       sh(named, ["checkout", "-qb", "side"]);
@@ -3427,8 +3487,7 @@ describe("check-confidential", () => {
             "package.json": JSON.stringify({ scaffolding: { allow: [entry(text)] } }),
             "a.md": body,
           }),
-          "check-confidential",
-          ["--tree", "HEAD"],
+          [bin("check-confidential"), "--tree", "HEAD"],
           env,
         ).out,
         "check-confidential",
@@ -3463,8 +3522,7 @@ describe("check-confidential", () => {
         "people/jane-q-doe/index.md": "Jane Q Doe\n",
         "other.md": "Jane Q Doe\n",
       }),
-      "check-confidential",
-      ["--tree", "HEAD"],
+      [bin("check-confidential"), "--tree", "HEAD"],
       env,
     ).out;
     expect(lines(out, "check-confidential")).toEqual([
@@ -3484,8 +3542,7 @@ describe("check-confidential", () => {
       lines(
         run(
           repo({ "package.json": JSON.stringify({ scaffolding: { allow } }), ...files }),
-          "check-confidential",
-          ["--tree", "HEAD"],
+          [bin("check-confidential"), "--tree", "HEAD"],
           env,
         ).out,
         "check-confidential",
@@ -3513,7 +3570,7 @@ describe("check-confidential", () => {
       const dir = repo({ "package.json": "{}" });
       writeFileSync(join(dir, "acme-widgets.png"), PNG);
       sh(dir, ["add", "acme-widgets.png"]);
-      const r = run(dir, "check-confidential", ["--staged"], { ...env, CI: "" });
+      const r = run(dir, [bin("check-confidential"), "--staged"], { ...env, CI: "" });
       expect(r.out).toContain("acme-widgets.png: confidential term");
       expect(readdirSync(join(dir, "node_modules/.cache/scaffolding/read"))).toHaveLength(1);
     },
@@ -3526,10 +3583,13 @@ describe("check-confidential", () => {
     const pkg = (extra: object) => JSON.stringify({ ...extra, scaffolding: { allow } }, null, 2);
     const files = { "a.md": "Acme Widgets and Jane Q Doe\n" };
     const clean = repo({ "package.json": pkg({}), ...files });
-    expect(run(clean, "check-confidential", ["--tree", "HEAD"], env).code).toBe(0);
+    expect(run(clean, [bin("check-confidential"), "--tree", "HEAD"], env).code).toBe(0);
     const named = repo({ "package.json": pkg({ description: "Acme Widgets" }), ...files });
     expect(
-      lines(run(named, "check-confidential", ["--tree", "HEAD"], env).out, "check-confidential"),
+      lines(
+        run(named, [bin("check-confidential"), "--tree", "HEAD"], env).out,
+        "check-confidential",
+      ),
     ).toEqual([
       "[check-confidential] package.json: confidential term from the company records: remove or anonymise the name with a generic or fictitious placeholder. Only if this is a verified public false positive, add an allow entry with its reason in package.json scaffolding.allow (Acme Widgets)",
     ]);
@@ -3543,7 +3603,10 @@ describe("check-confidential", () => {
       ...files,
     });
     expect(
-      lines(run(reasoned, "check-confidential", ["--tree", "HEAD"], env).out, "check-confidential"),
+      lines(
+        run(reasoned, [bin("check-confidential"), "--tree", "HEAD"], env).out,
+        "check-confidential",
+      ),
     ).toEqual([
       "[check-confidential] package.json: confidential term from the company records: remove or anonymise the name with a generic or fictitious placeholder. Only if this is a verified public false positive, add an allow entry with its reason in package.json scaffolding.allow (Acme Widgets)",
     ]);
@@ -3551,14 +3614,14 @@ describe("check-confidential", () => {
     const staged = repo({ "package.json": "{}" });
     write(staged, { "package.json": pkg({}), ...files });
     sh(staged, ["add", "package.json", "a.md"]);
-    expect(run(staged, "check-confidential", ["--staged"], env).code).toBe(0);
+    expect(run(staged, [bin("check-confidential"), "--staged"], env).code).toBe(0);
   });
 
   test.runIf(process.platform === "darwin")("an image that cannot be decoded is refused", () => {
     const dir = repo({ "package.json": "{}" });
     write(dir, { "bad.png": "not an image at all" });
     sh(dir, ["add", "bad.png"]);
-    const r = run(dir, "check-confidential", ["--staged"], env);
+    const r = run(dir, [bin("check-confidential"), "--staged"], env);
     expect(r.out).toContain("bad.png: image not read");
     expect(r.code).toBe(1);
   });
@@ -3567,7 +3630,7 @@ describe("check-confidential", () => {
     const dir = repo({ "package.json": JSON.stringify({ scaffolding: { private: true } }) });
     write(dir, { "a.md": "Acme Widgets GmbH\n" });
     sh(dir, ["add", "a.md"]);
-    expect(run(dir, "check-confidential", ["--staged"], env).code).toBe(0);
+    expect(run(dir, [bin("check-confidential"), "--staged"], env).code).toBe(0);
   });
 
   test("an unstaged private flag leaves the scan of the index on", () => {
@@ -3577,7 +3640,7 @@ describe("check-confidential", () => {
       "a.md": "Acme Widgets GmbH\n",
     });
     sh(dir, ["add", "a.md"]);
-    const r = run(dir, "check-confidential", ["--staged"], env);
+    const r = run(dir, [bin("check-confidential"), "--staged"], env);
     expect(r.out).toContain("a.md: confidential term");
     expect(r.code).toBe(1);
   });
@@ -3595,7 +3658,7 @@ describe("check-confidential", () => {
       sh(dir, ["commit", "-qm", "purged"]);
       const purged = sh(dir, ["rev-parse", "HEAD"]).stdout.toString().trim();
       write(dir, {
-        ".confidential-purged.json": run(dir, "check-confidential", ["purged", purged]).out,
+        ".confidential-purged.json": run(dir, [bin("check-confidential"), "purged", purged]).out,
       });
       const push = (sha: string, name = "origin", source = "refs/heads/main") =>
         spawnSync(process.execPath, [bin("check-confidential"), "prepush", name, remote], {
@@ -3649,7 +3712,7 @@ describe("check-confidential", () => {
     // The rewrite: main without the purged commit, the list on it.
     sh(dir, ["reset", "-q", "--hard", "HEAD~1"]);
     write(dir, {
-      ".confidential-purged.json": run(dir, "check-confidential", ["purged", purged]).out,
+      ".confidential-purged.json": run(dir, [bin("check-confidential"), "purged", purged]).out,
     });
     sh(dir, ["add", ".confidential-purged.json"]);
     sh(dir, ["commit", "-qm", "list"]);
@@ -3714,7 +3777,9 @@ describe("check-confidential", () => {
   test("purged adds to the repository's list under its salt, a redirect's empty file included", () => {
     const dir = repo({ "package.json": "{}" });
     const purged = (shas: string[]) => {
-      const { salt, hashes } = jsonObject(run(dir, "check-confidential", ["purged", ...shas]).out);
+      const { salt, hashes } = jsonObject(
+        run(dir, [bin("check-confidential"), "purged", ...shas]).out,
+      );
       assert(Array.isArray(hashes), "the purged hash list");
       const listed: unknown[] = hashes;
       return { salt, hashes: listed };
@@ -3733,7 +3798,7 @@ describe("check-confidential", () => {
     write(dir, { ".confidential-purged.json": "{}" });
     expect(purged(["b".repeat(40)])).toEqual(both);
     sh(dir, ["add", ".confidential-purged.json"]);
-    const malformed = run(dir, "check-confidential", ["purged", "b".repeat(40)]);
+    const malformed = run(dir, [bin("check-confidential"), "purged", "b".repeat(40)]);
     expect(malformed).toEqual({
       code: 1,
       out: containingText(".confidential-purged.json does not parse"),
@@ -3756,7 +3821,8 @@ describe("check-confidential", () => {
       // A PATH holding git alone, so the machine's own git-lfs stays out of reach.
       const bare = temp();
       symlinkSync(Bun.which("git")!, join(bare, "git"));
-      const push = (dir: string, PATH: string, remote = "origin", old = "0".repeat(40)) => {
+      const origin = { remote: "origin", old: "0".repeat(40) };
+      const push = (dir: string, PATH: string, { remote, old } = origin) => {
         const head = sh(dir, ["rev-parse", "HEAD"]).stdout.toString().trim();
         return spawnSync(process.execPath, [bin("check-confidential"), "prepush", remote, "x"], {
           cwd: dir,
@@ -3771,10 +3837,10 @@ describe("check-confidential", () => {
       };
       writeFileSync(log, "");
       const logged = () => readFileSync(log, "utf8");
-      const capture = (name: string, dir: string, remote?: string, old?: string) => {
+      const capture = (name: string, dir: string, destination = origin) => {
         const length = logged().length;
-        const installed = push(dir, `${stub}:${bare}`, remote, old);
-        const unavailable = push(dir, bare, remote, old);
+        const installed = push(dir, `${stub}:${bare}`, destination);
+        const unavailable = push(dir, bare, destination);
         results.set(name, { installed, unavailable, log: logged().slice(length) });
       };
       // Nothing of LFS: git-lfs is never started, installed or not; a .lfsconfig and an empty store
@@ -3818,10 +3884,14 @@ describe("check-confidential", () => {
       sh(raw, ["update-ref", "refs/remotes/origin/main", "HEAD~1"]);
       capture("already tracked on origin", raw);
       // A second remote lacks what origin holds, so the path is new there.
-      capture("raw filtered path for a second remote", raw, "backup");
+      const backup = { ...origin, remote: "backup" };
+      capture("raw filtered path for a second remote", raw, backup);
       // A push to a URL has no tracking refs: the remote's tip from the input counts instead.
-      const before = sh(raw, ["rev-parse", "HEAD~1"]).stdout.toString().trim();
-      capture("URL with an existing remote tip", raw, "/elsewhere.git", before);
+      const untracked = {
+        remote: "/elsewhere.git",
+        old: sh(raw, ["rev-parse", "HEAD~1"]).stdout.toString().trim(),
+      };
+      capture("URL with an existing remote tip", raw, untracked);
       // .git/info/attributes counts as well.
       const info = repo({ "package.json": "{}", "a.bin": "x" });
       write(info, { ".git/info/attributes": "*.bin filter=lfs\n" });
@@ -3906,21 +3976,44 @@ describe("check-confidential never", () => {
   const dir = temp();
   writeFileSync(join(dir, "never.txt"), "QZX\nBrennwald AG\nMarigold\nZWOX\n");
   writeFileSync(join(dir, "public.txt"), "We like Marigold.\n");
-  const build = (input: string, never = join(dir, "never.txt")) =>
-    run(
-      dir,
-      "check-confidential",
-      ["build", "-", "--public", join(dir, "public.txt"), "--never", never],
-      {},
-      input,
+  const build = (input: string, never = join(dir, "never.txt")) => {
+    const r = spawnSync(
+      process.execPath,
+      [
+        "--no-env-file",
+        bin("check-confidential"),
+        "build",
+        "-",
+        "--public",
+        join(dir, "public.txt"),
+        "--never",
+        never,
+      ],
+      {
+        cwd: dir,
+        env: { ...process.env, SCAFFOLDING_LOAD: "0" },
+        encoding: "utf8",
+        input: input,
+      },
     );
+    return { code: r.status, out: `${r.stdout}${r.stderr}` };
+  };
   const list = join(dir, "list.json");
   writeFileSync(list, build("Acme Widgets\nMarigold\n").out);
   const env = { SCAFFOLDING_CONFIDENTIAL_TERMS: list, CI: "" };
   // The never scan reads the working tree's package.json and needs no commit.
   const plain = repo({ "package.json": "{}" }, false);
-  const never = (texts: unknown, at = plain, extra = {}) =>
-    run(at, "check-confidential", ["never"], { ...env, ...extra }, JSON.stringify(texts));
+  const never = (texts: unknown, at = plain, extra = {}) => {
+    const overrides = { ...env, ...extra };
+    const input = JSON.stringify(texts);
+    const r = spawnSync(process.execPath, ["--no-env-file", bin("check-confidential"), "never"], {
+      cwd: at,
+      env: { ...process.env, SCAFFOLDING_LOAD: "0", ...overrides },
+      encoding: "utf8",
+      input,
+    });
+    return { code: r.status, out: `${r.stdout}${r.stderr}` };
+  };
   const listWith = (section?: unknown) => {
     const file = join(temp(), "list.json");
     writeFileSync(
@@ -3965,7 +4058,17 @@ describe("check-confidential never", () => {
   });
 
   test("build refuses a missing never input", () => {
-    const bare = run(dir, "check-confidential", ["build", "-", "--never"], {}, "Acme Widgets\n");
+    const bareChild = spawnSync(
+      process.execPath,
+      ["--no-env-file", bin("check-confidential"), "build", "-", "--never"],
+      {
+        cwd: dir,
+        env: { ...process.env, SCAFFOLDING_LOAD: "0" },
+        encoding: "utf8",
+        input: "Acme Widgets\n",
+      },
+    );
+    const bare = { code: bareChild.status, out: `${bareChild.stdout}${bareChild.stderr}` };
     expect(bare.code).toBe(1);
     expect(bare.out).toContain(
       "--never: no name; not building. Pass at least one name via --never <file> (or after a NUL byte on stdin) and re-run `check-confidential build`",
@@ -3980,12 +4083,32 @@ describe("check-confidential never", () => {
 
   test("build reads the never names from stdin after a NUL byte; without one it refuses", () => {
     const both = ["build", "-", "--never", "-"];
-    const r = run(dir, "check-confidential", both, {}, "Acme Widgets\nZWOX\n\0QZX\nBrennwald AG\n");
+    const rChild = spawnSync(
+      process.execPath,
+      ["--no-env-file", bin("check-confidential"), ...both],
+      {
+        cwd: dir,
+        env: { ...process.env, SCAFFOLDING_LOAD: "0" },
+        encoding: "utf8",
+        input: "Acme Widgets\nZWOX\n\0QZX\nBrennwald AG\n",
+      },
+    );
+    const r = { code: rChild.status, out: `${rChild.stdout}${rChild.stderr}` };
     expect(r.code).toBe(0);
     // ZWOX before the NUL is a term: QZX two hashes, Brennwald AG and Brennwald one each.
     expect(jsonObject(r.out).hashes).toHaveLength(2);
     expect(jsonObject(r.out).never).toHaveLength(4);
-    const none = run(dir, "check-confidential", both, {}, "Acme Widgets\nQZX\n");
+    const noneChild = spawnSync(
+      process.execPath,
+      ["--no-env-file", bin("check-confidential"), ...both],
+      {
+        cwd: dir,
+        env: { ...process.env, SCAFFOLDING_LOAD: "0" },
+        encoding: "utf8",
+        input: "Acme Widgets\nQZX\n",
+      },
+    );
+    const none = { code: noneChild.status, out: `${noneChild.stdout}${noneChild.stderr}` };
     expect(none.code).toBe(1);
     expect(none.out).toContain(
       "--never: no name; not building. Pass at least one name via --never <file> (or after a NUL byte on stdin) and re-run `check-confidential build`",
@@ -4091,7 +4214,17 @@ describe("check-confidential never", () => {
     test.each(["", "{}", "[]", "not json", '{"a": "x", "b": 1}', '{"a": [{}]}', '"QZX"'])(
       "refuses %j despite an allow entry",
       (input) => {
-        const r = run(at, "check-confidential", ["never"], env, input);
+        const rChild = spawnSync(
+          process.execPath,
+          ["--no-env-file", bin("check-confidential"), "never"],
+          {
+            cwd: at,
+            env: { ...process.env, SCAFFOLDING_LOAD: "0", ...env },
+            encoding: "utf8",
+            input: input,
+          },
+        );
+        const r = { code: rChild.status, out: `${rChild.stdout}${rChild.stderr}` };
         expect(r.code).toBe(1);
         expect(r.out).toContain(
           'stdin: nothing to scan: stdin holds no {"<where>": <value>} object, each value a string or JSON holding one. Pipe a non-empty JSON object mapping each source key to its string or nested JSON text into `check-confidential never`',
@@ -4148,7 +4281,7 @@ describe("check-confidential never", () => {
     const staged = (text: string, terms = list) => {
       write(at, { "a.md": `a\n${text}\n` });
       prepareGit(at, ["add", "a.md"]);
-      return run(at, "check-confidential", ["--staged"], {
+      return run(at, [bin("check-confidential"), "--staged"], {
         ...env,
         SCAFFOLDING_CONFIDENTIAL_TERMS: terms,
       }).code;
@@ -4179,7 +4312,7 @@ describe("check-confidential never", () => {
     test("refuses a never name in a commit message", () => {
       const msg = join(at, "MSG");
       writeFileSync(msg, "fix: deck for Brennwald\n");
-      expect(run(at, "check-confidential", ["--message-file", msg], env).code).toBe(1);
+      expect(run(at, [bin("check-confidential"), "--message-file", msg], env).code).toBe(1);
     });
   });
 });
@@ -4187,7 +4320,7 @@ describe("check-confidential never", () => {
 describe("check-confidential list source", () => {
   const names = join(temp(), "names.txt");
   writeFileSync(names, "Acme Widgets GmbH\n");
-  const fresh = run(temp(), "check-confidential", ["build", names]).out;
+  const fresh = run(temp(), [bin("check-confidential"), "build", names]).out;
   const builtDaysAgo = (days: number, list = fresh) =>
     JSON.stringify({
       ...JSON.parse(list),
@@ -4229,8 +4362,16 @@ describe("check-confidential list source", () => {
       CI: "",
       SCAFFOLDING_CONFIDENTIAL_TERMS: "",
     };
-    const check = (extra: Record<string, string> = {}, args = ["--staged"], input?: string) =>
-      run(dir, "check-confidential", args, { ...env, ...extra }, input);
+    const check = (extra: Record<string, string> = {}, args = ["--staged"], input?: string) => {
+      const overrides = { ...env, ...extra };
+      const r = spawnSync(process.execPath, ["--no-env-file", bin("check-confidential"), ...args], {
+        cwd: dir,
+        env: { ...process.env, SCAFFOLDING_LOAD: "0", ...overrides },
+        encoding: "utf8",
+        input,
+      });
+      return { code: r.status, out: `${r.stdout}${r.stderr}` };
+    };
     const calls = () => readFileSync(log, "utf8").split("\n").filter(Boolean).length;
     return { dir, home, check, calls, cache };
   }
@@ -4251,7 +4392,13 @@ describe("check-confidential list source", () => {
     beforeAll(() => {
       const neverNames = join(temp(), "never.txt");
       writeFileSync(neverNames, "QZX\n");
-      withNever = run(temp(), "check-confidential", ["build", names, "--never", neverNames]).out;
+      withNever = run(temp(), [
+        bin("check-confidential"),
+        "build",
+        names,
+        "--never",
+        neverNames,
+      ]).out;
     });
 
     test("fetches and caches a list once for repeated scans", () => {
@@ -4344,36 +4491,42 @@ describe("check-confidential list source", () => {
   });
 
   test.each([
-    [
-      "the staged scan opts into scanning without a list",
-      { gh: "deny" },
-      ["--staged", "--list-optional"],
-      0,
-      /--list-optional: terms not scanned/,
-    ],
-    ["the staged scan requires a list", { gh: "deny" }, ["--staged"], 1, /Refused/],
-    [
-      "the local list is stale",
-      { gh: "deny", cache: builtDaysAgo(10), cacheDays: 2 },
-      ["--staged", "--list-optional"],
-      1,
-      /Refused/,
-    ],
-    [
-      "the available list matches a term",
-      { gh: "ok" },
-      ["--staged", "--list-optional"],
-      1,
-      /\(Acme Widgets\)/,
-    ],
-    [
-      "an index scan always needs a list",
-      { gh: "deny" },
-      ["--index", "--list-optional"],
-      1,
-      /Refused/,
-    ],
-  ] as const)("checks an optional list when %s", (_, settings, flags, code, finding) => {
+    {
+      scenario: "the staged scan opts into scanning without a list",
+      settings: { gh: "deny" },
+      flags: ["--staged", "--list-optional"],
+      code: 0,
+      finding: /--list-optional: terms not scanned/,
+    },
+    {
+      scenario: "the staged scan requires a list",
+      settings: { gh: "deny" },
+      flags: ["--staged"],
+      code: 1,
+      finding: /Refused/,
+    },
+    {
+      scenario: "the local list is stale",
+      settings: { gh: "deny", cache: builtDaysAgo(10), cacheDays: 2 },
+      flags: ["--staged", "--list-optional"],
+      code: 1,
+      finding: /Refused/,
+    },
+    {
+      scenario: "the available list matches a term",
+      settings: { gh: "ok" },
+      flags: ["--staged", "--list-optional"],
+      code: 1,
+      finding: /\(Acme Widgets\)/,
+    },
+    {
+      scenario: "an index scan always needs a list",
+      settings: { gh: "deny" },
+      flags: ["--index", "--list-optional"],
+      code: 1,
+      finding: /Refused/,
+    },
+  ] as const)("checks an optional list when $scenario", ({ settings, flags, code, finding }) => {
     expect(machine(settings).check({}, [...flags])).toEqual({
       code,
       out: matchingText(finding),
@@ -4519,12 +4672,12 @@ describe("scaffolding check", () => {
   test("an allow entry naming a check that reads no allow list fails", () => {
     const entry = (check: string) => ({ allow: [{ check, path: "a.ts", reason: "r" }] });
     const lock = { CHECK_LOCK: join(temp(), "lock") };
-    const left = run(gate({ skip, ...entry("unique-names") }), "scaffolding", ["check"], lock);
+    const left = run(gate({ skip, ...entry("unique-names") }), [bin("scaffolding"), "check"], lock);
     expect(left.out).toContain("scaffolding.allow names no check that reads it: unique-names");
     expect(left.code).toBe(1);
     // Control: a check that reads it.
     expect(
-      run(gate({ skip, ...entry("spaces") }), "scaffolding", ["check"], lock).out,
+      run(gate({ skip, ...entry("spaces") }), [bin("scaffolding"), "check"], lock).out,
     ).not.toContain("names no check");
   });
 
@@ -4536,7 +4689,7 @@ describe("scaffolding check", () => {
       "b.ts": 'import { a } from "./a.ts";\nexport const b = (): number => a();\n',
     });
     prepareGit(dir, ["add", "--", "a.ts", "b.ts"]);
-    const r = run(dir, "scaffolding", ["check"], { CHECK_LOCK: join(dir, ".lock") });
+    const r = run(dir, [bin("scaffolding"), "check"], { CHECK_LOCK: join(dir, ".lock") });
     expect(r.code).toBe(1);
     expect(r.out).toMatch(/failed in [\d.]+ s: cycles/);
     expectGuideAfter(r.out, "import-cycle", "runtime import cycle");
@@ -4558,7 +4711,7 @@ describe("scaffolding check", () => {
     });
     afterEach(() => rmSync(join(dir, "b.js"), { force: true }));
     const changed = () =>
-      run(dir, "scaffolding", ["check", "--changed"], { CHECK_LOCK: join(temp(), "lock") });
+      run(dir, [bin("scaffolding"), "check", "--changed"], { CHECK_LOCK: join(temp(), "lock") });
     test("skips names for a prose-only change", () => {
       const green = changed();
       expect(green, green.out).toEqual({
@@ -4607,7 +4760,7 @@ describe("scaffolding check", () => {
   describe("layers step checks the committed map", () => {
     let dir: string;
     let original: string;
-    const check = () => run(dir, "scaffolding", ["check"], { CHECK_LOCK: join(dir, ".lock") });
+    const check = () => run(dir, [bin("scaffolding"), "check"], { CHECK_LOCK: join(dir, ".lock") });
     const stale =
       "docs/architecture/layers.md is stale: run `bun run scaffolding layers --write` and commit the file with this change.";
     beforeAll(() => {
@@ -4653,7 +4806,7 @@ describe("scaffolding check", () => {
     });
 
     test("generates the map to stdout without writing it", () => {
-      expect(run(dir, "scaffolding", ["layers"])).toEqual({ code: 0, out: layerFixture });
+      expect(run(dir, [bin("scaffolding"), "layers"])).toEqual({ code: 0, out: layerFixture });
       expect(existsSync(join(dir, layerMap))).toBe(false);
     });
 
@@ -4668,7 +4821,7 @@ describe("scaffolding check", () => {
     });
 
     test("accepts a newly generated and committed layer map", () => {
-      const generated = run(dir, "scaffolding", ["layers", "--write"]);
+      const generated = run(dir, [bin("scaffolding"), "layers", "--write"]);
       requireFixtureSuccess("scaffolding layers --write", generated.code, generated.out);
       expect(readFileSync(join(dir, layerMap), "utf8")).toBe(layerFixture);
       prepareGit(dir, ["add", "--", layerMap]);
@@ -4686,7 +4839,7 @@ describe("scaffolding check", () => {
       ".oxlintrc.json":
         '{"overrides":[{"files":["src/**"],"rules":{"no-restricted-syntax":"error"}}]}',
     });
-    const check = () => run(dir, "scaffolding", ["check"], { CHECK_LOCK: join(dir, ".lock") });
+    const check = () => run(dir, [bin("scaffolding"), "check"], { CHECK_LOCK: join(dir, ".lock") });
     const absent = check();
     expect(absent.code).toBe(0);
     expect(absent.out).toContain("ok   layers");
@@ -4709,7 +4862,7 @@ describe("scaffolding check", () => {
         'import { B } from "../b/b.js";\nimport "../b/b.js";\nexport const A = () => <B />;\n',
       "src/b/b.js": "export const B = () => null;\n",
     });
-    const result = run(dir, "scaffolding", ["layers"]);
+    const result = run(dir, [bin("scaffolding"), "layers"]);
     expect(result.code, result.out).toBe(0);
     expect(result.out).toContain('  L0["src/a"]\n  L1["src/b"]\n  L0 -->|2| L1');
   });
@@ -4720,7 +4873,7 @@ describe("scaffolding check", () => {
       "src/a/a.ts": 'import "../b/b.ts";\nexport const broken = ;\n',
       "src/b/b.ts": "export {};\n",
     });
-    const result = run(dir, "scaffolding", ["layers"]);
+    const result = run(dir, [bin("scaffolding"), "layers"]);
     expect(result.code).toBe(1);
     expect(result.out).toContain("[layers] src/a/a.ts: cannot scan imports");
     expect(result.out).toContain("Fix the source syntax and rerun");
@@ -4728,7 +4881,7 @@ describe("scaffolding check", () => {
 
   test("layers name the Oxlint config and the remedy when parsing fails", () => {
     const dir = repo({ ".oxlintrc.json": '{ /* comment */ "overrides": [ }\n' });
-    const result = run(dir, "scaffolding", ["layers"]);
+    const result = run(dir, [bin("scaffolding"), "layers"]);
     expect(result.code).toBe(1);
     expect(result.out).toContain("[layers] .oxlintrc.json: cannot parse the config");
     expect(result.out).toContain("Fix the config so it is a valid JSON object");
@@ -4746,7 +4899,7 @@ describe("scaffolding check", () => {
       "src/lib/helper.ts": "export const helper = 1;\n",
       "src/components/Card.astro": "<slot />\n",
     });
-    const result = run(dir, "scaffolding", ["layers"]);
+    const result = run(dir, [bin("scaffolding"), "layers"]);
     expect(result.code, result.out).toBe(0);
     expect(result.out.match(/ {2}L\d+ -->.*/g)).toEqual(["  L2 -->|1| L0", "  L2 -->|2| L1"]);
   });
@@ -4757,7 +4910,7 @@ describe("scaffolding check", () => {
       "src/lib/a.js": 'import "../../tools/b.js";\n',
       "tools/b.js": "export {};\n",
     });
-    const result = run(dir, "scaffolding", ["layers"]);
+    const result = run(dir, [bin("scaffolding"), "layers"]);
     expect(result.code, result.out).toBe(0);
     expect(result.out).toContain('  L0["src/lib"]\n  L1["tools"]\n  L0 -->|1| L1');
   });
@@ -4774,7 +4927,7 @@ describe("scaffolding check", () => {
       "src/a.test.ts": 'import "./nested/b.test.ts";\n',
       "src/nested/b.test.ts": "export {};\n",
     });
-    const result = run(dir, "scaffolding", ["layers"]);
+    const result = run(dir, [bin("scaffolding"), "layers"]);
     expect(result.code, result.out).toBe(0);
     const [, graph] = result.out.split("```mermaid\n");
     assert(graph, "the Mermaid map");
@@ -4784,32 +4937,37 @@ describe("scaffolding check", () => {
   });
 
   test.each([
-    [
-      "src/**/*.ts",
-      "src/*.ts",
-      "sub/deep.ts",
-      'L0["src/**/*.ts"]\n  L1["src/*.ts"]\n  L1 -->|1| L0',
-    ],
-    ["src/**/*", "src/*", "sub/deep.ts", 'L0["src/*"]\n  L1["src/**/*"]\n  L0 -->|1| L1'],
-    [
-      "src/**/*.{ts,tsx}",
-      "src/*.ts",
-      "sub/deep.tsx",
-      'L0["src/**/*.{ts,tsx}"]\n  L1["src/*.ts"]\n  L1 -->|1| L0',
-    ],
-    [
-      "src/*.{ts,tsx}",
-      "src/*.ts",
-      "deep.tsx",
-      'L0["src/*.ts"]\n  L1["src/*.{ts,tsx}"]\n  L0 -->|1| L1',
-    ],
-  ])("layers distinguish %s from %s", (broad, narrow, target, body) => {
+    {
+      broad: "src/**/*.ts",
+      narrow: "src/*.ts",
+      target: "sub/deep.ts",
+      body: 'L0["src/**/*.ts"]\n  L1["src/*.ts"]\n  L1 -->|1| L0',
+    },
+    {
+      broad: "src/**/*",
+      narrow: "src/*",
+      target: "sub/deep.ts",
+      body: 'L0["src/*"]\n  L1["src/**/*"]\n  L0 -->|1| L1',
+    },
+    {
+      broad: "src/**/*.{ts,tsx}",
+      narrow: "src/*.ts",
+      target: "sub/deep.tsx",
+      body: 'L0["src/**/*.{ts,tsx}"]\n  L1["src/*.ts"]\n  L1 -->|1| L0',
+    },
+    {
+      broad: "src/*.{ts,tsx}",
+      narrow: "src/*.ts",
+      target: "deep.tsx",
+      body: 'L0["src/*.ts"]\n  L1["src/*.{ts,tsx}"]\n  L0 -->|1| L1',
+    },
+  ])("layers distinguish $broad from $narrow", ({ broad, narrow, target, body }) => {
     const dir = repo({
       ".oxlintrc.json": withOverrides([layerOverride([broad]), layerOverride([narrow])]),
       "src/root.ts": `import "./${target}";\n`,
       [`src/${target}`]: "export {};\n",
     });
-    const result = run(dir, "scaffolding", ["layers"]);
+    const result = run(dir, [bin("scaffolding"), "layers"]);
     expect(result.code, result.out).toBe(0);
     const [, graph] = result.out.split("```mermaid\n");
     assert(graph, "the Mermaid map");
@@ -4826,7 +4984,7 @@ describe("scaffolding check", () => {
       "src/a.js": 'import "./q/xy.js";\n',
       "src/q/xy.js": "export {};\n",
     });
-    const result = run(dir, "scaffolding", ["layers"]);
+    const result = run(dir, [bin("scaffolding"), "layers"]);
     expect(result.code, result.out).toBe(0);
     const [, graph] = result.out.split("```mermaid\n");
     assert(graph, "the Mermaid map");
@@ -4843,7 +5001,7 @@ describe("scaffolding check", () => {
       "src/a.js": 'import "./excluded.js";\n',
       "src/excluded.js": "export {};\n",
     });
-    const result = run(dir, "scaffolding", ["layers"]);
+    const result = run(dir, [bin("scaffolding"), "layers"]);
     expect(result.code, result.out).toBe(0);
     expect(result.out).toContain('  L0["src"]\n  L1["src (outside layers)"]\n  L0 -->|1| L1');
   });
@@ -4852,7 +5010,7 @@ describe("scaffolding check", () => {
     const dir = repo({
       ".oxlintrc.json": withOverrides([{ ...layerOverride(["src/**"]), excludeFiles: [""] }]),
     });
-    expect(run(dir, "scaffolding", ["layers"])).toEqual({
+    expect(run(dir, [bin("scaffolding"), "layers"])).toEqual({
       code: 1,
       out: "[layers] .oxlintrc.json: layer excludeFiles must list non-empty globs\n",
     });
@@ -4866,7 +5024,7 @@ describe("scaffolding check", () => {
         layerOverride(["./src/**"], "third", "Use the third public import."),
       ]),
     });
-    const result = run(dir, "scaffolding", ["layers"]);
+    const result = run(dir, [bin("scaffolding"), "layers"]);
     expect(result.code, result.out).toBe(0);
     expect(result.out.match(/^## src$/gm)).toEqual(["## src"]);
     expect(result.out.match(/^ {2}L\d+\["src"\]$/gm)).toEqual(['  L0["src"]']);
@@ -4887,7 +5045,7 @@ describe("scaffolding check", () => {
         layerOverride(["src/**"], "pipe", "Keep \\| literal.\nUse one line per item."),
       ]),
     });
-    const generate = run(dir, "scaffolding", ["layers", "--write"]);
+    const generate = run(dir, [bin("scaffolding"), "layers", "--write"]);
     const map = readFileSync(join(dir, layerMap), "utf8");
     expect(generate.code, generate.out).toBe(0);
     prepareGit(dir, ["add", "--", layerMap]);
@@ -4904,7 +5062,7 @@ describe("scaffolding check", () => {
       formatInputs.status,
       formatInputs.stdout + formatInputs.stderr,
     );
-    const check = run(dir, "scaffolding", ["check"], { CHECK_LOCK: join(dir, ".lock") });
+    const check = run(dir, [bin("scaffolding"), "check"], { CHECK_LOCK: join(dir, ".lock") });
     expect(check.code, check.out).toBe(0);
     expect(
       Array.from(check.out.matchAll(/ok {3}(?:format|markdown)\b/g), ([line]) => line).sort(),
@@ -4926,7 +5084,7 @@ describe("scaffolding check", () => {
       "src/lib/excluded.js": 'import "../../outside/b.js";\n',
       "outside/b.js": "export {};\n",
     });
-    const result = run(dir, "scaffolding", ["layers"]);
+    const result = run(dir, [bin("scaffolding"), "layers"]);
     expect(result.code, result.out).toBe(0);
     expect(result.out.match(/ {2}L\d+ -->.*/g)).toEqual(["  L1 -->|1| L0", "  L2 -->|1| L1"]);
   });
@@ -4951,7 +5109,7 @@ describe("scaffolding check", () => {
       prepareGit(dir, ["add", "--", "record.md"]);
     });
     afterEach(() => write(dir, { "record.md": "Body without a title.\n" }));
-    const check = () => run(dir, "scaffolding", ["check"], { CHECK_LOCK: join(dir, ".lock") });
+    const check = () => run(dir, [bin("scaffolding"), "check"], { CHECK_LOCK: join(dir, ".lock") });
 
     test("fails the Markdown step and prints its repair command once", () => {
       const result = check();
@@ -4975,7 +5133,7 @@ describe("scaffolding check", () => {
     const dir = gate({ skip: rest, markdown: { content: ["articles"] } });
     write(dir, { "articles/post.md": "Body with <span>inline HTML</span>.\n" });
     prepareGit(dir, ["add", "--", "articles/post.md"]);
-    const result = run(dir, "scaffolding", ["check"], { CHECK_LOCK: join(dir, ".lock") });
+    const result = run(dir, [bin("scaffolding"), "check"], { CHECK_LOCK: join(dir, ".lock") });
     expect(result.code, result.out).toBe(0);
   });
 
@@ -4990,7 +5148,7 @@ describe("scaffolding check", () => {
       env = { CHECK_LOCK: join(dir, ".lock"), ...shellcheckFixture(dir) };
     });
     afterEach(() => write(dir, { "script.sh": shellScript }));
-    const check = () => run(dir, "scaffolding", ["check"], env);
+    const check = () => run(dir, [bin("scaffolding"), "check"], env);
 
     test("fails the shell step and prints its repair command once", () => {
       const result = check();
@@ -5016,26 +5174,26 @@ describe("scaffolding check", () => {
     );
     install(dir);
     write(dir, { ".oxlintrc.json": JSON.stringify(oxlintTemplate) });
-    const r = run(dir, "scaffolding", ["check"], { CHECK_LOCK: join(dir, ".lock") });
+    const r = run(dir, [bin("scaffolding"), "check"], { CHECK_LOCK: join(dir, ".lock") });
     expect(r.out).toContain("ok   lint");
     expect(r.out).toContain("ok   oxlint");
     expect(r.code).toBe(0);
   });
 
   describe.each([
-    [
-      "oxlint",
-      "no-self-assign",
-      "eslint(no-self-assign)",
-      "let value = 0;\nvalue = value;\nconsole.log(value);\n",
-    ],
-    [
-      "lint",
-      "no-useless-assignment",
-      "no-useless-assignment",
-      "let value = 0;\nvalue = 1;\nconsole.log(value);\n",
-    ],
-  ])("gate rule guides for %s", (_, id, finding, broken) => {
+    {
+      linter: "oxlint",
+      id: "no-self-assign",
+      finding: "eslint(no-self-assign)",
+      broken: "let value = 0;\nvalue = value;\nconsole.log(value);\n",
+    },
+    {
+      linter: "lint",
+      id: "no-useless-assignment",
+      finding: "no-useless-assignment",
+      broken: "let value = 0;\nvalue = 1;\nconsole.log(value);\n",
+    },
+  ])("gate rule guides for $linter", ({ id, finding, broken }) => {
     let dir: string;
     const clean = "console.log(1);\n";
     beforeAll(() => {
@@ -5056,7 +5214,7 @@ describe("scaffolding check", () => {
       write(dir, { "a.js": clean });
       rmSync(join(dir, "b.js"), { force: true });
     });
-    const check = () => run(dir, "scaffolding", ["check"], { CHECK_LOCK: join(dir, ".lock") });
+    const check = () => run(dir, [bin("scaffolding"), "check"], { CHECK_LOCK: join(dir, ".lock") });
 
     test("prints one guide after a single finding", () => {
       write(dir, { "a.js": broken });
@@ -5083,7 +5241,7 @@ describe("scaffolding check", () => {
 
   test("runs the repository's steps in order and passes", () => {
     const dir = gate({ skip, check: ["mine", ["true", "true"]] }, { mine: "echo ran-mine" });
-    const r = run(dir, "scaffolding", ["check"], { CHECK_LOCK: join(dir, ".lock") });
+    const r = run(dir, [bin("scaffolding"), "check"], { CHECK_LOCK: join(dir, ".lock") });
     expect(r.code).toBe(0);
     expect(r.out).toContain("ran-mine");
     expect(r.out).toContain("passed");
@@ -5110,7 +5268,7 @@ describe("scaffolding check", () => {
     });
     install(dir);
     symlinkSync(join(import.meta.dirname, "../node_modules/.bin"), join(dir, "node_modules/.bin"));
-    const r = run(dir, "scaffolding", ["check"], { CHECK_LOCK: join(dir, ".lock") });
+    const r = run(dir, [bin("scaffolding"), "check"], { CHECK_LOCK: join(dir, ".lock") });
     expect(r.out).not.toContain("vendor/inner");
     expect(r.code, r.out).toBe(0);
   });
@@ -5170,44 +5328,52 @@ describe("scaffolding check", () => {
     // The lock outside the checkout: an untracked file there is a changed path.
     const lock = { CHECK_LOCK: join(temp(), "lock") };
     write(dir, { "docs/a.md": "a\n" });
-    const mapped = run(dir, "scaffolding", ["check", "--changed"], lock);
+    const mapped = run(dir, [bin("scaffolding"), "check", "--changed"], lock);
     expect(mapped.out).toContain("docs-ran");
     expect(mapped.out).not.toContain("src-ran");
     expect(mapped.out).toContain("[scaffolding] skipped check:src: no changed path maps to it");
     expect(mapped.code).toBe(0);
     // A file every step reads runs every step too.
     write(dir, { "bunfig.toml": "\n" });
-    expect(run(dir, "scaffolding", ["check", "--changed"], lock).out).toContain("src-ran");
+    expect(run(dir, [bin("scaffolding"), "check", "--changed"], lock).out).toContain("src-ran");
   });
 
   test.each([
-    ["docs/guide.md", "# Guide\n", "markdown", "shell", 'matches "docs/guide.md"'],
-    [
-      "scripts/.shellcheckrc",
-      "# Defaults.\n",
-      "shell",
-      "markdown",
-      'matches "scripts/.shellcheckrc"',
-    ],
-    [
-      "scripts/script.bash",
-      "#!/bin/bash\ntrue\n",
-      "shell",
-      "markdown",
-      'matches "scripts/script.bash"',
-    ],
-    [
-      "scripts/tool",
-      "#!/usr/bin/env --split-string dash\ntrue\n",
-      "shell",
-      "markdown",
-      'matches shell shebang in "scripts/tool"',
-    ],
-  ])("--changed selects the matching linter for %s", (path, text, step, skipped, why) => {
+    {
+      path: "docs/guide.md",
+      text: "# Guide\n",
+      step: "markdown",
+      skipped: "shell",
+      why: 'matches "docs/guide.md"',
+    },
+    {
+      path: "scripts/.shellcheckrc",
+      text: "# Defaults.\n",
+      step: "shell",
+      skipped: "markdown",
+      why: 'matches "scripts/.shellcheckrc"',
+    },
+    {
+      path: "scripts/script.bash",
+      text: "#!/bin/bash\ntrue\n",
+      step: "shell",
+      skipped: "markdown",
+      why: 'matches "scripts/script.bash"',
+    },
+    {
+      path: "scripts/tool",
+      text: "#!/usr/bin/env --split-string dash\ntrue\n",
+      step: "shell",
+      skipped: "markdown",
+      why: 'matches shell shebang in "scripts/tool"',
+    },
+  ])("--changed selects the matching linter for $path", ({ path, text, step, skipped, why }) => {
     const { shell: _s, markdown: _m, ...rest } = skip;
     const dir = gate({ skip: rest });
     write(dir, { [path]: text });
-    const r = run(dir, "scaffolding", ["check", "--changed"], { CHECK_LOCK: join(temp(), "lock") });
+    const r = run(dir, [bin("scaffolding"), "check", "--changed"], {
+      CHECK_LOCK: join(temp(), "lock"),
+    });
     expect(r.code, r.out).toBe(0);
     expect(r.out).toContain(`selected ${step}: ${why}`);
     expect(r.out).toContain(`skipped ${skipped}: no changed path maps to it`);
@@ -5223,7 +5389,7 @@ describe("scaffolding check", () => {
     prepareGit(dir, ["rm", "-q", "--", "bin/tool"]);
     prepareGit(dir, ["commit", "-qm", "remove script", "--", "bin/tool"]);
     const tip = sh(dir, ["rev-parse", "HEAD"]).stdout.toString().trim();
-    const r = run(dir, "scaffolding", ["check", "--changed", `${old}..${tip}`], {
+    const r = run(dir, [bin("scaffolding"), "check", "--changed", `${old}..${tip}`], {
       CHECK_LOCK: join(temp(), "lock"),
     });
     expect(r.code, r.out).toBe(0);
@@ -5245,7 +5411,7 @@ describe("scaffolding check", () => {
       const base = prepareGit(dir, ["rev-parse", "HEAD"]);
       const env = { CHECK_LOCK: join(temp(), "lock"), ...(await realShellcheckFixture(dir)) };
       write(dir, { "lib/common.inc": "value=after\n" });
-      local = run(dir, "scaffolding", ["check", "--changed"], env);
+      local = run(dir, [bin("scaffolding"), "check", "--changed"], env);
       rmSync(join(dir, "lib/common.inc"));
       write(dir, { "scripts/main.sh": "#!/bin/sh\ntrue\n" });
       prepareGit(dir, ["add", "--", "scripts/main.sh", "lib/common.inc"]);
@@ -5257,7 +5423,7 @@ describe("scaffolding check", () => {
         "scripts/main.sh",
         "lib/common.inc",
       ]);
-      pushed = run(dir, "scaffolding", ["check", "--changed", `${base}..HEAD`], env);
+      pushed = run(dir, [bin("scaffolding"), "check", "--changed", `${base}..HEAD`], env);
     });
 
     test("selects shell after an edit to the sourced file", () => {
@@ -5293,7 +5459,7 @@ describe("scaffolding check", () => {
     write(dir, { [path]: contents });
     prepareGit(dir, ["add", "--", path]);
     prepareGit(dir, ["commit", "-qm", "change one file", "--", path]);
-    const r = run(dir, "scaffolding", ["check", "--changed", `${old}..HEAD`], {
+    const r = run(dir, [bin("scaffolding"), "check", "--changed", `${old}..HEAD`], {
       CHECK_LOCK: join(temp(), "lock"),
       ...shellcheckFixture(dir),
     });
@@ -5318,7 +5484,7 @@ describe("scaffolding check", () => {
     ])("validates path mappings and full-only declarations (%j)", (config, message) => {
       const dir = gate({ skip, check: ["check:docs"], ...config });
       const lock = { CHECK_LOCK: join(temp(), "lock") };
-      const result = run(dir, "scaffolding", args, lock);
+      const result = run(dir, [bin("scaffolding"), ...args], lock);
       expect(result.out).toContain(message);
       expect(result.code).toBe(1);
     });
@@ -5334,18 +5500,18 @@ describe("scaffolding check", () => {
       ".claude/skills/s/SKILL.md": "s\n",
       ".claude/skills/s/agents/a.yaml": "a\n",
     });
-    const quick = run(bare, "scaffolding", ["check", "--changed"], lock);
+    const quick = run(bare, [bin("scaffolding"), "check", "--changed"], lock);
     expect(quick.out).toContain("selected check:src: no path scope configured");
     expect(quick.out).toContain("src-ran");
     expect(quick.code).toBe(0);
     // Skill data outside the default map falls back to the fast gate.
     write(bare, { ".claude/skills/s/x.json": "{}\n" });
-    expect(run(bare, "scaffolding", ["check", "--changed"], lock).out).toContain(
+    expect(run(bare, [bin("scaffolding"), "check", "--changed"], lock).out).toContain(
       '".claude/skills/s/x.json" matches no path glob: all fast steps run',
     );
     const own = gate({ skip, ...steps, changed: { ".claude/**": ["check:src"] } }, scripts);
     write(own, { ".claude/rules/r.md": "r\n" });
-    expect(run(own, "scaffolding", ["check", "--changed"], lock).out).toContain(
+    expect(run(own, [bin("scaffolding"), "check", "--changed"], lock).out).toContain(
       'selected check:src: matches ".claude/rules/r.md"',
     );
   });
@@ -5390,7 +5556,10 @@ describe("scaffolding check", () => {
       const docs = commit("docs/a.md");
       const docsRange = `${base}..${docs}`;
       const changed = (scenario: string, ...ranges: string[]) => {
-        results.set(scenario, run(dir, "scaffolding", ["check", "--changed", ...ranges], lock));
+        results.set(
+          scenario,
+          run(dir, [bin("scaffolding"), "check", "--changed", ...ranges], lock),
+        );
       };
       changed("prose", docsRange);
 
@@ -5428,7 +5597,7 @@ describe("scaffolding check", () => {
         }),
       });
       changed("full-only test", `${lint}..${source}`);
-      full = run(dir, "scaffolding", ["check"], lock);
+      full = run(dir, [bin("scaffolding"), "check"], lock);
     }, limit(20_000));
 
     const rangeMessages =
@@ -5549,7 +5718,7 @@ describe("scaffolding check", () => {
       const previous = sh(dir, ["rev-parse", "HEAD"]).stdout.toString().trim();
       write(dir, { "docs/reflog.md": "reflog\n" });
       prepareGit(dir, ["add", "--", "docs/reflog.md"]);
-      prepareCommand(dir, "git", ["commit", "-qm", "dated target", "--", "docs/reflog.md"], {
+      prepareCommand(dir, ["git", "commit", "-qm", "dated target", "--", "docs/reflog.md"], {
         ...process.env,
         GIT_COMMITTER_DATE: new Date(Date.now() - 172_800_000).toISOString(),
       });
@@ -5567,7 +5736,7 @@ describe("scaffolding check", () => {
       commit(tree, { ".claude/rules/s.md": "s\n" });
       rules = push(tree, "HEAD:refs/heads/main");
       // A remote tip this clone lacks runs all fast steps.
-      lacks = run(dir, "scaffolding", ["check", "--changed", `${"1".repeat(40)}..HEAD`], env);
+      lacks = run(dir, [bin("scaffolding"), "check", "--changed", `${"1".repeat(40)}..HEAD`], env);
       // A tag carries no branch and requires no branch gate.
       sh(dir, ["tag", "v1"]);
       tag = push(dir, "refs/tags/v1");
@@ -5661,7 +5830,7 @@ describe("scaffolding check", () => {
 
   test("a failing step fails the gate and stops the later ones", () => {
     const dir = gate({ skip, check: ["false", "echo never-ran"] });
-    const r = run(dir, "scaffolding", ["check"], { CHECK_LOCK: join(dir, ".lock") });
+    const r = run(dir, [bin("scaffolding"), "check"], { CHECK_LOCK: join(dir, ".lock") });
     expect(r.code).toBe(1);
     expect(r.out).toContain("FAIL false");
     expect(r.out).not.toContain("never-ran");
@@ -5672,7 +5841,7 @@ describe("scaffolding check", () => {
       { skip, check: [["check:slow", "check:fast", "check:also"]] },
       { "check:slow": "sleep 2; echo slow-done", "check:fast": "exit 1", "check:also": "exit 1" },
     );
-    const r = run(dir, "scaffolding", ["check"], { CHECK_LOCK: join(dir, ".lock") });
+    const r = run(dir, [bin("scaffolding"), "check"], { CHECK_LOCK: join(dir, ".lock") });
     expect(r.code).toBe(1);
     expect(r.out.indexOf("FAIL check:fast")).toBeLessThan(r.out.indexOf("slow-done"));
     expect(r.out).toMatch(/\[scaffolding\] failed in [\d.]+ s: check:fast, check:also\n/);
@@ -5697,7 +5866,7 @@ describe("scaffolding check", () => {
     test(
       "above one waiting process per core runs two steps at a time",
       () => {
-        const loaded = run(dir, "scaffolding", ["check"], {
+        const loaded = run(dir, [bin("scaffolding"), "check"], {
           CHECK_LOCK: join(dir, ".lock"),
           SCAFFOLDING_LOAD: "99999",
         });
@@ -5713,7 +5882,7 @@ describe("scaffolding check", () => {
     test(
       "at idle starts all steps together and uses the default test timeout",
       () => {
-        const idle = run(dir, "scaffolding", ["check"], { CHECK_LOCK: join(dir, ".lock") });
+        const idle = run(dir, [bin("scaffolding"), "check"], { CHECK_LOCK: join(dir, ".lock") });
         expect(idle.out).not.toContain("at a time");
         expect(idle.out).toContain("limit=5000\n");
         expect(idle.code).toBe(1);
@@ -5736,7 +5905,7 @@ describe("scaffolding check", () => {
         stderr: "pipe",
         stdout: "pipe",
       });
-      await untilFile(lock, (text) => text.length > 0, "the gate's lock");
+      await until(() => fileReady(lock, (text) => text.length > 0), `the gate's lock at ${lock}`);
       await Bun.sleep(1_000);
       gateRun.kill("SIGTERM");
       const code = await gateRun.exited;
@@ -5771,7 +5940,7 @@ describe("scaffolding check", () => {
       let out = "";
       gateRun.stdout.on("data", (d) => (out += d));
       gateRun.stderr.on("data", (d) => (out += d));
-      await untilFile(lock, (text) => text.length > 0, "the gate's lock");
+      await until(() => fileReady(lock, (text) => text.length > 0), `the gate's lock at ${lock}`);
       await Bun.sleep(1_000);
       process.kill(-gateRun.pid!, "SIGINT");
       await new Promise((done) => gateRun.on("close", done));
@@ -5784,7 +5953,7 @@ describe("scaffolding check", () => {
   test.each(["INT", "KILL"])("reports FAIL when only a step receives SIG%s", (signal) => {
     const step = `echo step-output; kill -s ${signal} "$$"`;
     const dir = gate({ skip, check: [step] });
-    const result = run(dir, "scaffolding", ["check"], { CHECK_LOCK: join(dir, ".lock") });
+    const result = run(dir, [bin("scaffolding"), "check"], { CHECK_LOCK: join(dir, ".lock") });
     expect(result.code).toBe(1);
     expect(result.out).toMatch(/^step-output$/m);
     expect(result.out).toMatch(/^\[scaffolding\] FAIL echo step-output; kill -s .+ \d+\.\d s$/m);
@@ -5802,7 +5971,7 @@ describe("scaffolding check", () => {
       "fake/bunx": '#!/bin/sh\necho "install $*" >> calls.txt\necho /nowhere/chrome\n',
     });
     chmodSync(join(dir, "fake/bunx"), 0o755);
-    const r = run(dir, "scaffolding", ["check"], {
+    const r = run(dir, [bin("scaffolding"), "check"], {
       CHECK_LOCK: join(dir, ".lock"),
       PATH: `${join(dir, "fake")}:${process.env.PATH}`,
       PUPPETEER_CACHE_DIR: join(dir, "cache"),
@@ -5840,36 +6009,45 @@ describe("scaffolding check", () => {
     const lock = (d: string) => ({ CHECK_LOCK: join(d, ".lock") });
     const noScans = { ...skip, colours: "fixture", copies: "fixture", elements: "fixture" };
     const pinned = [
-      ["no retired inputs", { skip: noScans }, {}, 1, /declare scaffolding\.brand\.retired/],
-      [
-        "valid skip reason",
-        { skip: { ...noScans, retired: "brand only in tests" } },
-        {},
-        0,
-        /passed/,
-      ],
-      [
-        "blank skip reason",
-        { skip: { ...noScans, retired: " " } },
-        {},
-        1,
-        /declare scaffolding\.brand\.retired/,
-      ],
+      {
+        scenario: "no retired inputs",
+        config: { skip: noScans },
+        scripts: {},
+        code: 1,
+        report: /declare scaffolding\.brand\.retired/,
+      },
+      {
+        scenario: "valid skip reason",
+        config: { skip: { ...noScans, retired: "brand only in tests" } },
+        scripts: {},
+        code: 0,
+        report: /passed/,
+      },
+      {
+        scenario: "blank skip reason",
+        config: { skip: { ...noScans, retired: " " } },
+        scripts: {},
+        code: 1,
+        report: /declare scaffolding\.brand\.retired/,
+      },
     ] as const;
-    test.each(pinned)("required retired scan with %s", (_, config, scripts, code, report) => {
-      const dir = branded(config, scripts);
-      expect(run(dir, "scaffolding", ["check"], lock(dir))).toEqual({
-        code,
-        out: matchingText(report),
-      });
-    });
+    test.each(pinned)(
+      "required retired scan with $scenario",
+      ({ config, scripts, code, report }) => {
+        const dir = branded(config, scripts);
+        expect(run(dir, [bin("scaffolding"), "check"], lock(dir))).toEqual({
+          code,
+          out: matchingText(report),
+        });
+      },
+    );
 
     test("uses the local retired check in place of the shared scan", () => {
       const dir = branded(
         { skip: noScans, check: [["check:retired", "true"]] },
         { "check:retired": "echo ran-retired" },
       );
-      const result = run(dir, "scaffolding", ["check"], lock(dir));
+      const result = run(dir, [bin("scaffolding"), "check"], lock(dir));
       expect(result.code, result.out).toBe(0);
       expect(result.out).toContain("retired uses local check:retired");
       expect(result.out).toContain("ran-retired");
@@ -5877,7 +6055,7 @@ describe("scaffolding check", () => {
 
     test("rejects skip.retired if the repository does not pin brand", () => {
       const unpinned = gate({ skip: { ...skip, retired: "brand only in tests" } });
-      expect(run(unpinned, "scaffolding", ["check"], lock(unpinned)).out).toContain(
+      expect(run(unpinned, [bin("scaffolding"), "check"], lock(unpinned)).out).toContain(
         "scaffolding.skip names no shared step: retired",
       );
     });
@@ -5906,7 +6084,7 @@ describe("scaffolding check", () => {
       { devDependencies: { "@hackersandwizards/brand": "file:brand" } },
     );
     write(dir, { "brand/package.json": '{"name":"@hackersandwizards/brand","version":"1.0.0"}' });
-    const result = run(dir, "scaffolding", ["check"], { CHECK_LOCK: join(dir, ".lock") });
+    const result = run(dir, [bin("scaffolding"), "check"], { CHECK_LOCK: join(dir, ".lock") });
     expect(result.out).toContain(`scaffolding.${key} is unused`);
     expect(result.code).toBe(1);
   });
@@ -5979,7 +6157,8 @@ describe("scaffolding check", () => {
         chmodSync(join(dir, "brand/check.sh"), 0o755);
       });
       afterEach(() => write(dir, { [input]: "bad" }));
-      const check = () => run(dir, "scaffolding", ["check"], { CHECK_LOCK: join(dir, ".lock") });
+      const check = () =>
+        run(dir, [bin("scaffolding"), "check"], { CHECK_LOCK: join(dir, ".lock") });
       test("refuses the failing scan", () => {
         const red = check();
         expect(red).toEqual({ code: 1, out: containingText(`FAIL ${step}`) });
@@ -6015,7 +6194,7 @@ describe("scaffolding check", () => {
     });
 
     test("reports the full gate failure of the installed command", () => {
-      const result = run(dir, "scaffolding", ["check"], env);
+      const result = run(dir, [bin("scaffolding"), "check"], env);
       expect(result.code, result.out).toBe(1);
       expect(result.out).toContain("slides-pins-fixture");
       expect(result.out).toContain("FAIL pins");
@@ -6026,7 +6205,7 @@ describe("scaffolding check", () => {
       prepareGit(dir, ["add", "slides", "accepted"]);
       prepareGit(dir, ["commit", "-qm", "pin"]);
       write(dir, { "docs/readme.md": "# Fixture" });
-      const result = run(dir, "scaffolding", ["check", "--changed"], env);
+      const result = run(dir, [bin("scaffolding"), "check", "--changed"], env);
       expect(result.code, result.out).toBe(0);
       expect(result.out).toContain("selected pins: runs on every changed check");
       expect(result.out).toContain("ok   pins");
@@ -6040,7 +6219,7 @@ describe("scaffolding check", () => {
       { "check:pins": "echo own-pins-fixture" },
       { name: "@hackersandwizards/slides" },
     );
-    const local = run(owner, "scaffolding", ["check"], env);
+    const local = run(owner, [bin("scaffolding"), "check"], env);
     expect(local.code, local.out).toBe(0);
     expect(local.out).toContain("own-pins-fixture");
     expect(local.out).toContain("ok   check:pins");
@@ -6074,7 +6253,7 @@ describe("scaffolding check", () => {
     });
 
     test("passes direct unit-test arguments to the fast test suite", () => {
-      const direct = run(dir, "scaffolding", ["test", "unit.test.ts"], env);
+      const direct = run(dir, [bin("scaffolding"), "test", "unit.test.ts"], env);
       expect(direct.code, direct.out).toBe(0);
       expect(direct.out).toContain(
         JSON.stringify(["run", "--exclude", `${folder}/**`, "unit.test.ts"]),
@@ -6083,14 +6262,14 @@ describe("scaffolding check", () => {
 
     test("preserves a direct fast test run's failure exit", () => {
       write(dir, { "broken-fast": "" });
-      const fastRed = run(dir, "scaffolding", ["test"], env);
+      const fastRed = run(dir, [bin("scaffolding"), "test"], env);
       expect(fastRed.out).toContain(JSON.stringify(["run", "--exclude", `${folder}/**`]));
       expect(fastRed.code).toBe(7);
     });
 
     test("defers the browser tests in changed checks", () => {
       write(dir, { "src/input.ts": "", "src/broken.ts": "" });
-      const changed = run(dir, "scaffolding", ["check", "--changed"], env);
+      const changed = run(dir, [bin("scaffolding"), "check", "--changed"], env);
       expect(changed.code, changed.out).toBe(0);
       expect(changed.out).toContain("deferred browser-test");
       expect(changed.out).toContain(JSON.stringify(["run", "--exclude", `${folder}/**`]));
@@ -6099,7 +6278,7 @@ describe("scaffolding check", () => {
 
     test("reports a full gate's browser failure after the build and the fast suite", () => {
       write(dir, { broken: "" });
-      const full = run(dir, "scaffolding", ["check"], env);
+      const full = run(dir, [bin("scaffolding"), "check"], env);
       expect(full.code).toBe(1);
       expect(
         Array.from(full.out.matchAll(/ok {3}(?:catalog|test)\b/g), (match) => match[0]).sort(),
@@ -6183,7 +6362,7 @@ describe("scaffolding check", () => {
 
   test("a skipped step must name an own entry in the shared step table", () => {
     const dir = gate({ skip: { ...skip, constructor: "not a step" } });
-    const result = run(dir, "scaffolding", ["check"], { CHECK_LOCK: join(dir, ".lock") });
+    const result = run(dir, [bin("scaffolding"), "check"], { CHECK_LOCK: join(dir, ".lock") });
     expect(result.code).toBe(1);
     expect(result.out).toContain("scaffolding.skip names no shared step: constructor");
   });
@@ -6210,10 +6389,10 @@ describe("scaffolding check", () => {
       prepareGit(dir, ["commit", "-qm", "pin"]);
       mkdirSync(join(dir, "site"));
       prepareGit(dir, ["commit", "--allow-empty", "-qm", "empty push"]);
-      empty = run(dir, "scaffolding", ["check", "--changed", "HEAD^..HEAD"], env);
+      empty = run(dir, [bin("scaffolding"), "check", "--changed", "HEAD^..HEAD"], env);
       try {
         write(dir, { "assets/sample.png": "binary fixture" });
-        outside = run(dir, "scaffolding", ["check", "--changed"], env);
+        outside = run(dir, [bin("scaffolding"), "check", "--changed"], env);
       } finally {
         rmSync(join(dir, "assets"), { recursive: true, force: true });
       }
@@ -6275,11 +6454,11 @@ describe("scaffolding check", () => {
       prepareGit(dir, ["add", "brand"]);
       prepareGit(dir, ["commit", "-qm", "pin"]);
       const env = { CHECK_LOCK: join(dir, ".lock") };
-      full = run(dir, "scaffolding", ["check"], env);
+      full = run(dir, [bin("scaffolding"), "check"], env);
       // A changed gate defers the build and consumes an already rendered page.
       write(dir, { "rendered/page.html": "" });
       rmSync(join(dir, "ready"), { force: true });
-      changed = run(dir, "scaffolding", ["check", "--changed", "HEAD..HEAD"], env);
+      changed = run(dir, [bin("scaffolding"), "check", "--changed", "HEAD..HEAD"], env);
     });
     const steps = /ok {3}(?:check:prepare|colours|copies)(?= )/g;
 
@@ -6301,18 +6480,30 @@ describe("scaffolding check", () => {
     });
   });
 
-  describe.each([
-    [
-      "local",
-      ["check:colours", "check:copies"],
-      [["check:colours", "check:copies", "check:scan"]],
-      { "check:colours": "brand-colours", "check:copies": "brand-copies" },
-      (path: string) => `matches "${path}"`,
-    ],
-    ["shared", ["colours", "copies"], ["check:scan"], {}, () => "runs on every changed check"],
-  ] as const)(
-    "migrated brand mappings retain %s path matches",
-    (_, scanNames, check, scripts, selection) => {
+  describe.each<{
+    scan: string;
+    scanNames: readonly string[];
+    check: readonly (string | readonly string[])[];
+    scripts: Record<string, string>;
+    selection: (path: string) => string;
+  }>([
+    {
+      scan: "local",
+      scanNames: ["check:colours", "check:copies"],
+      check: [["check:colours", "check:copies", "check:scan"]],
+      scripts: { "check:colours": "brand-colours", "check:copies": "brand-copies" },
+      selection: (path: string) => `matches "${path}"`,
+    },
+    {
+      scan: "shared",
+      scanNames: ["colours", "copies"],
+      check: ["check:scan"],
+      scripts: {},
+      selection: () => "runs on every changed check",
+    },
+  ])(
+    "migrated brand mappings retain $scan path matches",
+    ({ scanNames, check, scripts, selection }) => {
       let dir: string;
       const env = { CHECK_LOCK: join(temp(), "lock") };
       beforeAll(() => {
@@ -6356,7 +6547,7 @@ describe("scaffolding check", () => {
       )("selects the same scans for %s", (path, selected) => {
         write(dir, { [path]: "# Fixture\n" });
         try {
-          const result = run(dir, "scaffolding", ["check", "--changed"], env);
+          const result = run(dir, [bin("scaffolding"), "check", "--changed"], env);
           expect(result.code, result.out).toBe(0);
           const selections = result.out.match(
             /selected (?:check:)?(?:colours|copies|scan): [^\n]+/g,
@@ -6403,23 +6594,28 @@ describe("scaffolding check", () => {
       "brand/retired.sh": `#!/bin/sh\ngrep -qx ${expected} "$1/page"\n`,
     });
     chmodSync(join(dir, "brand/retired.sh"), 0o755);
-    const result = run(dir, "scaffolding", ["check"], { CHECK_LOCK: join(dir, ".lock") });
+    const result = run(dir, [bin("scaffolding"), "check"], { CHECK_LOCK: join(dir, ".lock") });
     expect(result.code, result.out).toBe(0);
     expect(result.out).toContain("ok   retired");
     expect(readFileSync(join(dir, "dist/page"), "utf8")).toBe("catalog-file\n");
   });
 
   describe.each([
-    [
-      "check:links",
-      {},
-      { "check:links": "crawls the built site" },
-      ["FAIL check:links", "links uses local check:links"],
-    ],
-    ["links", { linkSkips: ["/catalog"] }, {}, ["FAIL links"]],
+    {
+      step: "check:links",
+      serverConfig: {},
+      fullOnly: { "check:links": "crawls the built site" },
+      failureMessages: ["FAIL check:links", "links uses local check:links"],
+    },
+    {
+      step: "links",
+      serverConfig: { linkSkips: ["/catalog"] },
+      fullOnly: {},
+      failureMessages: ["FAIL links"],
+    },
   ] as const)(
-    "links crawls the preview build with the local skip prefixes and fails on the same broken page (%s)",
-    (step, serverConfig, fullOnly, failureMessages) => {
+    "links crawls the preview build with the local skip prefixes and fails on the same broken page ($step)",
+    ({ step, serverConfig, fullOnly, failureMessages }) => {
       const server = 'exec bun server.ts "$PORT"';
       const brokenPage = '<a href="/missing">missing</a><a href="/catalog/missing">skipped</a>';
       let dir: string;
@@ -6458,14 +6654,14 @@ describe("scaffolding check", () => {
       afterEach(() => write(dir, { "page.html": brokenPage }));
 
       test("defers the crawler without starting the preview server", () => {
-        const result = run(dir, "scaffolding", ["check", "--changed"], env);
+        const result = run(dir, [bin("scaffolding"), "check", "--changed"], env);
         expect(result.code, result.out).toBe(0);
         expect(result.out).toContain(`deferred ${step}`);
         expect(result.out).not.toContain("fixture server started");
       });
 
       test("reports the broken link from the preview and excludes the skipped path", () => {
-        const result = run(dir, "scaffolding", ["check"], env);
+        const result = run(dir, [bin("scaffolding"), "check"], env);
         expect(result.code, result.out).toBe(1);
         const messages = result.out.match(
           /ok {3}check:preview|fixture server started|\/missing \(404\) <- \/|FAIL (?:check:)?links|links uses local check:links/g,
@@ -6486,7 +6682,7 @@ describe("scaffolding check", () => {
         write(dir, {
           "page.html": '<a href="/found">found</a><a href="/catalog/missing">skipped</a>',
         });
-        const result = run(dir, "scaffolding", ["check"], env);
+        const result = run(dir, [bin("scaffolding"), "check"], env);
         expect(result.code, result.out).toBe(0);
         expect(result.out).toContain(`ok   ${step}`);
         expect(readFileSync(join(dir, ".preview/index.html"), "utf8")).toBe("catalog-file build");
@@ -6528,7 +6724,7 @@ describe("scaffolding check", () => {
       }); console.error("elements server started");`,
     });
     chmodSync(join(dir, "brand/elements.ts"), 0o755);
-    const result = run(dir, "scaffolding", ["check"], { CHECK_LOCK: join(temp(), "lock") });
+    const result = run(dir, [bin("scaffolding"), "check"], { CHECK_LOCK: join(temp(), "lock") });
     expect(result.code, result.out).toBe(0);
     const messages = result.out.match(
       /ok {3}catalog|elements server started|elements fetched the built page|ok {3}elements|ok {3}links/g,
@@ -6550,7 +6746,7 @@ describe("scaffolding check", () => {
       constructor: "#!/bin/sh\necho ran-local-file\nexit 1\n",
     });
     for (const file of ["tools/constructor", "constructor"]) chmodSync(join(dir, file), 0o755);
-    const result = run(dir, "scaffolding", ["check"], {
+    const result = run(dir, [bin("scaffolding"), "check"], {
       CHECK_LOCK: join(dir, ".lock"),
       PATH: `${join(dir, "tools")}${delimiter}${process.env.PATH}`,
     });
@@ -6561,11 +6757,11 @@ describe("scaffolding check", () => {
   test("a gate without tests goes red unless the skip gives a reason", () => {
     const { test: _, ...noTest } = skip;
     const dir = gate({ skip: noTest });
-    const r = run(dir, "scaffolding", ["check"], { CHECK_LOCK: join(dir, ".lock") });
+    const r = run(dir, [bin("scaffolding"), "check"], { CHECK_LOCK: join(dir, ".lock") });
     expect(r.code).toBe(1);
     expect(r.out).toContain("scaffolding.test is missing");
     const named = gate({ skip: noTest, test: "echo ran-tests" });
-    const ok = run(named, "scaffolding", ["check"], { CHECK_LOCK: join(named, ".lock") });
+    const ok = run(named, [bin("scaffolding"), "check"], { CHECK_LOCK: join(named, ".lock") });
     expect(ok.out).toContain("ran-tests");
     expect(ok.code).toBe(0);
   });
@@ -6573,45 +6769,54 @@ describe("scaffolding check", () => {
   test("the catalog build is a shared step: bun run build", () => {
     const { catalog: _, ...noCatalog } = skip;
     const built = gate({ skip: noCatalog }, { build: "echo ran-build" });
-    const ok = run(built, "scaffolding", ["check"], { CHECK_LOCK: join(built, ".lock") });
+    const ok = run(built, [bin("scaffolding"), "check"], { CHECK_LOCK: join(built, ".lock") });
     expect(ok.out).toContain("ok   catalog");
     expect(ok.out).toContain("ran-build");
     expect(ok.code).toBe(0);
     const broken = gate({ skip: noCatalog }, { build: "exit 3" });
-    const r = run(broken, "scaffolding", ["check"], { CHECK_LOCK: join(broken, ".lock") });
+    const r = run(broken, [bin("scaffolding"), "check"], { CHECK_LOCK: join(broken, ".lock") });
     expect(r.out).toContain("FAIL catalog");
     expect(r.code).toBe(1);
   });
 
-  test.each([
-    [
-      "after Astro typecheck",
-      "run check:types --pretty",
-      { "check:types": "sleep 1 && touch tc-done && echo astro", build: "test -f tc-done" },
-      0,
-      "ok   typecheck",
-    ],
-    [
-      "beside non-Astro typecheck",
-      "tc",
-      {
+  test.each<{
+    scenario: string;
+    typecheck: string;
+    scripts: Record<string, string>;
+    code: number;
+    typecheckReport: string;
+  }>([
+    {
+      scenario: "after Astro typecheck",
+      typecheck: "run check:types --pretty",
+      scripts: {
+        "check:types": "sleep 1 && touch tc-done && echo astro",
+        build: "test -f tc-done",
+      },
+      code: 0,
+      typecheckReport: "ok   typecheck",
+    },
+    {
+      scenario: "beside non-Astro typecheck",
+      typecheck: "tc",
+      scripts: {
         tc: "for i in $(seq 60); do test -f built && exit 0; sleep 0.05; done; exit 1",
         build: "touch built",
       },
-      0,
-      "ok   typecheck",
-    ],
-    [
-      "after failing Astro typecheck",
-      "astro",
-      { astro: "exit 1", build: "echo built" },
-      1,
-      "FAIL typecheck",
-    ],
-  ] as const)("the catalog build runs %s", (_, typecheck, scripts, code, typecheckReport) => {
+      code: 0,
+      typecheckReport: "ok   typecheck",
+    },
+    {
+      scenario: "after failing Astro typecheck",
+      typecheck: "astro",
+      scripts: { astro: "exit 1", build: "echo built" },
+      code: 1,
+      typecheckReport: "FAIL typecheck",
+    },
+  ])("the catalog build runs $scenario", ({ typecheck, scripts, code, typecheckReport }) => {
     const { catalog: _catalog, typecheck: _typecheck, ...rest } = skip;
     const dir = gate({ skip: rest, typecheck }, scripts);
-    const result = run(dir, "scaffolding", ["check"], { CHECK_LOCK: join(dir, ".lock") });
+    const result = run(dir, [bin("scaffolding"), "check"], { CHECK_LOCK: join(dir, ".lock") });
     expect(result.code, result.out).toBe(code);
     expect(result.out).toContain(typecheckReport);
     expect(result.out).toContain("ok   catalog");
@@ -6620,7 +6825,7 @@ describe("scaffolding check", () => {
   test("a private repository's gate leaves the confidential scan to check-confidential", () => {
     const { confidential: _, ...rest } = skip;
     const dir = gate({ skip: rest, private: true }, {});
-    const r = run(dir, "scaffolding", ["check"], { CHECK_LOCK: join(dir, ".lock") });
+    const r = run(dir, [bin("scaffolding"), "check"], { CHECK_LOCK: join(dir, ".lock") });
     expect(r.out).toContain("ok   confidential");
   });
 
@@ -6648,7 +6853,7 @@ describe("scaffolding check", () => {
       join(import.meta.dirname, "..", "node_modules/stylelint/bin/stylelint.mjs"),
       join(dir, "node_modules/.bin/stylelint"),
     );
-    const r = run(dir, "scaffolding", ["check"], { CHECK_LOCK: join(dir, ".lock") });
+    const r = run(dir, [bin("scaffolding"), "check"], { CHECK_LOCK: join(dir, ".lock") });
     expect(r.out).toContain(
       'src/bad.css: line 1, col 16, error - Unexpected custom property "--color-nope"',
     );
@@ -6664,7 +6869,9 @@ describe("scaffolding check", () => {
     const { admin: _, ...noAdmin } = skip;
     test("requires a pin or a skip reason", () => {
       const bare = gate({ skip: noAdmin });
-      const unpinned = run(bare, "scaffolding", ["check"], { CHECK_LOCK: join(bare, ".lock") });
+      const unpinned = run(bare, [bin("scaffolding"), "check"], {
+        CHECK_LOCK: join(bare, ".lock"),
+      });
       expect(unpinned.code).toBe(1);
       expect(unpinned.out).toContain(
         "@hackersandwizards/admin is not pinned: pin it, or skip.admin with a reason",
@@ -6686,7 +6893,7 @@ describe("scaffolding check", () => {
         "admin/check.sh": `#!/bin/sh\necho admin-check-ran\n${verdict}\n`,
       });
       spawnSync("chmod", ["+x", join(dir, "admin/check.sh")]);
-      return run(dir, "scaffolding", ["check"], { CHECK_LOCK: join(dir, ".lock") });
+      return run(dir, [bin("scaffolding"), "check"], { CHECK_LOCK: join(dir, ".lock") });
     };
     test("reports a failure from the pinned command", () => {
       const result = pinned("exit 1");
@@ -6708,12 +6915,14 @@ describe("scaffolding check", () => {
     { skip: { ...skip, lint: " " } },
   ])("rejects invalid gate configuration %#", (config) => {
     const dir = gate(config);
-    expect(run(dir, "scaffolding", ["check"], { CHECK_LOCK: join(dir, ".lock") }).code).toBe(1);
+    expect(run(dir, [bin("scaffolding"), "check"], { CHECK_LOCK: join(dir, ".lock") }).code).toBe(
+      1,
+    );
   });
 
   test.each([false, 0, {}, true, ""])("rejects %j as a skip reason", (lint) => {
     const dir = gate({ skip: { ...skip, lint } });
-    const r = run(dir, "scaffolding", ["check"], { CHECK_LOCK: join(dir, ".lock") });
+    const r = run(dir, [bin("scaffolding"), "check"], { CHECK_LOCK: join(dir, ".lock") });
     expect(r.out).toContain("scaffolding.skip.lint has no reason");
     expect(r.code).toBe(1);
   });
@@ -6771,34 +6980,35 @@ exec "${process.execPath}" "$@"
   };
   const twice = "start locked\nend\nstart locked\nend\n";
   // Two at once, the first holding its install for 2 s: the second's result once both have ended.
-  const both = async (
-    command: string,
-    args: string[],
-    cwd: string,
-    bun: { fake: string; log: string },
-  ) => {
-    const first = spawn(command, args, { cwd, env: env(bun, { BUN_SLEEP: "2" }), stdio: "ignore" });
+  const both = async (cwd: string, bun: { fake: string; log: string }) => {
+    const command = join(cwd, ".githooks/install");
+    const first = spawn(command, [], { cwd, env: env(bun, { BUN_SLEEP: "2" }), stdio: "ignore" });
     const done = new Promise((resolve) => first.on("close", resolve));
-    const second = spawnSync(command, args, { cwd, env: env(bun), encoding: "utf8" });
+    const second = spawnSync(command, [], { cwd, env: env(bun), encoding: "utf8" });
     await done;
     return second;
   };
 
   test.each([
-    [
-      "checkout with a changed lock",
-      "post-checkout",
-      (change: string[]) => change,
-      "start locked\nend\n",
-    ],
-    ["merge with a changed lock", "post-merge", () => ["0"], "start locked\nend\n"],
-    [
-      "checkout with an unchanged lock",
-      "post-checkout",
-      ([, current]: string[]) => [current, current, "1"],
-      "",
-    ],
-  ] as const)("install under the lock after a %s", (_, hook, argumentsOf, log) => {
+    {
+      change: "checkout with a changed lock",
+      hook: "post-checkout",
+      argumentsOf: (change: string[]) => change,
+      log: "start locked\nend\n",
+    },
+    {
+      change: "merge with a changed lock",
+      hook: "post-merge",
+      argumentsOf: () => ["0"],
+      log: "start locked\nend\n",
+    },
+    {
+      change: "checkout with an unchanged lock",
+      hook: "post-checkout",
+      argumentsOf: ([, current]: string[]) => [current, current, "1"],
+      log: "",
+    },
+  ] as const)("install under the lock after a $change", ({ hook, argumentsOf, log }) => {
     const dir = consumer();
     const args = lockChange(dir);
     sh(dir, ["update-ref", "ORIG_HEAD", args[0]]);
@@ -6855,19 +7065,22 @@ exec "${process.execPath}" "$@"
   });
 
   test.each([
-    ["the installer", "install", () => [], 1],
-    ["the checkout", "post-checkout", lockChange, 0],
-  ] as const)("a failed install is reported to stderr by %s", (_, hook, argumentsOf, code) => {
-    const dir = consumer();
-    const bun = fakeBun();
-    const result = spawnSync(join(dir, ".githooks", hook), argumentsOf(dir), {
-      cwd: dir,
-      env: env(bun, { BUN_EXIT: "1" }),
-      encoding: "utf8",
-    });
-    expect({ code: result.status, stdout: result.stdout }).toEqual({ code, stdout: "" });
-    expect(result.stderr).toContain("[install]");
-  });
+    { hookLabel: "the installer", hook: "install", argumentsOf: () => [], code: 1 },
+    { hookLabel: "the checkout", hook: "post-checkout", argumentsOf: lockChange, code: 0 },
+  ] as const)(
+    "a failed install is reported to stderr by $hookLabel",
+    ({ hook, argumentsOf, code }) => {
+      const dir = consumer();
+      const bun = fakeBun();
+      const result = spawnSync(join(dir, ".githooks", hook), argumentsOf(dir), {
+        cwd: dir,
+        env: env(bun, { BUN_EXIT: "1" }),
+        encoding: "utf8",
+      });
+      expect({ code: result.status, stdout: result.stdout }).toEqual({ code, stdout: "" });
+      expect(result.stderr).toContain("[install]");
+    },
+  );
 
   // Offline, a new worktree's install waited on the network with no end, and `worktree add` with it.
   test(
@@ -6964,7 +7177,7 @@ exec "${process.execPath}" "$@"
   test("two first installs at once wait for each other, the second without a word", async () => {
     const dir = consumer();
     const bun = fakeBun();
-    const second = await both(join(dir, ".githooks/install"), [], dir, bun);
+    const second = await both(dir, bun);
     expect(`${second.stdout}${second.stderr}`).toBe("");
     expect(second.status).toBe(0);
     expect(read(bun.log)).toBe(twice);
@@ -6991,7 +7204,7 @@ exec "${process.execPath}" "$@"
     const dir = consumer();
     orphan(dir);
     const bun = fakeBun();
-    await both(join(dir, ".githooks/install"), [], dir, bun);
+    await both(dir, bun);
     expect(read(bun.log)).toBe(twice);
     expect(leftovers(dir)).toEqual([]);
   });
@@ -7007,9 +7220,13 @@ exec "${process.execPath}" "$@"
         stdio: "ignore",
       });
       const lock = join(dir, "node_modules/.check.lock");
-      await untilFile(lock, (value) => value.includes('"group"'), "the install process group", {
-        timeoutMs: 200 * 50,
-      });
+      await until(
+        () => fileReady(lock, (value) => value.includes('"group"')),
+        `the install process group at ${lock}`,
+        {
+          timeoutMs: 200 * 50,
+        },
+      );
       expect(read(lock)).toContain('"group"');
       // Reaped before the next call blocks the event loop: an unreaped shell reads as live.
       const gone = new Promise((resolve) => first.on("exit", resolve));
@@ -7100,7 +7317,7 @@ exec "${process.execPath}" "$@"
     writeFileSync(join(dir, ".githooks/post-commit"), "#!/bin/sh\n");
     const bun = fakeBun();
     const branch = sh(dir, ["branch", "--show-current"]).stdout.toString().trim();
-    prepareCommand(dir, "git", ["switch", "-q", "--orphan", "unborn"], env(bun));
+    prepareCommand(dir, ["git", "switch", "-q", "--orphan", "unborn"], env(bun));
     const returned = spawnSync("git", ["switch", "-q", branch], { cwd: dir, env: env(bun) });
     expect(returned.status, returned.stderr.toString()).toBe(0);
     expect(existsSync(join(dir, ".githooks/post-commit"))).toBe(true);
@@ -7288,9 +7505,13 @@ describe("skeleton SessionStart hook", () => {
       timeout: 3_000,
     });
     // The fetch's ssh ends, and with it the fetch and its timer.
-    await untilFile(pid, (value) => /^\d+\n$/.test(value), "the fetch process PID", {
-      intervalMs: 100,
-    });
+    await until(
+      () => fileReady(pid, (value) => /^\d+\n$/.test(value)),
+      `the fetch process PID at ${pid}`,
+      {
+        intervalMs: 100,
+      },
+    );
     process.kill(Number(readFileSync(pid, "utf8")));
     expect(r.stdout).not.toContain("not fetched");
     expect(r.signal).toBe("SIGTERM");
@@ -7521,46 +7742,64 @@ describe("shared eslint config", () => {
   });
 
   test.each([
-    ["no-empty", "a.js", wrap(empty), wrap(recovery), 2],
-    [
-      "eqeqeq",
-      "a.js",
-      "export const same = (a, b) => a == b;\n",
-      "export const same = (a, b) => a === b || a == null;\n",
-      2,
-    ],
-    [
-      "no-duplicate-imports",
-      "a.ts",
-      'import { value } from "./value";\nimport { other } from "./value";\nexport const n = value + other;\n',
-      'import { value } from "./value";\nimport type { Value } from "./value";\nexport const n: Value = value;\n',
-      2,
-    ],
-    [
-      "no-warning-comments",
-      "a.js",
-      "// this has a todo in it\n// FIXME: revise\nexport {};\n",
-      "// explanation\nexport {};\n",
-      3,
-    ],
-    ["no-var", "a.js", "var n = 1;\nconsole.log(n);\n", "const n = 1;\nconsole.log(n);\n", 2],
-    ["no-var", "a.mjs", "var n = 1;\nconsole.log(n);\n", "const n = 1;\nconsole.log(n);\n", 2],
-    ["prefer-const", "a.js", "let n = 1;\nconsole.log(n);\n", "const n = 1;\nconsole.log(n);\n", 2],
-    [
-      "prefer-const",
-      "a.mjs",
-      "let n = 1;\nconsole.log(n);\n",
-      "const n = 1;\nconsole.log(n);\n",
-      2,
-    ],
-    [
-      "no-inferrable-types",
-      "a.ts",
-      "const n: number = 1;\nconsole.log(n);\n",
-      "const n = 1;\nconsole.log(n);\n",
-      2,
-    ],
-  ])("Oxlint reports and guides %s in %s", (rule, file, hit, pass, occurrences) => {
+    { rule: "no-empty", file: "a.js", hit: wrap(empty), pass: wrap(recovery), occurrences: 2 },
+    {
+      rule: "eqeqeq",
+      file: "a.js",
+      hit: "export const same = (a, b) => a == b;\n",
+      pass: "export const same = (a, b) => a === b || a == null;\n",
+      occurrences: 2,
+    },
+    {
+      rule: "no-duplicate-imports",
+      file: "a.ts",
+      hit: 'import { value } from "./value";\nimport { other } from "./value";\nexport const n = value + other;\n',
+      pass: 'import { value } from "./value";\nimport type { Value } from "./value";\nexport const n: Value = value;\n',
+      occurrences: 2,
+    },
+    {
+      rule: "no-warning-comments",
+      file: "a.js",
+      hit: "// this has a todo in it\n// FIXME: revise\nexport {};\n",
+      pass: "// explanation\nexport {};\n",
+      occurrences: 3,
+    },
+    {
+      rule: "no-var",
+      file: "a.js",
+      hit: "var n = 1;\nconsole.log(n);\n",
+      pass: "const n = 1;\nconsole.log(n);\n",
+      occurrences: 2,
+    },
+    {
+      rule: "no-var",
+      file: "a.mjs",
+      hit: "var n = 1;\nconsole.log(n);\n",
+      pass: "const n = 1;\nconsole.log(n);\n",
+      occurrences: 2,
+    },
+    {
+      rule: "prefer-const",
+      file: "a.js",
+      hit: "let n = 1;\nconsole.log(n);\n",
+      pass: "const n = 1;\nconsole.log(n);\n",
+      occurrences: 2,
+    },
+    {
+      rule: "prefer-const",
+      file: "a.mjs",
+      hit: "let n = 1;\nconsole.log(n);\n",
+      pass: "const n = 1;\nconsole.log(n);\n",
+      occurrences: 2,
+    },
+    {
+      rule: "no-inferrable-types",
+      file: "a.ts",
+      hit: "const n: number = 1;\nconsole.log(n);\n",
+      pass: "const n = 1;\nconsole.log(n);\n",
+      occurrences: 2,
+    },
+  ])("Oxlint reports and guides $rule in $file", ({ rule, file, hit, pass, occurrences }) => {
     const { dir, oxlint } = lintFixture();
     write(dir, { [file]: hit });
     const red = oxlint();
@@ -7575,21 +7814,21 @@ describe("shared eslint config", () => {
   });
 
   test.each([
-    [
-      "clause",
-      wrap(commented),
-      wrap(recovery) + "function control() { try { return 1; } catch {} }\ncontrol();\n",
-      1,
-      "This catch discards",
-    ],
-    [
-      "callback",
-      "Promise.resolve(1).catch(() => {});\nPromise.resolve(1).catch(function () { /* note */ });\n",
-      "const handle = console.error;\nPromise.resolve(1).catch(() => undefined);\nPromise.resolve(1).catch(handle);\nPromise.resolve(1).catch((error) => { console.error(error); });\n",
-      2,
-      "This .catch() callback discards",
-    ],
-  ])("ESLint reports and guides the empty catch %s", (_, hit, pass, occurrences, wording) => {
+    {
+      shape: "clause",
+      hit: wrap(commented),
+      pass: wrap(recovery) + "function control() { try { return 1; } catch {} }\ncontrol();\n",
+      occurrences: 1,
+      wording: "This catch discards",
+    },
+    {
+      shape: "callback",
+      hit: "Promise.resolve(1).catch(() => {});\nPromise.resolve(1).catch(function () { /* note */ });\n",
+      pass: "const handle = console.error;\nPromise.resolve(1).catch(() => undefined);\nPromise.resolve(1).catch(handle);\nPromise.resolve(1).catch((error) => { console.error(error); });\n",
+      occurrences: 2,
+      wording: "This .catch() callback discards",
+    },
+  ])("ESLint reports and guides the empty catch $shape", ({ hit, pass, occurrences, wording }) => {
     const { dir, eslint } = lintFixture();
     write(dir, { "a.js": hit });
     const red = eslint("a.js");
@@ -7892,15 +8131,15 @@ const Element = Fragment;
     });
 
     describe.each([
-      [
-        "typed",
-        { ...process.env, SCAFFOLDING_LINT_UNTYPED: "" },
-        true,
-        ["14:3 ", "15:3 "],
-        ["19:3 "],
-      ],
-      ["untyped", untyped, false, [], []],
-    ] as const)("ESLint %s Astro diagnostics", (mode, env, typed, floating, unsafeCalls) => {
+      {
+        mode: "typed",
+        env: { ...process.env, SCAFFOLDING_LINT_UNTYPED: "" },
+        typed: true,
+        floating: ["14:3 ", "15:3 "],
+        unsafeCalls: ["19:3 "],
+      },
+      { mode: "untyped", env: untyped, typed: false, floating: [], unsafeCalls: [] },
+    ] as const)("ESLint $mode Astro diagnostics", ({ mode, env, typed, floating, unsafeCalls }) => {
       let result: ReturnType<typeof run>;
       let stderr: string;
       beforeAll(() => {
@@ -7942,30 +8181,65 @@ const Element = Fragment;
   const unsafeCall = "@typescript-eslint/no-unsafe-call";
   const unsafeAccess = "@typescript-eslint/no-unsafe-member-access";
   test.each([
-    ["inline with JSDoc", " is:inline", jsdoc, "stage", "style.setProperty", []],
-    ["unprocessed by attribute", ' type="module"', jsdoc, "stage", "style.setProperty", []],
-    [
-      "inline without JSDoc",
-      " is:inline",
-      "",
-      "stage",
-      "style.setProperty",
-      [unsafeCall, unsafeAccess],
-    ],
-    ["inline with an unknown member", " is:inline", jsdoc, "stage", "unknownMember", [unsafeCall]],
-    ["processed with a type", "", "", "stage: HTMLElement", "style.setProperty", []],
-    ["processed without a type", "", "", "stage", "style.setProperty", [unsafeCall, unsafeAccess]],
-    [
-      "processed by src alone",
-      ' src="./helper.js"',
-      jsdoc,
-      "stage",
-      "style.setProperty",
-      [unsafeCall, unsafeAccess],
-    ],
+    {
+      script: "inline with JSDoc",
+      attrs: " is:inline",
+      doc: jsdoc,
+      parameter: "stage",
+      member: "style.setProperty",
+      rules: [],
+    },
+    {
+      script: "unprocessed by attribute",
+      attrs: ' type="module"',
+      doc: jsdoc,
+      parameter: "stage",
+      member: "style.setProperty",
+      rules: [],
+    },
+    {
+      script: "inline without JSDoc",
+      attrs: " is:inline",
+      doc: "",
+      parameter: "stage",
+      member: "style.setProperty",
+      rules: [unsafeCall, unsafeAccess],
+    },
+    {
+      script: "inline with an unknown member",
+      attrs: " is:inline",
+      doc: jsdoc,
+      parameter: "stage",
+      member: "unknownMember",
+      rules: [unsafeCall],
+    },
+    {
+      script: "processed with a type",
+      attrs: "",
+      doc: "",
+      parameter: "stage: HTMLElement",
+      member: "style.setProperty",
+      rules: [],
+    },
+    {
+      script: "processed without a type",
+      attrs: "",
+      doc: "",
+      parameter: "stage",
+      member: "style.setProperty",
+      rules: [unsafeCall, unsafeAccess],
+    },
+    {
+      script: "processed by src alone",
+      attrs: ' src="./helper.js"',
+      doc: jsdoc,
+      parameter: "stage",
+      member: "style.setProperty",
+      rules: [unsafeCall, unsafeAccess],
+    },
   ])(
-    "typed Astro lint checks a helper in a script %s",
-    async (_, attrs, doc, parameter, member, rules) => {
+    "typed Astro lint checks a helper in a script $script",
+    async ({ attrs, doc, parameter, member, rules }) => {
       const { dir } = lintFixture();
       write(dir, {
         "tsconfig.json": '{"compilerOptions":{"strict":true,"allowJs":false},"include":["*.ts"]}',
@@ -8065,48 +8339,51 @@ const slug = Astro.params.slug.toUpperCase();
     const eslint = join(import.meta.dirname, "../node_modules/eslint/bin/eslint.js");
     const floating = "@typescript-eslint/no-floating-promises";
     test.each([
-      [
-        "typed",
-        { ...process.env, SCAFFOLDING_LINT_UNTYPED: "" },
-        1,
-        [
+      {
+        mode: "typed",
+        env: { ...process.env, SCAFFOLDING_LINT_UNTYPED: "" },
+        status: 1,
+        expected: [
           ["app/Explicit.astro", floating, 3, 21, 3, 40],
           ["app/Explicit.astro", floating, 4, 3, 4, 23],
           ["app/[slug].astro", floating, 13, 3, 13, 22],
           ["app/[slug].astro", floating, 8, 1, 8, 25],
         ],
-      ],
-      ["untyped", untyped, 0, []],
-    ])("Astro frontmatter reports original positions with %s lint", (_, env, status, expected) => {
-      const run = spawnSync(process.execPath, ["--bun", eslint, "app", "-f", "json"], {
-        cwd: dir,
-        encoding: "utf8",
-        env,
-      });
-      expect(run.stderr).toBe("");
-      const results = JSON.parse(run.stdout) as {
-        filePath: string;
-        messages: {
-          ruleId: string;
-          line: number;
-          column: number;
-          endLine: number;
-          endColumn: number;
+      },
+      { mode: "untyped", env: untyped, status: 0, expected: [] },
+    ])(
+      "Astro frontmatter reports original positions with $mode lint",
+      ({ env, status, expected }) => {
+        const run = spawnSync(process.execPath, ["--bun", eslint, "app", "-f", "json"], {
+          cwd: dir,
+          encoding: "utf8",
+          env,
+        });
+        expect(run.stderr).toBe("");
+        const results = JSON.parse(run.stdout) as {
+          filePath: string;
+          messages: {
+            ruleId: string;
+            line: number;
+            column: number;
+            endLine: number;
+            endColumn: number;
+          }[];
         }[];
-      }[];
-      const findings = results.flatMap(({ filePath, messages }) =>
-        messages.map(({ ruleId, line, column, endLine, endColumn }) => [
-          relative(realpathSync(dir), filePath),
-          ruleId,
-          line,
-          column,
-          endLine,
-          endColumn,
-        ]),
-      );
-      expect(run.status).toBe(status);
-      expect(findings).toEqual(expected);
-    });
+        const findings = results.flatMap(({ filePath, messages }) =>
+          messages.map(({ ruleId, line, column, endLine, endColumn }) => [
+            relative(realpathSync(dir), filePath),
+            ruleId,
+            line,
+            column,
+            endLine,
+            endColumn,
+          ]),
+        );
+        expect(run.status).toBe(status);
+        expect(findings).toEqual(expected);
+      },
+    );
   });
 });
 
@@ -8231,20 +8508,21 @@ describe("catalog", () => {
     const css =
       ".x{a:var(--a);b:var( --b , calc(1px + var(--q)));c:var(--n, var(--b));d:var(--c);e:var(--z, 1px);f:var(--loop)}";
     test.each([
-      [
-        "nested var fallbacks",
-        css,
-        tokens,
-        ".x{a:var(--a, calc(var(--b, 3px) + 1px));b:var(--b, 3px);c:var(--n, var(--b, 3px));d:var(--c, color-mix(in srgb, var(--a, var(--b)) 5%, white));e:var(--z, 1px);f:var(--loop, var(--loop))}",
-      ],
-      ["no token values", css, {}, css],
-      [
-        "literal brand value with an absent token",
-        ".x{a:brand-value(--b);b:brand-value( --n )}",
-        tokens,
-        ".x{a:3px;b:var(--n)}",
-      ],
-    ] as const)("resolves %s", (_, input, values, expected) => {
+      {
+        scenario: "nested var fallbacks",
+        input: css,
+        values: tokens,
+        expected:
+          ".x{a:var(--a, calc(var(--b, 3px) + 1px));b:var(--b, 3px);c:var(--n, var(--b, 3px));d:var(--c, color-mix(in srgb, var(--a, var(--b)) 5%, white));e:var(--z, 1px);f:var(--loop, var(--loop))}",
+      },
+      { scenario: "no token values", input: css, values: {}, expected: css },
+      {
+        scenario: "literal brand value with an absent token",
+        input: ".x{a:brand-value(--b);b:brand-value( --n )}",
+        values: tokens,
+        expected: ".x{a:3px;b:var(--n)}",
+      },
+    ] as const)("resolves $scenario", ({ input, values, expected }) => {
       expect(brandFallbacks(input, values)).toBe(expected);
     });
 
@@ -8295,19 +8573,37 @@ describe("catalog", () => {
     });
 
     test.each([
-      ["sidebar", "dashboard/a.astro", route.replace("hasSidebar={true}", ""), false, /sidebar/],
-      ["client:load", "stories/a.astro", drifted, true, /client:load/],
-      [
-        "CSS import",
-        "stories/a.astro",
-        route.replace("'astrobook/client'", "'x'"),
-        false,
-        /CSS import/,
-      ],
-      ["recognized route folder", "other/a.astro", route, false, /CSS import/],
+      {
+        missing: "sidebar",
+        path: "dashboard/a.astro",
+        input: route.replace("hasSidebar={true}", ""),
+        serverOnly: false,
+        error: /sidebar/,
+      },
+      {
+        missing: "client:load",
+        path: "stories/a.astro",
+        input: drifted,
+        serverOnly: true,
+        error: /client:load/,
+      },
+      {
+        missing: "CSS import",
+        path: "stories/a.astro",
+        input: route.replace("'astrobook/client'", "'x'"),
+        serverOnly: false,
+        error: /CSS import/,
+      },
+      {
+        missing: "recognized route folder",
+        path: "other/a.astro",
+        input: route,
+        serverOnly: false,
+        error: /CSS import/,
+      },
     ] as const)(
-      "refuses to rewrite a route missing its %s",
-      (_, path, input, serverOnly, error) => {
+      "refuses to rewrite a route missing its $missing",
+      ({ path, input, serverOnly, error }) => {
         expect(() => rewriteRoute(path, input, serverOnly)).toThrow(error);
       },
     );
@@ -8468,24 +8764,34 @@ describe("catalog", () => {
       );
 
       test.each([
-        ["", "Fx catalog", "Lead.", "/"],
-        [statePath, "Box parts: Two – Fx catalog", "Lead.", "/dashboard/Parts/box-parts/two/"],
-        [alonePath, "Box parts: Two – Fx catalog", "Lead.", "/dashboard/Parts/box-parts/two/"],
-        [
-          "dashboard/Parts/box-parts/one",
-          "Box parts: One – Fx catalog",
-          "The first box.",
-          "/dashboard/Parts/box-parts/one/",
-        ],
-        [
-          "stories/Parts/box-parts/one",
-          "Box parts: One – Fx catalog",
-          "The first box.",
-          "/dashboard/Parts/box-parts/one/",
-        ],
+        { path: "", title: "Fx catalog", description: "Lead.", canonical: "/" },
+        {
+          path: statePath,
+          title: "Box parts: Two – Fx catalog",
+          description: "Lead.",
+          canonical: "/dashboard/Parts/box-parts/two/",
+        },
+        {
+          path: alonePath,
+          title: "Box parts: Two – Fx catalog",
+          description: "Lead.",
+          canonical: "/dashboard/Parts/box-parts/two/",
+        },
+        {
+          path: "dashboard/Parts/box-parts/one",
+          title: "Box parts: One – Fx catalog",
+          description: "The first box.",
+          canonical: "/dashboard/Parts/box-parts/one/",
+        },
+        {
+          path: "stories/Parts/box-parts/one",
+          title: "Box parts: One – Fx catalog",
+          description: "The first box.",
+          canonical: "/dashboard/Parts/box-parts/one/",
+        },
       ])(
-        "/%s exposes its title, description and canonical",
-        (path, title, description, canonical) => {
+        "/$path exposes its title, description and canonical",
+        ({ path, title, description, canonical }) => {
           const html = page(path);
           expect(html).toContain(`<title>${title}</title>`);
           expect(html).toContain(`<meta name="description" content="${description}">`);
@@ -9667,17 +9973,27 @@ export default { ...config, vite: { plugins: [{
       limit(90_000),
     );
 
-    test.each([
-      ["/assets/nested/page.css", "text/css", "a {\n  color: red;\n}\n", {}],
-      [
-        "/assets/nested/data.constructor",
-        "application/octet-stream",
-        "own file",
-        { "assets/nested/data.constructor": "own file" },
-      ],
-    ] as const)(
-      "serves %s with its MIME type and original bytes",
-      async (path, contentType, body, files) => {
+    test.each<{
+      path: string;
+      contentType: string;
+      body: string;
+      files: Record<string, string>;
+    }>([
+      {
+        path: "/assets/nested/page.css",
+        contentType: "text/css",
+        body: "a {\n  color: red;\n}\n",
+        files: {},
+      },
+      {
+        path: "/assets/nested/data.constructor",
+        contentType: "application/octet-stream",
+        body: "own file",
+        files: { "assets/nested/data.constructor": "own file" },
+      },
+    ])(
+      "serves $path with its MIME type and original bytes",
+      async ({ path, contentType, body, files }) => {
         write(fixture, files);
         const result = await fetch(`${server.url}${path}`);
         expect({
@@ -10447,7 +10763,7 @@ describe("check-staged", () => {
       write(dir, { "new.md": "No title.\n" });
       prepareGit(dir, ["add", "--", "new.md"]);
       write(dir, { "new.md": "# Working tree title\n" });
-      const result = run(dir, "check-staged");
+      const result = run(dir, [bin("check-staged")]);
       expect(result.code, result.out).toBe(1);
       expect(result.out).toContain("new.md:1 error MD041");
       expect(result.out).not.toContain("unrelated.md");
@@ -10458,7 +10774,7 @@ describe("check-staged", () => {
       write(dir, { "new.md": "# Working tree title\n" });
       prepareGit(dir, ["add", "--", "new.md"]);
       write(dir, { "new.md": "An unstaged edit.\n" });
-      const result = run(dir, "check-staged");
+      const result = run(dir, [bin("check-staged")]);
       expect(result.code, result.out).toBe(0);
       expect(result.out).not.toContain(markdownRepair);
       expect(readFileSync(join(dir, "new.md"), "utf8")).toBe("An unstaged edit.\n");
@@ -10492,7 +10808,7 @@ describe("check-staged", () => {
     test("reports the staged shell source and ignores the unstaged config", () => {
       stageScripts();
       write(dir, { "bin/helper": "#!/usr/bin/env python\n", ".shellcheckrc": disabled });
-      const result = run(dir, "check-staged", [], env);
+      const result = run(dir, [bin("check-staged")], env);
       expect(result.code, result.out).toBe(1);
       expect(result.out).toContain("In bin/helper line 2");
       expect(result.out).toContain("SC2034");
@@ -10505,7 +10821,7 @@ describe("check-staged", () => {
       write(dir, { ".shellcheckrc": disabled });
       prepareGit(dir, ["add", "--", ".shellcheckrc"]);
       write(dir, { ".shellcheckrc": defaults, "bin/helper": shellScript });
-      const result = run(dir, "check-staged", [], env);
+      const result = run(dir, [bin("check-staged")], env);
       expect(result.code, result.out).toBe(0);
       expect(result.out).not.toContain(shellRepair);
       expect(readFileSync(join(dir, "bin/helper"), "utf8")).toBe(shellScript);
@@ -10524,10 +10840,10 @@ describe("check-staged", () => {
       "a.sh": '#!/bin/sh\n. ./lib.sh\nprintf "%s\\n" "$foo"\n',
     });
     prepareGit(dir, ["add", "--", "a.sh"]);
-    const result = run(dir, "check-staged", [], env);
+    const result = run(dir, [bin("check-staged")], env);
     expect(result.code, result.out).toBe(0);
     prepareGit(dir, ["add", "--", "a.sh", "lib.sh"]);
-    const red = run(dir, "check-staged", [], env);
+    const red = run(dir, [bin("check-staged")], env);
     expect(red.code).toBe(1);
     expect(red.out).toContain("SC2154");
   });
@@ -10543,7 +10859,7 @@ describe("check-staged", () => {
       "main.sh": "#!/bin/sh\nfalse\n",
       "lib/common.inc": "false\n",
     });
-    const green = run(dir, "check-staged", [], env);
+    const green = run(dir, [bin("check-staged")], env);
     expect(green.code, green.out).toBe(0);
   });
 
@@ -10556,7 +10872,7 @@ describe("check-staged", () => {
     const env = await realShellcheckFixture(dir);
     write(dir, { "main.sh": '#!/bin/sh\n. ./lib/common.inc\nprintf "%s\\n" "$value"\n' });
     prepareGit(dir, ["add", "--", "main.sh"]);
-    const result = run(dir, "check-staged", [], env);
+    const result = run(dir, [bin("check-staged")], env);
     expect(result.code, result.out).toBe(0);
   });
 
@@ -10565,11 +10881,11 @@ describe("check-staged", () => {
     const env = await realShellcheckFixture(dir);
     write(dir, { "scripts/main.sh": "#!/bin/sh\n. ./scripts/lib.sh\n" });
     prepareGit(dir, ["add", "--", "scripts/main.sh"]);
-    const green = run(dir, "check-staged", [], env);
+    const green = run(dir, [bin("check-staged")], env);
     expect(green.code, green.out).toBe(0);
     write(dir, { "scripts/lib.sh": shellStyleFinding + "true\n" });
     prepareGit(dir, ["add", "--", "scripts/lib.sh"]);
-    const red = run(dir, "check-staged", [], env);
+    const red = run(dir, [bin("check-staged")], env);
     expect(red.code, red.out).toBe(1);
     expect(red.out).toMatch(/In scripts\/lib\.sh line 2:[\s\S]*SC2006 \(style\)/);
   });
@@ -10580,13 +10896,13 @@ describe("check-staged", () => {
     spawnSync("chmod", ["+x", join(dir, "node_modules/.bin/admin-check")]);
     write(dir, { "docs/agent-work/items/a.md": "# broken\n" });
     sh(dir, ["add", "docs/agent-work/items/a.md"]);
-    expect(run(dir, "check-staged").code).toBe(1);
+    expect(run(dir, [bin("check-staged")]).code).toBe(1);
     write(dir, { "docs/agent-work/items/a.md": "# Fine again\n" });
-    expect(run(dir, "check-staged").code).toBe(1);
+    expect(run(dir, [bin("check-staged")]).code).toBe(1);
     sh(dir, ["add", "docs/agent-work/items/a.md"]);
-    expect(run(dir, "check-staged").code).toBe(0);
+    expect(run(dir, [bin("check-staged")]).code).toBe(0);
     write(dir, { "docs/agent-work/items/a.md": "# broken, unstaged\n" });
-    expect(run(dir, "check-staged").code).toBe(0);
+    expect(run(dir, [bin("check-staged")]).code).toBe(0);
   });
 
   describe("check:skills reads staged paths, including deletions and both sides of renames", () => {
@@ -10645,7 +10961,7 @@ describe("check-staged", () => {
     write(dir, { [path]: "# Staged\n" });
     prepareGit(dir, ["add", path]);
     write(dir, edit);
-    const result = run(dir, "check-staged", [], { npm_package_name: "" });
+    const result = run(dir, [bin("check-staged")], { npm_package_name: "" });
     return { dir, result: { ...result, out: result.out.trim() } };
   };
 
@@ -10709,7 +11025,7 @@ describe("check-staged", () => {
     });
     write(dir, { ".claude/new.md": "# New\n" });
     sh(dir, ["add", ".claude/new.md"]);
-    const r = run(dir, "check-staged");
+    const r = run(dir, [bin("check-staged")]);
     expect(r.code).toBe(1);
     expect(r.out).toContain("rename the script validate:skills to check:skills");
   });
@@ -10722,7 +11038,7 @@ describe("check-staged", () => {
     chmodSync(join(dir, "node_modules/.bin/prettier"), 0o755);
     write(dir, { "--no-config.ts": "export {};\n" });
     sh(dir, ["add", "--", "--no-config.ts"]);
-    run(dir, "check-staged");
+    run(dir, [bin("check-staged")]);
     expect(readFileSync(join(dir, "args.txt"), "utf8").endsWith("--\n--no-config.ts\n")).toBe(true);
   });
 
@@ -10770,11 +11086,11 @@ describe("check-staged", () => {
         "src/a.ts": "export {};\n",
         ".oxlintrc.json": JSON.stringify({ ...config, overrides: [] }),
       });
-      const red = run(dir, "check-staged");
+      const red = run(dir, [bin("check-staged")]);
       expect(red.out).toContain("no-restricted-imports");
       expect(red.code).toBe(1);
       sh(dir, ["add", "src/a.ts"]);
-      expect(run(dir, "check-staged").code).toBe(0);
+      expect(run(dir, [bin("check-staged")]).code).toBe(0);
     },
   );
 
@@ -10810,7 +11126,7 @@ describe("check-staged", () => {
     test("prints the guide for one staged finding", () => {
       write(dir, { "a.js": broken });
       prepareGit(dir, ["add", "--", "a.js"]);
-      const result = run(dir, "check-staged");
+      const result = run(dir, [bin("check-staged")]);
       expect(result.code, result.out).toBe(1);
       expectGuide(result.out, id);
     });
@@ -10819,7 +11135,7 @@ describe("check-staged", () => {
       write(dir, { "a.js": broken, "b.js": broken });
       prepareGit(dir, ["add", "--", "a.js", "b.js"]);
       write(dir, { "b.js": repaired });
-      const result = run(dir, "check-staged");
+      const result = run(dir, [bin("check-staged")]);
       expect(result.code, result.out).toBe(1);
       const [findings] = result.out.split("[guide]");
       expect(findings).toContain("a.js");
@@ -10830,7 +11146,7 @@ describe("check-staged", () => {
     test("prints no guide for clean staged files", () => {
       write(dir, { "a.js": repaired, "b.js": repaired });
       prepareGit(dir, ["add", "--", "a.js", "b.js"]);
-      const result = run(dir, "check-staged");
+      const result = run(dir, [bin("check-staged")]);
       expect(result.code, result.out).toBe(0);
       expect(result.out).not.toContain("[guide] ");
     });
@@ -10843,17 +11159,23 @@ describe("check-staged", () => {
   const malformedOxlint = '{\n  // Missing value.\n  "options":\n}\n';
 
   test.each([
-    ["commented", commentedOxlint, malformedOxlint, 0, []],
-    [
-      "malformed",
-      malformedOxlint,
-      commentedOxlint,
-      1,
-      ["[check:staged] oxlint: ValueExpected at position 35"],
-    ],
+    {
+      syntax: "commented",
+      staged: commentedOxlint,
+      working: malformedOxlint,
+      code: 0,
+      diagnostics: [],
+    },
+    {
+      syntax: "malformed",
+      staged: malformedOxlint,
+      working: commentedOxlint,
+      code: 1,
+      diagnostics: ["[check:staged] oxlint: ValueExpected at position 35"],
+    },
   ])(
-    "check-staged reads the %s Oxlint configuration from the index",
-    (_, staged, working, code, diagnostics) => {
+    "check-staged reads the $syntax Oxlint configuration from the index",
+    ({ staged, working, code, diagnostics }) => {
       const dir = repo({
         "package.json": JSON.stringify({
           type: "module",
@@ -10871,7 +11193,7 @@ describe("check-staged", () => {
       write(dir, { ".oxlintrc.json": staged, "a.js": "console.log(2);\n" });
       prepareGit(dir, ["add", "--", ".oxlintrc.json", "a.js"]);
       write(dir, { ".oxlintrc.json": working });
-      const result = run(dir, "check-staged");
+      const result = run(dir, [bin("check-staged")]);
       expect(result.code, result.out).toBe(code);
       const actual = Array.from(
         result.out.matchAll(/^\[check:staged\] oxlint:.*$/gm),
@@ -10890,7 +11212,7 @@ describe("check-staged", () => {
       });
       write(dir, { "a.ts": 'import x from "../../elsewhere/x.ts";\n' });
       sh(dir, ["add", "a.ts"]);
-      return run(dir, "check-staged");
+      return run(dir, [bin("check-staged")]);
     };
     expect(staged({}).code).toBe(1);
     expect(staged({ coupling: "a fixture outside" }).code).toBe(0);
@@ -10900,7 +11222,7 @@ describe("check-staged", () => {
     const dir = repo({ "package.json": pkg, "docs/agent-work/items/a.md": "# Fine\n" });
     write(dir, { "docs/agent-work/items/a.md": "changed\n" });
     sh(dir, ["add", "docs/agent-work/items/a.md"]);
-    const r = run(dir, "check-staged");
+    const r = run(dir, [bin("check-staged")]);
     expect(r.code).toBe(1);
     expect(r.out).toContain("admin-check not installed");
   });
@@ -10919,47 +11241,57 @@ describe("check-staged", () => {
     write(dir, { "big.txt": "staged line\n".repeat(200_000) });
     sh(dir, ["add", "big.txt"]);
     write(dir, { "big.txt": "unstaged\n" });
-    const r = run(dir, "check-staged");
+    const r = run(dir, [bin("check-staged")]);
     expect(r.out).not.toContain("EPIPE");
     expect(r.out).toContain("[check:staged] prettier: big.txt as staged");
     expect(r.code).toBe(1);
   });
 
   test.each([
-    [
-      "both are declared",
-      { devDependencies: { prettier: "3", eslint: "10" } },
-      1,
-      "prettier not installed",
-    ],
-    ["neither is declared", {}, 1, "prettier not installed"],
-    ["format is skipped", { scaffolding: { skip: { format: "none" } } }, 1, "eslint not installed"],
-    [
-      "format has an empty reason",
-      { scaffolding: { skip: { format: "", lint: "none" } } },
-      1,
-      "prettier not installed",
-    ],
-    [
-      "format has a false reason",
-      { scaffolding: { skip: { format: false, lint: "none" } } },
-      1,
-      "prettier not installed",
-    ],
-    [
-      "format has an object reason",
-      { scaffolding: { skip: { format: {}, lint: "none" } } },
-      1,
-      "prettier not installed",
-    ],
-    ["both have reasons", { scaffolding: { skip: { format: "none", lint: "none" } } }, 0, /^$/],
+    {
+      tools: "both are declared",
+      manifest: { devDependencies: { prettier: "3", eslint: "10" } },
+      code: 1,
+      report: "prettier not installed",
+    },
+    { tools: "neither is declared", manifest: {}, code: 1, report: "prettier not installed" },
+    {
+      tools: "format is skipped",
+      manifest: { scaffolding: { skip: { format: "none" } } },
+      code: 1,
+      report: "eslint not installed",
+    },
+    {
+      tools: "format has an empty reason",
+      manifest: { scaffolding: { skip: { format: "", lint: "none" } } },
+      code: 1,
+      report: "prettier not installed",
+    },
+    {
+      tools: "format has a false reason",
+      manifest: { scaffolding: { skip: { format: false, lint: "none" } } },
+      code: 1,
+      report: "prettier not installed",
+    },
+    {
+      tools: "format has an object reason",
+      manifest: { scaffolding: { skip: { format: {}, lint: "none" } } },
+      code: 1,
+      report: "prettier not installed",
+    },
+    {
+      tools: "both have reasons",
+      manifest: { scaffolding: { skip: { format: "none", lint: "none" } } },
+      code: 0,
+      report: /^$/,
+    },
   ] as const)(
-    "check-staged resolves required Prettier and ESLint tools when %s",
-    (_, manifest, code, report) => {
+    "check-staged resolves required Prettier and ESLint tools when $tools",
+    ({ manifest, code, report }) => {
       const dir = repo({ "package.json": JSON.stringify(manifest) });
       write(dir, { "a.ts": "export {};\n" });
       prepareGit(dir, ["add", "a.ts"]);
-      const result = run(dir, "check-staged");
+      const result = run(dir, [bin("check-staged")]);
       expect(result.code, result.out).toBe(code);
       expect(result.out).toMatch(report);
     },
@@ -10976,7 +11308,7 @@ describe("check-staged", () => {
       write(dir, { [prettier]: "#!/bin/sh\nexit 0\n", "a.ts": "export {};\n" });
       chmodSync(join(dir, prettier), 0o755);
       prepareGit(dir, ["add", "a.ts"]);
-      const result = run(dir, "check-staged");
+      const result = run(dir, [bin("check-staged")]);
       expect(result.code, result.out).toBe(0);
       expect(result.out).not.toContain("not installed");
     },
@@ -11007,23 +11339,47 @@ describe("check-staged", () => {
       arrange(dir);
       write(dir, files);
       sh(dir, ["add", ...Object.keys(files)]);
-      return { dir, ...run(dir, "check-staged") };
+      return { dir, ...run(dir, [bin("check-staged")]) };
     };
 
-    test.each([
-      ["a CSS file is staged", { "a.css": bad }, undefined, 1, /stylelint not installed/],
-      [
-        "only hidden CSS and a TypeScript file are staged",
-        { "a.ts": "export {};\n", ".x/a.css": bad },
-        undefined,
-        0,
-        /^$/,
-      ],
-      ["there is a skip reason", { "a.css": bad }, "none", 0, /^$/],
-      ["the skip reason is blank", { "a.css": bad }, " ", 1, /stylelint not installed/],
-    ] as const)(
-      "resolves the required binary when %s",
-      (_, files, reason, code, report) => {
+    test.each<{
+      scenario: string;
+      files: Record<string, string>;
+      reason: string | undefined;
+      code: number;
+      report: RegExp;
+    }>([
+      {
+        scenario: "a CSS file is staged",
+        files: { "a.css": bad },
+        reason: undefined,
+        code: 1,
+        report: /stylelint not installed/,
+      },
+      {
+        scenario: "only hidden CSS and a TypeScript file are staged",
+        files: { "a.ts": "export {};\n", ".x/a.css": bad },
+        reason: undefined,
+        code: 0,
+        report: /^$/,
+      },
+      {
+        scenario: "there is a skip reason",
+        files: { "a.css": bad },
+        reason: "none",
+        code: 0,
+        report: /^$/,
+      },
+      {
+        scenario: "the skip reason is blank",
+        files: { "a.css": bad },
+        reason: " ",
+        code: 1,
+        report: /stylelint not installed/,
+      },
+    ])(
+      "resolves the required binary when $scenario",
+      ({ files, reason, code, report }) => {
         const result = staged(files, reason, () => {});
         expect(result.code, result.out).toBe(code);
         expect(result.out).toMatch(report);
@@ -11071,7 +11427,7 @@ describe("check-staged", () => {
         write(ok.dir, { "a.css": bad });
         sh(ok.dir, ["add", "a.css"]);
         write(ok.dir, { "a.css": "a { color: #000; }\n" });
-        const partial = run(ok.dir, "check-staged");
+        const partial = run(ok.dir, [bin("check-staged")]);
         expect(partial).toEqual({
           code: 1,
           out: containingText("[check:staged] stylelint: a.css as staged"),
@@ -11103,10 +11459,10 @@ describe("check-staged", () => {
     sh(dir, ["add", "a.ts"]);
     // An unstaged skip leaves the tool on; an unstaged removal leaves the staged skip in force.
     write(dir, { "package.json": manifest({ format: "unstaged" }) });
-    expect(run(dir, "check-staged").code).toBe(1);
+    expect(run(dir, [bin("check-staged")]).code).toBe(1);
     commit({ format: "committed" });
     write(dir, { "package.json": manifest({}) });
-    expect(run(dir, "check-staged").code).toBe(0);
+    expect(run(dir, [bin("check-staged")]).code).toBe(0);
     commit({});
     sh(dir, ["rm", "-q", "--cached", "a.ts"]);
     // A submodule's new commit, with the submodule dirty, is no file for prettier.
@@ -11116,7 +11472,7 @@ describe("check-staged", () => {
     sh(join(dir, "sub"), ["commit", "-q", "--allow-empty", "-m", "next"]);
     write(dir, { "sub/x.md": "dirty\n", "docs/agent-work/items/a.md": "# A\n" });
     sh(dir, ["add", "sub", "docs/agent-work/items/a.md"]);
-    const r = run(dir, "check-staged");
+    const r = run(dir, [bin("check-staged")]);
     expect(r).toEqual({ code: 0, out: "" });
     expect(readFileSync(join(dir, "args.log"), "utf8")).not.toMatch(/\bsub\b/);
     expect(
@@ -11130,7 +11486,7 @@ describe("check-staged", () => {
     const dir = repo({ "package.json": pkg });
     write(dir, { "docs/tracking/items/a.md": "fine\n" });
     sh(dir, ["add", "docs/tracking/items/a.md"]);
-    expect(run(dir, "check-staged").out).toContain("admin-check not installed");
+    expect(run(dir, [bin("check-staged")]).out).toContain("admin-check not installed");
   });
 });
 
@@ -11164,20 +11520,11 @@ describe("raise-pins", () => {
     }
     return base;
   }
-  function consumer(
-    base: string,
-    scripts: Record<string, string>,
-    names = ["b", "a"],
-    others: Record<string, string> = {},
-  ) {
-    const dependencies = Object.fromEntries(
-      names.map((name) => [`@hackersandwizards/${name}`, `git+file://${base}/${name}#v1.0.0`]),
-    );
-    Object.assign(dependencies, others);
+  function consumer(dependencies: Record<string, string>, scripts: Record<string, string>) {
     const pkg = { name: "c", private: true, scripts, dependencies };
     const dir = repo({ "package.json": `${JSON.stringify(pkg, null, 2)}\n` }, false);
     const env = { ...process.env, BUN_INSTALL_CACHE_DIR: cacheDir };
-    prepareCommand(dir, "bun", ["install"], env);
+    prepareCommand(dir, ["bun", "install"], env);
     sh(dir, ["add", "-A"]);
     sh(dir, ["commit", "-qm", "init"]);
     return dir;
@@ -11208,16 +11555,22 @@ describe("raise-pins", () => {
 
     beforeAll(() => {
       base = packages();
-      const dir = consumer(base, { check: "true" });
-      raised = run(dir, "raise-pins", [], identity);
+      const dir = consumer(
+        {
+          "@hackersandwizards/b": `git+file://${base}/b#v1.0.0`,
+          "@hackersandwizards/a": `git+file://${base}/a#v1.0.0`,
+        },
+        { check: "true" },
+      );
+      raised = run(dir, [bin("raise-pins")], identity);
       pin = readFileSync(join(dir, "package.json"), "utf8");
       installed = version(dir, "a");
       revisions = sh(dir, ["rev-list", "--count", "HEAD"]).stdout.toString().trim();
       sh(dir, ["checkout", "--", "package.json", "bun.lock"]);
-      committed = run(dir, "raise-pins", ["--commit"], identity);
+      committed = run(dir, [bin("raise-pins"), "--commit"], identity);
       subject = sh(dir, ["log", "-1", "--format=%s"]).stdout.toString().trim();
       status = sh(dir, ["status", "--porcelain"]).stdout.toString();
-      repeated = run(dir, "raise-pins", ["--commit"], identity);
+      repeated = run(dir, [bin("raise-pins"), "--commit"], identity);
     });
 
     test("installs and gates the raised pins without committing by default", () => {
@@ -11248,11 +11601,11 @@ describe("raise-pins", () => {
   test("selects a pin by its repository's owner, not its name: an unscoped one of ours rises, a foreign one stays", () => {
     const ours = packages(["u"], "");
     const foreign = packages(["f"], "", "someone");
-    const dir = consumer(ours, { check: "true" }, [], {
-      u: `git+file://${ours}/u#v1.0.0`,
-      f: `git+file://${foreign}/f#v1.0.0`,
-    });
-    const r = run(dir, "raise-pins", ["--commit"], identity);
+    const dir = consumer(
+      { u: `git+file://${ours}/u#v1.0.0`, f: `git+file://${foreign}/f#v1.0.0` },
+      { check: "true" },
+    );
+    const r = run(dir, [bin("raise-pins"), "--commit"], identity);
     expect(r.code).toBe(0);
     expect(lines(r.out, "raise-pins")).toEqual([
       "[raise-pins] u: v1.0.0 -> v1.10.0",
@@ -11264,9 +11617,15 @@ describe("raise-pins", () => {
 
   test("a remote not read keeps its pin and leaves the other raises to commit", () => {
     const base = packages();
-    const dir = consumer(base, { check: "true" });
+    const dir = consumer(
+      {
+        "@hackersandwizards/b": `git+file://${base}/b#v1.0.0`,
+        "@hackersandwizards/a": `git+file://${base}/a#v1.0.0`,
+      },
+      { check: "true" },
+    );
     renameSync(join(base, "b"), join(base, "b-gone"));
-    const r = run(dir, "raise-pins", ["--commit"], identity);
+    const r = run(dir, [bin("raise-pins"), "--commit"], identity);
     expect(r.code).toBe(1);
     expect(r.out).toContain("[raise-pins] @hackersandwizards/b: no v<version> tag read from");
     expect(sh(dir, ["log", "-1", "--format=%s"]).stdout.toString().trim()).toBe(
@@ -11314,47 +11673,57 @@ describe("raise-pins", () => {
   test("a scaffolding raise commits what check-structure --fix wrote, unless --fix rewrote an edit", () => {
     const base = packages(["scaffolding"]);
     const fix = { check: "true", "check-structure": "echo fixed > skeleton.txt" };
-    const dir = consumer(base, fix, ["scaffolding"]);
+    const dir = consumer(
+      { "@hackersandwizards/scaffolding": `git+file://${base}/scaffolding#v1.0.0` },
+      fix,
+    );
     // git status lists an untracked nested repository as a directory.
     sh(dir, ["init", "-q", "nested"]);
-    expect(run(dir, "raise-pins", ["--commit"], identity).code).toBe(0);
+    expect(run(dir, [bin("raise-pins"), "--commit"], identity).code).toBe(0);
     expect(sh(dir, ["show", "--name-only", "--format=", "HEAD"]).stdout.toString()).toContain(
       "skeleton.txt",
     );
 
-    const edited = consumer(base, { ...fix, "check-structure": "echo fixed > edited.txt" }, [
-      "scaffolding",
-    ]);
+    const edited = consumer(
+      { "@hackersandwizards/scaffolding": `git+file://${base}/scaffolding#v1.0.0` },
+      { ...fix, "check-structure": "echo fixed > edited.txt" },
+    );
     write(edited, { "edited.txt": "committed\n" });
     sh(edited, ["add", "edited.txt"]);
     sh(edited, ["commit", "-qm", "edited"]);
     write(edited, { "edited.txt": "someone's edit\n" });
-    const r = run(edited, "raise-pins", ["--commit"], identity);
+    const r = run(edited, [bin("raise-pins"), "--commit"], identity);
     expect(r.code).toBe(1);
     expect(r.out).toContain("check-structure --fix rewrote edited.txt");
     expect(sh(edited, ["log", "-1", "--format=%s"]).stdout.toString().trim()).toBe("edited");
   });
 
   test("a commit its hook refuses leaves nothing staged and says so", () => {
-    const dir = consumer(packages(["a"]), { check: "true" }, ["a"]);
+    const dir = consumer(
+      { "@hackersandwizards/a": `git+file://${packages(["a"])}/a#v1.0.0` },
+      { check: "true" },
+    );
     write(dir, { "hooks/pre-commit": "#!/bin/sh\nexit 1\n" });
     chmodSync(join(dir, "hooks/pre-commit"), 0o755);
     sh(dir, ["config", "core.hooksPath", "hooks"]);
-    const r = run(dir, "raise-pins", ["--commit"], identity);
+    const r = run(dir, [bin("raise-pins"), "--commit"], identity);
     expect(r.code).toBe(1);
     expect(r.out).toContain("[raise-pins] the commit failed (above)");
     expect(sh(dir, ["diff", "--cached", "--name-only"]).stdout.toString()).toBe("");
   });
 
   test("a red gate commits nothing; an uncommitted package.json stops it before any change", () => {
-    const dir = consumer(packages(), { check: "exit 1" }, ["a"]);
-    const r = run(dir, "raise-pins", ["--commit"], identity);
+    const dir = consumer(
+      { "@hackersandwizards/a": `git+file://${packages()}/a#v1.0.0` },
+      { check: "exit 1" },
+    );
+    const r = run(dir, [bin("raise-pins"), "--commit"], identity);
     expect(r.code).toBe(1);
     expect(r.out).toContain(
       "[raise-pins] nothing committed: package.json and bun.lock keep the raise",
     );
     expect(sh(dir, ["rev-list", "--count", "HEAD"]).stdout.toString().trim()).toBe("1");
-    const dirty = run(dir, "raise-pins", [], identity);
+    const dirty = run(dir, [bin("raise-pins")], identity);
     expect(dirty.code).toBe(1);
     expect(dirty.out).toContain("uncommitted change");
   });
@@ -11412,7 +11781,7 @@ describe("check-spaces", () => {
   ].join("\n");
 
   test("finds text meeting an inline tag across a line break, and nothing else", () => {
-    const r = run(repo({ "src/A.astro": page, "package.json": "{}" }), "check-spaces");
+    const r = run(repo({ "src/A.astro": page, "package.json": "{}" }), [bin("check-spaces")]);
     expect(r.code).toBe(1);
     expect(
       lines(r.out, "spaces").map((l) => l.match(/line (\d+):.*?meets <(\w+)>/)!.slice(1)),
@@ -11426,18 +11795,18 @@ describe("check-spaces", () => {
       ["36", "code"],
       ["44", "small"],
     ]);
-    const empty = run(
-      repo({ "src/B.astro": "---\n---\n<code>x</code>\n", "package.json": "{}" }),
-      "check-spaces",
-    );
+    const empty = run(repo({ "src/B.astro": "---\n---\n<code>x</code>\n", "package.json": "{}" }), [
+      bin("check-spaces"),
+    ]);
     expect(empty.code).toBe(0);
   });
 
   describe("inline spaces around tags and expressions", () => {
     const flagged = (body: string) =>
       lines(
-        run(repo({ "src/A.astro": `<p>\n${body}\n</p>\n`, "package.json": "{}" }), "check-spaces")
-          .out,
+        run(repo({ "src/A.astro": `<p>\n${body}\n</p>\n`, "package.json": "{}" }), [
+          bin("check-spaces"),
+        ]).out,
         "spaces",
       ).length;
     test.each([
@@ -11501,10 +11870,9 @@ describe("check-spaces", () => {
         1,
       ],
     ] as const)("checks spacing for %s", (_, configs, expected) => {
-      const result = run(
-        repo({ "src/A.astro": page, "package.json": "{}", ...configs }),
-        "check-spaces",
-      );
+      const result = run(repo({ "src/A.astro": page, "package.json": "{}", ...configs }), [
+        bin("check-spaces"),
+      ]);
       expect(result.code, result.out).toBe(expected);
     });
   });
@@ -11525,7 +11893,7 @@ describe("check-spaces", () => {
             "src/C.astro": `<p>\n${body}\n</p>\n`,
             "package.json": JSON.stringify({ name: "fx", version: "1.0.0", ...pkg }),
           }),
-          "check-spaces",
+          [bin("check-spaces")],
         ).out,
         "spaces",
       ).map((l) => l.match(/\] ([^:]+):/)![1]);
@@ -11583,8 +11951,8 @@ describe("check-spaces", () => {
           scaffolding: { allow: [{ check: "spaces", path: "src/*.astro", text, reason: "flex" }] },
         }),
       });
-    expect(run(allowed("<span></span>"), "check-spaces").code).toBe(0);
-    expect(run(allowed("nothing"), "check-spaces").out).toContain(
+    expect(run(allowed("<span></span>"), [bin("check-spaces")]).code).toBe(0);
+    expect(run(allowed("nothing"), [bin("check-spaces")]).out).toContain(
       "allow entry matches nothing: remove this stale entry (or unused path/text item) from package.json scaffolding.allow",
     );
   });
@@ -11610,7 +11978,7 @@ describe("check-names", () => {
       "b.js": "export function findEntry() { return 2; }\n",
       "c.mjs": "let findEntry = function inner() { return 3; };\n",
     });
-    const result = run(dir, "check-names");
+    const result = run(dir, [bin("check-names")]);
     expect(result.code, result.out).toBe(1);
     expect(lines(result.out, "names")).toEqual([
       "[names] a.ts: function `findEntry` is also declared in b.js, c.mjs",
@@ -11623,7 +11991,7 @@ describe("check-names", () => {
       "a.ts": "export const findEntry = () => 1;\n",
       "b.ts": "const findEntry = (() => 2);\n",
     });
-    const result = run(dir, "check-names");
+    const result = run(dir, [bin("check-names")]);
     expect(result.code, result.out).toBe(1);
     expect(lines(result.out, "names")).toEqual([
       "[names] a.ts: function `findEntry` is also declared in b.ts",
@@ -11636,14 +12004,14 @@ describe("check-names", () => {
       "a.ts": source,
       "b.ts": "if (ready) { var findEntry = () => 2; }\n",
     });
-    const result = run(dir, "check-names");
+    const result = run(dir, [bin("check-names")]);
     expect(result.code, result.out).toBe(1);
     expect(lines(result.out, "names")).toEqual([
       "[names] a.ts: function `findEntry` is also declared in b.ts",
     ]);
     expectGuide(result.out, "duplicate-function-name");
     write(dir, { "b.ts": "if (ready) { const findEntry = () => 2; findEntry(); }\n" });
-    expect(run(dir, "check-names")).toEqual({ code: 0, out: "" });
+    expect(run(dir, [bin("check-names")])).toEqual({ code: 0, out: "" });
   });
 
   test("tests, nested declarations, excluded files, and framework names pass", () => {
@@ -11664,7 +12032,7 @@ describe("check-names", () => {
       },
       [...oxlintTemplate.ignorePatterns, "generated.js"],
     );
-    expect(run(dir, "check-names")).toEqual({ code: 0, out: "" });
+    expect(run(dir, [bin("check-names")])).toEqual({ code: 0, out: "" });
   });
 
   test("verbatim installed skeleton files are exempt while modified copies are checked", () => {
@@ -11677,9 +12045,9 @@ describe("check-names", () => {
       },
       oxlintTemplate.ignorePatterns.filter((pattern) => pattern !== "/.githooks/**"),
     );
-    expect(run(dir, "check-names")).toEqual({ code: 0, out: "" });
+    expect(run(dir, [bin("check-names")])).toEqual({ code: 0, out: "" });
     write(dir, { [path]: skeleton + "\n// Local behavior.\n" });
-    const result = run(dir, "check-names");
+    const result = run(dir, [bin("check-names")]);
     expect(result.code, result.out).toBe(1);
     expect(lines(result.out, "names")).toEqual([
       "[names] .githooks/check-lock.ts: function `parseHolder` is also declared in a.ts",
@@ -11688,12 +12056,15 @@ describe("check-names", () => {
   });
 
   test("the package itself has unique production function names", () => {
-    expect(run(join(import.meta.dirname, ".."), "check-names")).toEqual({ code: 0, out: "" });
+    expect(run(join(import.meta.dirname, ".."), [bin("check-names")])).toEqual({
+      code: 0,
+      out: "",
+    });
   });
 });
 
 describe("check-cycles", () => {
-  const cycle = (files: Record<string, string>) => run(repo(files), "check-cycles");
+  const cycle = (files: Record<string, string>) => run(repo(files), [bin("check-cycles")]);
   const page = "src/pages/index.astro";
   const frontmatter = (specifier: string) =>
     `---\nimport { value } from "${specifier}";\n---\n<p>{value}</p>\n`;
@@ -11738,7 +12109,7 @@ describe("check-cycles", () => {
     write(dir, {
       "node_modules/cycle-config/tsconfig.json": '{"compilerOptions":{"strict":true}}',
     });
-    const r = run(dir, "check-cycles");
+    const r = run(dir, [bin("check-cycles")]);
     expect(r.code).toBe(1);
     expect(r.out).toContain(`${page} -> src/pages/value.ts -> ${page}`);
   });
@@ -11763,7 +12134,7 @@ describe("check-cycles", () => {
     });
 
     test("reports a tracked TypeScript cycle without creating an Astro mirror", () => {
-      const result = run(dir, "check-cycles");
+      const result = run(dir, [bin("check-cycles")]);
       expect(result.code).toBe(1);
       expect(result.out).toContain("a.ts -> b.ts -> a.ts");
       expect(existsSync(mirrorCache)).toBe(false);
@@ -11771,7 +12142,7 @@ describe("check-cycles", () => {
 
     test("ignores untracked imports without creating an Astro mirror", () => {
       addInputs();
-      const result = run(dir, "check-cycles");
+      const result = run(dir, [bin("check-cycles")]);
       expect(result.out).toContain("a.ts -> b.ts -> a.ts");
       expect(result.out).not.toContain("missing-");
       expect(existsSync(mirrorCache)).toBe(false);
@@ -11780,7 +12151,7 @@ describe("check-cycles", () => {
     test("reports staged unresolved imports and removes the Astro mirror", () => {
       addInputs();
       prepareGit(dir, ["add", "--", page, "untracked.ts"]);
-      const result = run(dir, "check-cycles");
+      const result = run(dir, [bin("check-cycles")]);
       expect(result.code).toBe(1);
       expect(result.out).toContain("a.ts -> b.ts -> a.ts");
       expect(new Set(result.out.match(/\.\/missing-(?:astro|ts)\.ts/g))).toEqual(
@@ -11792,7 +12163,7 @@ describe("check-cycles", () => {
 
   test("an Astro compiler error names the source and the mirror is removed", () => {
     const dir = repo({ [page]: "---\nconst =\n---\n<p>Page</p>\n" });
-    const r = run(dir, "check-cycles");
+    const r = run(dir, [bin("check-cycles")]);
     expect(r.code).toBe(1);
     expect(r.out).toContain(`[cycles] ${page}:`);
     expect(r.out).toContain("Unexpected token");
@@ -11844,7 +12215,7 @@ describe("check-cycles", () => {
     const dir = repo({ [page]: "<p>Page</p>\n" });
     const outside = temp();
     symlinkSync(outside, join(dir, "node_modules"), "dir");
-    const r = run(dir, "check-cycles");
+    const r = run(dir, [bin("check-cycles")]);
     expect(r.code).toBe(1);
     expect(r.out).toContain(
       "the cycles cache path contains a symlink: replace node_modules/.cache/scaffolding (or a symlinked parent) with a real directory by removing the symlink and running bun install",
@@ -11884,18 +12255,24 @@ describe("check-cycles", () => {
     expect(lines(r.out, "cycles")).toHaveLength(1);
   });
 
-  describe.each([
-    ["src/pages/index.ts", "", "\n", [], {}],
-    [
-      page,
-      "---\n",
-      "\n---\n<p>Page</p>\n",
-      ['import "./component.astro";'],
-      {
+  describe.each<{
+    source: string;
+    open: string;
+    close: string;
+    extraImports: readonly string[];
+    extraFiles: Record<string, string>;
+  }>([
+    { source: "src/pages/index.ts", open: "", close: "\n", extraImports: [], extraFiles: {} },
+    {
+      source: page,
+      open: "---\n",
+      close: "\n---\n<p>Page</p>\n",
+      extraImports: ['import "./component.astro";'],
+      extraFiles: {
         "src/pages/component.astro": "<p>Component</p>\n",
       },
-    ],
-  ] as const)("import checks in %s", (source, open, close, extraImports, extraFiles) => {
+    },
+  ])("import checks in $source", ({ source, open, close, extraImports, extraFiles }) => {
     const sourceWithImports = (imports: string) => `${open}${imports}${close}`;
 
     describe("sibling imports", () => {
@@ -11918,11 +12295,11 @@ describe("check-cycles", () => {
       });
       afterEach(() => write(checkout, { [source]: inside }));
       test("passes without an import leaving the checkout", () => {
-        expect(run(checkout, "check-cycles")).toEqual({ code: 0, out: "" });
+        expect(run(checkout, [bin("check-cycles")])).toEqual({ code: 0, out: "" });
       });
       test.each(["../../../sibling/value.ts", "@sibling/value"])("rejects %s", (specifier) => {
         write(checkout, { [source]: sourceWithImports(`import "${specifier}";`) });
-        const r = run(checkout, "check-cycles");
+        const r = run(checkout, [bin("check-cycles")]);
         expect(r.code).toBe(1);
         expect(lines(r.out, "cycles")).toEqual([
           `[cycles] ${source}: import leaves the checkout: take another repository's code from its published package, never from a sibling path (${specifier} -> ../sibling/value.ts)`,
@@ -11949,11 +12326,11 @@ describe("check-cycles", () => {
         "src/pages/icon.svg": "<svg/>\n",
         "src/pages/data.json": "{}\n",
       });
-      expect(run(dir, "check-cycles")).toEqual({ code: 0, out: "" });
+      expect(run(dir, [bin("check-cycles")])).toEqual({ code: 0, out: "" });
 
       rmSync(join(dir, "src/pages/icon.svg"));
       write(dir, { [source]: sourceWithImports(`${imports}\nimport "../missing.ts";`) });
-      const r = run(dir, "check-cycles");
+      const r = run(dir, [bin("check-cycles")]);
       expect(r.code).toBe(1);
       expect(lines(r.out, "cycles")).toEqual([
         `[cycles] ${source}: relative import does not resolve to a file: fix the typo, add the missing file or extension, or remove the dead import (../missing.ts)`,
@@ -11968,7 +12345,7 @@ describe("check-cycles", () => {
       "b.ts": 'import { a } from "./a.ts";\nexport const b = (): number => a();\n',
     };
     const dir = repo({ "README.md": "x\n" });
-    expect(run(dir, "check-cycles").code).toBe(0);
+    expect(run(dir, [bin("check-cycles")]).code).toBe(0);
     sh(dir, [
       "-c",
       "protocol.file.allow=always",
@@ -11978,7 +12355,7 @@ describe("check-cycles", () => {
       repo(loop),
       "vendor/in",
     ]);
-    expect(run(dir, "check-cycles").code).toBe(0);
+    expect(run(dir, [bin("check-cycles")]).code).toBe(0);
     // Control: the same files in the repository itself.
     expect(cycle(loop).code).toBe(1);
   });
@@ -12001,7 +12378,7 @@ describe("check-licenses", () => {
       ...files,
       "package.json": JSON.stringify({ name: "fx", dependencies, scaffolding }),
     });
-    prepareCommand(dir, process.execPath, ["install"]);
+    prepareCommand(dir, [process.execPath, "install"]);
     return dir;
   }
   const license = (l: string) => ({ license: l });
@@ -12025,7 +12402,7 @@ describe("check-licenses", () => {
       "@hackersandwizards/own": license("SEE LICENSE IN LICENSE"),
       "@img/sharp-libvips-darwin-arm64": license("LGPL-3.0-or-later"),
     });
-    const r = run(dir, "check-licenses");
+    const r = run(dir, [bin("check-licenses")]);
     expect(r.code).toBe(1);
     const red = lines(r.out, "check-licenses").map((line) => {
       const match = line.match(/^\S+ @?[^@]+/);
@@ -12051,8 +12428,10 @@ describe("check-licenses", () => {
   });
 
   test("a planted GPL dependency is red, a permissive one green", () => {
-    expect(run(installed({ planted: license("GPL-3.0-only") }), "check-licenses").code).toBe(1);
-    expect(run(installed({ planted: license("MIT") }), "check-licenses").code).toBe(0);
+    expect(run(installed({ planted: license("GPL-3.0-only") }), [bin("check-licenses")]).code).toBe(
+      1,
+    );
+    expect(run(installed({ planted: license("MIT") }), [bin("check-licenses")]).code).toBe(0);
   });
 
   const pinned = { license: "Standard 'no charge' license", reason: "dev only" };
@@ -12067,10 +12446,9 @@ describe("check-licenses", () => {
     "accepts the %s licence exception without findings",
     (_, licenses) => {
       expect(
-        run(
-          installed({ gsap: license("Standard 'no charge' license") }, { licenses }),
-          "check-licenses",
-        ),
+        run(installed({ gsap: license("Standard 'no charge' license") }, { licenses }), [
+          bin("check-licenses"),
+        ]),
       ).toEqual({ code: 0, out: "" });
     },
     limit(20_000),
@@ -12091,7 +12469,7 @@ describe("check-licenses", () => {
     (_, licenses, diagnostic) => {
       const result = run(
         installed({ gsap: license("Standard 'no charge' license") }, { licenses }),
-        "check-licenses",
+        [bin("check-licenses")],
       );
       expect(result.code, result.out).toBe(1);
       expect(result.out).toContain(diagnostic);
@@ -12102,15 +12480,15 @@ describe("check-licenses", () => {
   test("fails closed: no node_modules, an empty one, a missing lockfile", () => {
     const dir = installed({ fine: license("MIT") });
     renameSync(join(dir, "node_modules"), join(dir, "node_modules-away"));
-    const missing = run(dir, "check-licenses");
+    const missing = run(dir, [bin("check-licenses")]);
     expect(missing.code).toBe(1);
     expect(missing.out).toContain("run bun install");
     mkdirSync(join(dir, "node_modules"));
-    const empty = run(dir, "check-licenses");
+    const empty = run(dir, [bin("check-licenses")]);
     expect(empty.code).toBe(1);
     expect(empty.out).toContain("run bun install");
     const bare = repo({ "package.json": JSON.stringify({ name: "fx" }) });
-    expect(run(bare, "check-licenses").code).toBe(1);
+    expect(run(bare, [bin("check-licenses")]).code).toBe(1);
   });
 
   describe("a lock entry Bun skips", () => {
@@ -12139,13 +12517,14 @@ describe("check-licenses", () => {
         }),
       });
       for (const name of ["a", "b", "c"])
-        prepareCommand(join(dir, "src", name), process.execPath, [
+        prepareCommand(join(dir, "src", name), [
+          process.execPath,
           "pm",
           "pack",
           "--destination",
           dir,
         ]);
-      prepareCommand(dir, process.execPath, ["install"]);
+      prepareCommand(dir, [process.execPath, "install"]);
       lock = join(dir, "bun.lock");
       pinned = readFileSync(lock, "utf8").replace(
         /("c": \["c@[^"]*", \{ "dependencies": \{ "b": "1\.0\.0" \})/,
@@ -12155,11 +12534,11 @@ describe("check-licenses", () => {
         throw new Error(`Could not mark the optional dependency as skipped in ${lock}:\n${pinned}`);
       writeFileSync(lock, pinned);
       rmSync(join(dir, "node_modules"), { recursive: true });
-      prepareCommand(dir, process.execPath, ["install", "--frozen-lockfile"]);
+      prepareCommand(dir, [process.execPath, "install", "--frozen-lockfile"]);
     });
     test("passes when no installed package needs the skipped entry", () => {
       expect(existsSync(join(dir, "node_modules/b"))).toBe(false);
-      expect(run(dir, "check-licenses")).toEqual({ code: 0, out: "" });
+      expect(run(dir, [bin("check-licenses")])).toEqual({ code: 0, out: "" });
     });
     test("ignores prototype object properties when resolving a peer", () => {
       const lockWithPeer = pinned.replace(
@@ -12169,7 +12548,7 @@ describe("check-licenses", () => {
       expect(lockWithPeer).not.toBe(pinned);
       writeFileSync(lock, lockWithPeer);
       try {
-        expect(run(dir, "check-licenses")).toEqual({ code: 0, out: "" });
+        expect(run(dir, [bin("check-licenses")])).toEqual({ code: 0, out: "" });
       } finally {
         writeFileSync(lock, pinned);
       }
@@ -12178,7 +12557,7 @@ describe("check-licenses", () => {
       const bundle = join(dir, "node_modules/a/node_modules/b");
       renameSync(bundle, `${bundle}-away`);
       try {
-        const unbundled = run(dir, "check-licenses");
+        const unbundled = run(dir, [bin("check-licenses")]);
         expect(unbundled.code).toBe(1);
         expect(unbundled.out).toContain("a/b");
       } finally {
@@ -12194,10 +12573,10 @@ describe("check-licenses", () => {
     );
     write(dir, { "notes.txt": "x\n" });
     sh(dir, ["add", "notes.txt"]);
-    expect(run(dir, "check-staged").out).not.toContain("[check-licenses]");
+    expect(run(dir, [bin("check-staged")]).out).not.toContain("[check-licenses]");
     write(dir, { "package.json": readFileSync(join(dir, "package.json"), "utf8") + "\n" });
     sh(dir, ["add", "package.json"]);
-    const r = run(dir, "check-staged");
+    const r = run(dir, [bin("check-staged")]);
     expect(r.code).toBe(1);
     expect(r.out).toContain("[check-licenses] planted");
   });
@@ -12288,31 +12667,32 @@ printf '%s\\n' "$2/chrome/${build}/chrome-x/chrome"
   );
 
   test.each([
-    [
-      "placement",
-      (_cache: string, _build: string) => {},
-      0,
-      'printf "%s\\n" "$2/chrome/build/chrome-x/chrome"\n',
-      /ENOENT/,
-    ],
-    [
-      "retirement",
-      (cache: string, build: string) =>
+    {
+      stage: "placement",
+      arrange: (_cache: string, _build: string) => {},
+      stageCount: 0,
+      script: 'printf "%s\\n" "$2/chrome/build/chrome-x/chrome"\n',
+      error: /ENOENT/,
+    },
+    {
+      stage: "retirement",
+      arrange: (cache: string, build: string) =>
         mkdirSync(join(cache, "chrome", build), { recursive: true }),
-      0,
-      'mkdir -p "$2/died"\n: > "$2/died/occupied"\nprintf "%s\\n" "$2/chrome/%BUILD%/chrome-x/chrome"\n',
-      /ENOTEMPTY|EEXIST/,
-    ],
-    [
-      "cleanup",
-      (_cache: string, _build: string) => {},
-      2,
-      ': > "$2/occupied"\nchmod a-w "$2"\n',
-      /EACCES|EPERM|ENOTEMPTY/,
-    ],
+      stageCount: 0,
+      script:
+        'mkdir -p "$2/died"\n: > "$2/died/occupied"\nprintf "%s\\n" "$2/chrome/%BUILD%/chrome-x/chrome"\n',
+      error: /ENOTEMPTY|EEXIST/,
+    },
+    {
+      stage: "cleanup",
+      arrange: (_cache: string, _build: string) => {},
+      stageCount: 2,
+      script: ': > "$2/occupied"\nchmod a-w "$2"\n',
+      error: /EACCES|EPERM|ENOTEMPTY/,
+    },
   ] as const)(
-    "Chrome %s propagates unexpected install errors",
-    async (_, arrange, stageCount, script, error) => {
+    "Chrome $stage propagates unexpected install errors",
+    async ({ arrange, stageCount, script, error }) => {
       const { chromeBinary, chromeBinaryAsync } = await import("../lib/chrome.ts");
       const dir = temp();
       const chromeCache = join(dir, "cache");
@@ -12343,8 +12723,7 @@ printf '%s\\n' "$2/chrome/${build}/chrome-x/chrome"
     },
   );
 
-  const plant = (cache: string, kind: string, build: string, file: string) => {
-    const path = join(cache, kind, build, `${kind}-x`, file);
+  const plant = (path: string) => {
     write("/", { [path]: "" });
     return path;
   };
@@ -12364,14 +12743,19 @@ printf '%s\\n' "$2/chrome/${build}/chrome-x/chrome"
   test("Chrome selects the newest cached executable for this platform and kind", async () => {
     const { cachedChrome } = await import("../lib/chrome.ts");
     const cache = temp();
-    plant(cache, "chrome", `${chromeTestPlatform}-9.0.1`, chromeTestExecutable);
-    const newest = plant(cache, "chrome", `${chromeTestPlatform}-10.0.1`, chromeTestExecutable);
-    plant(cache, "chrome", "other-99.0.0", chromeTestExecutable);
+    plant(join(cache, "chrome", `${chromeTestPlatform}-9.0.1`, "chrome-x", chromeTestExecutable));
+    const newest = plant(
+      join(cache, "chrome", `${chromeTestPlatform}-10.0.1`, "chrome-x", chromeTestExecutable),
+    );
+    plant(join(cache, "chrome", "other-99.0.0", "chrome-x", chromeTestExecutable));
     const shell = plant(
-      cache,
-      "chrome-headless-shell",
-      `${chromeTestPlatform}-10.0.1`,
-      "chrome-headless-shell",
+      join(
+        cache,
+        "chrome-headless-shell",
+        `${chromeTestPlatform}-10.0.1`,
+        "chrome-headless-shell-x",
+        "chrome-headless-shell",
+      ),
     );
     withChromeCache(cache, () => {
       expect(cachedChrome()).toBe(newest);
@@ -12382,8 +12766,12 @@ printf '%s\\n' "$2/chrome/${build}/chrome-x/chrome"
   test("Chrome selects a newer cached build only after its unpack ends", async () => {
     const { cachedChrome } = await import("../lib/chrome.ts");
     const cache = temp();
-    const earlier = plant(cache, "chrome", `${chromeTestPlatform}-10.0.1`, chromeTestExecutable);
-    const unpacking = plant(cache, "chrome", `${chromeTestPlatform}-11.0.1`, chromeTestExecutable);
+    const earlier = plant(
+      join(cache, "chrome", `${chromeTestPlatform}-10.0.1`, "chrome-x", chromeTestExecutable),
+    );
+    const unpacking = plant(
+      join(cache, "chrome", `${chromeTestPlatform}-11.0.1`, "chrome-x", chromeTestExecutable),
+    );
     // The archive stays beside the build until the unpack ends, even after the executable appears.
     write(cache, { "chrome/11.0.1-chrome-x.zip": "" });
     withChromeCache(cache, () => {
@@ -12396,9 +12784,19 @@ printf '%s\\n' "$2/chrome/${build}/chrome-x/chrome"
   test("Chrome takes the consumer's puppeteer-core pin for the requested executable kind", async () => {
     const { cachedChrome } = await import("../lib/chrome.ts");
     const cache = temp();
-    const pinned = plant(cache, "chrome", `${chromeTestPlatform}-9.0.1`, chromeTestExecutable);
-    plant(cache, "chrome", `${chromeTestPlatform}-10.0.1`, chromeTestExecutable);
-    plant(cache, "chrome-headless-shell", `${chromeTestPlatform}-10.0.1`, "chrome-headless-shell");
+    const pinned = plant(
+      join(cache, "chrome", `${chromeTestPlatform}-9.0.1`, "chrome-x", chromeTestExecutable),
+    );
+    plant(join(cache, "chrome", `${chromeTestPlatform}-10.0.1`, "chrome-x", chromeTestExecutable));
+    plant(
+      join(
+        cache,
+        "chrome-headless-shell",
+        `${chromeTestPlatform}-10.0.1`,
+        "chrome-headless-shell-x",
+        "chrome-headless-shell",
+      ),
+    );
     const consumer = temp();
     write(consumer, {
       "node_modules/puppeteer-core/package.json": JSON.stringify({
@@ -12419,7 +12817,7 @@ printf '%s\\n' "$2/chrome/${build}/chrome-x/chrome"
   test("Chrome honours CHROME_BINARY ahead of an available cached build", async () => {
     const { chromeBinary } = await import("../lib/chrome.ts");
     const cache = temp();
-    plant(cache, "chrome", `${chromeTestPlatform}-10.0.1`, chromeTestExecutable);
+    plant(join(cache, "chrome", `${chromeTestPlatform}-10.0.1`, "chrome-x", chromeTestExecutable));
     withChromeCache(cache, () => {
       process.env.CHROME_BINARY = "/opt/own-chrome";
       expect(chromeBinary()).toBe("/opt/own-chrome");
@@ -12858,7 +13256,10 @@ await serve([process.execPath, "-e", "console.error('boot failed: stack'); proce
         { stdout: "ignore" },
       );
       try {
-        await untilFile(marker, (value) => /^\d+\n$/.test(value), "the wrapped server's PID");
+        await until(
+          () => fileReady(marker, (value) => /^\d+\n$/.test(value)),
+          `the wrapped server's PID at ${marker}`,
+        );
         const pid = Number(readFileSync(marker, "utf8"));
         expect(pid).toBeGreaterThan(0);
         try {
@@ -12882,7 +13283,7 @@ await serve([process.execPath, "-e", "console.error('boot failed: stack'); proce
 const shellScript = '#!/bin/sh\nunused=1\nprintf "%s\\n" ok\n';
 const shellStyleFinding = '#!/bin/sh\nprintf "%s\\n" "`printf ok`"\n';
 const checkedShell = (dir: string, env?: Record<string, string>) =>
-  run(dir, "scaffolding", ["shell"], env);
+  run(dir, [bin("scaffolding"), "shell"], env);
 
 test("shell input discovery uses the index shebang and ignores grep.patternType", () => {
   const dir = repo({
@@ -13100,7 +13501,8 @@ describe.each([".githooks/pre-push", "template/.githooks/pre-push"])("%s", (path
 });
 
 describe("scaffolding markdown", () => {
-  const check = (dir: string, ...args: string[]) => run(dir, "scaffolding", ["markdown", ...args]);
+  const check = (dir: string, ...args: string[]) =>
+    run(dir, [bin("scaffolding"), "markdown", ...args]);
   const bad = "Body without a title.\n";
   const content = "Body with <span>inline HTML</span>.\n";
   const headings = "# Same\n\n_Intro_\n\n# Same\n";
@@ -13193,7 +13595,7 @@ describe("scaffolding markdown", () => {
         "articles/post.md": trailingSpace,
         "docs/post.md": trailingSpace,
       });
-      const result = run(dir, "scaffolding", args);
+      const result = run(dir, [bin("scaffolding"), ...args]);
       expect(result.code).toBe(1);
       expect(result.out).toContain("docs/post.md:1 error MD041");
       expect(result.out).not.toContain("articles/post.md");
@@ -13216,7 +13618,7 @@ describe("scaffolding markdown", () => {
     write(dir, { "articles/post.md": content });
     prepareGit(dir, ["add", "--", "articles/post.md"]);
     write(dir, { "package.json": manifest([]) });
-    expect(run(dir, "check-staged").code).toBe(0);
+    expect(run(dir, [bin("check-staged")]).code).toBe(0);
   });
 
   test("recognizes top-level frontmatter titles and limits H1s in the body", () => {

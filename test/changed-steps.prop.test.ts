@@ -80,26 +80,33 @@ test.prop([fc.constantFrom("src/package.json", "docs/yarn.lock", ".githooks/pre-
   },
 );
 
-type GlobInput = (base: string, first: string, second: string, invalid: string) => string;
+const globParts = fc.record(
+  {
+    segments: fc.array(name, { minLength: 1 }),
+    first: name,
+    second: name,
+    invalid: fc.constantFrom("", ".", ".."),
+  },
+  { noNullPrototype: true },
+);
+type GlobParts = ReturnType<typeof globParts.generate>["value"];
+type GlobInput = (base: string, parts: GlobParts) => string;
 const globCases: [string, GlobInput, boolean][] = [
   ["plain path", (base) => base, true],
-  ["braces and a class", (base, first, second) => `${base}/{${first},${second}}/[ab]*`, true],
-  ["unclosed brace", (base, first, second) => `${base}/{${first},${second}`, false],
-  ["extra closing brace", (base, first, second) => `${base}/${first},${second}}`, false],
+  ["braces and a class", (base, { first, second }) => `${base}/{${first},${second}}/[ab]*`, true],
+  ["unclosed brace", (base, { first, second }) => `${base}/{${first},${second}`, false],
+  ["extra closing brace", (base, { first, second }) => `${base}/${first},${second}}`, false],
   ["unclosed class", (base) => `${base}/[ab`, false],
   ["reversed braces", (base) => `${base}/}{`, false],
   ["NUL", (base) => `${base}/a\0b`, false],
   ["escaped brace and a class", (base) => `${base}/[{]\\}`, true],
   ["trailing escape", (base) => `${base}/a\\`, false],
-  ["invalid path segment", (base, first, _second, invalid) => `${base}/${invalid}/${first}`, false],
+  ["invalid path segment", (base, { first, invalid }) => `${base}/${invalid}/${first}`, false],
 ];
 
 describe.each(globCases)("changed glob with %s", (_, glob, accepted) => {
-  test.prop([fc.array(name, { minLength: 1 }), name, name, fc.constantFrom("", ".", "..")])(
-    "classifies the generated pattern",
-    (segments, first, second, invalid) => {
-      const pattern = glob(segments.join("/"), first, second, invalid);
-      expect(validGlob(pattern), pattern).toBe(accepted);
-    },
-  );
+  test.prop([globParts])("classifies the generated pattern", (parts) => {
+    const pattern = glob(parts.segments.join("/"), parts);
+    expect(validGlob(pattern), pattern).toBe(accepted);
+  });
 });

@@ -24,7 +24,7 @@ import { setTimeout as delay } from "node:timers/promises";
 import { afterAll, assert, describe, expect, it } from "vitest";
 import { jsonObject } from "../lib/json.ts";
 import { limit } from "@hackersandwizards/scaffolding/test-timeout";
-import { until, untilBefore, untilFile, untilPath } from "./wait.ts";
+import { fileReady, pathReady, until, untilBefore } from "./wait.ts";
 
 const SCRIPT = resolve(import.meta.dirname, "../template/.githooks/check-lock.ts");
 
@@ -46,14 +46,8 @@ interface Run {
   stderr: string;
 }
 
-const run = (
-  lock: string,
-  args: string[],
-  env: Record<string, string> = {},
-  preload?: string,
-): Run => {
-  const options = preload ? ["--preload", preload] : [];
-  const { status, signal, stdout, stderr } = spawnSync("bun", [...options, SCRIPT, ...args], {
+const run = (lock: string, argv: string[], env: Record<string, string> = {}): Run => {
+  const { status, signal, stdout, stderr } = spawnSync("bun", argv, {
     encoding: "utf-8",
     stdio: ["ignore", "pipe", "pipe"],
     env: { ...process.env, CHECK_LOCK: lock, ...env },
@@ -237,18 +231,18 @@ describe("check-lock serialises the checks", () => {
 
   it("releases the lock when the run finishes", () => {
     const lock = lockPath();
-    run(lock, ["true"]);
+    run(lock, [SCRIPT, "true"]);
     expect(() => readFileSync(lock)).toThrow(/ENOENT/);
   });
 
   it("reports the command's exit code rather than its own, and names it on stdout", () => {
-    const result = run(lockPath(), ["sh", "-c", "exit 3"]);
+    const result = run(lockPath(), [SCRIPT, "sh", "-c", "exit 3"]);
     expect(result.status).toBe(3);
     expect(result.stdout).toContain("failed (exit 3)");
   });
 
   it("names the signal that killed the command, which reports no exit code of its own", () => {
-    const result = run(lockPath(), ["sh", "-c", "kill -9 $$"]);
+    const result = run(lockPath(), [SCRIPT, "sh", "-c", "kill -9 $$"]);
     expect(result.status).toBe(1);
     expect(result.stdout).toContain("failed (killed by SIGKILL)");
   });
@@ -258,7 +252,7 @@ describe("check-lock serialises the checks", () => {
     () => {
       const lock = lockPath();
       heldBy(lock, process.pid);
-      const result = run(lock, ["echo", "ran"], { CHECK_LOCK_WAIT_MS: "1500" });
+      const result = run(lock, [SCRIPT, "echo", "ran"], { CHECK_LOCK_WAIT_MS: "1500" });
       expect(result.status).toBe(1);
       expect(result.stdout).not.toContain("ran");
       expect(result.stderr).toContain(`pid ${process.pid} still holds`);
@@ -275,7 +269,7 @@ describe("check-lock serialises the checks", () => {
     () => {
       const lock = lockPath();
       heldBy(lock, process.pid);
-      const result = run(lock, ["echo", "ran"], { CHECK_LOCK_WAIT_MS: "0" });
+      const result = run(lock, [SCRIPT, "echo", "ran"], { CHECK_LOCK_WAIT_MS: "0" });
       expect(result.status).toBe(1);
       expect(result.stderr).toContain(`pid ${process.pid} still holds ${lock} after 0s`);
     },
@@ -292,7 +286,7 @@ describe("check-lock serialises the checks", () => {
       });
       const done = new Promise((resolve) => first.on("close", resolve));
       await until(() => existsSync(lock), "the first holder");
-      const same = run(lock, ["sh", "-c", "sleep 2"], { CHECK_LOCK_WAIT_MS: "0" });
+      const same = run(lock, [SCRIPT, "sh", "-c", "sleep 2"], { CHECK_LOCK_WAIT_MS: "0" });
       await done;
       expect(same.status).toBe(0);
       expect(same.stderr).toBe("");
@@ -309,11 +303,11 @@ describe("check-lock serialises the checks", () => {
       const earlier = `${lock}.queue/000000000000001-${process.pid}`;
       writeFileSync(earlier, "");
       const started = Date.now();
-      expect(run(lock, ["echo", "ran"], { CHECK_LOCK_WAIT_MS: "0" }).stdout).toBe("ran\n");
+      expect(run(lock, [SCRIPT, "echo", "ran"], { CHECK_LOCK_WAIT_MS: "0" }).stdout).toBe("ran\n");
       expect(Date.now() - started).toBeGreaterThanOrEqual(5_900);
       expect(existsSync(earlier)).toBe(false);
       writeFileSync(`${lock}.queue/000000000000001-999999`, "");
-      expect(run(lock, ["echo", "ran"]).stdout).toBe("ran\n");
+      expect(run(lock, [SCRIPT, "echo", "ran"]).stdout).toBe("ran\n");
       expect(readdirSync(`${lock}.queue`)).toEqual([]);
     },
     limit(30_000),
@@ -330,7 +324,7 @@ describe("check-lock serialises the checks", () => {
       writeFileSync(ghost, "");
       const old = new Date(Date.now() - 60_000);
       utimesSync(ghost, old, old);
-      const result = run(lock, ["echo", "ran"], { CHECK_LOCK_WAIT_MS: "0" });
+      const result = run(lock, [SCRIPT, "echo", "ran"], { CHECK_LOCK_WAIT_MS: "0" });
       expect(result.stderr).toBe("");
       expect(result.stdout).toBe("ran\n");
       expect(readdirSync(`${lock}.queue`)).toEqual([]);
@@ -352,14 +346,12 @@ describe("check-lock serialises the checks", () => {
       const first = start("sleep 2");
       await until(() => existsSync(lock), "the first holder");
       const second = start("sleep 2");
-      await untilPath<string[]>(
-        `${lock}.queue`,
-        readdirSync,
-        (files) => files.length > 0,
-        "the queue",
+      await until(
+        () => pathReady<string[]>(`${lock}.queue`, readdirSync, (files) => files.length > 0),
+        `the queue at ${lock}.queue`,
       );
       // Longer than either holder alone, shorter than both.
-      const third = run(lock, ["echo", "ran"], { CHECK_LOCK_WAIT_MS: "3500" });
+      const third = run(lock, [SCRIPT, "echo", "ran"], { CHECK_LOCK_WAIT_MS: "3500" });
       expect(third.stdout).toBe("ran\n");
       expect(await first).toBe(0);
       expect(await second).toBe(0);
@@ -469,11 +461,9 @@ describe("check-lock serialises the checks", () => {
       child.stdout.on("data", (chunk: Buffer) => (stdout += chunk));
       child.stderr.on("data", (chunk: Buffer) => (stderr += chunk));
       const status = new Promise<number | null>((done) => child.on("close", done));
-      await untilPath<string[]>(
-        `${lock}.queue`,
-        readdirSync,
-        (files) => files.length > 0,
-        "the ticket",
+      await until(
+        () => pathReady<string[]>(`${lock}.queue`, readdirSync, (files) => files.length > 0),
+        `the ticket at ${lock}.queue`,
       );
       disturb(`${lock}.queue`);
       await new Promise((go) => setTimeout(go, 4_500));
@@ -522,7 +512,7 @@ describe("check-lock serialises the checks", () => {
     () => {
       const lock = lockPath();
       mkdirSync(lock);
-      const result = run(lock, ["echo", "ran"], { CHECK_LOCK_WAIT_MS: "0" });
+      const result = run(lock, [SCRIPT, "echo", "ran"], { CHECK_LOCK_WAIT_MS: "0" });
       expect(result.status).toBe(1);
       expect(result.stdout).not.toContain("ran");
     },
@@ -560,11 +550,9 @@ describe("check-lock serialises the checks", () => {
         stdio: "ignore",
       });
       const exit = new Promise((done) => child.on("exit", done));
-      await untilPath<string[]>(
-        `${lock}.queue`,
-        readdirSync,
-        (files) => files.length > 0,
-        "the ticket",
+      await until(
+        () => pathReady<string[]>(`${lock}.queue`, readdirSync, (files) => files.length > 0),
+        `the ticket at ${lock}.queue`,
       );
       const waiting = Date.now();
       await new Promise((go) => setTimeout(go, 3_000));
@@ -597,7 +585,7 @@ describe("check-lock serialises the checks", () => {
     () => {
       const lock = lockPath();
       heldBy(lock, process.pid);
-      const result = run(lock, ["echo", "ran"], { CHECK_LOCK_WAIT_MS: "15min" });
+      const result = run(lock, [SCRIPT, "echo", "ran"], { CHECK_LOCK_WAIT_MS: "15min" });
       expect(result.status).toBe(1);
       expect(result.stderr).toContain("CHECK_LOCK_WAIT_MS");
       expect(result.stdout).not.toContain("ran");
@@ -615,7 +603,7 @@ describe("check-lock serialises the checks", () => {
         lock,
         JSON.stringify({ pid: process.pid, startedAt: Date.now() - 11 * 60_000 }),
       );
-      const result = run(lock, ["echo", "ran"], { CHECK_LOCK_WAIT_MS: "1500" });
+      const result = run(lock, [SCRIPT, "echo", "ran"], { CHECK_LOCK_WAIT_MS: "1500" });
       expect(result.status).toBe(1);
       expect(result.stdout).not.toContain("ran");
     },
@@ -636,7 +624,7 @@ describe("check-lock wraps a consumer's build", () => {
       const finished = new Promise((go) => check.on("close", go));
       await until(() => existsSync(lock), "the lock");
 
-      const build = run(lock, ["sh", "-c", `test -e ${done} && echo built`]);
+      const build = run(lock, [SCRIPT, "sh", "-c", `test -e ${done} && echo built`]);
       await finished;
       expect(build.status).toBe(0);
       expect(build.stdout).toBe("built\n");
@@ -649,7 +637,9 @@ describe("check-lock wraps a consumer's build", () => {
     "runs a build nested inside a locked command at once",
     () => {
       const lock = lockPath();
-      const result = run(lock, ["bun", SCRIPT, "echo", "built"], { CHECK_LOCK_WAIT_MS: "1500" });
+      const result = run(lock, [SCRIPT, "bun", SCRIPT, "echo", "built"], {
+        CHECK_LOCK_WAIT_MS: "1500",
+      });
       expect(result.status).toBe(0);
       expect(result.stdout).toBe("built\n");
     },
@@ -661,7 +651,7 @@ describe("check-lock wraps a consumer's build", () => {
     () => {
       const lock = lockPath();
       heldBy(lock, process.pid);
-      const result = run(lock, ["echo", "built"], {
+      const result = run(lock, [SCRIPT, "echo", "built"], {
         CHECK_LOCK_WAIT_MS: "1500",
         SCAFFOLDING_LOCKED: `${lock}.other`,
       });
@@ -674,11 +664,11 @@ describe("check-lock wraps a consumer's build", () => {
   // Killing check-lock alone left the build running beside a lock whose dead holder read as stale,
   // and a terminal's Ctrl-C ended check-lock before a build still shutting down had exited.
   it.each([
-    ["a kill of check-lock alone", "SIGTERM", false, 1],
-    ["a Ctrl-C to the whole process group", "SIGINT", true, -1],
+    { how: "a kill of check-lock alone", signal: "SIGTERM", group: false, target: 1 },
+    { how: "a Ctrl-C to the whole process group", signal: "SIGINT", group: true, target: -1 },
   ] as const)(
-    "holds the lock until the build has exited after %s",
-    async (how, signal, group, target) => {
+    "holds the lock until the build has exited after $how",
+    async ({ signal, group, target }) => {
       const lock = lockPath();
       const pidFile = `${lock}.child`;
       // The build sits under a shell, as in `check-lock sh -c 'cd catalog && astro build'`, and
@@ -693,7 +683,10 @@ describe("check-lock wraps a consumer's build", () => {
       const finished = new Promise<NodeJS.Signals | null>((go) =>
         check.on("close", (_, how) => go(how)),
       );
-      await untilFile(pidFile, (text) => text.endsWith("\n"), "the build's pid");
+      await until(
+        () => fileReady(pidFile, (text) => text.endsWith("\n")),
+        `the build's pid at ${pidFile}`,
+      );
       const child = Number(readFileSync(pidFile, "utf8"));
       const holderPid = check.pid;
       assert(holderPid, "check-lock should have started");
@@ -737,13 +730,16 @@ describe("check-lock wraps a consumer's build", () => {
         stdio: "ignore",
         detached: true,
       });
-      await untilFile(lock, (text) => text.includes("group"), "the command's group in the lock");
+      await until(
+        () => fileReady(lock, (text) => text.includes("group")),
+        `the command's group in the lock at ${lock}`,
+      );
       expect(readFileSync(lock, "utf8")).toContain('"group"');
       // Reaped first: a zombie holder would read as live through its pid alone.
       const reaped = new Promise((go) => check.on("close", go));
       process.kill(-check.pid!, "SIGKILL");
       await reaped;
-      const next = run(lock, ["sh", "-c", `test -e ${done} && echo built`], {
+      const next = run(lock, [SCRIPT, "sh", "-c", `test -e ${done} && echo built`], {
         CHECK_LOCK_WAIT_MS: "15000",
       });
       expect(next.status).toBe(0);
@@ -762,13 +758,16 @@ describe("check-lock wraps a consumer's build", () => {
         stdio: "ignore",
         detached: true,
       });
-      await untilFile(lock, (text) => text.includes("group"), "the command's group in the lock");
+      await until(
+        () => fileReady(lock, (text) => text.includes("group")),
+        `the command's group in the lock at ${lock}`,
+      );
       const { group } = JSON.parse(readFileSync(lock, "utf8")) as { group: number };
       const reaped = new Promise((go) => check.on("close", go));
       process.kill(-check.pid!, "SIGKILL");
       await reaped;
       try {
-        const next = run(lock, ["echo", "ran"], { CHECK_LOCK_WAIT_MS: "10000" });
+        const next = run(lock, [SCRIPT, "echo", "ran"], { CHECK_LOCK_WAIT_MS: "10000" });
         expect(next.stdout).toContain("ran");
       } finally {
         process.kill(-group, "SIGKILL");
@@ -790,13 +789,16 @@ describe("check-lock wraps a consumer's build", () => {
         { env: { ...process.env, CHECK_LOCK: lock }, stdio: "ignore", detached: true },
       );
       await until(() => existsSync(ready), "the build's trap");
-      await untilFile(lock, (text) => text.includes("group"), "the command's group in the lock");
+      await until(
+        () => fileReady(lock, (text) => text.includes("group")),
+        `the command's group in the lock at ${lock}`,
+      );
       check.kill("SIGTERM");
       await until(() => readFileSync(lock, "utf8").includes("signalled"), "the signal in the lock");
       const reaped = new Promise((go) => check.on("close", go));
       check.kill("SIGKILL");
       await reaped;
-      const next = run(lock, ["sh", "-c", `test -e ${done} && echo built`], {
+      const next = run(lock, [SCRIPT, "sh", "-c", `test -e ${done} && echo built`], {
         CHECK_LOCK_WAIT_MS: "15000",
       });
       expect(next.stdout).toBe("built\n");
@@ -815,7 +817,7 @@ describe("check-lock wraps a consumer's build", () => {
         { env: { ...process.env, CHECK_LOCK: lock }, stdio: "ignore" },
       );
       const finished = new Promise((go) => check.on("close", go));
-      await untilFile(pidFile, (text) => text.endsWith("\n"), "the pid");
+      await until(() => fileReady(pidFile, (text) => text.endsWith("\n")), `the pid at ${pidFile}`);
       process.kill(Number(readFileSync(pidFile, "utf8")), "SIGTERM");
       await finished;
       expect(existsSync(lock)).toBe(false);
@@ -836,7 +838,7 @@ describe("check-lock wraps a consumer's build", () => {
         { env: { ...process.env, CHECK_LOCK: lock }, stdio: "ignore" },
       );
       const finished = new Promise((go) => check.on("close", go));
-      await untilFile(pidFile, (text) => text.endsWith("\n"), "the pid");
+      await until(() => fileReady(pidFile, (text) => text.endsWith("\n")), `the pid at ${pidFile}`);
       const sent = Date.now();
       process.kill(Number(readFileSync(pidFile, "utf8")), "SIGTERM");
       await finished;
@@ -887,7 +889,7 @@ describe("check-lock wraps a consumer's build", () => {
   );
 
   it("reads a CHECK_LOCK_RUN_S past setTimeout's range as a long bound, not as none left", () => {
-    const result = run(lockPath(), ["sh", "-c", "sleep 1; echo ran"], {
+    const result = run(lockPath(), [SCRIPT, "sh", "-c", "sleep 1; echo ran"], {
       CHECK_LOCK_RUN_S: "2147484",
     });
     expect(result.status).toBe(0);
@@ -895,7 +897,7 @@ describe("check-lock wraps a consumer's build", () => {
   });
 
   it("names a command that cannot start", () => {
-    const result = run(lockPath(), ["no-such-command-here"]);
+    const result = run(lockPath(), [SCRIPT, "no-such-command-here"]);
     expect(result.status).toBe(1);
     expect(result.stdout).toContain("not found");
     expect(result.stdout).not.toContain("output above");
@@ -929,7 +931,7 @@ describe("check-lock wraps a consumer's build", () => {
       }));
     `,
     );
-    const result = run(lock, [...args], {}, preload);
+    const result = run(lock, ["--preload", preload, SCRIPT, ...args]);
     expect(result.signal).toBe("SIGTERM");
     expect(result.stderr).toBe("");
     expect(result.stdout).toMatch(output);
@@ -941,13 +943,13 @@ describe("check-lock fails open", () => {
   it("reclaims a lock whose holder is gone", () => {
     const lock = lockPath();
     heldBy(lock, 999_999);
-    expect(run(lock, ["echo", "ran"]).stdout).toContain("ran");
+    expect(run(lock, [SCRIPT, "echo", "ran"]).stdout).toContain("ran");
   });
 
   it.skipIf(process.getuid?.() === 0)("reads a live holder of another user as live", () => {
     const lock = lockPath();
     heldBy(lock, 1);
-    const result = run(lock, ["echo", "ran"], { CHECK_LOCK_WAIT_MS: "1500" });
+    const result = run(lock, [SCRIPT, "echo", "ran"], { CHECK_LOCK_WAIT_MS: "1500" });
     expect(result.status).toBe(1);
     expect(result.stdout).not.toContain("ran");
   });
@@ -959,7 +961,7 @@ describe("check-lock fails open", () => {
       heldBy(lock, 999_999);
       const claim = `${lock}.reclaim-${createHash("sha1").update(readFileSync(lock)).digest("hex")}.0`;
       writeFileSync(claim, "999998");
-      const result = run(lock, ["echo", "ran"], { CHECK_LOCK_WAIT_MS: "6000" });
+      const result = run(lock, [SCRIPT, "echo", "ran"], { CHECK_LOCK_WAIT_MS: "6000" });
       expect(result.stdout).toContain("ran");
     },
     limit(30_000),
@@ -973,7 +975,7 @@ describe("check-lock fails open", () => {
       heldBy(lock, 999_999);
       const claim = `${lock}.reclaim-${createHash("sha1").update(readFileSync(lock)).digest("hex")}.0`;
       writeFileSync(claim, String(process.pid));
-      const result = run(lock, ["echo", "ran"], { CHECK_LOCK_WAIT_MS: "1500" });
+      const result = run(lock, [SCRIPT, "echo", "ran"], { CHECK_LOCK_WAIT_MS: "1500" });
       expect(result.stdout).not.toContain("ran");
       expect(existsSync(claim)).toBe(true);
     },
@@ -983,7 +985,7 @@ describe("check-lock fails open", () => {
   it("reclaims a lock it cannot parse", () => {
     const lock = lockPath();
     writeFileSync(lock, "not json");
-    expect(run(lock, ["echo", "ran"]).stdout).toContain("ran");
+    expect(run(lock, [SCRIPT, "echo", "ran"]).stdout).toContain("ran");
   });
 
   it("reports a queue ticket lookup error and still takes the lock", () => {
@@ -992,7 +994,7 @@ describe("check-lock fails open", () => {
     mkdirSync(queue);
     const name = "000000000000001-999999";
     symlinkSync(name, join(queue, name));
-    const result = run(lock, ["sh", "-c", 'test -f "$1" && echo ran', "sh", lock]);
+    const result = run(lock, [SCRIPT, "sh", "-c", 'test -f "$1" && echo ran', "sh", lock]);
     expect(result.status).toBe(0);
     expect(result.stderr.trim().split("\n")).toEqual([
       expect.stringMatching(/\[check-lock\] queue failed .*ELOOP.*continuing without queue order/),
@@ -1020,12 +1022,16 @@ describe("check-lock fails open", () => {
         }));
       `,
       );
-      const result = run(
-        lock,
-        ["sh", "-c", 'test -f "$1" && echo ran; exit 7', "sh", lock],
-        {},
+      const result = run(lock, [
+        "--preload",
         preload,
-      );
+        SCRIPT,
+        "sh",
+        "-c",
+        'test -f "$1" && echo ran; exit 7',
+        "sh",
+        lock,
+      ]);
       expect(result.status).toBe(7);
       expect(result.stderr.trim().split("\n")).toEqual([
         expect.stringMatching(
@@ -1058,12 +1064,16 @@ describe("check-lock fails open", () => {
         }));
       `,
       );
-      const result = run(
-        lock,
-        ["sh", "-c", 'sleep 0.2; test -f "$1" && echo ran; exit 7', "sh", lock],
-        {},
+      const result = run(lock, [
+        "--preload",
         preload,
-      );
+        SCRIPT,
+        "sh",
+        "-c",
+        'sleep 0.2; test -f "$1" && echo ran; exit 7',
+        "sh",
+        lock,
+      ]);
       expect(result.status).toBe(7);
       expect(result.stderr.trim().split("\n")).toEqual([
         expect.stringMatching(/\[check-lock\] lock annotation failed .*EISDIR.*command continues/),
@@ -1078,7 +1088,7 @@ describe("check-lock fails open", () => {
     const lock = lockPath();
     const folder = dirname(lock);
     try {
-      const result = run(lock, ["sh", "-c", 'chmod a-w "$1" && echo ran', "sh", folder]);
+      const result = run(lock, [SCRIPT, "sh", "-c", 'chmod a-w "$1" && echo ran', "sh", folder]);
       expect(result.status).toBe(0);
       expect(result.stderr.trim().split("\n")).toEqual([
         expect.stringMatching(
@@ -1094,7 +1104,7 @@ describe("check-lock fails open", () => {
 
   it("runs immediately when the lock path is unusable", () => {
     const started = Date.now();
-    const result = run("/nonexistent-directory/impossible.lock", ["echo", "ran"]);
+    const result = run("/nonexistent-directory/impossible.lock", [SCRIPT, "echo", "ran"]);
     expect(result.status).toBe(0);
     expect(result.stdout).toBe("ran\n");
     expect(result.stderr).toMatch(/\[check-lock\] lock unusable .*running "echo ran" unserialised/);
@@ -1104,7 +1114,7 @@ describe("check-lock fails open", () => {
   it("reports an unexpected acquisition error and runs without the lock", () => {
     const loop = join(dirname(lockPath()), "loop");
     symlinkSync("loop", loop);
-    const result = run(join(loop, "check.lock"), ["sh", "-c", "echo ran; exit 7"]);
+    const result = run(join(loop, "check.lock"), [SCRIPT, "sh", "-c", "echo ran; exit 7"]);
     expect(result.status).toBe(7);
     expect(result.stderr.trim().split("\n")).toEqual([
       expect.stringMatching(/\[check-lock\] lock unusable .*ELOOP.*unserialised/),
