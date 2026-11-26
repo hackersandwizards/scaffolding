@@ -43,54 +43,69 @@ export function extractMarkupText(name: string, text: string): string {
   return decodeEntities(`${spaced}\n${blocked}`);
 }
 
-function inflateZipPayload(name: string, method: number, raw: Buffer): Buffer | string {
+const DAMAGED_ZIP = "damaged zip archive";
+
+function zipDirectoryEntry(data: Buffer, offset: number) {
+  if (offset + 46 > data.length) return DAMAGED_ZIP;
+  if (data.readUInt32LE(offset) !== 0x02014b50) return "damaged zip directory";
+  const nameStart = offset + 46;
+  const nameEnd = nameStart + data.readUInt16LE(offset + 28);
+  const next = nameEnd + data.readUInt16LE(offset + 30) + data.readUInt16LE(offset + 32);
+  if (next > data.length) return DAMAGED_ZIP;
+  return {
+    name: data.toString("utf8", nameStart, nameEnd),
+    flags: data.readUInt16LE(offset + 8),
+    method: data.readUInt16LE(offset + 10),
+    size: data.readUInt32LE(offset + 20),
+    local: data.readUInt32LE(offset + 42),
+    next,
+  };
+}
+
+function inflateZipBody(raw: Buffer): Buffer | string {
+  try {
+    return inflateRawSync(raw);
+  } catch (error) {
+    if (error instanceof Error) {
+      const { code } = error as NodeJS.ErrnoException;
+      if (code === "Z_DATA_ERROR" || code === "Z_BUF_ERROR")
+        return `${DAMAGED_ZIP} (${error.message})`;
+    }
+    throw error;
+  }
+}
+
+function zipEntryBody(data: Buffer, entry: Exclude<ReturnType<typeof zipDirectoryEntry>, string>) {
+  const { name, flags, method, size, local } = entry;
+  if (flags & 1) return `${name} is encrypted`;
+  if (size === 0xffffffff || local === 0xffffffff) return "zip64 archive";
+  if (local + 30 > data.length) return DAMAGED_ZIP;
+  const from = local + 30 + data.readUInt16LE(local + 26) + data.readUInt16LE(local + 28);
+  if (from + size > data.length) return DAMAGED_ZIP;
+  const raw = data.subarray(from, from + size);
   if (method === 0) return raw;
-  if (method === 8) return inflateRawSync(raw);
+  if (method === 8) return inflateZipBody(raw);
   return `${name} uses compression method ${method}`;
 }
 
-function readCentralDirectoryEntry(
-  data: Buffer,
-  at: number,
-): { nextAt: number; entry?: ZipEntry; error?: string } {
-  if (data.readUInt32LE(at) !== 0x02014b50) return { nextAt: at, error: "damaged zip directory" };
-  const flags = data.readUInt16LE(at + 8);
-  const method = data.readUInt16LE(at + 10);
-  const size = data.readUInt32LE(at + 20);
-  const nameLength = data.readUInt16LE(at + 28);
-  const name = data.toString("utf8", at + 46, at + 46 + nameLength);
-  const local = data.readUInt32LE(at + 42);
-  const nextAt = at + 46 + nameLength + data.readUInt16LE(at + 30) + data.readUInt16LE(at + 32);
-  if (name.endsWith("/")) return { nextAt };
-  if (flags & 1) return { nextAt, error: `${name} is encrypted` };
-  if (size === 0xffffffff || local === 0xffffffff) return { nextAt, error: "zip64 archive" };
-  const from = local + 30 + data.readUInt16LE(local + 26) + data.readUInt16LE(local + 28);
-  const content = inflateZipPayload(name, method, data.subarray(from, from + size));
-  if (typeof content === "string") return { nextAt, error: content };
-  return { nextAt, entry: { name, data: content } };
-}
-
-function readZipEntries(data: Buffer): ZipEntry[] | string {
-  const end = data.lastIndexOf(Buffer.from("PK\x05\x06", "latin1"));
-  if (end < 0) return "no zip directory";
-  const entries: ZipEntry[] = [];
-  let at = data.readUInt32LE(end + 16);
-  for (let n = data.readUInt16LE(end + 10); n > 0; n--) {
-    const step = readCentralDirectoryEntry(data, at);
-    if (step.error) return step.error;
-    if (step.entry) entries.push(step.entry);
-    at = step.nextAt;
-  }
-  return entries;
-}
-
+/** The entries of a zip archive (Office, OpenDocument, iWork, .zip), or why it cannot be read. */
 /** The entries of a zip archive (Office, OpenDocument, iWork, .zip), or why it cannot be read. */
 export function unzipArchive(data: Buffer): ZipEntry[] | string {
-  try {
-    return readZipEntries(data);
-  } catch (error) {
-    return `damaged zip archive (${(error as Error).message})`;
+  const end = data.lastIndexOf(Buffer.from("PK\x05\x06", "latin1"));
+  if (end < 0) return "no zip directory";
+  if (end + 22 > data.length) return DAMAGED_ZIP;
+  const entries: ZipEntry[] = [];
+  let offset = data.readUInt32LE(end + 16);
+  for (let n = data.readUInt16LE(end + 10); n > 0; n--) {
+    const entry = zipDirectoryEntry(data, offset);
+    if (typeof entry === "string") return entry;
+    offset = entry.next;
+    if (entry.name.endsWith("/")) continue;
+    const contents = zipEntryBody(data, entry);
+    if (typeof contents === "string") return contents;
+    entries.push({ name: entry.name, data: contents });
   }
+  return entries;
 }
 
 // "page num type width ..." under two header lines, one row per image.

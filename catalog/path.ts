@@ -27,7 +27,8 @@ export function catalogPath({
 export const decodeCatalogPath = (s: string) => {
   try {
     return decodeURIComponent(s);
-  } catch {
+  } catch (error) {
+    if (!(error instanceof URIError)) throw error;
     return "";
   }
 };

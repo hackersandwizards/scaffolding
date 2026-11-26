@@ -31,16 +31,19 @@ function readLock(lockFile: string, forReclaim = false): string | undefined {
 }
 
 function parseHolder(raw: string | undefined): Holder | undefined {
+  if (raw === undefined) return undefined;
+  let holder: Holder | null;
   try {
-    const holder = JSON.parse(raw ?? "") as Holder;
-    if (typeof holder.pid !== "number") return undefined;
-    // kill(-1) and kill(0) address every process or this one's group, never the command's.
-    if (!(typeof holder.group === "number" && Number.isInteger(holder.group) && holder.group > 1))
-      delete holder.group;
-    return holder;
-  } catch {
-    return undefined;
+    holder = JSON.parse(raw) as Holder | null;
+  } catch (error) {
+    if (error instanceof SyntaxError) return undefined;
+    throw error;
   }
+  if (typeof holder?.pid !== "number") return undefined;
+  // kill(-1) and kill(0) address every process or this one's group, never the command's.
+  if (holder.group === undefined || !Number.isInteger(holder.group) || holder.group <= 1)
+    delete holder.group;
+  return holder;
 }
 
 export const readHolder = (lockFile: string): Holder | undefined => parseHolder(readLock(lockFile));

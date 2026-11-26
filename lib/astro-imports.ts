@@ -17,7 +17,7 @@ import {
   type GraphResult,
   type VisitImports,
 } from "./import-scan.ts";
-import { git, isObject, type Finding } from "./repo.ts";
+import { git, isObject, resolveModuleIfAvailable, type Finding } from "./repo.ts";
 
 export function astroFrontmatterCode(source: string, ast: unknown) {
   if (!isObject(ast)) throw new Error("cannot read the Astro syntax tree");
@@ -120,12 +120,13 @@ export async function checkAstroImports(
   files: string[],
   visit?: VisitImports,
 ): Promise<GraphResult> {
-  const compiler = await import("@astrojs/compiler-rs").catch(() => undefined);
-  if (!compiler)
+  if (resolveModuleIfAvailable("@astrojs/compiler-rs", import.meta.dir) === undefined)
     return {
       complete: false,
       findings: [cycleFinding("cannot load @astrojs/compiler-rs: run bun install")],
     };
+
+  const compiler = await import("@astrojs/compiler-rs");
 
   const cache = prepareCyclesCache(root);
   if (cache === undefined)

@@ -2,7 +2,7 @@ import { spawnSync } from "node:child_process";
 import { closeSync, openSync, readFileSync, readSync } from "node:fs";
 import { posix } from "node:path";
 
-import { pathChunks } from "./repo.ts";
+import { pathChunks, throwGitCommandFailure } from "./repo.ts";
 
 export const shellExtension = /\.(?:sh|bash)$/;
 export const otherScript = /\.(?:[cm]?[jt]sx?|py[wz]?|rb|pl|php|lua|fish|zsh|ps1)$/;
@@ -157,7 +157,7 @@ export function gitShellShebangs(root: string, candidates: string[], ref?: strin
       { cwd: root, encoding: "utf8", maxBuffer: Infinity },
     );
     if (r.status === 1) continue;
-    if (r.status !== 0) throw new Error("git grep could not read shell shebangs");
+    if (r.status !== 0) throwGitCommandFailure(r, "git grep could not read shell shebangs");
     scripts.push(...matchGitShellShebangs(r.stdout, wanted, ref));
   }
   return scripts;

@@ -17,9 +17,11 @@ export const rejection = (promise: Promise<unknown>): Promise<string> => {
 };
 
 function resolvedJson(value: unknown): string | undefined {
+  if (typeof value === "bigint") return undefined;
   try {
     return JSON.stringify(value);
-  } catch {
-    return undefined;
+  } catch (error) {
+    if (error instanceof TypeError) return undefined;
+    throw error;
   }
 }

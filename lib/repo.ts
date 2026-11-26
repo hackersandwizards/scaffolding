@@ -162,10 +162,29 @@ export type Finding = {
   name?: true;
 };
 
+export class GitCommandError extends Error {}
+
+export function throwGitCommandFailure(
+  result: { status: number | null; error?: Error },
+  message: string,
+): never {
+  if (result.status === null) throw result.error ?? new Error(message);
+  throw new GitCommandError(message);
+}
+
 export function git(args: string[], cwd = process.cwd(), input?: string): Buffer {
   const r = spawnSync("git", args, { cwd, input, maxBuffer: Infinity });
-  if (r.status !== 0) throw new Error(`git ${args.join(" ")}: ${r.stderr}`);
+  if (r.status !== 0) throwGitCommandFailure(r, `git ${args.join(" ")}: ${r.stderr}`);
   return r.stdout;
+}
+
+export function resolveModuleIfAvailable(specifier: string, directory: string): string | undefined {
+  try {
+    return Bun.resolveSync(specifier, directory);
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException)?.code !== "ERR_MODULE_NOT_FOUND") throw error;
+    return undefined;
+  }
 }
 
 // Chunked: a commit touching most of a repository passes more path bytes than ARG_MAX holds.

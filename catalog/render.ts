@@ -132,8 +132,10 @@ if(r.bottom>f.clientHeight)f.style.height=r.bottom+"px";
 f.style.transform="translate("+((p.clientWidth-r.width*s)/2-r.left*s)+"px,"+((p.clientHeight-r.height*s)/2-r.top*s)+"px) scale("+s+")";
 around(own?own.parentElement:c);};
 const all=()=>document.querySelectorAll(".hw-catalog-preview").forEach(fit);all();
-const load=(f)=>{const u=f.dataset.src;if(!u)return;delete f.dataset.src;if(!f.hasAttribute("data-srcdoc")){f.src=u;return;}
-fetch(new URL(u,location.href)).then((r)=>r.ok&&r.text().then((h)=>{f.srcdoc=h.replace(/<head\b[^>]*>/i,(t)=>t+'<base href="'+r.url+'">');})).catch(()=>{});};
+const load=async(f)=>{const u=f.dataset.src;if(!u)return;delete f.dataset.src;if(!f.hasAttribute("data-srcdoc")){f.src=u;return;}
+const url=new URL(u,location.href);let r,h;
+try{r=await fetch(url);if(!r.ok)return;h=await r.text();}catch(error){if(!(error instanceof TypeError))throw error;return;}
+f.srcdoc=h.replace(/<head\b[^>]*>/i,(t)=>t+'<base href="'+r.url+'">');};
 let started=0;const start=()=>{if(started++)return;const frames=document.querySelectorAll(".hw-catalog-preview iframe[data-src]");if(document.hidden){frames.forEach(load);return;}const m=document.querySelector("main"),root=m&&m.scrollHeight>m.clientHeight?m:null;
 const near=new IntersectionObserver((seen)=>{for(const e of seen)if(e.isIntersecting){near.unobserve(e.target);load(e.target);}},{root,rootMargin:"200px 0px"});
 frames.forEach((f)=>near.observe(f));};

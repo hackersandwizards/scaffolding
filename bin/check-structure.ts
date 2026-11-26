@@ -54,9 +54,9 @@ const add = (path: string, message: string, text = ""): Finding => {
 const at = (path: string) => join(root, path);
 const exists = (path: string) => {
   try {
-    lstatSync(at(path));
-    return true;
-  } catch {
+    return lstatSync(at(path), { throwIfNoEntry: false }) !== undefined;
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException)?.code !== "ENOTDIR") throw error;
     return false;
   }
 };

@@ -21,13 +21,31 @@ import { createHash } from "node:crypto";
 import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { setTimeout as delay } from "node:timers/promises";
-import { afterAll, assert, describe, expect, it } from "vitest";
+import { afterAll, assert, describe, expect, it, vi } from "vitest";
 import { defined } from "../lib/defined.ts";
 import { jsonObject } from "../lib/json.ts";
 import { limit } from "@hackersandwizards/scaffolding/test-timeout";
 import { fileReady, pathReady, until, untilBefore } from "./wait.ts";
 
 const SCRIPT = resolve(import.meta.dirname, "../template/.githooks/check-lock.ts");
+
+function probeBuildProcess(pid: number): boolean {
+  try {
+    process.kill(pid, 0);
+    return true;
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException)?.code !== "ESRCH") throw error;
+    return false;
+  }
+}
+
+it("unexpected build liveness failure surfaces", () => {
+  using kill = vi.spyOn(process, "kill").mockImplementation(() => {
+    throw new Error("build liveness fault");
+  });
+  expect(() => probeBuildProcess(process.pid)).toThrow("build liveness fault");
+  expect(kill).toHaveBeenCalledWith(process.pid, 0);
+});
 
 const roots: string[] = [];
 afterAll(() => {
@@ -694,22 +712,19 @@ describe("check-lock wraps a consumer's build", () => {
       process.kill(target * holderPid, signal);
       // A regression must fail here, not hang the run or leave the build behind.
       const died = await Promise.race([finished, Bun.sleep(10_000).then(() => "hung")]);
-      const alive = (() => {
-        try {
-          process.kill(child, 0);
-          return true;
-        } catch {
-          return false;
-        }
-      })();
-      for (const pid of [holderPid, child]) {
-        try {
-          process.kill(pid, "SIGKILL");
-        } catch (error) {
-          assert(
-            (error as NodeJS.ErrnoException).code === "ESRCH",
-            `could not clean up pid ${pid}: ${String(error)}`,
-          );
+      let alive: boolean;
+      try {
+        alive = probeBuildProcess(child);
+      } finally {
+        for (const pid of [holderPid, child]) {
+          try {
+            process.kill(pid, "SIGKILL");
+          } catch (error) {
+            assert(
+              (error as NodeJS.ErrnoException).code === "ESRCH",
+              `could not clean up pid ${pid}: ${String(error)}`,
+            );
+          }
         }
       }
       expect(alive).toBe(false);

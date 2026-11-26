@@ -1,7 +1,7 @@
 import { once } from "node:events";
 import { createServer, type IncomingMessage, type ServerResponse } from "node:http";
 import { join } from "node:path";
-import { assert, expect, test } from "vitest";
+import { assert, expect, test, vi } from "vitest";
 
 function runSiteCommand(entry: string[], load = "0") {
   const child = Bun.spawn([process.execPath, "--no-env-file", ...entry], {
@@ -23,6 +23,24 @@ function bunServer(code: string): string {
 const serverCommand = bunServer(
   'console.error("server stderr"); Bun.serve({ hostname: process.env.HOST, port: Number(process.env.PORT), fetch: () => new Response(String(process.pid)) });',
 );
+
+function siteTestProcessAlive(pid: number): boolean {
+  try {
+    return process.kill(pid, 0);
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException)?.code !== "ESRCH") throw error;
+    return false;
+  }
+}
+
+test("server cleanup polling surfaces an unexpected process probe error", () => {
+  const error = new Error("unexpected process probe error");
+  using kill = vi.spyOn(process, "kill").mockImplementationOnce(() => {
+    throw error;
+  });
+  expect(() => siteTestProcessAlive(process.pid)).toThrow(error);
+  expect(kill).toHaveBeenCalledWith(process.pid, 0);
+});
 
 test.each([
   { code: 0, flags: ["--timeout", "120"], output: "" },
@@ -56,14 +74,7 @@ test.each([
     expect(url).toMatch(/^http:\/\/127\.0\.0\.1:\d+$/);
     expect(repeated).toBe(`a=${url}&b=${url}`);
     expect(pid).toBeGreaterThan(0);
-    const alive = () => {
-      try {
-        return process.kill(pid, 0);
-      } catch {
-        return false;
-      }
-    };
-    await expect.poll(alive).toBe(false);
+    await expect.poll(() => siteTestProcessAlive(pid)).toBe(false);
   },
 );
 
@@ -109,15 +120,7 @@ test.each([
   expect(performance.now() - started).toBeLessThan(3200);
   const pid = Number(stdout.trim());
   expect(pid).toBeGreaterThan(0);
-  await expect
-    .poll(() => {
-      try {
-        return process.kill(pid, 0);
-      } catch {
-        return false;
-      }
-    })
-    .toBe(false);
+  await expect.poll(() => siteTestProcessAlive(pid)).toBe(false);
 });
 
 test("with-server returns 1 when the check dies on a signal", async () => {

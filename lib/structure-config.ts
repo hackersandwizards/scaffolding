@@ -1,8 +1,8 @@
-import { existsSync } from "node:fs";
+import { statSync } from "node:fs";
 import { basename, join, posix } from "node:path";
 import type { Node } from "typescript";
 import { placedSteps } from "./gate-config.ts";
-import { isObject, isReason, type Package } from "./repo.ts";
+import { isObject, isReason, resolveModuleIfAvailable, type Package } from "./repo.ts";
 
 export type StructureHit = { path: string; message: string; text: string };
 export type SkeletonManifest = {
@@ -78,16 +78,34 @@ export function mergeSkeletonEntries(
   return { invalidParents, differ };
 }
 
+const isVitestBuildMessage = (error: unknown): boolean =>
+  error instanceof Error && error.name === "BuildMessage";
+
+function isVitestParseFailure(error: unknown): boolean {
+  if (isVitestBuildMessage(error)) return true;
+  return (
+    error instanceof AggregateError &&
+    error.errors.length > 0 &&
+    error.errors.every(isVitestBuildMessage)
+  );
+}
+
+function transpileVitestConfig(config: string): string | undefined {
+  const transpiler = new Bun.Transpiler({ loader: "ts" });
+  try {
+    return transpiler.transformSync(config);
+  } catch (error) {
+    if (!isVitestParseFailure(error)) throw error;
+    return undefined;
+  }
+}
+
 export function usesSharedVitest(config: string): boolean {
   const specifier = "@hackersandwizards/scaffolding/vitest";
   if (!config.includes(specifier)) return false;
   // Read the static export forms after Bun strips comments and TypeScript syntax.
-  let js: string;
-  try {
-    js = new Bun.Transpiler({ loader: "ts" }).transformSync(config);
-  } catch {
-    return false;
-  }
+  const js = transpileVitestConfig(config);
+  if (js === undefined) return false;
   if (/^export \{ default \} from "@hackersandwizards\/scaffolding\/vitest";$/m.test(js))
     return true;
   const imported = js.match(
@@ -167,9 +185,11 @@ export function testTimeoutConfigured(
 export async function loadPrettier(root: string): Promise<typeof import("prettier") | undefined> {
   // Prettier's own resolution, so the rules count from any config form, the shared one included.
   const prettierEntry = join(root, "node_modules/prettier/index.mjs");
-  const loaded: unknown = await import(
-    existsSync(prettierEntry) ? prettierEntry : "prettier"
-  ).catch(() => undefined);
+  const entry = statSync(prettierEntry, { throwIfNoEntry: false })?.isFile()
+    ? prettierEntry
+    : resolveModuleIfAvailable("prettier", import.meta.dir);
+  if (entry === undefined) return undefined;
+  const loaded: unknown = await import(entry);
   const isPrettier = (module: unknown): module is typeof import("prettier") =>
     isObject(module) &&
     typeof module.resolveConfig === "function" &&

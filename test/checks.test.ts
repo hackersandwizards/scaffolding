@@ -1,5 +1,15 @@
+import {
+  afterAll,
+  afterEach,
+  assert,
+  beforeAll,
+  beforeEach,
+  describe,
+  expect,
+  test,
+  vi,
+} from "vitest";
 import { CheckAllowEntries } from "../lib/allow-entries.ts";
-import { afterAll, afterEach, assert, beforeAll, beforeEach, describe, expect, test } from "vitest";
 import { spawn, spawnSync } from "node:child_process";
 import { createHash } from "node:crypto";
 import {
@@ -100,6 +110,38 @@ test("fixture cleanup propagates filesystem errors besides disappearance", () =>
   symlinkSync(name, join(dir, name));
   expect(() => sweepFixtures(dir)).toThrow(/ELOOP/);
 });
+async function requestBrowserDebugPage(port: number, url: string) {
+  let response: Response | undefined;
+  try {
+    response = await fetch(`http://127.0.0.1:${port}/json/new?${url}`, { method: "PUT" });
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException)?.code !== "ECONNREFUSED") throw error;
+  }
+  if (response?.ok) return response;
+  await Bun.sleep(100);
+}
+
+async function browserDebugTarget(port: number, url: string) {
+  for (let i = 0; i < 100; i++) {
+    const response = await requestBrowserDebugPage(port, url);
+    if (!response) continue;
+    const target = member(await response.json(), "webSocketDebuggerUrl");
+    if (typeof target === "string") return target;
+  }
+  throw new Error("Chrome opened no page to attach to");
+}
+
+test("unexpected browser target failure surfaces", async () => {
+  using request = vi
+    .spyOn(globalThis, "fetch")
+    .mockResolvedValue(Response.json({ webSocketDebuggerUrl: "ws://example.test" }))
+    .mockRejectedValueOnce(new Error("debug target fault"));
+  expect(await rejection(browserDebugTarget(1, "about:blank"))).toContain("debug target fault");
+  expect(request).toHaveBeenCalledWith("http://127.0.0.1:1/json/new?about:blank", {
+    method: "PUT",
+  });
+});
+
 /** A headless Chrome on a free debugging port with one tab open at `url`, driven over CDP. The
  * unused debugging pipe on fds 3 and 4 closes when this process dies, killed by a signal included,
  * where no `finally` runs, and Chrome quits on that. */
@@ -121,12 +163,7 @@ async function browse(url: string, args: string[] = []) {
   );
   let ws: WebSocket;
   try {
-    let target: unknown;
-    for (let i = 0; i < 100 && typeof target !== "string"; i++)
-      target = await fetch(`http://127.0.0.1:${port}/json/new?${url}`, { method: "PUT" })
-        .then(async (r) => member(await r.json(), "webSocketDebuggerUrl"))
-        .catch(() => new Promise((r) => setTimeout(r, 100)));
-    if (typeof target !== "string") throw new Error("Chrome opened no page to attach to");
+    const target = await browserDebugTarget(port, url);
     ws = new WebSocket(target);
     await new Promise((r) => ws.addEventListener("open", r, { once: true }));
   } catch (e) {

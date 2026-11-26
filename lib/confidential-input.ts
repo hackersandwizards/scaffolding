@@ -1,4 +1,4 @@
-import { isStrings, jsonObject } from "./json.ts";
+import { isObject, isStrings, jsonObject } from "./json.ts";
 
 export function parsePurgedList(text: string) {
   const { salt, hashes } = jsonObject(text);
@@ -19,18 +19,23 @@ export function validTermTokenLimit(value: unknown): value is number {
 }
 
 export const parseTermList = (text: string): TermList | undefined => {
+  let parsed: unknown;
   try {
-    const { built, salt, maxTokens, hashes, never } = jsonObject(text);
-    return isStrings(hashes) &&
-      (never === undefined || isStrings(never)) &&
-      typeof salt === "string" &&
-      validTermTokenLimit(maxTokens)
-      ? { built: typeof built === "string" ? built : undefined, salt, maxTokens, hashes, never }
-      : undefined;
-  } catch {
-    return undefined;
+    parsed = JSON.parse(text);
+  } catch (error) {
+    if (error instanceof SyntaxError) return undefined;
+    throw error;
   }
+  if (!isObject(parsed)) return undefined;
+  const { built, salt, maxTokens, hashes, never } = parsed;
+  return isStrings(hashes) &&
+    (never === undefined || isStrings(never)) &&
+    typeof salt === "string" &&
+    validTermTokenLimit(maxTokens)
+    ? { built: typeof built === "string" ? built : undefined, salt, maxTokens, hashes, never }
+    : undefined;
 };
+
 const ENTITY = new Map([
   ["amp", "&"],
   ["lt", "<"],

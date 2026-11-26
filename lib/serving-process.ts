@@ -46,10 +46,13 @@ export class ServingProcess {
 
   signalGroup(signal: NodeJS.Signals | 0) {
     const pid = this.server.pid;
+    if (pid === undefined) return false;
     try {
-      return pid !== undefined && process.kill(-pid, signal);
-    } catch {
-      return false;
+      return process.kill(-pid, signal);
+    } catch (error) {
+      const code = (error as NodeJS.ErrnoException)?.code;
+      if (code === "ESRCH" || (signal === 0 && code === "EPERM")) return false;
+      throw error;
     }
   }
   stop = () => {

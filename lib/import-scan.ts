@@ -2,7 +2,7 @@ import { existsSync, realpathSync, statSync } from "node:fs";
 import { dirname, isAbsolute, join, relative, resolve, sep } from "node:path";
 import { cruise, type IDependency, type IModule, type ICruiseResult } from "dependency-cruiser";
 import extractTSConfig from "dependency-cruiser/config-utl/extract-ts-config";
-import type { Finding } from "./repo.ts";
+import { resolveModuleIfAvailable, type Finding } from "./repo.ts";
 
 const check = "cycles";
 export const sourceExtension = /\.[cm]?[jt]sx?$/;
@@ -22,11 +22,7 @@ function resolveRelativeImport(root: string, specifier: string, source: string) 
   const directory = dirname(join(root, source));
   const exactPath = resolve(directory, file);
   if (statSync(exactPath, { throwIfNoEntry: false })?.isFile()) return exactPath;
-  try {
-    return Bun.resolveSync(file, directory);
-  } catch {
-    return undefined;
-  }
+  return resolveModuleIfAvailable(file, directory);
 }
 
 export type ResolvedImport = { target: string; specifier: string; system: string };

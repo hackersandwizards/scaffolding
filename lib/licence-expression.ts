@@ -18,43 +18,78 @@ const ALLOWED = new Set([
   "MPL-2.0",
 ]);
 
+type LicenceGroup = {
+  allowedAlternative: boolean;
+  term: boolean;
+  needsOperand: boolean;
+};
+
+const licenceGroup = (): LicenceGroup => ({
+  allowedAlternative: false,
+  term: true,
+  needsOperand: true,
+});
+
+const groupLicenceAllowed = (group: LicenceGroup) => group.allowedAlternative || group.term;
+
+function addLicenceOperand(group: LicenceGroup, allowed: boolean): void {
+  group.term = group.term && allowed;
+  group.needsOperand = false;
+}
+
+function readLicenceOperator(groups: LicenceGroup[], group: LicenceGroup, token: string): boolean {
+  switch (token) {
+    case "AND":
+      group.needsOperand = true;
+      return true;
+    case "OR":
+      group.allowedAlternative = groupLicenceAllowed(group);
+      group.term = true;
+      group.needsOperand = true;
+      return true;
+    case ")": {
+      const parent = groups.at(-2);
+      if (!parent) return false;
+      addLicenceOperand(parent, groupLicenceAllowed(group));
+      groups.pop();
+      return true;
+    }
+    default:
+      return false;
+  }
+}
+
+const licenceIdentifier = (token: string | undefined): token is string =>
+  token !== undefined && !/^(AND|OR|WITH|\(|\))$/.test(token);
+
+function readLicenceAtom(tokens: string[], at: number) {
+  const token = tokens[at];
+  if (!licenceIdentifier(token)) return undefined;
+  if (tokens[at + 1] !== "WITH") return { token, next: at + 1 };
+  if (!licenceIdentifier(tokens[at + 2])) return undefined;
+  return { token, next: at + 3 };
+}
+
 export function licenceAllowed(expression: string): boolean {
   const tokens = expression.match(/\(|\)|[^\s()]+/g) ?? [];
-  let at = 0;
-  const fail = () => {
-    throw new Error(expression);
-  };
-  const atom = (): boolean => {
-    const token = tokens[at++];
-    if (token === "(") {
-      const value = or();
-      if (tokens[at++] !== ")") fail();
-      return value;
-    }
-    if (!token || /^(AND|OR|WITH|\))$/.test(token)) fail();
-    if (tokens[at] === "WITH" && /^(AND|OR|WITH|\(|\))?$/.test(tokens[(at += 2) - 1] ?? "")) fail();
-    return ALLOWED.has(token);
-  };
-  const and = (): boolean => {
-    let value = atom();
-    while (tokens[at] === "AND") {
+  const root = licenceGroup();
+  const groups = [root];
+  for (let at = 0; at < tokens.length;) {
+    const group = groups.at(-1);
+    if (!group) return false;
+    const token = tokens[at];
+    if (!group.needsOperand) {
+      if (!readLicenceOperator(groups, group, token)) return false;
       at++;
-      value = atom() && value;
-    }
-    return value;
-  };
-  const or = (): boolean => {
-    let value = and();
-    while (tokens[at] === "OR") {
+    } else if (token === "(") {
+      groups.push(licenceGroup());
       at++;
-      value = and() || value;
+    } else {
+      const atom = readLicenceAtom(tokens, at);
+      if (!atom) return false;
+      addLicenceOperand(group, ALLOWED.has(atom.token));
+      at = atom.next;
     }
-    return value;
-  };
-  try {
-    const value = or();
-    return at === tokens.length && value;
-  } catch {
-    return false;
   }
+  return groups.length === 1 && !root.needsOperand && groupLicenceAllowed(root);
 }

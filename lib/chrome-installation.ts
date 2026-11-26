@@ -7,11 +7,8 @@ import { basename, dirname, join, relative } from "node:path";
 // hung 15 minutes while gates took its half-unpacked build.
 export const UNPACK_WAIT_MS = 120_000;
 export const writtenAgo = (path: string) => {
-  try {
-    return Date.now() - statSync(path).mtimeMs;
-  } catch {
-    return 0;
-  }
+  const entry = statSync(path, { throwIfNoEntry: false });
+  return entry ? Date.now() - entry.mtimeMs : 0;
 };
 const archivesOf = (build: string, names: string[]) =>
   names.filter((name) => name.startsWith(`${build.slice(build.indexOf("-") + 1)}-`));

@@ -26,15 +26,19 @@ const kindOf = (shell?: boolean) => (shell ? "chrome-headless-shell" : "chrome")
 
 /** The build the puppeteer-core installed where the process runs pins; undefined without one. */
 function pinnedBuild(shell?: boolean): string | undefined {
+  const require = createRequire(join(process.cwd(), "package.json"));
+  let entry: string;
   try {
-    const require = createRequire(join(process.cwd(), "package.json"));
-    const revisions: unknown = require("puppeteer-core/internal/revisions.js");
-    const pinned = isObject(revisions) ? revisions.PUPPETEER_REVISIONS : undefined;
-    const build = isObject(pinned) ? pinned[kindOf(shell)] : undefined;
-    return typeof build === "string" ? build : undefined;
-  } catch {
+    entry = require.resolve("puppeteer-core/internal/revisions.js");
+  } catch (error) {
+    const code = (error as NodeJS.ErrnoException)?.code;
+    if (code !== "MODULE_NOT_FOUND" && code !== "ERR_PACKAGE_PATH_NOT_EXPORTED") throw error;
     return undefined;
   }
+  const revisions: unknown = require(entry);
+  const pinned = isObject(revisions) ? revisions.PUPPETEER_REVISIONS : undefined;
+  const build = isObject(pinned) ? pinned[kindOf(shell)] : undefined;
+  return typeof build === "string" ? build : undefined;
 }
 
 // Pinned: bunx runs the newest published release of an unpinned package.
@@ -48,6 +52,24 @@ const install = (shell?: boolean, path = cache()) => [
   "--format",
   "{{path}}",
 ];
+
+const chromeInstallerFailed = (error: unknown): boolean =>
+  isObject(error) &&
+  (error.code === "ENOENT" ||
+    error.code === "ENOBUFS" ||
+    error.code === "ERR_CHILD_PROCESS_STDIO_MAXBUFFER" ||
+    typeof error.code === "number" ||
+    typeof error.status === "number" ||
+    typeof error.signal === "string");
+
+function runChromeInstaller(executable: string, args: string[]): string | undefined {
+  try {
+    return execFileSync(executable, args, { encoding: "utf-8" });
+  } catch (error) {
+    if (!chromeInstallerFailed(error)) throw error;
+    return undefined;
+  }
+}
 
 const UNPACK_POLL_MS = 500;
 
@@ -100,20 +122,22 @@ function lookup(options: Options) {
   return { key, ...found };
 }
 
+function chromeInstallInputs() {
+  const folder = cache();
+  mkdirSync(folder, { recursive: true });
+  const executable = Bun.which("bunx", { PATH: process.env.PATH ?? "/usr/bin:/bin" });
+  return { folder, executable };
+}
+
 // An install unpacks into a folder of its own and moves the whole build into the cache, so no reader
 // takes it half unpacked and two installs never write one folder: one in the cache's own folder
 // returned another's half-unpacked build at once and deleted the archive that marked it. A staging
 // folder an hour old is a killed install's.
-function stage(): string | undefined {
-  try {
-    mkdirSync(cache(), { recursive: true });
-    for (const name of readdirSync(cache()))
-      if (name.startsWith(".install-") && writtenAgo(join(cache(), name)) > 3_600_000)
-        rmSync(join(cache(), name), { recursive: true, force: true });
-    return mkdtempSync(join(cache(), ".install-"));
-  } catch {
-    return undefined;
-  }
+function stage(folder: string): string {
+  for (const name of readdirSync(folder))
+    if (name.startsWith(".install-") && writtenAgo(join(folder, name)) > 3_600_000)
+      rmSync(join(folder, name), { recursive: true, force: true });
+  return mkdtempSync(join(folder, ".install-"));
 }
 
 /** The installed executable, moved from `staged` into the cache in place of a build whose install
@@ -151,16 +175,12 @@ export function chromeBinary(options: Options = {}): string | undefined {
   }
   const { key, path } = found;
   if (path) return path;
-  const staged = stage();
-  if (!staged) return undefined;
+  const { folder, executable } = chromeInstallInputs();
+  if (!executable) return undefined;
+  const staged = stage(folder);
   try {
-    const args = install(options.shell, staged);
-    let output: string;
-    try {
-      output = execFileSync("bunx", args, { encoding: "utf-8" });
-    } catch {
-      return undefined;
-    }
+    const output = runChromeInstaller(executable, install(options.shell, staged));
+    if (output === undefined) return undefined;
     const installed = place(staged, output);
     if (installed) known.set(key, installed);
     return installed;
@@ -185,14 +205,18 @@ export async function chromeBinaryAsync(options: Options = {}): Promise<string |
   if (path) return path;
   const running = installs.get(key);
   if (running) return running;
-  const staged = stage();
-  if (!staged) return undefined;
+  const { folder, executable } = chromeInstallInputs();
+  if (!executable) return undefined;
+  const staged = stage(folder);
   const started = Promise.resolve()
     .then(() => {
       const args = install(options.shell, staged);
-      return promisify(execFile)("bunx", args, { encoding: "utf-8" }).then(
+      return promisify(execFile)(executable, args, { encoding: "utf-8" }).then(
         ({ stdout }) => place(staged, stdout),
-        () => undefined,
+        (error: unknown) => {
+          if (!chromeInstallerFailed(error)) throw error;
+          return undefined;
+        },
       );
     })
     .then((installed) => {

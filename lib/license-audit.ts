@@ -36,25 +36,32 @@ export function parseListedPackages(groups: Record<string, unknown>): {
   return { listed, packages: listed.filter(isListedPackage) };
 }
 
+function readLicenseGroups(run: LicenseListRun) {
+  if (run.status !== 0) return undefined;
+  const { stdout } = run;
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(stdout);
+  } catch (error) {
+    if (error instanceof SyntaxError) return undefined;
+    throw error;
+  }
+  return isObject(parsed) ? parsed : undefined;
+}
+
 export function parseLicenseCommandOutput(
   run: LicenseListRun,
   missingNeeded: () => string[] | undefined,
 ): { packages: ListedPackage[]; problems: string[] } {
   const problems: string[] = [];
-  let groups: Record<string, unknown>;
-  try {
-    if (run.status !== 0) throw new Error("non-zero status");
-    const parsed: unknown = JSON.parse(run.stdout);
-    if (!isObject(parsed)) throw new Error("non-object json");
-    groups = parsed;
-  } catch {
+  const groups = readLicenseGroups(run);
+  if (!groups)
     return {
       packages: [],
       problems: [
         `bun pm licenses --json gave no package list (exit ${run.status}): ${`${run.stderr}`.trim()}; run bun install`,
       ],
     };
-  }
   const { listed, packages } = parseListedPackages(groups);
   if (!listed.length) problems.push("bun pm licenses lists no package: run bun install");
   if (/not installed/.test(run.stderr)) {

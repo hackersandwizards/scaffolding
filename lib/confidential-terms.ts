@@ -339,8 +339,9 @@ export function parseNeverInput(raw: string): (readonly [string, string[]])[] | 
   let input: unknown;
   try {
     input = JSON.parse(raw);
-  } catch {
-    return undefined;
+  } catch (error) {
+    if (error instanceof SyntaxError) return undefined;
+    throw error;
   }
   if (!input || typeof input !== "object" || Array.isArray(input)) return undefined;
   const texts = Object.entries(input).map(

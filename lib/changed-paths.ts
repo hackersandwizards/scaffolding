@@ -1,9 +1,9 @@
 import { spawnSync } from "node:child_process";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
-import { git as readGit } from "./repo.ts";
+import { git as readGit, GitCommandError } from "./repo.ts";
 import { gitShellScripts, needsShellShebang, shellInput, shellSources } from "./shell-inputs.ts";
-import { inNodeModules, regularInput, trackedInputs, treeInputs } from "./tracked-inputs.ts";
+import { indexInputs, inNodeModules, regularInput, treeInputs } from "./tracked-inputs.ts";
 
 export type ChangedFilesResult =
   | {
@@ -127,11 +127,27 @@ export function collectRangeChangesWithShell(
       const inputs = collectShellRefs(root, refs);
       for (const path of inputs.shebangs) shellShebangs.add(path);
       for (const path of inputs.sourced) sourcedPaths.add(path);
-    } catch {
+    } catch (error) {
+      if (!(error instanceof GitCommandError)) throw error;
       return { fallback: "git could not read shell inputs in the pushed ranges" };
     }
   }
   return { paths, shellShebangs, sourcedPaths, since: formatSince(ranges) };
+}
+
+const unavailableShellPaths = new Set(["ENOENT", "ENOTDIR", "EISDIR", "EACCES", "EPERM"]);
+class ShellInputUnavailable extends Error {}
+
+function readWorkingShellInput<T>(read: () => T): T {
+  try {
+    return read();
+  } catch (error) {
+    if (unavailableShellPaths.has((error as NodeJS.ErrnoException)?.code ?? ""))
+      throw new ShellInputUnavailable("could not read a working-tree shell input", {
+        cause: error,
+      });
+    throw error;
+  }
 }
 
 export function readWorkingTreeShellInputs(
@@ -142,13 +158,15 @@ export function readWorkingTreeShellInputs(
   const baseShell = readShellTreeInputs(root, base);
   const shellShebangs = new Set<string>(baseShell.shebangs);
   const sourcedPaths = new Set<string>(baseShell.sourced);
-  const tracked = trackedInputs(root);
-  const scripts = tracked.filter((path) => shellInput(path, join(root, path)));
-  for (const path of shellSources(scripts, tracked, (path) => readFileSync(join(root, path))))
-    sourcedPaths.add(path);
+  const regular = (path: string) => readWorkingShellInput(() => regularInput(root, path));
+  const shell = (path: string) => readWorkingShellInput(() => shellInput(path, join(root, path)));
+  const read = (path: string) => readWorkingShellInput(() => readFileSync(join(root, path)));
+  const tracked = indexInputs(root).filter(regular);
+  const scripts = tracked.filter(shell);
+  for (const path of shellSources(scripts, tracked, read)) sourcedPaths.add(path);
   for (const path of changedPaths) {
     if (inNodeModules(path) || !needsShellShebang(path)) continue;
-    if (regularInput(root, path) && shellInput(path, join(root, path))) shellShebangs.add(path);
+    if (regular(path) && shell(path)) shellShebangs.add(path);
   }
   return { shellShebangs, sourcedPaths };
 }
@@ -194,7 +212,8 @@ export function collectWorkingTreeChangesWithShell(root: string): ChangedFilesRe
       collected.paths,
     );
     return { paths: collected.paths, shellShebangs, sourcedPaths, since: collected.since };
-  } catch {
+  } catch (error) {
+    if (!(error instanceof GitCommandError || error instanceof ShellInputUnavailable)) throw error;
     return { fallback: "could not read shell inputs in the base commit or working tree" };
   }
 }

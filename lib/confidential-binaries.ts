@@ -224,21 +224,24 @@ export class BinaryContentScanner {
   ): Map<string, string> {
     mkdirSync(this.cacheDir, { recursive: true });
     this.scratch = mkdtempSync(join(this.cacheDir, "scan-"));
-    const kept = computeReaderCachePaths(files, this.cacheDir, readerSources);
-    files.forEach(({ where, data }, index) =>
-      existsSync(kept[index])
-        ? this.appendText(where, readFileSync(kept[index], "utf8"))
-        : new FileContentReader(this, where).read(where, data),
-    );
-    this.applyOcr(ocrSource);
-    this.writeReadCache(files, kept);
-    return this.texts;
+    try {
+      const kept = computeReaderCachePaths(files, this.cacheDir, readerSources);
+      files.forEach(({ where, data }, index) =>
+        existsSync(kept[index])
+          ? this.appendText(where, readFileSync(kept[index], "utf8"))
+          : new FileContentReader(this, where).read(where, data),
+      );
+      this.applyOcr(ocrSource);
+      this.writeReadCache(files, kept);
+      return this.texts;
+    } finally {
+      rmSync(this.scratch, { recursive: true, force: true });
+    }
   }
 
   private applyOcr(ocrSource: string): void {
     const ocr = this.images.length ? compileOcrBinary(ocrSource, this.cacheDir) : undefined;
     const blocks = this.runOcrBinary(ocr);
-    rmSync(this.scratch, { recursive: true, force: true });
     for (const { file, where, entry, why } of this.images) {
       const text = blocks.get(file);
       if (text !== undefined) this.appendText(where, text);

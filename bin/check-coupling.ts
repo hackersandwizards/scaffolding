@@ -15,7 +15,6 @@ import {
   finish,
   git,
   isObject,
-  jsonObject,
   listFiles,
   readPackage,
   reader,
@@ -66,12 +65,14 @@ const own = readPackage(root).name;
 const pkg = readPackage(root, staged ? ":" : undefined);
 const registry = new PackageRegistry(root, pkg, own);
 const withoutAllow = (json: string) => {
-  let parsed;
+  let parsed: unknown;
   try {
-    parsed = jsonObject(json);
-  } catch {
-    return json;
+    parsed = JSON.parse(json);
+  } catch (error) {
+    if (error instanceof SyntaxError) return json;
+    throw error;
   }
+  if (!isObject(parsed)) return json;
   if (isObject(parsed.scaffolding))
     parsed.scaffolding = { ...parsed.scaffolding, allow: undefined };
   return JSON.stringify(parsed, null, 2);
