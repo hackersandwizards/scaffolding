@@ -55,6 +55,7 @@ For `eslint.config.js`, copy
 - `./property` provides the Vitest property testing API. [Test setup](docs/configs.md#property)
 - `./catalog`: the catalog preset for an Astro config ([The catalog](docs/catalog.md)).
 - `./rejection`: the error a promise rejects with, as text, in a test.
+- `./defined`: narrows a nullable value in a test, or throws naming what is missing.
 - `./serve`, `./chrome`: a gate server on a free port, and Chrome for Testing.
 
 ## Commands
