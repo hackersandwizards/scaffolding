@@ -24,6 +24,19 @@ export function retitleLayout(source: string, words: string): string {
     .replace(titleTag, "<title>{pageTitle(storyModules, Astro.props.story, config.title)}</title>");
 }
 
+export function astrobookRouteKind(file: string, source: string): "dashboard" | "stories" {
+  const kind = file.split(/[\\/]/)[0];
+  if (
+    !(kind === "dashboard" || kind === "stories") ||
+    !source.includes(anchor) ||
+    !lead.test(source)
+  )
+    throw new Error(
+      `catalog: Astrobook's route ${file} has no place for its CSS import or its lead`,
+    );
+  return kind;
+}
+
 /**
  * One route Astrobook wrote under dashboard/ or stories/ (`file`, relative to the codegen folder),
  * rewritten: its route's CSS imported after Astrobook's client import, before the story's; the
@@ -37,15 +50,7 @@ export function rewriteRoute(
   serverOnly: boolean,
 ): string | undefined {
   if (source.includes(`import "${CSS}`)) return undefined;
-  const kind = file.split(/[\\/]/)[0];
-  if (
-    !(kind === "dashboard" || kind === "stories") ||
-    !source.includes(anchor) ||
-    !lead.test(source)
-  )
-    throw new Error(
-      `catalog: Astrobook's route ${file} has no place for its CSS import or its lead`,
-    );
+  const kind = astrobookRouteKind(file, source);
   if (kind === "dashboard" && !source.includes(sidebar))
     throw new Error(`catalog: Astrobook's route ${file} has no sidebar for the bar to replace`);
   if (serverOnly && !source.includes(client))
@@ -62,23 +67,30 @@ export function rewriteRoute(
 /** The route Astrobook wrote at `path` (`file`, relative to the codegen folder), rewritten as Vite
  * loads it; the file on disk stays Astrobook's. Every Astro process on the root rewrites the same
  * files on its setup, Astrobook (0.13.3) in place, so a read can find a route empty or cut while
- * another process writes it: a route that does not rewrite is read again until it does, `waitMs`
- * at most, then fails as rewriteRoute does. Rewritten on disk, a page built or served while another
+ * another process writes it: a route that does not rewrite is read again until it does, for up
+ * to two seconds, then fails as rewriteRoute does. Rewritten on disk, a page built or served while another
  * process's setup ran lost its CSS without an error. */
-export async function loadRoute(
+export function loadRoute(path: string, file: string, serverOnly: boolean): Promise<string> {
+  return readRouteUntilRewritten(path, (source) => rewriteRoute(file, source, serverOnly), 2000);
+}
+
+export async function readRouteUntilRewritten(
   path: string,
-  file: string,
-  serverOnly: boolean,
-  waitMs = 2000,
+  rewrite: (source: string) => string | undefined,
+  waitMs: number,
 ): Promise<string> {
   const until = Date.now() + waitMs;
   for (;;) {
     const source = readFileSync(path, "utf8");
     try {
-      return rewriteRoute(file, source, serverOnly) ?? source;
+      return rewrite(source) ?? source;
     } catch (e) {
       if (Date.now() >= until) throw e;
     }
     await new Promise((done) => setTimeout(done, 10));
   }
 }
+
+// Astrobook's URL folders for a state's page and a state alone, passed so its defaults cannot move
+// under the dev redirect and the forwarding pages.
+export const SUBPATHS = { dashboardSubpath: "dashboard", previewSubpath: "stories" };

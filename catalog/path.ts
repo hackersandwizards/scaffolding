@@ -23,3 +23,11 @@ export function catalogPath({
   const home = pages.some((f) => /^(index(\.|$)|\[\.\.\.)/.test(f));
   return `${dev ? "" : base.replace(/\/$/, "")}${home ? "/catalog" : ""}/`;
 }
+
+export const decodeCatalogPath = (s: string) => {
+  try {
+    return decodeURIComponent(s);
+  } catch {
+    return "";
+  }
+};

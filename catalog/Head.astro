@@ -239,6 +239,20 @@ const root = {
       if (event.target instanceof HTMLSelectElement && event.target.matches("[data-hw-states]"))
         location.href = event.target.value;
     });
+    const stateDirections = new Map([
+      ["ArrowLeft", "prev"],
+      ["ArrowRight", "next"],
+    ]);
+    /** @param {KeyboardEvent} event */
+    function followCatalogStateLink(event) {
+      const rel = stateDirections.get(event.key);
+      if (rel === undefined) return;
+      const link = document.querySelector(`.hw-catalog-bar a[rel="${rel}"]`);
+      if (link instanceof HTMLAnchorElement)
+        setTimeout(() => {
+          if (!event.defaultPrevented) location.href = link.href;
+        });
+    }
     // The arrow keys step through the states unless a field or the story has the focus, or a
     // story's own handler, which runs after this one, takes the key.
     document.addEventListener("keydown", (event) => {
@@ -257,12 +271,7 @@ const root = {
           (target.closest("main") && !target.closest(".hw-catalog-bar")))
       )
         return;
-      const rel = event.key === "ArrowLeft" ? "prev" : event.key === "ArrowRight" ? "next" : "";
-      const link = rel && document.querySelector(`.hw-catalog-bar a[rel="${rel}"]`);
-      if (link instanceof HTMLAnchorElement)
-        setTimeout(() => {
-          if (!event.defaultPrevented) location.href = link.href;
-        });
+      followCatalogStateLink(event);
     });
   })();
 </script>

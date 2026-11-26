@@ -29,7 +29,7 @@ import { pathToFileURL } from "node:url";
 import { brandFallbacks } from "../catalog/fallbacks.ts";
 import { selectChangedSteps } from "../lib/changed-steps.ts";
 import { catalogPath } from "../catalog/path.ts";
-import { loadRoute, rewriteRoute } from "../catalog/route.ts";
+import { loadRoute, readRouteUntilRewritten, rewriteRoute } from "../catalog/route.ts";
 import {
   oxlintConfiguration,
   oxlintFiles,
@@ -163,7 +163,11 @@ async function browse(url: string, args: string[] = []) {
 }
 
 const sh = (cwd: string, args: string[], input?: string) =>
-  spawnSync("git", ["-c", "user.email=t@t", "-c", "user.name=t", ...args], { cwd, input });
+  spawnSync("git", ["-c", "user.email=t@t", "-c", "user.name=t", ...args], {
+    cwd,
+    input,
+    env: Object.fromEntries(Object.entries(process.env).filter(([key]) => !key.startsWith("GIT_"))),
+  });
 
 /** Fail at the Git command that could not prepare the fixture. */
 function prepareGit(dir: string, args: string[], input?: string) {
@@ -8627,7 +8631,8 @@ describe("catalog", () => {
     // The file on disk stays Astrobook's.
     expect(readFileSync(file, "utf8")).toBe(route);
     writeFileSync(file, "");
-    expect(await rejection(loadRoute(file, "stories/a.astro", false, 100))).toContain("CSS import");
+    const rewrite = (source: string) => rewriteRoute("stories/a.astro", source, false);
+    expect(await rejection(readRouteUntilRewritten(file, rewrite, 100))).toContain("CSS import");
   });
 
   describe("the Astro catalog preset", () => {
@@ -12036,7 +12041,7 @@ describe("check-names", () => {
   });
 
   test("verbatim installed skeleton files are exempt while modified copies are checked", () => {
-    const path = ".githooks/check-lock.ts";
+    const path = ".githooks/check-lock-record.ts";
     const skeleton = readFileSync(join(import.meta.dirname, "../template", path), "utf8");
     const dir = namesFixture(
       {
@@ -12050,7 +12055,7 @@ describe("check-names", () => {
     const result = run(dir, [bin("check-names")]);
     expect(result.code, result.out).toBe(1);
     expect(lines(result.out, "names")).toEqual([
-      "[names] .githooks/check-lock.ts: function `parseHolder` is also declared in a.ts",
+      "[names] .githooks/check-lock-record.ts: function `parseHolder` is also declared in a.ts",
     ]);
     expectGuide(result.out, "duplicate-function-name");
   });
