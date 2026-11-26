@@ -51,17 +51,22 @@ describe.each(detectedBoundaries)("inline boundary at %s", (_, input) => {
   );
 });
 
-const absentBoundaries: [string, BoundaryInput][] = [
-  ["explicit space", (text, tag, indent) => [`${text}{" "}`, `${indent}<${tag}>`, "", false]],
-  ["bare expression", (_, tag, indent) => ["{name}", `${indent}<${tag}>`, "", false]],
-  ["discarded expression", (text, tag) => [text, `{<${tag} />}`, "", false]],
+const absentBoundaries: [string, BoundaryInput, false | undefined][] = [
+  [
+    "explicit space",
+    (text, tag, indent) => [`${text}{" "}`, `${indent}<${tag}>`, "", false],
+    false,
+  ],
+  ["bare expression", (_, tag, indent) => ["{name}", `${indent}<${tag}>`, "", false], false],
+  ["discarded expression", (text, tag) => [text, `{<${tag} />}`, "", false], false],
+  ["adjacent text", (text, _, indent) => [text, indent + text, "", false], undefined],
 ];
 
-describe.each(absentBoundaries)("inline boundary at %s", (_, input) => {
+describe.each(absentBoundaries)("inline boundary at %s", (_, input, expected) => {
   test.prop([word, fc.constantFrom("a", "code", "span"), fc.nat(8)])(
     "reports no lost space",
     (text, tag, spaces) => {
-      expect(lostSpaceTag(...input(text, tag, " ".repeat(spaces)))).toBeFalsy();
+      expect(lostSpaceTag(...input(text, tag, " ".repeat(spaces)))).toBe(expected);
     },
   );
 });

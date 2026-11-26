@@ -1,4 +1,4 @@
-import { afterAll, assert, beforeAll, describe, expect, test } from "vitest";
+import { afterAll, afterEach, assert, beforeAll, beforeEach, describe, expect, test } from "vitest";
 import { spawn, spawnSync } from "node:child_process";
 import { createHash } from "node:crypto";
 import {
@@ -37,6 +37,7 @@ import {
   runOxlint,
 } from "../lib/oxlint.ts";
 import { ESLint } from "eslint";
+import { activeSeverity } from "../lib/lint-rule-overlaps.ts";
 import { rejection } from "../lib/rejection.ts";
 import { gitShellShebangs, shellInput } from "../lib/shell-inputs.ts";
 import { shellcheckBinary } from "../lib/shellcheck.ts";
@@ -164,6 +165,14 @@ async function browse(url: string, args: string[] = []) {
 const sh = (cwd: string, args: string[], input?: string) =>
   spawnSync("git", ["-c", "user.email=t@t", "-c", "user.name=t", ...args], { cwd, input });
 
+/** Fail at the Git command that could not prepare the fixture. */
+function prepareGit(dir: string, args: string[], input?: string) {
+  const result = sh(dir, args, input);
+  if (result.status === 0) return result.stdout.toString().trimEnd();
+  throw new Error(`git ${args.join(" ")} failed in ${dir}: ${result.error ?? result.status}
+${result.stdout}${result.stderr}`);
+}
+
 function repo(files: Record<string, string>, commit = true) {
   const dir = temp();
   sh(dir, ["init", "-q", "-b", "main"]);
@@ -283,7 +292,7 @@ test("ordinary Node property tests still enforce the coverage threshold", () => 
   expect(output).toMatch(/Coverage for lines .* does not meet global threshold/);
 });
 
-test.each([
+describe.each([
   { runtime: "node", folder: undefined },
   { runtime: "bun", folder: undefined },
   { runtime: "bun", folder: "test/pages" },
@@ -291,7 +300,13 @@ test.each([
 ] as const)(
   "the consumer explore command runs aliased properties on $runtime (browser folder $folder)",
   ({ runtime, folder }) => {
-    const { dir, property, path } = exploreFixture(runtime, folder);
+    let dir: string, property: string, path: string | undefined, source: string, config: string;
+    beforeAll(() => {
+      ({ dir, property, path } = exploreFixture(runtime, folder));
+      source = readFileSync(join(dir, property), "utf8");
+      config = readFileSync(join(dir, "vitest.config.mjs"), "utf8");
+    });
+    afterEach(() => write(dir, { [property]: source, "vitest.config.mjs": config }));
     const explore = () =>
       spawnSync(process.execPath, ["run", "explore", "--seed", "-188"], {
         cwd: dir,
@@ -306,47 +321,38 @@ test.each([
           SCAFFOLDING_TEST_TIMEOUT_MS: "6000",
         },
       });
-    const passing = explore();
-    expect(
-      {
-        status: passing.status,
-        plan: Array.from(
-          passing.stdout.matchAll(/seed -188, 512 runs per property/g),
-          ([part]) => part,
-        ),
-        summary: Array.from(passing.stdout.matchAll(/Tests\s+1 passed/g), ([part]) => part),
-        coverage: passing.stdout.includes("Coverage enabled"),
-      },
-      passing.stdout + passing.stderr,
-    ).toEqual({
-      status: 0,
-      plan: ["seed -188, 512 runs per property"],
-      summary: [matchingText(/Tests\s+1 passed/)],
-      coverage: false,
+    test("reports the search plan and passes without coverage", () => {
+      const result = explore();
+      expect(result.status, result.stdout + result.stderr).toBe(0);
+      expect(result.stdout).toContain("seed -188, 512 runs per property");
+      expect(result.stdout).toMatch(/Tests\s+1 passed/);
+      expect(result.stdout).not.toContain("Coverage enabled");
     });
 
-    const file = join(dir, property);
-    writeFileSync(file, readFileSync(file, "utf8").replace("toBeGreaterThan(0)", "toBe(0)"));
-    const failing = explore();
-    expect(failing.status, failing.stdout + failing.stderr).toBe(1);
-    const output = failing.stdout + failing.stderr;
-    expect(output).toContain("with seed=-188");
-    expect(output).toContain("Counterexample: [1]");
-
-    writeFileSync(file, readFileSync(file, "utf8").replace("toBe(0)", "toBeGreaterThan(0)"));
-    writeFileSync(join(dir, "vitest.config.mjs"), "export default {};");
-    const direct = spawnSync(process.execPath, ["run", "test:run", property], {
-      cwd: dir,
-      encoding: "utf8",
-      env: {
-        ...process.env,
-        PATH: path,
-        SCAFFOLDING_EXPLORING: undefined,
-        SCAFFOLDING_EXPLORE_SEED: "42",
-        SCAFFOLDING_EXPLORE_RUNS: "2",
-      },
+    test("reports the original seed and shrunk counterexample", () => {
+      write(dir, { [property]: source.replace("toBeGreaterThan(0)", "toBe(0)") });
+      const failing = explore();
+      expect(failing.status, failing.stdout + failing.stderr).toBe(1);
+      const output = failing.stdout + failing.stderr;
+      expect(output).toContain("with seed=-188");
+      expect(output).toContain("Counterexample: [1]");
     });
-    expect(direct.status, direct.stdout + direct.stderr).toBe(0);
+
+    test("runs a direct test without the exploration plan", () => {
+      writeFileSync(join(dir, "vitest.config.mjs"), "export default {};");
+      const direct = spawnSync(process.execPath, ["run", "test:run", property], {
+        cwd: dir,
+        encoding: "utf8",
+        env: {
+          ...process.env,
+          PATH: path,
+          SCAFFOLDING_EXPLORING: undefined,
+          SCAFFOLDING_EXPLORE_SEED: "42",
+          SCAFFOLDING_EXPLORE_RUNS: "2",
+        },
+      });
+      expect(direct.status, direct.stdout + direct.stderr).toBe(0);
+    });
   },
 );
 
@@ -390,7 +396,7 @@ test("the installed pre-commit hook marks the commands it calls", () => {
     ),
   });
   chmodSync(join(dir, ".githooks/pre-commit"), 0o755);
-  expect(sh(dir, ["config", "core.hooksPath", ".githooks"]).status).toBe(0);
+  prepareGit(dir, ["config", "core.hooksPath", ".githooks"]);
   const commit = sh(dir, ["commit", "--allow-empty", "-m", "exercise pre-commit"]);
   expect(commit.status).toBe(1);
   expect(commit.stderr.toString()).toContain("cannot run inside a git hook");
@@ -502,56 +508,89 @@ const fiveExpectations = sixExpectations.slice(0, 5).join("\n");
 const expectationTest = (body: string) =>
   `${vitestImports}test("checks output", () => { ${body} });`;
 const expectedValueCases = `${vitestImports}
-test.each([[0, 0], [1, 1], [null, null], [undefined, undefined]])("uses the expected value for %s", (input, expected) => {
-  expect(input).toBe(expected);
+const identity = (value) => value;
+const numeric = (value) => Number([value].join(""));
+test.each([
+  ["a positive input", identity, 1, 1],
+  ["zero", identity, 0, 0],
+  ["null", identity, null, null],
+  ["undefined", identity, undefined, undefined],
+  ["the numeric fallback", numeric, undefined, 0],
+])("uses the expected value for %s", (_, resolve, input, expected) => {
+  expect(resolve(input)).toBe(expected);
 });`;
 test.each([
-  ["six expectations", "max-expects", expectationTest(sixExpectations.join("\n")), 1],
-  ["five expectations", "max-expects", expectationTest(fiveExpectations), 0],
-  [
-    "six expectations in a helper",
-    "max-expects",
-    `${vitestImports}function expectAll() { ${sixExpectations.join("\n")} }\ntest("checks helper output", () => expectAll());`,
-    1,
-  ],
-  [
-    "if",
-    "no-conditional-in-test",
-    expectationTest('let result = 0; if (Number("1")) result = 1; expect(result).toBe(1);'),
-    1,
-  ],
-  [
-    "conditional operator",
-    "no-conditional-in-test",
-    expectationTest('const result = Number("1") ? 1 : 0; expect(result).toBe(1);'),
-    1,
-  ],
-  [
-    "nullish coalescing",
-    "no-conditional-in-test",
-    expectationTest("const result = [0, 1].at(0) ?? 0; expect(result).toBe(0);"),
-    1,
-  ],
-  ["a table with fixed expected values", "no-conditional-in-test", expectedValueCases, 0],
-] as const)("Oxlint checks test design for %s", (_, rule, source, status) => {
-  const dir = repo({
-    ".oxlintrc.json": JSON.stringify(oxlintTemplate),
-    "test/example.js": source,
-  });
+  {
+    name: "six expectations",
+    source: expectationTest(sixExpectations.join("\n")),
+    code: 1,
+    findings: ["test/example.js:7:1 vitest(max-expects)"],
+    guides: ["max-expects"],
+  },
+  {
+    name: "five expectations",
+    source: expectationTest(fiveExpectations),
+    code: 0,
+    findings: [],
+    guides: [],
+  },
+  {
+    name: "six expectations in a helper",
+    source: `${vitestImports}function expectAll() { ${sixExpectations.join("\n")} }\ntest("checks helper output", () => expectAll());`,
+    code: 1,
+    findings: ["test/example.js:7:1 vitest(max-expects)"],
+    guides: ["max-expects"],
+  },
+  {
+    name: "if",
+    source: expectationTest(
+      "const input = 1; let result = 0; if (input) result = input; expect(result).toBe(1);",
+    ),
+    code: 1,
+    findings: ["test/example.js:2:64 vitest(no-conditional-in-test)"],
+    guides: ["no-conditional-in-test"],
+  },
+  {
+    name: "conditional operator",
+    source: expectationTest(
+      "const input = 0; const result = input ? input : 0; expect(result).toBe(0);",
+    ),
+    code: 1,
+    findings: ["test/example.js:2:63 vitest(no-conditional-in-test)"],
+    guides: ["no-conditional-in-test"],
+  },
+  {
+    name: "nullish coalescing",
+    source: expectationTest(
+      "const input = undefined; const result = input ?? 0; expect(result).toBe(0);",
+    ),
+    code: 1,
+    findings: ["test/example.js:2:71 vitest(no-conditional-in-test)"],
+    guides: ["no-conditional-in-test"],
+  },
+  {
+    name: "a table with the same inputs and outputs",
+    source: expectedValueCases,
+    code: 0,
+    findings: [],
+    guides: [],
+  },
+])("Oxlint checks test design for $name", ({ source, code, findings, guides }) => {
+  const dir = repo({ ".oxlintrc.json": JSON.stringify(oxlintTemplate), "test/example.js": source });
   install(dir);
   const result = spawnSync(
     process.execPath,
     ["--no-env-file", join(import.meta.dirname, "../lib/oxlint.ts")],
     { cwd: dir, encoding: "utf8" },
   );
-  expect(result.status, result.stdout + result.stderr).toBe(status);
-  const finding = `vitest(${rule})`;
-  const observed = result.stdout.split("\n").filter((line) => line.includes(finding));
-  const [findings, ...guides] = result.stdout.split(/\n\n(?=\[guide\] )/);
-  expect(guides.map((guide) => guide.trimEnd())).toEqual(
-    Array<string>(status).fill(fixtureGuide(rule)),
+  const [report, ...guideBlocks] = result.stdout.split(/\n\n(?=\[guide\] )/);
+  const diagnostics = Array.from(
+    report.matchAll(/^([^:\n]+):(\d+):(\d+): (?:error|warning) ([\w-]+\([\w-]+\)):/gm),
+    ([, file, line, column, rule]) => `${file}:${line}:${column} ${rule}`,
   );
-  expect(findings.split("\n").filter((line) => line.includes(finding))).toEqual(observed);
+  expect(result.status, result.stdout + result.stderr).toBe(code);
+  expect(diagnostics, report).toEqual(findings);
+  expect(guideBlocks.map((guide) => guide.trimEnd())).toEqual(guides.map(fixtureGuide));
 });
 
 test("Oxlint enforces expect-expect in test folders and stays out of non-test files", () => {
@@ -1168,12 +1207,11 @@ test.each([
   ["scaled", "7500", 18_000],
 ])("the test-timeout export gives a consumer its %s limit", (_, timeout, expected) => {
   const dir = repo({
-    "test-limit.ts": `import { limit } from "@hackersandwizards/scaffolding/test-timeout";
-import { until, untilFile } from "./wait.ts";
+    "test-limit.mjs": `import { limit } from "@hackersandwizards/scaffolding/test-timeout";
 console.log(limit(12_000));\n`,
   });
   install(dir);
-  const result = spawnSync(process.execPath, ["--no-env-file", "test-limit.ts"], {
+  const result = spawnSync(process.execPath, ["--no-env-file", "test-limit.mjs"], {
     cwd: dir,
     encoding: "utf8",
     env: { ...process.env, SCAFFOLDING_TEST_TIMEOUT_MS: timeout },
@@ -1380,7 +1418,7 @@ describe("scaffold and check-structure", () => {
         "utils/untracked.ts": "export {};\n",
       },
     );
-    expect(sh(other, ["add", "--", "src/corex/c.ts"]).status).toBe(0);
+    prepareGit(other, ["add", "--", "src/corex/c.ts"]);
     expect(run(other, "check-structure")).toEqual({ code: 0, out: "" });
   });
 
@@ -1492,12 +1530,19 @@ describe("scaffold and check-structure", () => {
       expect(refused.stdout).not.toContain(exercises);
     });
 
+    const disabledRule = '"vitest/no-import-node-test": "off"';
+    const closingBrace = comment.indexOf("}", comment.indexOf(disabledRule));
+    const missingSeverity = '"vitest/no-import-node-test":';
     test.each([
-      ["missing severity", '"vitest/no-import-node-test":', "ValueExpected at position 602"],
+      [
+        "missing severity",
+        missingSeverity,
+        `ValueExpected at position ${closingBrace - (disabledRule.length - missingSeverity.length)}`,
+      ],
       [
         "trailing comma",
-        '"vitest/no-import-node-test": "off",',
-        "PropertyNameExpected at position 609",
+        `${disabledRule},`,
+        `PropertyNameExpected at position ${closingBrace + 1}`,
       ],
     ])(
       "check-structure still reports malformed Oxlint configuration with %s",
@@ -1506,7 +1551,7 @@ describe("scaffold and check-structure", () => {
           `malformed-commented-oxlint-${name}`,
           {},
           {
-            ".oxlintrc.json": comment.replace('"vitest/no-import-node-test": "off"', rule),
+            ".oxlintrc.json": comment.replace(disabledRule, rule),
           },
         );
         const result = run(malformed, "check-structure");
@@ -1831,6 +1876,12 @@ describe("scaffold and check-structure", () => {
         },
       );
     });
+    afterEach(() =>
+      write(other, {
+        [eslint]: config + "export default base;\n",
+        [oxlint]: JSON.stringify(oxlintTemplate),
+      }),
+    );
     test("shared presets pass without a local rule", () => {
       expect(run(other, "check-structure")).toEqual({ code: 0, out: "" });
     });
@@ -1881,7 +1932,6 @@ describe("scaffold and check-structure", () => {
             /src\/Probe\.astro\/\d+_frontmatter\.tsx: ESLint rule no-debugger overlaps Oxlint rule no-debugger.*\(Astro frontmatter\)/,
           ),
         ]);
-        write(other, { [eslint]: config + "export default base;\n" });
       },
       limit(10_000),
     );
@@ -2881,7 +2931,7 @@ describe("check-confidential", () => {
     const dir = repo({ "package.json": "{}" });
     write(dir, { "word/document.xml": "<w:t>Acme&nbsp;Widgets</w:t>" });
     expect(spawnSync("zip", ["-qr", "document.docx", "word"], { cwd: dir }).status).toBe(0);
-    expect(sh(dir, ["add", "document.docx"]).status).toBe(0);
+    prepareGit(dir, ["add", "document.docx"]);
     const copy = temp();
     const root = join(import.meta.dirname, "..");
     for (const part of ["lib", "config"])
@@ -2896,16 +2946,10 @@ describe("check-confidential", () => {
       return { status: result.status, output: result.stdout + result.stderr };
     };
     const first = scan();
-    expect(
-      {
-        status: first.status,
-        cache: readdirSync(join(dir, "node_modules/.cache/scaffolding/read")),
-      },
-      first.output,
-    ).toEqual({
-      status: 0,
-      cache: expect.arrayContaining([matchingText(/^[a-f0-9]{32}$/)]) as unknown,
-    });
+    expect(first.status, first.output).toBe(0);
+    expect(readdirSync(join(dir, "node_modules/.cache/scaffolding/read"))).toContainEqual(
+      matchingText(/^[a-f0-9]{32}$/),
+    );
     const decoder = join(copy, "lib/confidential-input.ts");
     const source = readFileSync(decoder, "utf8");
     const updated = source.replace(
@@ -3540,10 +3584,12 @@ describe("check-confidential", () => {
   });
 
   describe("prepush hands the refs to Git LFS only where the push may carry LFS content", () => {
-    const results = new Map<string, { statuses: (number | null)[]; log: string }>();
+    const results = new Map<
+      string,
+      { installed: number | null; unavailable: number | null; log: string }
+    >();
     let beforeStore: string;
     let rawHasStore: boolean;
-    let renameStatuses: (number | null)[];
     let totalLog: string;
     beforeAll(() => {
       const stub = temp();
@@ -3568,14 +3614,11 @@ describe("check-confidential", () => {
       };
       writeFileSync(log, "");
       const logged = () => readFileSync(log, "utf8");
-      const both = (dir: string, remote?: string, old?: string) => [
-        push(dir, `${stub}:${bare}`, remote, old),
-        push(dir, bare, remote, old),
-      ];
       const capture = (name: string, dir: string, remote?: string, old?: string) => {
         const length = logged().length;
-        const statuses = both(dir, remote, old);
-        results.set(name, { statuses, log: logged().slice(length) });
+        const installed = push(dir, `${stub}:${bare}`, remote, old);
+        const unavailable = push(dir, bare, remote, old);
+        results.set(name, { installed, unavailable, log: logged().slice(length) });
       };
       // Nothing of LFS: git-lfs is never started, installed or not; a .lfsconfig and an empty store
       // hold no objects.
@@ -3636,12 +3679,10 @@ describe("check-confidential", () => {
         ".gitattributes": "*.psd lockable\n",
         "a.psd": "x",
       });
-      renameStatuses = [
-        sh(renamed, ["update-ref", "refs/remotes/origin/main", "HEAD"]).status,
-        sh(renamed, ["config", "diff.renames", "true"]).status,
-        sh(renamed, ["mv", "a.psd", "a.txt"]).status,
-        sh(renamed, ["commit", "-qm", "rename", "a.psd", "a.txt"]).status,
-      ];
+      prepareGit(renamed, ["update-ref", "refs/remotes/origin/main", "HEAD"]);
+      prepareGit(renamed, ["config", "diff.renames", "true"]);
+      prepareGit(renamed, ["mv", "a.psd", "a.txt"]);
+      prepareGit(renamed, ["commit", "-qm", "rename", "a.psd", "a.txt"]);
       capture("rename from a lockable path", renamed);
       // A merge whose resolution alone changes a lockable path.
       const merged = repo({
@@ -3662,7 +3703,7 @@ describe("check-confidential", () => {
     }, limit(20_000));
 
     const invoked = "pre-push origin x\n";
-    test.each([
+    const scenarios = [
       ["no LFS metadata", [0, 0], ""],
       ["empty LFS config", [0, 0], ""],
       ["empty local store", [0, 0], ""],
@@ -3677,13 +3718,23 @@ describe("check-confidential", () => {
       ["lockable path", [3, 1], invoked],
       ["rename from a lockable path", [3, 1], invoked],
       ["merge resolution changes a lockable path", [3, 1], invoked],
-    ] as const)("checks installed and unavailable Git LFS for %s", (scenario, statuses, log) => {
-      expect(results.get(scenario)).toEqual({ statuses, log });
+    ] as const;
+
+    test.each(scenarios)("delegates to installed Git LFS for %s", (scenario, [code], log) => {
+      const result = results.get(scenario);
+      assert(result, scenario);
+      expect(result.installed).toBe(code);
+      expect(result.log).toBe(log);
+    });
+
+    test.each(scenarios)("handles unavailable Git LFS for %s", (scenario, [, code]) => {
+      const result = results.get(scenario);
+      assert(result, scenario);
+      expect(result.unavailable).toBe(code);
     });
 
     test("the push fixture exercises each relevant history without creating an LFS store", () => {
       expect(rawHasStore).toBe(false);
-      expect(renameStatuses).toEqual([0, 0, 0, 0]);
       expect(beforeStore).toBe("");
       expect(totalLog).toBe(
         "pre-push origin x\n".repeat(3) + "pre-push backup x\n" + "pre-push origin x\n".repeat(4),
@@ -3934,10 +3985,10 @@ describe("check-confidential never", () => {
       }).code;
     };
     for (const text of ["QZX", "see qzx-workshop/", "ZWOX", "Brennwald", "brennwald"])
-      expect([text, staged(text)]).toEqual([text, 1]);
+      expect(staged(text), text).toEqual(1);
     // A dictionary word on the never list refuses no ordinary text in public.
     for (const text of ["bei Qzx", "zwox", "Zwox", "a marigold", "Marigold"])
-      expect([text, staged(text)]).toEqual([text, 0]);
+      expect(staged(text), text).toEqual(0);
     // A list without a never section scans as before.
     const old = listWith(undefined);
     expect(staged("QZX Brennwald", old)).toBe(0);
@@ -4058,15 +4109,28 @@ describe("check-confidential list source", () => {
     expect(m.calls()).toBe(0);
   });
 
-  test("a stale copy within 7 days is used with a warning, retried at most hourly", () => {
-    const m = machine({ gh: "deny", cache: builtDaysAgo(2), cacheDays: 2 });
-    const first = m.check();
-    expect(first.out).toMatch(
-      /^(?![\s\S]*Refused)(?=[\s\S]*using the copy fetched before)[\s\S]*\(Acme Widgets\)/,
-    );
-    expect(m.calls()).toBe(1);
-    expect(m.check().out).toContain("next fetch within the hour");
-    expect(m.calls()).toBe(1);
+  describe("a stale copy within 7 days", () => {
+    let first: ReturnType<typeof run>, again: ReturnType<typeof run>;
+    let firstFetches: number, totalFetches: number;
+    beforeAll(() => {
+      const m = machine({ gh: "deny", cache: builtDaysAgo(2), cacheDays: 2 });
+      first = m.check();
+      firstFetches = m.calls();
+      again = m.check();
+      totalFetches = m.calls();
+    });
+
+    test("warns and reports the term after a failed fetch", () => {
+      expect(first.out).toContain("using the copy fetched before");
+      expect(first.out).toContain("(Acme Widgets)");
+      expect(first.out).not.toContain("Refused");
+      expect(firstFetches).toBe(1);
+    });
+
+    test("does not retry a failed fetch within the hour", () => {
+      expect(again.out).toContain("next fetch within the hour");
+      expect(totalFetches).toBe(1);
+    });
   });
 
   test("a stale copy is replaced when the fetch works", () => {
@@ -4131,51 +4195,82 @@ describe("check-confidential list source", () => {
     });
   });
 
-  test("--list-optional without a list passes a file this machine cannot read, never with a list", () => {
+  describe("--list-optional with a file this machine cannot read", () => {
     const optional = ["--staged", "--list-optional"];
-    const none = machine({ gh: "deny" });
-    // A machine whose swiftc fails: no OCR, as off macOS.
-    const noOcr = temp();
-    writeFileSync(join(noOcr, "swiftc"), "#!/bin/sh\nexit 1\n", { mode: 0o755 });
-    write(none.dir, { "a.md": "a\n", "talk.pdf": "%PDF-1.4" });
-    writeFileSync(join(none.dir, "shot.png"), PNG);
-    sh(none.dir, ["add", "a.md", "shot.png", "talk.pdf"]);
-    const PATH = `${noOcr}:${stubDir}:/usr/bin:/bin`;
-    const r = none.check({ PATH }, optional);
-    expect(r).toEqual({
-      code: 0,
-      out: matchingText(
-        /(?=[\s\S]*shot\.png: image not read)(?=[\s\S]*talk\.pdf: PDF not read)[\s\S]*--list-optional: passed unread/,
-      ),
+    let PATH: string;
+    let withoutList: ReturnType<typeof run>, withList: ReturnType<typeof run>;
+    const unreadFiles = (dir: string) => {
+      write(dir, { "a.md": "a\n", "talk.pdf": "%PDF-1.4" });
+      writeFileSync(join(dir, "shot.png"), PNG);
+      prepareGit(dir, ["add", "a.md", "shot.png", "talk.pdf"]);
+    };
+
+    beforeAll(() => {
+      const noOcr = temp();
+      writeFileSync(join(noOcr, "swiftc"), "#!/bin/sh\nexit 1\n", { mode: 0o755 });
+      PATH = `${noOcr}:${stubDir}:/usr/bin:/bin`;
+      const none = machine({ gh: "deny" });
+      unreadFiles(none.dir);
+      withoutList = none.check({ PATH }, optional);
+      const list = join(none.home, "list.json");
+      writeFileSync(list, fresh);
+      withList = none.check({ PATH, SCAFFOLDING_CONFIDENTIAL_TERMS: list }, optional);
     });
-    // Passed unread is not read: a later scan with the list still refuses it.
-    const list = join(none.home, "list.json");
-    writeFileSync(list, fresh);
-    const strict = none.check({ PATH, SCAFFOLDING_CONFIDENTIAL_TERMS: list }, optional);
-    expect(strict).toEqual({ code: 1, out: containingText("shot.png: image not read") });
-    // A stale list refuses, and the unread file is reported, not passed.
-    const stale = machine({ gh: "deny", cache: builtDaysAgo(10), cacheDays: 2 });
-    writeFileSync(join(stale.dir, "shot.png"), PNG);
-    sh(stale.dir, ["add", "shot.png"]);
-    expect(stale.check({ PATH }, optional).out).not.toContain("passed unread");
+
+    test("passes the unread file without a list and reports both files", () => {
+      expect(withoutList.code, withoutList.out).toBe(0);
+      expect(withoutList.out).toContain("shot.png: image not read");
+      expect(withoutList.out).toContain("talk.pdf: PDF not read");
+      expect(withoutList.out).toContain("--list-optional: passed unread");
+    });
+
+    test("refuses an unread file after the list becomes available", () => {
+      expect(withList.code, withList.out).toBe(1);
+      expect(withList.out).toContain("shot.png: image not read");
+    });
+
+    test("does not pass an unread file with a stale list", () => {
+      const stale = machine({ gh: "deny", cache: builtDaysAgo(10), cacheDays: 2 });
+      writeFileSync(join(stale.dir, "shot.png"), PNG);
+      prepareGit(stale.dir, ["add", "shot.png"]);
+      expect(stale.check({ PATH }, optional).out).not.toContain("passed unread");
+    });
   });
 
-  test("--list-optional without a copy tries gh at most hourly; without it every commit tries", () => {
-    const m = machine({ gh: "deny" });
-    expect(m.check({}, ["--staged", "--list-optional"]).code).toBe(0);
-    const again = m.check({}, ["--staged", "--list-optional"]);
-    expect({ ...again, fetches: m.calls() }).toEqual({
-      code: 0,
-      out: containingText("next fetch within the hour"),
-      fetches: 1,
+  describe("--list-optional without a local copy", () => {
+    let first: ReturnType<typeof run>,
+      again: ReturnType<typeof run>,
+      strict: ReturnType<typeof run>;
+    let afterRetry: number, afterStrict: number, afterHour: number;
+    beforeAll(() => {
+      const m = machine({ gh: "deny" });
+      const optional = ["--staged", "--list-optional"];
+      first = m.check({}, optional);
+      again = m.check({}, optional);
+      afterRetry = m.calls();
+      strict = m.check();
+      afterStrict = m.calls();
+      const attempt = `${m.cache}.attempt`;
+      const hourAgo = (Date.now() - 3_700_000) / 1000;
+      utimesSync(attempt, hourAgo, hourAgo);
+      m.check({}, optional);
+      afterHour = m.calls();
     });
-    const strict = m.check();
-    expect({ code: strict.code, fetches: m.calls() }).toEqual({ code: 1, fetches: 2 });
-    const attempt = `${m.cache}.attempt`;
-    const hourAgo = (Date.now() - 3_700_000) / 1000;
-    utimesSync(attempt, hourAgo, hourAgo);
-    m.check({}, ["--staged", "--list-optional"]);
-    expect(m.calls()).toBe(3);
+    test("passes the first optional scan", () => {
+      expect(first.code, first.out).toBe(0);
+    });
+    test("passes a repeat within the hour without asking again", () => {
+      expect(again.code, again.out).toBe(0);
+      expect(again.out).toContain("next fetch within the hour");
+      expect(afterRetry).toBe(1);
+    });
+    test("tries again and refuses a strict commit scan", () => {
+      expect(strict.code, strict.out).toBe(1);
+      expect(afterStrict).toBe(2);
+    });
+    test("retrieves an optional list again after the hour", () => {
+      expect(afterHour).toBe(3);
+    });
   });
 
   test("CI skips the audit's term step without fetching, the path rule still holds", () => {
@@ -4255,7 +4350,7 @@ describe("scaffolding check", () => {
       "a.ts": 'import { b } from "./b.ts";\nexport const a = (): number => b();\n',
       "b.ts": 'import { a } from "./a.ts";\nexport const b = (): number => a();\n',
     });
-    expect(sh(dir, ["add", "--", "a.ts", "b.ts"]).status).toBe(0);
+    prepareGit(dir, ["add", "--", "a.ts", "b.ts"]);
     const r = run(dir, "scaffolding", ["check"], { CHECK_LOCK: join(dir, ".lock") });
     expect(r.code).toBe(1);
     expect(r.out).toMatch(/failed in [\d.]+ s: cycles/);
@@ -4272,8 +4367,8 @@ describe("scaffolding check", () => {
       "a.js": "export function lookup() { return 1; }\n",
     });
     install(dir);
-    expect(sh(dir, ["add", "--", ".oxlintrc.json", "a.js"]).status).toBe(0);
-    expect(sh(dir, ["commit", "-qm", "add source"]).status).toBe(0);
+    prepareGit(dir, ["add", "--", ".oxlintrc.json", "a.js"]);
+    prepareGit(dir, ["commit", "-qm", "add source"]);
     write(dir, { "README.md": "# Fixture\n" });
     const green = changed();
     expect(green, green.out).toEqual({
@@ -4318,6 +4413,7 @@ describe("scaffolding check", () => {
 
   describe("layers step checks the committed map", () => {
     let dir: string;
+    let original: string;
     const check = () => run(dir, "scaffolding", ["check"], { CHECK_LOCK: join(dir, ".lock") });
     const stale =
       "docs/architecture/layers.md is stale: run `bun run scaffolding layers --write` and commit the file with this change.";
@@ -4353,7 +4449,14 @@ describe("scaffolding check", () => {
         "src/lib/helper.js": "export {};\n",
         "tools/build.js": "export {};\n",
       });
-      expect(sh(dir, ["add", "--", "src", "tools"]).status).toBe(0);
+      prepareGit(dir, ["add", "--", "src", "tools"]);
+      original = prepareGit(dir, ["rev-parse", "HEAD"]);
+    });
+
+    afterEach(() => {
+      prepareGit(dir, ["reset", "--mixed", original]);
+      prepareGit(dir, ["add", "--", "src", "tools"]);
+      rmSync(join(dir, layerMap), { force: true });
     });
 
     test("generates the map to stdout without writing it", () => {
@@ -4374,13 +4477,12 @@ describe("scaffolding check", () => {
     test("accepts a newly generated and committed layer map", () => {
       expect(run(dir, "scaffolding", ["layers", "--write"]).code).toBe(0);
       expect(readFileSync(join(dir, layerMap), "utf8")).toBe(layerFixture);
-      expect(sh(dir, ["add", "--", layerMap]).status).toBe(0);
-      expect(sh(dir, ["commit", "-qm", "generate layers"]).status).toBe(0);
+      prepareGit(dir, ["add", "--", layerMap]);
+      prepareGit(dir, ["commit", "-qm", "generate layers"]);
       const fresh = check();
-      expect(fresh, fresh.out).toEqual({
-        code: 0,
-        out: matchingText(/^(?![\s\S]*\[guide\] )[\s\S]*ok {3}layers/),
-      });
+      expect(fresh.code, fresh.out).toBe(0);
+      expect(fresh.out).toContain("ok   layers");
+      expect(fresh.out).not.toContain("[guide] ");
     });
   });
 
@@ -4480,8 +4582,9 @@ describe("scaffolding check", () => {
     });
     const result = run(dir, "scaffolding", ["layers"]);
     expect(result.code, result.out).toBe(0);
-    const graph = result.out.split("```mermaid\n")[1]?.split("```")[0];
-    expect(graph).toBe(
+    const [, graph] = result.out.split("```mermaid\n");
+    assert(graph, "the Mermaid map");
+    expect(graph.split("```")[0]).toBe(
       'graph LR\n  L0["src"]\n  L1["src/**/*.test.ts"]\n  L2["src/**/*.ts"]\n  L0 -->|1| L2\n  L2 -->|1| L1\n',
     );
   });
@@ -4519,25 +4622,23 @@ describe("scaffolding check", () => {
     expect(graph.split("```")[0]).toBe(`graph LR\n  ${body}\n`);
   });
 
-  test("layers break equal specificity ties by layer name in either override order", () => {
-    const first = layerOverride(["src/**/*y.js"]);
-    const second = layerOverride(["src/**/x*.js"]);
+  const tiedLayerNames = ["src/**/*y.js", "src/**/x*.js"];
+  test.each([
+    ["given order", tiedLayerNames],
+    ["reverse order", [...tiedLayerNames].reverse()],
+  ])("layers break equal specificity ties by layer name in %s", (_, order) => {
     const dir = repo({
+      ".oxlintrc.json": withOverrides(order.map((name) => layerOverride([name]))),
       "src/a.js": 'import "./q/xy.js";\n',
       "src/q/xy.js": "export {};\n",
     });
-    for (const order of [
-      [first, second],
-      [second, first],
-    ]) {
-      write(dir, { ".oxlintrc.json": withOverrides(order) });
-      const result = run(dir, "scaffolding", ["layers"]);
-      expect(result.code, result.out).toBe(0);
-      const graph = result.out.split("```mermaid\n")[1]?.split("```")[0];
-      expect(graph).toBe(
-        'graph LR\n  L0["src"]\n  L1["src/**/*y.js"]\n  L2["src/**/x*.js"]\n  L0 -->|1| L1\n',
-      );
-    }
+    const result = run(dir, "scaffolding", ["layers"]);
+    expect(result.code, result.out).toBe(0);
+    const [, graph] = result.out.split("```mermaid\n");
+    assert(graph, "the Mermaid map");
+    expect(graph.split("```")[0]).toBe(
+      'graph LR\n  L0["src"]\n  L1["src/**/*y.js"]\n  L2["src/**/x*.js"]\n  L0 -->|1| L1\n',
+    );
   });
 
   test("layers distinguish a top-level layer from its excluded files", () => {
@@ -4590,11 +4691,8 @@ describe("scaffolding check", () => {
     });
     const generate = run(dir, "scaffolding", ["layers", "--write"]);
     const map = readFileSync(join(dir, layerMap), "utf8");
-    const stage = sh(dir, ["add", "--", layerMap]);
-    expect(
-      { generated: generate.code, staged: stage.status },
-      generate.out + stage.stderr.toString(),
-    ).toEqual({ generated: 0, staged: 0 });
+    expect(generate.code, generate.out).toBe(0);
+    prepareGit(dir, ["add", "--", layerMap]);
     const bins = join(dir, "node_modules/.bin");
     mkdirSync(bins, { recursive: true });
     symlinkSync(join(import.meta.dirname, "../node_modules/.bin/prettier"), join(bins, "prettier"));
@@ -4639,58 +4737,80 @@ describe("scaffolding check", () => {
     expect(result.out.match(/ {2}L\d+ -->.*/g)).toEqual(["  L1 -->|1| L0", "  L2 -->|1| L1"]);
   });
 
-  test("layers are selected by source, Oxlint config and map changes", () => {
-    const selected = (path: string) =>
-      selectChangedSteps([path], new Set(["layers", "cycles"]), [], []).steps.has("layers");
-    for (const path of ["src/a.ts", "src/a.astro", ".oxlintrc.json", layerMap])
-      expect(selected(path), path).toBe(true);
-    expect(selected("docs/other.md")).toBe(false);
+  test.each([
+    ["src/a.ts", true],
+    ["src/a.astro", true],
+    [".oxlintrc.json", true],
+    [layerMap, true],
+    ["docs/other.md", false],
+  ])("layers selection for %s", (path, selected) => {
+    const result = selectChangedSteps([path], new Set(["layers", "cycles"]), [], []);
+    expect(result.steps.has("layers")).toBe(selected);
   });
 
-  test("a tracked Markdown finding fails the gate under the step's name", () => {
-    const { markdown: _m, ...rest } = skip;
-    const dir = gate({ skip: rest });
-    write(dir, { "record.md": "Body without a title.\n" });
-    expect(sh(dir, ["add", "--", "record.md"]).status).toBe(0);
-    const env = { CHECK_LOCK: join(dir, ".lock") };
-    const r = run(dir, "scaffolding", ["check"], env);
-    expect(r, r.out).toEqual({
-      code: 1,
-      out: matchingText(/(?=[\s\S]*record\.md:1 error MD041)[\s\S]*failed in [\d.]+ s: markdown/),
+  describe("tracked Markdown in the gate", () => {
+    let dir: string;
+    beforeAll(() => {
+      const { markdown: _m, ...rest } = skip;
+      dir = gate({ skip: rest });
+      write(dir, { "record.md": "Body without a title.\n" });
+      prepareGit(dir, ["add", "--", "record.md"]);
     });
-    expect(r.out.split("\n").filter((line) => line === markdownRepair)).toEqual([markdownRepair]);
-    write(dir, { "record.md": "# Body without a title.\n" });
-    const green = run(dir, "scaffolding", ["check"], env);
-    expect(green).toEqual({ code: 0, out: withoutText(markdownRepair) });
+    afterEach(() => write(dir, { "record.md": "Body without a title.\n" }));
+    const check = () => run(dir, "scaffolding", ["check"], { CHECK_LOCK: join(dir, ".lock") });
+
+    test("fails the Markdown step and prints its repair command once", () => {
+      const result = check();
+      expect(result.code, result.out).toBe(1);
+      expect(result.out).toContain("record.md:1 error MD041");
+      expect(result.out).toMatch(/failed in [\d.]+ s: markdown/);
+      expect(result.out.split("\n").filter((line) => line === markdownRepair)).toEqual([
+        markdownRepair,
+      ]);
+    });
+
+    test("passes a clean Markdown file without a repair command", () => {
+      write(dir, { "record.md": "# Body without a title.\n" });
+      const result = check();
+      expect(result).toEqual({ code: 0, out: withoutText(markdownRepair) });
+    });
   });
 
   test("the gate accepts Markdown content folders and runs the Markdown step", () => {
     const { markdown: _m, ...rest } = skip;
     const dir = gate({ skip: rest, markdown: { content: ["articles"] } });
     write(dir, { "articles/post.md": "Body with <span>inline HTML</span>.\n" });
-    expect(sh(dir, ["add", "--", "articles/post.md"]).status).toBe(0);
+    prepareGit(dir, ["add", "--", "articles/post.md"]);
     const result = run(dir, "scaffolding", ["check"], { CHECK_LOCK: join(dir, ".lock") });
     expect(result.code, result.out).toBe(0);
   });
 
-  test("a tracked shell finding fails the gate under the step's name", () => {
-    const { shell: _s, ...rest } = skip;
-    const dir = gate({ skip: rest });
-    write(dir, { "script.sh": shellScript });
-    expect(sh(dir, ["add", "--", "script.sh"]).status).toBe(0);
-    const env = {
-      CHECK_LOCK: join(dir, ".lock"),
-      ...shellcheckFixture(dir),
-    };
-    const r = run(dir, "scaffolding", ["check"], env);
-    expect(r, r.out).toEqual({
-      code: 1,
-      out: matchingText(/(?=[\s\S]*SC2034)[\s\S]*failed in [\d.]+ s: shell/),
+  describe("tracked shell code in the gate", () => {
+    let dir: string;
+    let env: Record<string, string>;
+    beforeAll(() => {
+      const { shell: _s, ...rest } = skip;
+      dir = gate({ skip: rest });
+      write(dir, { "script.sh": shellScript });
+      prepareGit(dir, ["add", "--", "script.sh"]);
+      env = { CHECK_LOCK: join(dir, ".lock"), ...shellcheckFixture(dir) };
     });
-    expect(r.out.split("\n").filter((line) => line === shellRepair)).toEqual([shellRepair]);
-    write(dir, { "script.sh": "#!/bin/sh\necho ready\n" });
-    const green = run(dir, "scaffolding", ["check"], env);
-    expect(green).toEqual({ code: 0, out: withoutText(shellRepair) });
+    afterEach(() => write(dir, { "script.sh": shellScript }));
+    const check = () => run(dir, "scaffolding", ["check"], env);
+
+    test("fails the shell step and prints its repair command once", () => {
+      const result = check();
+      expect(result.code, result.out).toBe(1);
+      expect(result.out).toContain("SC2034");
+      expect(result.out).toMatch(/failed in [\d.]+ s: shell/);
+      expect(result.out.split("\n").filter((line) => line === shellRepair)).toEqual([shellRepair]);
+    });
+
+    test("passes a clean shell script without a repair command", () => {
+      write(dir, { "script.sh": "#!/bin/sh\necho ready\n" });
+      const result = check();
+      expect(result).toEqual({ code: 0, out: withoutText(shellRepair) });
+    });
   });
 
   test("lint waits for a typecheck that runs Astro, whose content types it reads", () => {
@@ -4708,7 +4828,7 @@ describe("scaffolding check", () => {
     expect(r.code).toBe(0);
   });
 
-  test.each([
+  describe.each([
     [
       "oxlint",
       "no-self-assign",
@@ -4721,32 +4841,50 @@ describe("scaffolding check", () => {
       "no-useless-assignment",
       "let value = 0;\nvalue = 1;\nconsole.log(value);\n",
     ],
-  ])("rule guides follow %s findings once and stay quiet on a pass", (_, id, finding, broken) => {
-    const { lint: _l, ...rest } = skip;
-    const dir = gate({ skip: rest });
-    write(dir, {
-      ".oxlintrc.json": JSON.stringify(oxlintTemplate),
-      "eslint.config.js": 'export { default } from "@hackersandwizards/scaffolding/eslint";\n',
-      "a.js": broken,
-    });
-    install(dir);
-    symlinkSync(join(import.meta.dirname, "../node_modules/.bin"), join(dir, "node_modules/.bin"));
-    const check = () => run(dir, "scaffolding", ["check"], { CHECK_LOCK: join(dir, ".lock") });
-    const single = check();
-    expect(single, single.out).toEqual({ code: 1, out: containingText(finding) });
-    expectGuideAfter(single.out, id, finding);
-    write(dir, { "b.js": broken });
-    const double = check();
-    const beforeGuide = double.out.split("[guide]")[0];
-    expect(
-      { code: double.code, occurrences: beforeGuide.split(finding).length - 1 },
-      double.out,
-    ).toEqual({ code: 1, occurrences: 2 });
-    expectGuide(double.out, id);
+  ])("gate rule guides for %s", (_, id, finding, broken) => {
+    let dir: string;
     const clean = "console.log(1);\n";
-    write(dir, { "a.js": clean, "b.js": clean });
-    const green = check();
-    expect(green, green.out).toEqual({ code: 0, out: withoutText("[guide] ") });
+    beforeAll(() => {
+      const { lint: _l, ...rest } = skip;
+      dir = gate({ skip: rest });
+      write(dir, {
+        ".oxlintrc.json": JSON.stringify(oxlintTemplate),
+        "eslint.config.js": 'export { default } from "@hackersandwizards/scaffolding/eslint";\n',
+        "a.js": clean,
+      });
+      install(dir);
+      symlinkSync(
+        join(import.meta.dirname, "../node_modules/.bin"),
+        join(dir, "node_modules/.bin"),
+      );
+    });
+    afterEach(() => {
+      write(dir, { "a.js": clean });
+      rmSync(join(dir, "b.js"), { force: true });
+    });
+    const check = () => run(dir, "scaffolding", ["check"], { CHECK_LOCK: join(dir, ".lock") });
+
+    test("prints one guide after a single finding", () => {
+      write(dir, { "a.js": broken });
+      const single = check();
+      expect(single, single.out).toEqual({ code: 1, out: containingText(finding) });
+      expectGuideAfter(single.out, id, finding);
+    });
+
+    test("prints one guide for two findings", () => {
+      write(dir, { "a.js": broken, "b.js": broken });
+      const double = check();
+      expect(double.code, double.out).toBe(1);
+      const beforeGuide = double.out.split("[guide]")[0];
+      expect(beforeGuide.split(finding).length - 1).toBe(2);
+      expectGuide(double.out, id);
+    });
+
+    test("prints no guide on a pass", () => {
+      write(dir, { "b.js": clean });
+      const green = check();
+      expect(green, green.out).toEqual({ code: 0, out: withoutText("[guide] ") });
+    });
   });
 
   test("runs the repository's steps in order and passes", () => {
@@ -4873,52 +5011,60 @@ describe("scaffolding check", () => {
     const { shell: _s, markdown: _m, ...rest } = skip;
     const dir = gate({ skip: rest });
     write(dir, { "bin/tool": "#!/bin/ksh\ntrue\n" });
-    expect(sh(dir, ["add", "--", "bin/tool"]).status).toBe(0);
-    expect(sh(dir, ["commit", "-qm", "add script", "--", "bin/tool"]).status).toBe(0);
+    prepareGit(dir, ["add", "--", "bin/tool"]);
+    prepareGit(dir, ["commit", "-qm", "add script", "--", "bin/tool"]);
     const old = sh(dir, ["rev-parse", "HEAD"]).stdout.toString().trim();
-    expect(sh(dir, ["rm", "-q", "--", "bin/tool"]).status).toBe(0);
-    expect(sh(dir, ["commit", "-qm", "remove script", "--", "bin/tool"]).status).toBe(0);
+    prepareGit(dir, ["rm", "-q", "--", "bin/tool"]);
+    prepareGit(dir, ["commit", "-qm", "remove script", "--", "bin/tool"]);
     const tip = sh(dir, ["rev-parse", "HEAD"]).stdout.toString().trim();
     const r = run(dir, "scaffolding", ["check", "--changed", `${old}..${tip}`], {
       CHECK_LOCK: join(temp(), "lock"),
     });
-    expect(r, r.out).toEqual({
-      code: 0,
-      out: matchingText(
-        /(?=[\s\S]*selected shell: matches shell shebang in "bin\/tool")[\s\S]*skipped markdown: no changed path maps to it/,
-      ),
-    });
+    expect(r.code, r.out).toBe(0);
+    expect(r.out).toContain('selected shell: matches shell shebang in "bin/tool"');
+    expect(r.out).toContain("skipped markdown: no changed path maps to it");
   });
 
-  test("--changed selects shell when a sourced tracked file changes", async () => {
-    const { shell: _s, ...rest } = skip;
-    const dir = gate({ skip: rest });
-    write(dir, {
-      "scripts/main.sh": '#!/bin/sh\n. ./lib/common.inc\nprintf "%s\\n" "$value"\n',
-      "lib/common.inc": "value=before\n",
+  describe("--changed when a sourced tracked file changes", () => {
+    let local: ReturnType<typeof run>, pushed: ReturnType<typeof run>;
+    beforeAll(async () => {
+      const { shell: _s, ...rest } = skip;
+      const dir = gate({ skip: rest });
+      write(dir, {
+        "scripts/main.sh": '#!/bin/sh\n. ./lib/common.inc\nprintf "%s\\n" "$value"\n',
+        "lib/common.inc": "value=before\n",
+      });
+      prepareGit(dir, ["add", "--", "scripts/main.sh", "lib/common.inc"]);
+      prepareGit(dir, ["commit", "-qm", "add source", "--", "scripts/main.sh", "lib/common.inc"]);
+      const base = prepareGit(dir, ["rev-parse", "HEAD"]);
+      const env = { CHECK_LOCK: join(temp(), "lock"), ...(await realShellcheckFixture(dir)) };
+      write(dir, { "lib/common.inc": "value=after\n" });
+      local = run(dir, "scaffolding", ["check", "--changed"], env);
+      rmSync(join(dir, "lib/common.inc"));
+      write(dir, { "scripts/main.sh": "#!/bin/sh\ntrue\n" });
+      prepareGit(dir, ["add", "--", "scripts/main.sh", "lib/common.inc"]);
+      prepareGit(dir, [
+        "commit",
+        "-qm",
+        "remove source",
+        "--",
+        "scripts/main.sh",
+        "lib/common.inc",
+      ]);
+      pushed = run(dir, "scaffolding", ["check", "--changed", `${base}..HEAD`], env);
     });
-    expect([
-      sh(dir, ["add", "--", "scripts/main.sh", "lib/common.inc"]).status,
-      sh(dir, ["commit", "-qm", "add source", "--", "scripts/main.sh", "lib/common.inc"]).status,
-    ]).toEqual([0, 0]);
-    const base = sh(dir, ["rev-parse", "HEAD"]).stdout.toString().trim();
-    const env = { CHECK_LOCK: join(temp(), "lock"), ...(await realShellcheckFixture(dir)) };
-    write(dir, { "lib/common.inc": "value=after\n" });
-    const local = run(dir, "scaffolding", ["check", "--changed"], env);
-    expect(local, local.out).toEqual({
-      code: 0,
-      out: containingText('selected shell: sources "lib/common.inc"'),
+
+    test("selects shell after an edit to the sourced file", () => {
+      expect(local, local.out).toEqual({
+        code: 0,
+        out: containingText('selected shell: sources "lib/common.inc"'),
+      });
     });
-    rmSync(join(dir, "lib/common.inc"));
-    write(dir, { "scripts/main.sh": "#!/bin/sh\ntrue\n" });
-    expect([
-      sh(dir, ["add", "--", "scripts/main.sh", "lib/common.inc"]).status,
-      sh(dir, ["commit", "-qm", "remove source", "--", "scripts/main.sh", "lib/common.inc"]).status,
-    ]).toEqual([0, 0]);
-    const pushed = run(dir, "scaffolding", ["check", "--changed", `${base}..HEAD`], env);
-    expect(pushed, pushed.out).toEqual({
-      code: 0,
-      out: containingText('selected shell: sources "lib/common.inc"'),
+    test("selects shell when a push removes the sourced file and its reference", () => {
+      expect(pushed, pushed.out).toEqual({
+        code: 0,
+        out: containingText('selected shell: sources "lib/common.inc"'),
+      });
     });
   });
 
@@ -4939,15 +5085,17 @@ describe("scaffolding check", () => {
     );
     const old = sh(dir, ["rev-parse", "HEAD"]).stdout.toString().trim();
     write(dir, { [path]: contents });
-    expect(sh(dir, ["add", "--", path]).status).toBe(0);
-    expect(sh(dir, ["commit", "-qm", "change one file", "--", path]).status).toBe(0);
+    prepareGit(dir, ["add", "--", path]);
+    prepareGit(dir, ["commit", "-qm", "change one file", "--", path]);
     const r = run(dir, "scaffolding", ["check", "--changed", `${old}..HEAD`], {
       CHECK_LOCK: join(temp(), "lock"),
       ...shellcheckFixture(dir),
     });
     expect(r.code, r.out).toBe(0);
     expect(r.out).toContain("tests-ran");
-    for (const step of skipped) expect(r.out).toContain(`skipped ${step}: fixture`);
+    expect(
+      Array.from(r.out.matchAll(/skipped (?:shell|markdown): fixture/g), ([line]) => line).sort(),
+    ).toEqual(skipped.map((step) => `skipped ${step}: fixture`).sort());
   });
 
   test.each([
@@ -5078,30 +5226,45 @@ describe("scaffolding check", () => {
       full = run(dir, "scaffolding", ["check"], lock);
     }, limit(20_000));
 
+    const rangeMessages =
+      /skipped (?:lint|test): no changed path maps to it|selected typecheck: Astro lint needs generated types|(?:3|2) paths since|selected lint: matches "src\/a\.ts"|selected test: matches "src\/b\.ts"|is a shared configuration path|starts a new branch|starts at a commit this clone lacks|is not a verifiable fast-forward|deferred test: launches Chrome|(?:lint|test)-ran/g;
     test.each([
       [
         "prose",
-        /^(?![\s\S]*(?:lint|test)-ran)(?=[\s\S]*skipped lint: no changed path maps to it)[\s\S]*skipped test: no changed path maps to it/,
+        ["skipped lint: no changed path maps to it", "skipped test: no changed path maps to it"],
       ],
       [
         "lint",
-        /^(?![\s\S]*test-ran)(?=[\s\S]*selected typecheck: Astro lint needs generated types)[\s\S]*lint-ran/,
+        [
+          "lint-ran",
+          "selected typecheck: Astro lint needs generated types",
+          "skipped test: no changed path maps to it",
+        ],
       ],
-      ["union", /(?=[\s\S]*3 paths since)(?=[\s\S]*lint-ran)[\s\S]*test-ran/],
-      ["rename", /(?=[\s\S]*2 paths since)[\s\S]*selected lint: matches "src\/a\.ts"/],
-      ["deletion", /selected test: matches "src\/b\.ts"/],
-      ["lockfile", /(?=[\s\S]*is a shared configuration path)[\s\S]*test-ran/],
-      ["new branch", /starts a new branch/],
-      ["absent base commit", /starts at a commit this clone lacks/],
-      ["non-fast-forward", /is not a verifiable fast-forward/],
-      ["full-only test", /^(?![\s\S]*test-ran)[\s\S]*deferred test: launches Chrome/],
-    ] as const)("selects the steps for %s", (scenario, findings) => {
+      ["union", ["3 paths since", 'selected lint: matches "src/a.ts"', "lint-ran", "test-ran"]],
+      ["rename", ["2 paths since", 'selected lint: matches "src/a.ts"', "lint-ran", "test-ran"]],
+      ["deletion", ['selected test: matches "src/b.ts"', "lint-ran", "test-ran"]],
+      ["lockfile", ["is a shared configuration path", "lint-ran", "test-ran"]],
+      ["new branch", ["starts a new branch", "lint-ran", "test-ran"]],
+      ["absent base commit", ["starts at a commit this clone lacks", "lint-ran", "test-ran"]],
+      ["non-fast-forward", ["is not a verifiable fast-forward", "lint-ran", "test-ran"]],
+      [
+        "full-only test",
+        [
+          "2 paths since",
+          'selected lint: matches "src/a.ts"',
+          "deferred test: launches Chrome",
+          "lint-ran",
+        ],
+      ],
+    ] as const)("selects the steps for %s", (scenario, messages) => {
       const result = results.get(scenario);
       assert(result, `the gate result for ${scenario}`);
-      expect(result, result.out).toEqual({ code: 0, out: matchingText(findings) });
-      expect(result.out).toMatch(
-        /^(?![\s\S]*(?:catalog|preview)-ran)(?=[\s\S]*deferred catalog: builds the catalog)[\s\S]*deferred check:preview: builds a preview/,
-      );
+      expect(result.code, result.out).toBe(0);
+      expect(new Set(result.out.match(rangeMessages)), result.out).toEqual(new Set(messages));
+      expect(result.out).not.toMatch(/(?:catalog|preview)-ran/);
+      expect(result.out).toContain("deferred catalog: builds the catalog");
+      expect(result.out).toContain("deferred check:preview: builds a preview");
     });
 
     test("runs all three deferred steps in the full gate", () => {
@@ -5186,7 +5349,7 @@ describe("scaffolding check", () => {
       docs = push(dir, "HEAD:refs/heads/main");
       const previous = sh(dir, ["rev-parse", "HEAD"]).stdout.toString().trim();
       write(dir, { "docs/reflog.md": "reflog\n" });
-      expect(sh(dir, ["add", "--", "docs/reflog.md"]).status).toBe(0);
+      prepareGit(dir, ["add", "--", "docs/reflog.md"]);
       expect(
         spawnSync("git", ["commit", "-qm", "dated target", "--", "docs/reflog.md"], {
           cwd: dir,
@@ -5217,38 +5380,33 @@ describe("scaffolding check", () => {
     }, limit(60_000));
 
     test("runs all fast steps for a new branch and sends the branch's refs to the scan", () => {
-      expect(first, first.out).toEqual({
-        code: 0,
-        out: matchingText(/(?=[\s\S]*starts a new branch: all fast steps run)[\s\S]*src-ran/),
-      });
+      expect(first.code, first.out).toBe(0);
+      expect(first.out).toContain("starts a new branch: all fast steps run");
+      expect(first.out).toContain("src-ran");
       expect(firstRefs).toBe(expectedFirstRefs);
     });
 
     test("skips both mapped checks on rules and skill prose despite working tree changes", () => {
-      expect(hub, hub.out).toEqual({
-        code: 0,
-        out: matchingText(
-          /(?=[\s\S]*\[scaffolding\] skipped check:src: no changed path maps to it)[\s\S]*\[scaffolding\] skipped check:docs: no changed path maps to it/,
-        ),
-      });
+      expect(hub.code, hub.out).toBe(0);
+      expect(hub.out).toContain("[scaffolding] skipped check:src: no changed path maps to it");
+      expect(hub.out).toContain("[scaffolding] skipped check:docs: no changed path maps to it");
     });
 
     test("runs the docs check alone for a path mapped to it", () => {
-      expect(docs.out).toMatch(/^(?![\s\S]*src-ran)[\s\S]*docs-ran/);
+      expect(docs.out).toContain("docs-ran");
+      expect(docs.out).not.toContain("src-ran");
     });
 
     test("checks and passes on the refs of a reflog-selected commit", () => {
-      expect(reflog, reflog.out).toEqual({
-        code: 0,
-        out: matchingText(
-          /^(?![\s\S]*src-ran)[\s\S]*selected check:docs: matches "docs\/reflog\.md"/,
-        ),
-      });
+      expect(reflog.code, reflog.out).toBe(0);
+      expect(reflog.out).not.toContain("src-ran");
+      expect(reflog.out).toContain('selected check:docs: matches "docs/reflog.md"');
       expect(reflogRefs).toBe(expectedReflogRefs);
     });
 
     test("uses the pushed range from a detached linked worktree", () => {
-      expect(code.out).toMatch(/(?=[\s\S]*selected check:src: matches "src\/a\.ts")[\s\S]*src-ran/);
+      expect(code.out).toContain('selected check:src: matches "src/a.ts"');
+      expect(code.out).toContain("src-ran");
       expect(rules.out).toContain("skipped check:src");
     });
 
@@ -5323,13 +5481,13 @@ describe("scaffolding check", () => {
     expect(r.out).toMatch(/\[scaffolding\] failed in [\d.]+ s: check:fast, check:also\n/);
   });
 
-  test(
-    "above one waiting process per core the repository's steps run a limited number at a time",
-    () => {
+  describe("the gate's concurrency limit", () => {
+    let dir: string;
+    beforeAll(() => {
       // Each step fails where three run at once.
       const body = (me: string) =>
         `touch ${me}.on; sleep 0.5; n=$(ls *.on | wc -l); rm ${me}.on; test $n -le 2`;
-      const dir = gate(
+      dir = gate(
         { skip, check: [["check:a", "check:b", "check:c", "check:limit"]] },
         {
           "check:a": body("a"),
@@ -5338,24 +5496,34 @@ describe("scaffolding check", () => {
           "check:limit": "echo limit=$SCAFFOLDING_TEST_TIMEOUT_MS",
         },
       );
-      const loaded = run(dir, "scaffolding", ["check"], {
-        CHECK_LOCK: join(dir, ".lock"),
-        SCAFFOLDING_LOAD: "99999",
-      });
-      // The per-test limit stretches by load per core, ten times at most.
-      expect(loaded, loaded.out).toEqual({
-        code: 0,
-        out: matchingText(
-          /(?=[\s\S]*load 99999 on \d+ cores: test and catalog run one after another, the repository's steps 2 at a time)[\s\S]*limit=50000/,
-        ),
-      });
-      const idle = run(dir, "scaffolding", ["check"], { CHECK_LOCK: join(dir, ".lock") });
-      expect(idle.out).not.toContain("at a time");
-      expect(idle.out).toContain("limit=5000\n");
-      expect(idle.code).toBe(1);
-    },
-    limit(40_000),
-  );
+    });
+    test(
+      "above one waiting process per core runs two steps at a time",
+      () => {
+        const loaded = run(dir, "scaffolding", ["check"], {
+          CHECK_LOCK: join(dir, ".lock"),
+          SCAFFOLDING_LOAD: "99999",
+        });
+        // The per-test limit stretches by load per core, ten times at most.
+        expect(loaded.code, loaded.out).toBe(0);
+        expect(loaded.out).toMatch(
+          /load 99999 on \d+ cores: test and catalog run one after another, the repository's steps 2 at a time/,
+        );
+        expect(loaded.out).toContain("limit=50000");
+      },
+      limit(40_000),
+    );
+    test(
+      "at idle starts all steps together and uses the default test timeout",
+      () => {
+        const idle = run(dir, "scaffolding", ["check"], { CHECK_LOCK: join(dir, ".lock") });
+        expect(idle.out).not.toContain("at a time");
+        expect(idle.out).toContain("limit=5000\n");
+        expect(idle.code).toBe(1);
+      },
+      limit(40_000),
+    );
+  });
 
   test(
     "a signal to the outer runner ends the steps, names them, and frees the lock",
@@ -5477,13 +5645,6 @@ describe("scaffolding check", () => {
     const pinned = [
       ["no retired inputs", { skip: noScans }, {}, 1, /declare scaffolding\.brand\.retired/],
       [
-        "local retired check",
-        { skip: noScans, check: [["check:retired", "true"]] },
-        { "check:retired": "echo ran-retired" },
-        0,
-        /(?=[\s\S]*ran-retired)[\s\S]*retired uses local check:retired/,
-      ],
-      [
         "valid skip reason",
         { skip: { ...noScans, retired: "brand only in tests" } },
         {},
@@ -5504,6 +5665,17 @@ describe("scaffolding check", () => {
         code,
         out: matchingText(report),
       });
+    });
+
+    test("uses the local retired check in place of the shared scan", () => {
+      const dir = branded(
+        { skip: noScans, check: [["check:retired", "true"]] },
+        { "check:retired": "echo ran-retired" },
+      );
+      const result = run(dir, "scaffolding", ["check"], lock(dir));
+      expect(result.code, result.out).toBe(0);
+      expect(result.out).toContain("retired uses local check:retired");
+      expect(result.out).toContain("ran-retired");
     });
 
     test("rejects skip.retired if the repository does not pin brand", () => {
@@ -5615,34 +5787,44 @@ describe("scaffolding check", () => {
     },
   );
 
-  test("pins runs the installed slides bin in both full and changed checks", () => {
+  describe("pins runs the installed slides bin", () => {
     const env = { CHECK_LOCK: join(temp(), "lock") };
-    const dir = gate(
-      { skip },
-      {},
-      { devDependencies: { "@hackersandwizards/slides": "file:slides" } },
-    );
-    write(dir, {
-      "slides/package.json": JSON.stringify({
-        name: "@hackersandwizards/slides",
-        bin: { "slides-pins": "pins.sh" },
-      }),
-      "slides/pins.sh": "#!/bin/sh\necho slides-pins-fixture\ntest -f accepted\n",
+    let dir: string;
+    let original: string;
+    beforeAll(() => {
+      dir = gate({ skip }, {}, { devDependencies: { "@hackersandwizards/slides": "file:slides" } });
+      write(dir, {
+        "slides/package.json": JSON.stringify({
+          name: "@hackersandwizards/slides",
+          bin: { "slides-pins": "pins.sh" },
+        }),
+        "slides/pins.sh": "#!/bin/sh\necho slides-pins-fixture\ntest -f accepted\n",
+      });
+      chmodSync(join(dir, "slides/pins.sh"), 0o755);
+      original = prepareGit(dir, ["rev-parse", "HEAD"]);
     });
-    chmodSync(join(dir, "slides/pins.sh"), 0o755);
-    const red = run(dir, "scaffolding", ["check"], env);
-    expect(red).toEqual({
-      code: 1,
-      out: matchingText(/(?=[\s\S]*slides-pins-fixture)[\s\S]*FAIL pins/),
+    afterEach(() => {
+      prepareGit(dir, ["reset", "--mixed", original]);
+      rmSync(join(dir, "accepted"), { force: true });
+      rmSync(join(dir, "docs/readme.md"), { force: true });
     });
-    write(dir, { accepted: "" });
-    sh(dir, ["add", "slides", "accepted"]);
-    sh(dir, ["commit", "-qm", "pin"]);
-    write(dir, { "docs/readme.md": "# Fixture" });
-    const green = run(dir, "scaffolding", ["check", "--changed"], env);
-    expect(green, green.out).toEqual({
-      code: 0,
-      out: matchingText(/(?=[\s\S]*selected pins: runs on every changed check)[\s\S]*ok {3}pins/),
+
+    test("reports the full gate failure of the installed command", () => {
+      const result = run(dir, "scaffolding", ["check"], env);
+      expect(result.code, result.out).toBe(1);
+      expect(result.out).toContain("slides-pins-fixture");
+      expect(result.out).toContain("FAIL pins");
+    });
+
+    test("selects pins even when a changed check only sees documentation", () => {
+      write(dir, { accepted: "" });
+      prepareGit(dir, ["add", "slides", "accepted"]);
+      prepareGit(dir, ["commit", "-qm", "pin"]);
+      write(dir, { "docs/readme.md": "# Fixture" });
+      const result = run(dir, "scaffolding", ["check", "--changed"], env);
+      expect(result.code, result.out).toBe(0);
+      expect(result.out).toContain("selected pins: runs on every changed check");
+      expect(result.out).toContain("ok   pins");
     });
   });
 
@@ -5654,10 +5836,10 @@ describe("scaffolding check", () => {
       { name: "@hackersandwizards/slides" },
     );
     const local = run(owner, "scaffolding", ["check"], env);
-    expect(local, local.out).toEqual({
-      code: 0,
-      out: matchingText(/^(?![\s\S]*ok {3}pins)(?=[\s\S]*own-pins-fixture)[\s\S]*ok {3}check:pins/),
-    });
+    expect(local.code, local.out).toBe(0);
+    expect(local.out).toContain("own-pins-fixture");
+    expect(local.out).toContain("ok   check:pins");
+    expect(local.out).not.toContain("ok   pins");
   });
 
   describe.each(["test/pages", "test/browser"])("browserTest uses %s", (folder) => {
@@ -5681,6 +5863,11 @@ describe("scaffolding check", () => {
       chmodSync(join(dir, "node_modules/.bin/vitest"), 0o755);
     });
 
+    afterEach(() => {
+      for (const file of ["broken", "broken-fast", "built", "src/input.ts", "src/broken.ts"])
+        rmSync(join(dir, file), { force: true });
+    });
+
     test("passes direct unit-test arguments to the fast test suite", () => {
       const direct = run(dir, "scaffolding", ["test", "unit.test.ts"], env);
       expect(direct.code, direct.out).toBe(0);
@@ -5694,7 +5881,6 @@ describe("scaffolding check", () => {
       const fastRed = run(dir, "scaffolding", ["test"], env);
       expect(fastRed.out).toContain(JSON.stringify(["run", "--exclude", `${folder}/**`]));
       expect(fastRed.code).toBe(7);
-      rmSync(join(dir, "broken-fast"));
     });
 
     test("defers the browser tests in changed checks", () => {
@@ -5714,14 +5900,14 @@ describe("scaffolding check", () => {
         Array.from(full.out.matchAll(/ok {3}(?:catalog|test)\b/g), (match) => match[0]).sort(),
       ).toEqual(["ok   catalog", "ok   test"]);
       expect(full.out).toContain(JSON.stringify(["run", folder]));
-      expect(full.out).toMatch(
-        /(?=[\s\S]*FAIL browser-test)[\s\S]*failed in [\d.]+ s: browser-test\n/,
-      );
+      expect(full.out).toContain("FAIL browser-test");
+      expect(full.out).toMatch(/failed in [\d.]+ s: browser-test\n/);
     });
   });
 
   describe("running installed bin commands", () => {
     let dir: string;
+    let manifest: string;
     const markdown = "# Note\n\nItems:\n- One\n";
     beforeAll(() => {
       dir = gate({ skip });
@@ -5737,10 +5923,15 @@ describe("scaffolding check", () => {
         if ((await Bun.file("note.md").text()) !== ${JSON.stringify(markdown)}) process.exit(8);
       `,
       });
-      expect(sh(dir, ["add", "--", "note.md"]).status).toBe(0);
+      prepareGit(dir, ["add", "--", "note.md"]);
+      manifest = readFileSync(join(dir, "package.json"), "utf8");
       for (const command of ["eslint", "prettier"]) chmodSync(join(bins, command), 0o755);
       for (const command of ["scaffolding", "scaffolding-explore"])
         symlinkSync(bin(command), join(bins, command));
+    });
+    afterEach(() => {
+      write(dir, { "note.md": markdown, "package.json": manifest });
+      rmSync(join(dir, "broken"), { force: true });
     });
     const bun = (...args: string[]) =>
       spawnSync(process.execPath, ["run", ...args], {
@@ -5792,77 +5983,117 @@ describe("scaffolding check", () => {
     expect(result.out).toContain("scaffolding.skip names no shared step: constructor");
   });
 
-  test("changed checks run both brand scans even for an empty push and defer built scans", () => {
-    const dir = gate(
-      { skip, brand: { directory: "site", retired: ["site/dist"] } },
-      {},
-      { devDependencies: { "@hackersandwizards/brand": "file:brand" } },
-    );
-    write(dir, {
-      "brand/package.json": JSON.stringify({
-        name: "@hackersandwizards/brand",
-        bin: { "brand-colours": "colours.sh", "brand-copies": "copies.sh" },
-      }),
-      "brand/colours.sh": "#!/bin/sh\nexit 0\n",
-      "brand/copies.sh": "#!/bin/sh\nexit 0\n",
-    });
-    for (const scan of ["colours", "copies"]) chmodSync(join(dir, `brand/${scan}.sh`), 0o755);
-    sh(dir, ["add", "brand"]);
-    sh(dir, ["commit", "-qm", "pin"]);
+  describe("brand scans in changed checks", () => {
+    let empty: ReturnType<typeof run>, outside: ReturnType<typeof run>;
     const env = { CHECK_LOCK: join(temp(), "lock") };
-    mkdirSync(join(dir, "site"));
-    sh(dir, ["commit", "--allow-empty", "-qm", "empty push"]);
-    const empty = run(dir, "scaffolding", ["check", "--changed", "HEAD^..HEAD"], env);
-    expect(empty.code, empty.out).toBe(0);
-    expect(empty.out).toContain("--changed: 0 paths");
-    expect(empty.out).toContain("deferred retired");
-    expect(empty.out).toContain("deferred elements");
-    write(dir, { "assets/sample.png": "binary fixture" });
-    const outside = run(dir, "scaffolding", ["check", "--changed"], env);
-    expect(outside.code, outside.out).toBe(0);
-    for (const result of [empty, outside])
-      for (const scan of ["colours", "copies"]) {
-        expect(result.out).toContain(`selected ${scan}: runs on every changed check`);
-        expect(result.out).toContain(`ok   ${scan}`);
+    beforeAll(() => {
+      const dir = gate(
+        { skip, brand: { directory: "site", retired: ["site/dist"] } },
+        {},
+        { devDependencies: { "@hackersandwizards/brand": "file:brand" } },
+      );
+      write(dir, {
+        "brand/package.json": JSON.stringify({
+          name: "@hackersandwizards/brand",
+          bin: { "brand-colours": "colours.sh", "brand-copies": "copies.sh" },
+        }),
+        "brand/colours.sh": "#!/bin/sh\nexit 0\n",
+        "brand/copies.sh": "#!/bin/sh\nexit 0\n",
+      });
+      for (const scan of ["colours", "copies"]) chmodSync(join(dir, `brand/${scan}.sh`), 0o755);
+      prepareGit(dir, ["add", "brand"]);
+      prepareGit(dir, ["commit", "-qm", "pin"]);
+      mkdirSync(join(dir, "site"));
+      prepareGit(dir, ["commit", "--allow-empty", "-qm", "empty push"]);
+      empty = run(dir, "scaffolding", ["check", "--changed", "HEAD^..HEAD"], env);
+      try {
+        write(dir, { "assets/sample.png": "binary fixture" });
+        outside = run(dir, "scaffolding", ["check", "--changed"], env);
+      } finally {
+        rmSync(join(dir, "assets"), { recursive: true, force: true });
       }
+    });
+
+    test.each([
+      ["an empty pushed range", () => empty],
+      ["an edit outside the brand directory", () => outside],
+    ] as const)("runs colour and copy scans for %s", (_, runResult) => {
+      const result = runResult();
+      expect(result.code, result.out).toBe(0);
+      expect(
+        new Set(
+          result.out.match(
+            /(?:selected (?:colours|copies): runs on every changed check|ok {3}(?:colours|copies))/g,
+          ),
+        ),
+      ).toEqual(
+        new Set([
+          "selected colours: runs on every changed check",
+          "selected copies: runs on every changed check",
+          "ok   colours",
+          "ok   copies",
+        ]),
+      );
+    });
+
+    test("defers the two built scans in an empty pushed range", () => {
+      expect(empty.out).toContain("--changed: 0 paths");
+      expect(empty.out).toContain("deferred retired");
+      expect(empty.out).toContain("deferred elements");
+    });
   });
 
-  test("placed brand scans run only in their configured group after the build", () => {
-    const { catalog: _catalog, ...skips } = skip;
-    const dir = gate(
-      {
-        skip: { ...skips, retired: "fixture", elements: "fixture" },
-        check: ["check:prepare", ["colours", "copies"]],
-      },
-      {
-        build: "mkdir -p rendered && touch rendered/page.html",
-        "check:prepare": "test -f rendered/page.html && touch ready",
-      },
-      { devDependencies: { "@hackersandwizards/brand": "file:brand" } },
-    );
-    write(dir, {
-      "brand/package.json": JSON.stringify({
-        name: "@hackersandwizards/brand",
-        bin: { "brand-colours": "scan.sh", "brand-copies": "scan.sh" },
-      }),
-      "brand/scan.sh": "#!/bin/sh\ntest -f ready\n",
+  describe("brand scans placed after check:prepare", () => {
+    let dir: string;
+    let full: ReturnType<typeof run>, changed: ReturnType<typeof run>;
+    beforeAll(() => {
+      const { catalog: _catalog, ...skips } = skip;
+      dir = gate(
+        {
+          skip: { ...skips, retired: "fixture", elements: "fixture" },
+          check: ["check:prepare", ["colours", "copies"]],
+        },
+        {
+          build: "mkdir -p rendered && touch rendered/page.html",
+          "check:prepare": "test -f rendered/page.html && touch ready",
+        },
+        { devDependencies: { "@hackersandwizards/brand": "file:brand" } },
+      );
+      write(dir, {
+        "brand/package.json": JSON.stringify({
+          name: "@hackersandwizards/brand",
+          bin: { "brand-colours": "scan.sh", "brand-copies": "scan.sh" },
+        }),
+        "brand/scan.sh": "#!/bin/sh\ntest -f ready\n",
+      });
+      chmodSync(join(dir, "brand/scan.sh"), 0o755);
+      prepareGit(dir, ["add", "brand"]);
+      prepareGit(dir, ["commit", "-qm", "pin"]);
+      const env = { CHECK_LOCK: join(dir, ".lock") };
+      full = run(dir, "scaffolding", ["check"], env);
+      // A changed gate defers the build and consumes an already rendered page.
+      write(dir, { "rendered/page.html": "" });
+      rmSync(join(dir, "ready"), { force: true });
+      changed = run(dir, "scaffolding", ["check", "--changed", "HEAD..HEAD"], env);
     });
-    chmodSync(join(dir, "brand/scan.sh"), 0o755);
-    sh(dir, ["add", "brand"]);
-    sh(dir, ["commit", "-qm", "pin"]);
-    const env = { CHECK_LOCK: join(dir, ".lock") };
-    const full = run(dir, "scaffolding", ["check"], env);
-    expect(full.code, full.out).toBe(0);
-    const changed = run(dir, "scaffolding", ["check", "--changed", "HEAD..HEAD"], env);
-    expect(changed.code, changed.out).toBe(0);
-    expect(changed.out).toContain("deferred catalog");
-    for (const result of [full, changed])
-      for (const scan of ["colours", "copies"]) {
-        expect(result.out.match(new RegExp(`ok   ${scan} `, "g"))).toHaveLength(1);
-        expect(result.out.indexOf(`ok   ${scan}`)).toBeGreaterThan(
-          result.out.indexOf("ok   check:prepare"),
-        );
-      }
+    const steps = /ok {3}(?:check:prepare|colours|copies)(?= )/g;
+
+    test.each([
+      ["full", () => full],
+      ["changed", () => changed],
+    ] as const)("runs each configured scan once after prepare in the %s gate", (_, runResult) => {
+      const result = runResult();
+      expect(result.code, result.out).toBe(0);
+      const messages = result.out.match(steps);
+      assert(messages, result.out);
+      const [prepare, ...scans] = messages;
+      expect(prepare).toBe("ok   check:prepare");
+      expect(scans.sort()).toEqual(["ok   colours", "ok   copies"]);
+    });
+
+    test("defers the catalog in the changed gate", () => {
+      expect(changed.out).toContain("deferred catalog");
+    });
   });
 
   describe.each([
@@ -5966,81 +6197,88 @@ describe("scaffolding check", () => {
     expect(readFileSync(join(dir, "dist/page"), "utf8")).toBe("catalog-file\n");
   });
 
-  test.each([
-    ["check:links", {}, { "check:links": "crawls the built site" }, true, false],
-    ["links", { linkSkips: ["/catalog"] }, {}, false, true],
+  describe.each([
+    [
+      "check:links",
+      {},
+      { "check:links": "crawls the built site" },
+      ["FAIL check:links", "links uses local check:links"],
+    ],
+    ["links", { linkSkips: ["/catalog"] }, {}, ["FAIL links"]],
   ] as const)(
     "links crawls the preview build with the local skip prefixes and fails on the same broken page (%s)",
-    (step, serverConfig, fullOnly, local, shared) => {
+    (step, serverConfig, fullOnly, failureMessages) => {
       const server = 'exec bun server.ts "$PORT"';
-      const dir = gate(
-        {
-          skip,
-          server: { command: server, timeout: 5, stderr: true },
-          ...serverConfig,
-          fullOnly: {
-            "check:preview": "builds the preview",
-            "check:rebuild": "rebuilds the preview",
-            ...fullOnly,
+      const brokenPage = '<a href="/missing">missing</a><a href="/catalog/missing">skipped</a>';
+      let dir: string;
+      const env = { CHECK_LOCK: join(temp(), "lock") };
+      beforeAll(() => {
+        dir = gate(
+          {
+            skip,
+            server: { command: server, timeout: 5, stderr: true },
+            ...serverConfig,
+            fullOnly: {
+              "check:preview": "builds the preview",
+              "check:rebuild": "rebuilds the preview",
+              ...fullOnly,
+            },
+            check: ["check:preview", step, "check:rebuild"],
           },
-          check: ["check:preview", step, "check:rebuild"],
-        },
-        {
-          "check:preview": "mkdir -p .preview && cp page.html .preview/index.html",
-          "check:links": `with-server --timeout 5 --stderr '${server}' -- check-links {url} --skip /catalog`,
-          "check:rebuild": "printf 'catalog-file build' > .preview/index.html",
-        },
-      );
-      write(dir, {
-        "page.html": '<a href="/missing">missing</a><a href="/catalog/missing">skipped</a>',
-        "server.ts": `Bun.serve({ port: Number(process.argv[2]), hostname: "127.0.0.1", fetch(req) {
+          {
+            "check:preview": "mkdir -p .preview && cp page.html .preview/index.html",
+            "check:links": `with-server --timeout 5 --stderr '${server}' -- check-links {url} --skip /catalog`,
+            "check:rebuild": "printf 'catalog-file build' > .preview/index.html",
+          },
+        );
+        write(dir, {
+          "page.html": brokenPage,
+          "server.ts": `Bun.serve({ port: Number(process.argv[2]), hostname: "127.0.0.1", fetch(req) {
           const path = new URL(req.url).pathname;
           if (path === "/") return new Response(Bun.file(".preview/index.html"));
           return new Response(null, { status: path === "/found" ? 200 : 404 });
         } }); console.error("fixture server started");`,
+        });
+        mkdirSync(join(dir, "node_modules/.bin"), { recursive: true });
+        for (const command of ["with-server", "check-links"])
+          symlinkSync(bin(command), join(dir, "node_modules/.bin", command));
       });
-      mkdirSync(join(dir, "node_modules/.bin"), { recursive: true });
-      for (const command of ["with-server", "check-links"])
-        symlinkSync(bin(command), join(dir, "node_modules/.bin", command));
-      const env = { CHECK_LOCK: join(temp(), "lock") };
-      const changed = run(dir, "scaffolding", ["check", "--changed"], env);
-      expect(
-        {
-          code: changed.code,
-          deferred: changed.out.includes(`deferred ${step}`),
-          served: changed.out.includes("fixture server started"),
-        },
-        changed.out,
-      ).toEqual({ code: 0, deferred: true, served: false });
-      const red = run(dir, "scaffolding", ["check"], env);
-      expect(
-        {
-          code: red.code,
-          built: red.out.includes("ok   check:preview"),
-          served: red.out.includes("fixture server started"),
-          missing: red.out.includes("/missing (404) <- /"),
-          skippedReported: red.out.includes("/catalog/missing"),
-          failed: red.out.includes(`FAIL ${step}`),
-          local: red.out.includes("links uses local check:links"),
-          shared: red.out.includes("FAIL links"),
-        },
-        red.out,
-      ).toEqual({
-        code: 1,
-        built: true,
-        served: true,
-        missing: true,
-        skippedReported: false,
-        failed: true,
-        local,
-        shared,
+      afterEach(() => write(dir, { "page.html": brokenPage }));
+
+      test("defers the crawler without starting the preview server", () => {
+        const result = run(dir, "scaffolding", ["check", "--changed"], env);
+        expect(result.code, result.out).toBe(0);
+        expect(result.out).toContain(`deferred ${step}`);
+        expect(result.out).not.toContain("fixture server started");
       });
-      write(dir, {
-        "page.html": '<a href="/found">found</a><a href="/catalog/missing">skipped</a>',
+
+      test("reports the broken link from the preview and excludes the skipped path", () => {
+        const result = run(dir, "scaffolding", ["check"], env);
+        expect(result.code, result.out).toBe(1);
+        const messages = result.out.match(
+          /ok {3}check:preview|fixture server started|\/missing \(404\) <- \/|FAIL (?:check:)?links|links uses local check:links/g,
+        );
+        expect(messages, result.out).toEqual(
+          expect.arrayContaining([
+            "ok   check:preview",
+            "fixture server started",
+            "/missing (404) <- /",
+            ...failureMessages,
+          ]),
+        );
+        expect(messages).toHaveLength(3 + failureMessages.length);
+        expect(result.out).not.toContain("/catalog/missing");
       });
-      const green = run(dir, "scaffolding", ["check"], env);
-      expect(green, green.out).toEqual({ code: 0, out: containingText(`ok   ${step}`) });
-      expect(readFileSync(join(dir, ".preview/index.html"), "utf8")).toBe("catalog-file build");
+
+      test("passes the repaired preview and runs the later rebuild", () => {
+        write(dir, {
+          "page.html": '<a href="/found">found</a><a href="/catalog/missing">skipped</a>',
+        });
+        const result = run(dir, "scaffolding", ["check"], env);
+        expect(result.code, result.out).toBe(0);
+        expect(result.out).toContain(`ok   ${step}`);
+        expect(readFileSync(join(dir, ".preview/index.html"), "utf8")).toBe("catalog-file build");
+      });
     },
   );
 
@@ -6219,14 +6457,17 @@ describe("scaffolding check", () => {
     expect(r.code).toBe(1);
   });
 
-  test("the admin step runs the pinned admin-check; without admin pinned it needs skip.admin", () => {
+  describe("the admin step", () => {
     const { admin: _, ...noAdmin } = skip;
-    const bare = gate({ skip: noAdmin });
-    const unpinned = run(bare, "scaffolding", ["check"], { CHECK_LOCK: join(bare, ".lock") });
-    expect(unpinned.code).toBe(1);
-    expect(unpinned.out).toContain(
-      "@hackersandwizards/admin is not pinned: pin it, or skip.admin with a reason",
-    );
+    test("requires a pin or a skip reason", () => {
+      const bare = gate({ skip: noAdmin });
+      const unpinned = run(bare, "scaffolding", ["check"], { CHECK_LOCK: join(bare, ".lock") });
+      expect(unpinned.code).toBe(1);
+      expect(unpinned.out).toContain(
+        "@hackersandwizards/admin is not pinned: pin it, or skip.admin with a reason",
+      );
+    });
+
     const pinned = (verdict: string) => {
       const dir = repo({
         "package.json": JSON.stringify({
@@ -6244,13 +6485,18 @@ describe("scaffolding check", () => {
       spawnSync("chmod", ["+x", join(dir, "admin/check.sh")]);
       return run(dir, "scaffolding", ["check"], { CHECK_LOCK: join(dir, ".lock") });
     };
-    const red = pinned("exit 1");
-    expect(red).toEqual({
-      code: 1,
-      out: matchingText(/(?=[\s\S]*admin-check-ran)[\s\S]*FAIL admin/),
+    test("reports a failure from the pinned command", () => {
+      const result = pinned("exit 1");
+      expect(result.code, result.out).toBe(1);
+      expect(result.out).toContain("admin-check-ran");
+      expect(result.out).toContain("FAIL admin");
     });
-    const green = pinned("exit 0");
-    expect(green).toEqual({ code: 0, out: containingText("ok   admin") });
+
+    test("passes when the pinned command succeeds", () => {
+      const result = pinned("exit 0");
+      expect(result.code, result.out).toBe(0);
+      expect(result.out).toContain("ok   admin");
+    });
   });
 
   test("an unknown key, an unknown skip and a skip without reason go red", () => {
@@ -6461,39 +6707,47 @@ exec "${process.execPath}" "$@"
     ["5", { CHECK_LOCK_RUN_S: "5" }, "5\n"],
     ["empty", { CHECK_LOCK_RUN_S: "" }, "60\n"],
   ] as const;
-  const boundCases = calls.flatMap(([caller, start]) =>
-    bounds.map(([bound, override, expected]) => ({ caller, start, bound, override, expected })),
-  );
-  test.each([
-    ...boundCases,
-    {
-      caller: "MCP server's start",
-      start: (dir: string, _: string[], options: HookOptions) => mcpStart(dir, options),
-      bound: "unset",
-      override: {},
-      expected: "60\n",
-    },
-    {
-      caller: "MCP server's start",
-      start: (dir: string, _: string[], options: HookOptions) => mcpStart(dir, options),
-      bound: "5",
-      override: { CHECK_LOCK_RUN_S: "5" },
-      expected: "5\n",
-    },
-  ])(
-    "$caller sets the install bound when CHECK_LOCK_RUN_S is $bound",
-    ({ start, override, expected }) => {
-      const dir = consumer();
-      const bun = fakeBun();
-      const args = lockChange(dir);
-      sh(dir, ["update-ref", "ORIG_HEAD", args[0]]);
+  describe.each(calls)("%s install bound", (_, start) => {
+    let dir: string;
+    let bun: ReturnType<typeof fakeBun>;
+    let args: string[];
+    beforeAll(() => {
+      dir = consumer();
+      bun = fakeBun();
+      args = lockChange(dir);
+      prepareGit(dir, ["update-ref", "ORIG_HEAD", args[0]]);
+    });
+    afterEach(() => rmSync(bun.bound, { force: true }));
+    test.each(bounds)("when CHECK_LOCK_RUN_S is %s", (_, override, expected) => {
       const options: HookOptions = { cwd: dir, env: env(bun) };
       delete options.env.CHECK_LOCK_RUN_S;
       Object.assign(options.env, override);
       start(dir, args, options);
       expect(read(bun.bound)).toBe(expected);
-    },
-  );
+    });
+  });
+
+  describe("MCP server's start install bound", () => {
+    let dir: string;
+    let bun: ReturnType<typeof fakeBun>;
+    beforeAll(() => {
+      dir = consumer();
+      bun = fakeBun();
+      const args = lockChange(dir);
+      prepareGit(dir, ["update-ref", "ORIG_HEAD", args[0]]);
+    });
+    afterEach(() => rmSync(bun.bound, { force: true }));
+    test.each([
+      ["unset", {}, "60\n"],
+      ["5", { CHECK_LOCK_RUN_S: "5" }, "5\n"],
+    ] as const)("when CHECK_LOCK_RUN_S is %s", (_, override, expected) => {
+      const options: HookOptions = { cwd: dir, env: env(bun) };
+      delete options.env.CHECK_LOCK_RUN_S;
+      Object.assign(options.env, override);
+      mcpStart(dir, options);
+      expect(read(bun.bound)).toBe(expected);
+    });
+  });
 
   // The MCP server's start and the SessionStart hook install at the same moment.
   test("two first installs at once wait for each other, the second without a word", async () => {
@@ -6704,7 +6958,7 @@ describe("skeleton SessionStart hook", () => {
   test("reports a diverged main and leaves its tip in place", () => {
     const { dir, path } = clone();
     write(dir, { "b.txt": "local commit\n" });
-    expect(sh(dir, ["commit", "-qam", "local"]).status).toBe(0);
+    prepareGit(dir, ["commit", "-qam", "local"]);
     const before = head(dir);
     expect(start(dir, { PATH: path }).stdout).toBe(notMerged);
     expect(head(dir)).toBe(before);
@@ -6722,7 +6976,7 @@ describe("skeleton SessionStart hook", () => {
     "reports and preserves a conflicting tracked edit and the tip with merge.autostash=%s",
     (autostash) => {
       const { dir, path } = clone();
-      expect(sh(dir, ["config", "merge.autostash", autostash]).status).toBe(0);
+      prepareGit(dir, ["config", "merge.autostash", autostash]);
       const before = head(dir);
       write(dir, { "a.txt": "another session's\n" });
       expect(start(dir, { PATH: path }).stdout).toBe(notMerged);
@@ -6752,26 +7006,44 @@ describe("skeleton SessionStart hook", () => {
     expect(head(dir)).toBe(head(origin));
   });
 
-  test("a cloud session in a clone of one other branch switches to main", () => {
-    const { dir, origin, path } = clone();
-    sh(origin, ["branch", "-q", "work", "HEAD~1"]);
-    const single = temp();
-    spawnSync("git", ["clone", "-q", "--single-branch", "--branch", "work", origin, single]);
-    cpSync(join(dir, ".githooks"), join(single, ".githooks"), { recursive: true });
-    const r = start(single, { PATH: path, CLAUDE_CODE_REMOTE: "true" });
-    expect({
-      stdout: r.stdout,
-      branch: sh(single, ["branch", "--show-current"]).stdout.toString(),
-      head: head(single),
-      upstream: sh(single, ["rev-parse", "--abbrev-ref", "main@{upstream}"]).stdout.toString(),
-    }).toEqual({ stdout: "", branch: "main\n", head: head(origin), upstream: "origin/main\n" });
-    // Each start without a main, as after a switch that failed, added main's refspec once more.
-    sh(single, ["switch", "-q", "work"]);
-    sh(single, ["branch", "-q", "-D", "main"]);
-    expect(start(single, { PATH: path, CLAUDE_CODE_REMOTE: "true" }).stdout).toBe("");
-    expect(sh(single, ["config", "--get-all", "remote.origin.fetch"]).stdout.toString()).toBe(
-      "+refs/heads/work:refs/remotes/origin/work\n+refs/heads/main:refs/remotes/origin/main\n",
-    );
+  describe("a cloud session in a clone of one other branch", () => {
+    let single: string;
+    let origin: string;
+    let cloud: Record<string, string>;
+    beforeAll(() => {
+      const fixture = clone();
+      origin = fixture.origin;
+      cloud = { PATH: fixture.path, CLAUDE_CODE_REMOTE: "true" };
+      prepareGit(origin, ["branch", "-q", "work", "HEAD~1"]);
+      single = temp();
+      prepareGit(single, ["clone", "-q", "--single-branch", "--branch", "work", origin, "."]);
+      cpSync(join(fixture.dir, ".githooks"), join(single, ".githooks"), { recursive: true });
+    });
+
+    test("switches to main and configures its upstream", () => {
+      const first = temp();
+      cpSync(single, first, { recursive: true });
+      expect(start(first, cloud).stdout).toBe("");
+      expect(prepareGit(first, ["branch", "--show-current"])).toBe("main");
+      expect(head(first)).toBe(head(origin));
+      expect(prepareGit(first, ["rev-parse", "--abbrev-ref", "main@{upstream}"])).toBe(
+        "origin/main",
+      );
+    });
+
+    test("keeps a single fetch refspec when main has to be created again", () => {
+      const restart = temp();
+      cpSync(single, restart, { recursive: true });
+      // The prerequisite start discovers main. The second starts without the local branch again.
+      const entered = start(restart, cloud);
+      assert(entered.status === 0, entered.stdout + entered.stderr);
+      prepareGit(restart, ["switch", "-q", "work"]);
+      prepareGit(restart, ["branch", "-q", "-D", "main"]);
+      expect(start(restart, cloud).stdout).toBe("");
+      expect(prepareGit(restart, ["config", "--get-all", "remote.origin.fetch"])).toBe(
+        "+refs/heads/work:refs/remotes/origin/work\n+refs/heads/main:refs/remotes/origin/main",
+      );
+    });
   });
 
   // setTimeout ran a delay past 2^31 - 1 ms at once, and the fetch was stopped as it began.
@@ -7015,13 +7287,14 @@ describe("shared eslint config", () => {
     const native = oxlintFiles(dir).sort();
     const nativeOnly = ["a.svelte", "a.vue"];
     expect(native).toEqual(expect.arrayContaining(nativeOnly));
-    const captured = await Promise.all(native.map((file) => eslint.calculateConfigForFile(file)));
-    const shared: unknown = expect.objectContaining({
-      rules: expect.objectContaining({ "scaffolding/no-empty-catch": [2] }) as unknown,
-    });
-    const expected = new Map(native.map((path) => [path, shared]));
-    for (const path of nativeOnly) expected.set(path, undefined);
-    expect(captured).toEqual(native.map((path) => expected.get(path)));
+    const active = await Promise.all(
+      native.map(async (file) =>
+        activeSeverity(
+          member(await eslint.calculateConfigForFile(file), "rules", "scaffolding/no-empty-catch"),
+        ),
+      ),
+    );
+    expect(native.filter((_, index) => !active[index])).toEqual(nativeOnly);
   });
 
   test.each([
@@ -7740,36 +8013,24 @@ describe("catalog", () => {
     ].join("\n");
     const drifted = route.replace(" client:load />", " client:visible />");
     test.each([
-      [
-        "server-only story",
-        "stories/a.astro",
-        route,
-        true,
-        /^(?![\s\S]*client:load)(?=[\s\S]*import "virtual:scaffolding\/catalog-css\/stories";)(?=[\s\S]*Astro\.locals\.hwCatalogLead = args\?\.lead;)[\s\S]*hasSidebar=\{true\}/,
-      ],
-      [
-        "interactive dashboard",
-        "dashboard/a.astro",
-        route,
-        false,
-        /(?=[\s\S]*client:load)[\s\S]*hasSidebar=\{false\}/,
-      ],
-      [
-        "a repeated conditional render",
-        "stories/a.astro",
-        `${route}${route.split("---")[1]}`,
-        true,
-        /^(?![\s\S]*client:load)[\s\S]*import "virtual:scaffolding\/catalog-css\/stories";/,
-      ],
-      [
-        "an interactive route with a hydration directive change",
-        "stories/a.astro",
-        drifted,
-        false,
-        /client:visible/,
-      ],
-    ] as const)("rewrites a %s", (_, path, input, serverOnly, expected) => {
-      expect(rewriteRoute(path, input, serverOnly)).toMatch(expected);
+      ["one render branch", route],
+      ["repeated render branches", `${route}${route.split("---")[1]}`],
+    ])("rewrites a server-only story with %s", (_, input) => {
+      const result = rewriteRoute("stories/a.astro", input, true);
+      expect(result).toContain('import "virtual:scaffolding/catalog-css/stories";');
+      expect(result).toContain("Astro.locals.hwCatalogLead = args?.lead;");
+      expect(result).toContain("hasSidebar={true}");
+      expect(result).not.toContain("client:load");
+    });
+
+    test("rewrites an interactive dashboard without its sidebar", () => {
+      const result = rewriteRoute("dashboard/a.astro", route, false);
+      expect(result).toContain("client:load");
+      expect(result).toContain("hasSidebar={false}");
+    });
+
+    test("preserves a changed hydration directive on an interactive story", () => {
+      expect(rewriteRoute("stories/a.astro", drifted, false)).toContain("client:visible");
     });
 
     test("a rewritten story does not change when rewritten again", () => {
@@ -7994,8 +8255,14 @@ describe("catalog", () => {
             },
           });
           painted = await browse(`${served.url}`);
+        }, limit(60_000));
+        beforeEach(async () => {
+          await painted.evaluate(
+            "localStorage.clear(); document.documentElement.dataset.fixtureReset = 'pending'",
+          );
+          await painted.send("Page.navigate", { url: served.url.href });
           await painted.until(
-            `document.readyState === "complete" && !!document.querySelector(".hw-catalog")`,
+            `location.pathname === "/" && document.readyState === "complete" && !document.documentElement.dataset.fixtureReset && !!document.querySelector(".hw-catalog")`,
           );
         }, limit(60_000));
         afterAll(() => {
@@ -8030,19 +8297,20 @@ describe("catalog", () => {
         const groundCSS =
           'document.head.insertAdjacentHTML("beforeend", "<style id=test-ground>@layer base { html { background: rgb(7, 8, 9); } }</style>")';
         test.each([
-          ["no token or role value", [], "rgba(0, 0, 0, 0)"],
-          ["the brand token", [groundToken], "rgb(1, 2, 3)"],
-          ["the brand role", [groundToken, groundRole], "rgb(4, 5, 6)"],
-          ["the story stylesheet", [groundToken, groundRole, groundCSS], "rgb(7, 8, 9)"],
-        ])("the shell uses %s as its background", async (_, steps, colour) => {
-          await painted.evaluate(
-            'document.documentElement.removeAttribute("style"); document.getElementById("test-ground")?.remove();',
-          );
-          for (const step of steps) await painted.evaluate(step);
-          expect(
-            await painted.evaluate(`getComputedStyle(document.documentElement).backgroundColor`),
-          ).toBe(colour);
-        });
+          ["no token or role value", "undefined", "rgba(0, 0, 0, 0)"],
+          ["the brand token", groundToken, "rgb(1, 2, 3)"],
+          ["the brand role", `${groundToken}; ${groundRole}`, "rgb(4, 5, 6)"],
+          ["the story stylesheet", `${groundToken}; ${groundRole}; ${groundCSS}`, "rgb(7, 8, 9)"],
+        ])(
+          "the shell uses %s as its background",
+          async (_, script, colour) => {
+            await painted.evaluate(script);
+            expect(
+              await painted.evaluate(`getComputedStyle(document.documentElement).backgroundColor`),
+            ).toBe(colour);
+          },
+          limit(60_000),
+        );
         test(
           "the catalog reads the brand ink for body text",
           async () => {
@@ -8182,69 +8450,88 @@ describe("catalog", () => {
         );
       });
 
-      test.each([
-        [statePath, [".fx-header{display:flex}", ".hw-catalog-bar{", ".box{color:teal}"], []],
-        [
-          alonePath,
-          [".box{color:teal}"],
-          [".fx-header{", "hw-catalog-bar", "hw-catalog-nav", "astrobook-sidebar,"],
-        ],
-        ["", [".fx-header{display:flex}", ".hw-catalog-grid{", ".acme-ui{"], [".box{"]],
-      ] as const)(
-        "includes only the intended stylesheet sources for /%s",
-        (path, present, absent) => {
-          const css = styles(page(path));
-          expect(present.map((value) => css.includes(value))).toEqual(present.map(() => true));
-          expect(absent.filter((value) => css.includes(value))).toEqual([]);
-        },
-      );
-      test("the dashboard bar has the current header, navigation and theme control", () => {
-        const bar = barOf(page(statePath));
-        // A state's page carries the header above the bar, the current item marked as the place, not
-        // the page.
-        expect(
-          bar.startsWith(
-            '<div data-hw-catalog-top><header class="fx-header"><a href="/">Fx</a><div class="hw-header-nav hw-catalog-nav"><nav class="hw-header-nav" aria-label="Main" data-hw-catalogs><a class="hw-header-link" href="/">Site</a><a class="hw-header-link" href="/catalog/" aria-current="true">Fx</a><a class="hw-header-link" href="https://example.com/other/">Other</a><a class="hw-header-link" href="//example.com/far/">Far</a></nav></div></header></div><nav class="hw-catalog-bar"',
-          ),
-        ).toBe(true);
-        expect(bar).toContain('<nav class="hw-catalog-bar" aria-label="Catalog">');
-        expect(bar).toContain('<a href="/catalog/"><span aria-hidden="true">');
-        expect(bar).toMatch(/Parts \/ <strong>Box parts<\/strong>/);
-        expect(bar).toContain('<button type="button" data-hw-theme aria-pressed="false">');
-      });
+      describe("stylesheet sources for each catalog page", () => {
+        const sheets = new Map<string, string>();
+        beforeAll(() => {
+          for (const path of [statePath, alonePath, ""]) sheets.set(path, styles(page(path)));
+        });
 
-      test("the dashboard bar links to the standalone state and marks the current state", () => {
-        const bar = barOf(page(statePath));
-        expect(bar).toMatch(
-          /<a class="hw-catalog-tool" href="\/stories\/Parts\/box-parts\/two\/">\s*Open this state alone\s*<\/a>/,
-        );
-        expect(bar).toContain('<ul aria-label="States">');
-        expect(bar).toMatch(/href="\/dashboard\/Parts\/box-parts\/one\/">One/);
-        expect(bar).toMatch(/href="\/dashboard\/Parts\/box-parts\/two\/" aria-current="page">Two/);
-      });
+        test.each([
+          [statePath, ".fx-header{display:flex}"],
+          [statePath, ".hw-catalog-bar{"],
+          [statePath, ".box{color:teal}"],
+          [alonePath, ".box{color:teal}"],
+          ["", ".fx-header{display:flex}"],
+          ["", ".hw-catalog-grid{"],
+          ["", ".acme-ui{"],
+        ])("includes %s stylesheet fragment %s", (path, fragment) => {
+          expect(sheets.get(path)).toContain(fragment);
+        });
 
-      test("dashboard bar arrows disable at the ends and all links carry href", () => {
-        const bar = barOf(page(statePath));
-        expect(bar).toContain(
-          '<a class="hw-catalog-step" rel="prev" href="/dashboard/Parts/box-parts/one/"',
-        );
-        // A step with nowhere to go is no anchor: Lighthouse's crawlable-anchors fails one without href.
-        expect(bar).toContain(
-          '<button class="hw-catalog-step" type="button" disabled aria-label="Next state">',
-        );
-        const first = barOf(page("dashboard/Parts/box-parts/one"));
-        expect(first).toContain(
-          '<button class="hw-catalog-step" type="button" disabled aria-label="Previous state">',
-        );
-        expect(first).toContain(
-          '<a class="hw-catalog-step" rel="next" href="/dashboard/Parts/box-parts/two/"',
-        );
-        expect(`${bar}${first}`).not.toMatch(/<a(?![^>]*href)[^>]*>/);
+        test.each([
+          [alonePath, ".fx-header{"],
+          [alonePath, "hw-catalog-bar"],
+          [alonePath, "hw-catalog-nav"],
+          [alonePath, "astrobook-sidebar,"],
+          ["", ".box{"],
+        ])("excludes %s stylesheet fragment %s", (path, fragment) => {
+          expect(sheets.get(path)).not.toContain(fragment);
+        });
       });
+      describe("dashboard bar", () => {
+        let bar: string;
+        beforeAll(() => {
+          bar = barOf(page(statePath));
+        });
+        test("the dashboard bar has the current header, navigation and theme control", () => {
+          // A state's page carries the header above the bar, the current item marked as the place, not
+          // the page.
+          expect(
+            bar.startsWith(
+              '<div data-hw-catalog-top><header class="fx-header"><a href="/">Fx</a><div class="hw-header-nav hw-catalog-nav"><nav class="hw-header-nav" aria-label="Main" data-hw-catalogs><a class="hw-header-link" href="/">Site</a><a class="hw-header-link" href="/catalog/" aria-current="true">Fx</a><a class="hw-header-link" href="https://example.com/other/">Other</a><a class="hw-header-link" href="//example.com/far/">Far</a></nav></div></header></div><nav class="hw-catalog-bar"',
+            ),
+          ).toBe(true);
+          expect(bar).toContain('<nav class="hw-catalog-bar" aria-label="Catalog">');
+          expect(bar).toContain('<a href="/catalog/"><span aria-hidden="true">');
+          expect(bar).toMatch(/Parts \/ <strong>Box parts<\/strong>/);
+          expect(bar).toContain('<button type="button" data-hw-theme aria-pressed="false">');
+        });
 
-      test("the dashboard shows the active state position", () => {
-        const bar = barOf(page(statePath));
-        expect(bar).toContain("2 of 2");
+        test("the dashboard bar links to the standalone state and marks the current state", () => {
+          expect(bar).toMatch(
+            /<a class="hw-catalog-tool" href="\/stories\/Parts\/box-parts\/two\/">\s*Open this state alone\s*<\/a>/,
+          );
+          expect(bar).toContain('<ul aria-label="States">');
+          expect(bar).toMatch(/href="\/dashboard\/Parts\/box-parts\/one\/">One/);
+          expect(bar).toMatch(
+            /href="\/dashboard\/Parts\/box-parts\/two\/" aria-current="page">Two/,
+          );
+        });
+
+        test("the last state's arrows link backwards and disable Next", () => {
+          expect(bar).toContain(
+            '<a class="hw-catalog-step" rel="prev" href="/dashboard/Parts/box-parts/one/"',
+          );
+          expect(bar).toContain(
+            '<button class="hw-catalog-step" type="button" disabled aria-label="Next state">',
+          );
+          expect(bar).not.toMatch(/<a(?![^>]*href)[^>]*>/);
+        });
+
+        test("the first state's arrows link forwards and disable Previous", () => {
+          const first = barOf(page("dashboard/Parts/box-parts/one"));
+          expect(first).toContain(
+            '<button class="hw-catalog-step" type="button" disabled aria-label="Previous state">',
+          );
+          expect(first).toContain(
+            '<a class="hw-catalog-step" rel="next" href="/dashboard/Parts/box-parts/two/"',
+          );
+          expect(first).not.toMatch(/<a(?![^>]*href)[^>]*>/);
+        });
+
+        test("the dashboard shows the active state position", () => {
+          expect(bar).toContain("2 of 2");
+        });
       });
 
       test("the dashboard groups a long state list into a menu", () => {
@@ -8303,54 +8590,70 @@ describe("catalog", () => {
         expect(home).not.toContain('id="foundations"');
       });
     });
-    test("an empty catalog keeps the lead and omits provenance", () => {
-      // An app with no stories folder builds a home without the line that would count nothing.
-      const empty = join(fixture, "empty");
-      write(empty, {
-        "astro.config.mjs":
-          'import { catalog } from "../../../catalog/index.ts";\nexport default { integrations: [catalog({ product: "Fx", css: [], lead: "", header: { component: "../catalog/Header.astro" } })] };\n',
-      });
-      expect(build([], {}, "empty").status).toBe(0);
-      const emptyHome = readFileSync(join(empty, "dist", "index.html"), "utf8");
-      expect(emptyHome).toContain('class="hw-catalog-lead"');
-      expect(emptyHome).not.toContain("hw-catalog-provenance");
-    });
+    test(
+      "an empty catalog keeps the lead and omits provenance",
+      () => {
+        // An app with no stories folder builds a home without the line that would count nothing.
+        const empty = join(fixture, "empty");
+        write(empty, {
+          "astro.config.mjs":
+            'import { catalog } from "../../../catalog/index.ts";\nexport default { integrations: [catalog({ product: "Fx", css: [], lead: "", header: { component: "../catalog/Header.astro" } })] };\n',
+        });
+        expect(build([], {}, "empty").status).toBe(0);
+        const emptyHome = readFileSync(join(empty, "dist", "index.html"), "utf8");
+        expect(emptyHome).toContain('class="hw-catalog-lead"');
+        expect(emptyHome).not.toContain("hw-catalog-provenance");
+      },
+      limit(60_000),
+    );
 
-    test("a project Pages base prefixes the catalog navigation and former URLs", () => {
-      // A project Pages site sets Astro's base: the links and the header's default follow it.
-      expect(build(["--base", "/fx"]).status).toBe(0);
-      const based = readFileSync(join(dist, "index.html"), "utf8");
-      expect(based).toContain(
-        '<header class="fx-header"><a href="/fx/">Fx</a><div class="hw-header-nav hw-catalog-nav"><nav class="hw-header-nav" aria-label="Main" data-hw-catalogs><a class="hw-header-link" href="/fx/">Site</a><a class="hw-header-link" href="/fx/catalog/" aria-current="page">Fx</a><a class="hw-header-link" href="https://example.com/other/">Other</a><a class="hw-header-link" href="//example.com/far/">Far</a></nav></div></header>',
-      );
-      expect(based).toContain('data-src="/fx/stories/Types/box-types/two/"');
-      expect(page("catalog/stories/Types/box-types/two")).toContain(
-        'url=/fx/stories/Types/box-types/two/"',
-      );
-    });
+    test(
+      "a project Pages base prefixes the catalog navigation and former URLs",
+      () => {
+        // A project Pages site sets Astro's base: the links and the header's default follow it.
+        expect(build(["--base", "/fx"]).status).toBe(0);
+        const based = readFileSync(join(dist, "index.html"), "utf8");
+        expect(based).toContain(
+          '<header class="fx-header"><a href="/fx/">Fx</a><div class="hw-header-nav hw-catalog-nav"><nav class="hw-header-nav" aria-label="Main" data-hw-catalogs><a class="hw-header-link" href="/fx/">Site</a><a class="hw-header-link" href="/fx/catalog/" aria-current="page">Fx</a><a class="hw-header-link" href="https://example.com/other/">Other</a><a class="hw-header-link" href="//example.com/far/">Far</a></nav></div></header>',
+        );
+        expect(based).toContain('data-src="/fx/stories/Types/box-types/two/"');
+        expect(page("catalog/stories/Types/box-types/two")).toContain(
+          'url=/fx/stories/Types/box-types/two/"',
+        );
+      },
+      limit(60_000),
+    );
 
-    test("a base ending in /catalog leaves forwarding and public files to its host", () => {
-      // A base ending in /catalog mounts the catalog under a host with its own home: no forwarding
-      // pages and no public/, which the host serves.
-      expect(build(["--base", "/catalog"]).status).toBe(0);
-      const mountedHome = readFileSync(join(dist, "index.html"), "utf8");
-      expect(mountedHome).toContain('data-src="/catalog/stories/Types/box-types/two/"');
-      // Its home reads /catalog/ already: the current item links there, not to /catalog/catalog/.
-      expect(mountedHome).toContain(
-        '<a class="hw-header-link" href="/catalog/" aria-current="page">Fx</a>',
-      );
-      expect(page("dashboard/Parts/box-parts/two")).toContain(
-        '<a href="/catalog/"><span aria-hidden',
-      );
-      expect(readdirSync(dist).filter((name) => /^(?:catalog|fx\.txt)$/.test(name))).toEqual([]);
-    });
+    test(
+      "a base ending in /catalog leaves forwarding and public files to its host",
+      () => {
+        // A base ending in /catalog mounts the catalog under a host with its own home: no forwarding
+        // pages and no public/, which the host serves.
+        expect(build(["--base", "/catalog"]).status).toBe(0);
+        const mountedHome = readFileSync(join(dist, "index.html"), "utf8");
+        expect(mountedHome).toContain('data-src="/catalog/stories/Types/box-types/two/"');
+        // Its home reads /catalog/ already: the current item links there, not to /catalog/catalog/.
+        expect(mountedHome).toContain(
+          '<a class="hw-header-link" href="/catalog/" aria-current="page">Fx</a>',
+        );
+        expect(page("dashboard/Parts/box-parts/two")).toContain(
+          '<a href="/catalog/"><span aria-hidden',
+        );
+        expect(readdirSync(dist).filter((name) => /^(?:catalog|fx\.txt)$/.test(name))).toEqual([]);
+      },
+      limit(60_000),
+    );
 
-    test("an explicit outDir is kept", () => {
-      // An outDir the config sets stays; only Astro's default moves to the repository's dist/.
-      const custom = join(fixture, "catalog", "custom");
-      expect(build(["--outDir", "./custom"]).status).toBe(0);
-      expect(existsSync(join(custom, "index.html"))).toBe(true);
-    });
+    test(
+      "an explicit outDir is kept",
+      () => {
+        // An outDir the config sets stays; only Astro's default moves to the repository's dist/.
+        const custom = join(fixture, "catalog", "custom");
+        expect(build(["--outDir", "./custom"]).status).toBe(0);
+        expect(existsSync(join(custom, "index.html"))).toBe(true);
+      },
+      limit(60_000),
+    );
 
     test.each([
       ["ignore", ""],
@@ -8415,47 +8718,59 @@ describe("catalog", () => {
         expect(existsSync(join(dist, "catalog"))).toBe(false);
       });
     });
-    test("rejects a redirect that takes over the catalog home", () => {
-      // A redirect from "/" would take the catalog's place: the build fails and says why.
-      const redirecting = join(fixture, "catalog", "redirecting.config.mjs");
-      writeFileSync(
-        redirecting,
-        'import config from "./astro.config.mjs";\nexport default { ...config, redirects: { "/": "/x/" } };\n',
-      );
-      const refused = build(["--config", "redirecting.config.mjs"]);
-      expect(refused.status).not.toBe(0);
-      expect(`${refused.stdout}${refused.stderr}`).toContain("`redirects` leaves out");
-      rmSync(redirecting);
-    });
+    test(
+      "rejects a redirect that takes over the catalog home",
+      () => {
+        // A redirect from "/" would take the catalog's place: the build fails and says why.
+        const redirecting = join(fixture, "catalog", "redirecting.config.mjs");
+        writeFileSync(
+          redirecting,
+          'import config from "./astro.config.mjs";\nexport default { ...config, redirects: { "/": "/x/" } };\n',
+        );
+        const refused = build(["--config", "redirecting.config.mjs"]);
+        expect(refused.status).not.toBe(0);
+        expect(`${refused.stdout}${refused.stderr}`).toContain("`redirects` leaves out");
+        rmSync(redirecting);
+      },
+      limit(60_000),
+    );
 
-    test("refuses to copy a file omitted from a package's exports", () => {
-      // A package path outside the package's exports fails the build by name.
-      const unexported = join(fixture, "catalog", "unexported.config.mjs");
-      writeFileSync(
-        unexported,
-        'import config from "./astro.config.mjs";\nimport { catalog } from "../../../catalog/index.ts";\nexport default { ...config, integrations: [catalog({ product: "Fx", css: [], lead: "", copy: ["@acme/fx/assets/skip.txt"] })] };\n',
-      );
-      const missing = build(["--config", "unexported.config.mjs"]);
-      expect(`${missing.stdout}${missing.stderr}`).toContain(
-        "catalog copy: @acme/fx/assets/skip.txt is no file in the exports of @acme/fx",
-      );
-      rmSync(unexported);
-    });
+    test(
+      "refuses to copy a file omitted from a package's exports",
+      () => {
+        // A package path outside the package's exports fails the build by name.
+        const unexported = join(fixture, "catalog", "unexported.config.mjs");
+        writeFileSync(
+          unexported,
+          'import config from "./astro.config.mjs";\nimport { catalog } from "../../../catalog/index.ts";\nexport default { ...config, integrations: [catalog({ product: "Fx", css: [], lead: "", copy: ["@acme/fx/assets/skip.txt"] })] };\n',
+        );
+        const missing = build(["--config", "unexported.config.mjs"]);
+        expect(`${missing.stdout}${missing.stderr}`).toContain(
+          "catalog copy: @acme/fx/assets/skip.txt is no file in the exports of @acme/fx",
+        );
+        rmSync(unexported);
+      },
+      limit(60_000),
+    );
 
-    test("rejects a current navigation item that does not exist", () => {
-      // A `nav.current` naming no item fails the build by name.
-      const misnamed = join(fixture, "catalog", "misnamed.config.mjs");
-      writeFileSync(
-        misnamed,
-        'import config from "./astro.config.mjs";\nimport { catalog } from "../../../catalog/index.ts";\nexport default { ...config, integrations: [catalog({ product: "Fx", css: [], lead: "", nav: { items: [{ name: "Fx", href: "/" }], current: "Fxx" } })] };\n',
-      );
-      const misnamedBuild = build(["--config", "misnamed.config.mjs"]);
-      expect(misnamedBuild.status).not.toBe(0);
-      expect(`${misnamedBuild.stdout}${misnamedBuild.stderr}`).toContain(
-        'catalog nav: current "Fxx" names no item',
-      );
-      rmSync(misnamed);
-    });
+    test(
+      "rejects a current navigation item that does not exist",
+      () => {
+        // A `nav.current` naming no item fails the build by name.
+        const misnamed = join(fixture, "catalog", "misnamed.config.mjs");
+        writeFileSync(
+          misnamed,
+          'import config from "./astro.config.mjs";\nimport { catalog } from "../../../catalog/index.ts";\nexport default { ...config, integrations: [catalog({ product: "Fx", css: [], lead: "", nav: { items: [{ name: "Fx", href: "/" }], current: "Fxx" } })] };\n',
+        );
+        const misnamedBuild = build(["--config", "misnamed.config.mjs"]);
+        expect(misnamedBuild.status).not.toBe(0);
+        expect(`${misnamedBuild.stdout}${misnamedBuild.stderr}`).toContain(
+          'catalog nav: current "Fxx" names no item',
+        );
+        rmSync(misnamed);
+      },
+      limit(60_000),
+    );
 
     const variant = (name: string, options: string) => {
       const file = join(fixture, "catalog", `${name}.config.mjs`);
@@ -8467,75 +8782,103 @@ describe("catalog", () => {
       rmSync(file);
       return result;
     };
-    test("dashboard CSS replaces regular story CSS on the dashboard only", () => {
-      // `dashboardCss` replaces `css` on a state's page; a state alone keeps `css`.
-      const dash = join(fixture, "catalog", "dash.css");
-      writeFileSync(dash, ".dash{color:red}\n");
-      expect(variant("dashed", 'css: ["./fx.css"], dashboardCss: ["./dash.css"]').status).toBe(0);
-      const dashCss = styles(page("dashboard/Parts/box-parts/two"));
-      expect(dashCss).toContain(".dash{color:red}");
-      expect(dashCss).not.toContain(".box{");
-      expect(styles(page("stories/Parts/box-parts/two"))).toContain(".box{color:teal}");
-      rmSync(dash);
-    });
+    test(
+      "dashboard CSS replaces regular story CSS on the dashboard only",
+      () => {
+        // `dashboardCss` replaces `css` on a state's page; a state alone keeps `css`.
+        const dash = join(fixture, "catalog", "dash.css");
+        writeFileSync(dash, ".dash{color:red}\n");
+        expect(variant("dashed", 'css: ["./fx.css"], dashboardCss: ["./dash.css"]').status).toBe(0);
+        const dashCss = styles(page("dashboard/Parts/box-parts/two"));
+        expect(dashCss).toContain(".dash{color:red}");
+        expect(dashCss).not.toContain(".box{");
+        expect(styles(page("stories/Parts/box-parts/two"))).toContain(".box{color:teal}");
+        rmSync(dash);
+      },
+      limit(60_000),
+    );
 
-    test("focus-ring class can be used in a catalog without brand", () => {
-      // Without brand, hw-focus-ring in `htmlClass` loads no focus ring and fails no build.
-      expect(variant("ringless", 'htmlClass: ["hw-focus-ring"]').status).toBe(0);
-    });
+    test(
+      "focus-ring class can be used in a catalog without brand",
+      () => {
+        // Without brand, hw-focus-ring in `htmlClass` loads no focus ring and fails no build.
+        expect(variant("ringless", 'htmlClass: ["hw-focus-ring"]').status).toBe(0);
+      },
+      limit(60_000),
+    );
 
-    test("rejects a preview size for an unknown story group", () => {
-      // A `previewSize` key naming no group fails the build by name: a renamed group would fall back
-      // to the small fitted view unseen.
-      const stale = variant("stale", "previewSize: { Parts: [1, 1], Pieces: [1440, 900] }");
-      expect(stale.status).not.toBe(0);
-      expect(`${stale.stdout}${stale.stderr}`).toContain(
-        'catalog previewSize: "Pieces" names no story group (Parts, Types)',
-      );
-    });
+    test(
+      "rejects a preview size for an unknown story group",
+      () => {
+        // A `previewSize` key naming no group fails the build by name: a renamed group would fall back
+        // to the small fitted view unseen.
+        const stale = variant("stale", "previewSize: { Parts: [1, 1], Pieces: [1440, 900] }");
+        expect(stale.status).not.toBe(0);
+        expect(`${stale.stdout}${stale.stderr}`).toContain(
+          'catalog previewSize: "Pieces" names no story group (Parts, Types)',
+        );
+      },
+      limit(60_000),
+    );
 
-    test("rejects a configured preview state absent from all stories", () => {
-      // A `previewStates` entry naming no story's state fails the build by name: a renamed state
-      // would leave every tile on another state unseen.
-      const unknown = variant("unknown", 'previewStates: ["two", "gone"]');
-      expect(unknown.status).not.toBe(0);
-      expect(`${unknown.stdout}${unknown.stderr}`).toContain(
-        'catalog previewStates: "gone" names no story\'s state',
-      );
-    });
+    test(
+      "rejects a configured preview state absent from all stories",
+      () => {
+        // A `previewStates` entry naming no story's state fails the build by name: a renamed state
+        // would leave every tile on another state unseen.
+        const unknown = variant("unknown", 'previewStates: ["two", "gone"]');
+        expect(unknown.status).not.toBe(0);
+        expect(`${unknown.stdout}${unknown.stderr}`).toContain(
+          'catalog previewStates: "gone" names no story\'s state',
+        );
+      },
+      limit(60_000),
+    );
 
-    test("themeToggle false disables the catalog's theme and control", () => {
-      // `themeToggle: false`: the bar offers no dark theme.
-      expect(variant("light", "themeToggle: false").status).toBe(0);
-      expect(page("dashboard/Parts/box-parts/two")).not.toContain(
-        '<button type="button" data-hw-theme',
-      );
-      expect(root(page("dashboard/Parts/box-parts/two"))).toBe("{}");
-    });
+    test(
+      "themeToggle false disables the catalog's theme and control",
+      () => {
+        // `themeToggle: false`: the bar offers no dark theme.
+        expect(variant("light", "themeToggle: false").status).toBe(0);
+        expect(page("dashboard/Parts/box-parts/two")).not.toContain(
+          '<button type="button" data-hw-theme',
+        );
+        expect(root(page("dashboard/Parts/box-parts/two"))).toBe("{}");
+      },
+      limit(60_000),
+    );
 
-    test("a configured site makes canonical URLs absolute under the base", () => {
-      // With a `site` the canonical URL is absolute, under the base.
-      expect(build(["--site", "https://fx.example", "--base", "/fx"]).status).toBe(0);
-      expect(page("stories/Parts/box-parts/two")).toContain(
-        '<link rel="canonical" href="https://fx.example/fx/dashboard/Parts/box-parts/two/"',
-      );
-      expect(page("")).toContain('<link rel="canonical" href="https://fx.example/fx/"');
-    });
+    test(
+      "a configured site makes canonical URLs absolute under the base",
+      () => {
+        // With a `site` the canonical URL is absolute, under the base.
+        expect(build(["--site", "https://fx.example", "--base", "/fx"]).status).toBe(0);
+        expect(page("stories/Parts/box-parts/two")).toContain(
+          '<link rel="canonical" href="https://fx.example/fx/dashboard/Parts/box-parts/two/"',
+        );
+        expect(page("")).toContain('<link rel="canonical" href="https://fx.example/fx/"');
+      },
+      limit(60_000),
+    );
 
-    test("a catalog without brand keeps the repository favicon and typography", () => {
-      // Where the repository resolves brand, every page carries brand's favicon ahead of the
-      // repository's head, whose own link then wins; without brand the shell writes none.
-      expect(build().status).toBe(0);
-      expect(links(page(""), "icon")).toEqual(["/assets/logo.svg"]);
-      // Without brand the bar reads the repository's own --text-ui.
-      const brandless = globSync("**/*.{css,html}", { cwd: dist })
-        .map((f) => readFileSync(join(dist, f), "utf8"))
-        .join("");
-      expect(brandless.match(/\.hw-catalog-bar\{[^}]*\}/)?.[0]).toContain(
-        "font:500 1rem var(--font-sans);font-size:var(--text-ui);line-height:var(--text-ui--line-height);",
-      );
-      expect(brandless).not.toContain("brand-value");
-    });
+    test(
+      "a catalog without brand keeps the repository favicon and typography",
+      () => {
+        // Where the repository resolves brand, every page carries brand's favicon ahead of the
+        // repository's head, whose own link then wins; without brand the shell writes none.
+        expect(build().status).toBe(0);
+        expect(links(page(""), "icon")).toEqual(["/assets/logo.svg"]);
+        // Without brand the bar reads the repository's own --text-ui.
+        const brandless = globSync("**/*.{css,html}", { cwd: dist })
+          .map((f) => readFileSync(join(dist, f), "utf8"))
+          .join("");
+        expect(brandless.match(/\.hw-catalog-bar\{[^}]*\}/)?.[0]).toContain(
+          "font:500 1rem var(--font-sans);font-size:var(--text-ui);line-height:var(--text-ui--line-height);",
+        );
+        expect(brandless).not.toContain("brand-value");
+      },
+      limit(60_000),
+    );
 
     describe("a custom catalog home and Foundations", () => {
       let catalogDir: string, homed: string, ownHome: string, folder: string;
@@ -8554,11 +8897,15 @@ describe("catalog", () => {
             'import config from "./astro.config.mjs";\nimport { catalog } from "../../../catalog/index.ts";\nexport default { ...config, compressHTML: false, integrations: [catalog({ product: "Fx", css: [], lead: "", header: { component: "./Header.astro" }, home: "./OwnHome.astro" })] };\n',
           "OwnHome.astro": `---\nimport Home from "../../../catalog/Home.astro";\n---\n\n<Home>${body}</Home>\n`,
         });
-      test("adds a Foundations group when the custom home has content", () => {
-        ownHomeWith("<p>Tokens</p>");
-        expect(build(["--config", "homed.config.mjs"]).status).toBe(0);
-        expect(readFileSync(join(dist, "index.html"), "utf8")).toContain('id="foundations"');
-      });
+      test(
+        "adds a Foundations group when the custom home has content",
+        () => {
+          ownHomeWith("<p>Tokens</p>");
+          expect(build(["--config", "homed.config.mjs"]).status).toBe(0);
+          expect(readFileSync(join(dist, "index.html"), "utf8")).toContain('id="foundations"');
+        },
+        limit(60_000),
+      );
 
       describe("beside a stories group of the same name", () => {
         beforeAll(() => {
@@ -8568,22 +8915,30 @@ describe("catalog", () => {
           });
         });
 
-        test("refuses two groups that resolve to the same anchor", () => {
-          ownHomeWith("<p>Tokens</p>");
-          const twice = build(["--config", "homed.config.mjs"]);
-          expect(twice.status).not.toBe(0);
-          expect(`${twice.stdout}${twice.stderr}`).toContain(
-            'catalog: the groups "Foundations" and "Foundations" both draw as #foundations',
-          );
-        });
+        test(
+          "refuses two groups that resolve to the same anchor",
+          () => {
+            ownHomeWith("<p>Tokens</p>");
+            const twice = build(["--config", "homed.config.mjs"]);
+            expect(twice.status).not.toBe(0);
+            expect(`${twice.stdout}${twice.stderr}`).toContain(
+              'catalog: the groups "Foundations" and "Foundations" both draw as #foundations',
+            );
+          },
+          limit(60_000),
+        );
 
-        test("a whitespace-and-comment home leaves just the story group", () => {
-          ownHomeWith("\n  <!-- none yet -->\n");
-          expect(build(["--config", "homed.config.mjs"]).status).toBe(0);
-          const folderOnly = readFileSync(join(dist, "index.html"), "utf8");
-          expect(folderOnly.match(/id="foundations"/g)).toHaveLength(1);
-          expect(folderOnly).not.toContain('class="hw-catalog-text"');
-        });
+        test(
+          "a whitespace-and-comment home leaves just the story group",
+          () => {
+            ownHomeWith("\n  <!-- none yet -->\n");
+            expect(build(["--config", "homed.config.mjs"]).status).toBe(0);
+            const folderOnly = readFileSync(join(dist, "index.html"), "utf8");
+            expect(folderOnly.match(/id="foundations"/g)).toHaveLength(1);
+            expect(folderOnly).not.toContain('class="hw-catalog-text"');
+          },
+          limit(60_000),
+        );
       });
     });
     describe("with brand installed", () => {
@@ -8761,44 +9116,50 @@ describe("catalog", () => {
           );
         });
       });
-      test("themeToggle false omits both brand and primary theme controls", () => {
-        // `htmlClass` holding brand's hw-focus-ring loads brand's focus ring on every page; without
-        // the class no page loads it. A `themeToggle` of false leaves brand's switch out of the
-        // header and offers the bar's none either.
-        expect(variant("unswitched", "themeToggle: false").status).toBe(0);
-        expect(page("")).not.toContain('id="theme-toggle"');
-        expect(page("dashboard/Parts/box-parts/two")).not.toContain(
-          '<button type="button" data-hw-theme',
-        );
-      });
-
-      const ring = ".hw-focus-ring :focus-visible{outline:3px solid purple}";
-      const ringPages = ["", "dashboard/Parts/box-parts/two", "stories/Parts/box-parts/two"];
-      test.each([
-        ["ringoff", "htmlClass: []", false],
-        ["ringed", 'htmlClass: ["hw-focus-ring"]', true],
-      ])(
-        "%s applies focus styling consistently across all pages",
-        (name, options, expected) => {
-          expect(variant(name, options).status).toBe(0);
-          expect(ringPages.map((path) => styles(page(path)).includes(ring))).toEqual(
-            ringPages.map(() => expected),
+      test(
+        "themeToggle false omits both brand and primary theme controls",
+        () => {
+          // `htmlClass` holding brand's hw-focus-ring loads brand's focus ring on every page; without
+          // the class no page loads it. A `themeToggle` of false leaves brand's switch out of the
+          // header and offers the bar's none either.
+          expect(variant("unswitched", "themeToggle: false").status).toBe(0);
+          expect(page("")).not.toContain('id="theme-toggle"');
+          expect(page("dashboard/Parts/box-parts/two")).not.toContain(
+            '<button type="button" data-hw-theme',
           );
         },
         limit(60_000),
       );
-      test("an explicit focus.css is loaded once before the other story CSS", () => {
-        // A list naming focus.css itself loads it once, ahead of the list's other sheets.
-        expect(
-          variant(
-            "ringtwice",
-            'css: ["./fx.css", "@hackersandwizards/brand/elements/focus.css"], htmlClass: ["hw-focus-ring"]',
-          ).status,
-        ).toBe(0);
-        const alone = styles(page("stories/Parts/box-parts/two"));
-        expect(alone.split(ring)).toHaveLength(2);
-        expect(alone.indexOf(ring)).toBeLessThan(alone.indexOf(".box{color:teal}"));
+
+      const ring = ".hw-focus-ring :focus-visible{outline:3px solid purple}";
+      describe.each([
+        ["ringoff", "htmlClass: []", withoutText(ring)],
+        ["ringed", 'htmlClass: ["hw-focus-ring"]', containingText(ring)],
+      ] as const)("%s focus styling", (name, options, expected) => {
+        beforeAll(() => {
+          const result = variant(name, options);
+          assert(result.status === 0, result.stdout + result.stderr);
+        }, limit(60_000));
+        test.each([[""], [statePath], [alonePath]])("applies to /%s", (path) => {
+          expect(styles(page(path))).toEqual(expected);
+        });
       });
+      test(
+        "an explicit focus.css is loaded once before the other story CSS",
+        () => {
+          // A list naming focus.css itself loads it once, ahead of the list's other sheets.
+          expect(
+            variant(
+              "ringtwice",
+              'css: ["./fx.css", "@hackersandwizards/brand/elements/focus.css"], htmlClass: ["hw-focus-ring"]',
+            ).status,
+          ).toBe(0);
+          const alone = styles(page("stories/Parts/box-parts/two"));
+          expect(alone.split(ring)).toHaveLength(2);
+          expect(alone.indexOf(ring)).toBeLessThan(alone.indexOf(".box{color:teal}"));
+        },
+        limit(60_000),
+      );
 
       describe("brand's favicon", () => {
         beforeAll(() => {
@@ -8815,20 +9176,27 @@ describe("catalog", () => {
           },
         );
       });
-      test("rejects brand older than the focus room token", () => {
-        // The shell's type sizes are brand's tokens.json steps (brand v2.5.0), the focus ring's room is
-        // brand's --hw-focus-room (v2.10.0).
-        const brandPkg = join(brand, "package.json");
-        writeFileSync(
-          brandPkg,
-          JSON.stringify({ ...JSON.parse(readFileSync(brandPkg, "utf8")), version: "2.9.0" }),
-        );
-        const older = build();
-        expect(older.status).not.toBe(0);
-        expect(older.stdout + older.stderr).toContain(
-          "needs @hackersandwizards/brand v2.10.0 or later, installed is v2.9.0",
-        );
-      });
+      test(
+        "rejects brand older than the focus room token",
+        () => {
+          // The shell's type sizes are brand's tokens.json steps (brand v2.5.0), the focus ring's room is
+          // brand's --hw-focus-room (v2.10.0).
+          const brandPkg = join(brand, "package.json");
+          const original = readFileSync(brandPkg, "utf8");
+          let older: ReturnType<typeof build>;
+          try {
+            writeFileSync(brandPkg, JSON.stringify({ ...JSON.parse(original), version: "2.9.0" }));
+            older = build();
+          } finally {
+            writeFileSync(brandPkg, original);
+          }
+          expect(older.status).not.toBe(0);
+          expect(older.stdout + older.stderr).toContain(
+            "needs @hackersandwizards/brand v2.10.0 or later, installed is v2.9.0",
+          );
+        },
+        limit(60_000),
+      );
     });
     describe("alongside a repository's own pages", () => {
       let src: string, pages: string;
@@ -8853,60 +9221,102 @@ describe("catalog", () => {
       afterAll(() => {
         rmSync(src, { recursive: true, force: true });
       });
-      test("preserves robots policy for ordinary pages and raw HTML endpoints", () => {
-        expect(build().status).toBe(0);
-        expect(readFileSync(join(dist, "tagged.html"), "utf8")).toBe(
-          '<html><head><meta name="robots" content="noindex"></head></html>',
-        );
-        expect(page("own")).toMatch(
-          /^(?![\s\S]*<meta\b[^>]*\bname\s*=\s*["']?robots\b)[\s\S]*<head><title>/i,
-        );
-        expect({ hasRobots: robots.test(page("kept")), html: page("kept") }).toEqual({
-          hasRobots: true,
-          html: matchingText(/^(?![\s\S]*noindex)[\s\S]*<meta name="robots" content="index">/),
+      afterEach(() => {
+        for (const file of ["headless.astro", "catalog/index.astro"])
+          rmSync(join(pages, file), { force: true });
+      });
+      describe("robots policy in a build with its own pages and endpoints", () => {
+        beforeAll(() => {
+          const result = build();
+          assert(result.status === 0, result.stdout + result.stderr);
+        }, limit(60_000));
+
+        test("a regular page keeps its head without a robots tag", () => {
+          const html = page("own");
+          expect(html).toContain("<head><title>");
+          expect(html).not.toMatch(robots);
         });
-        expect(readFileSync(join(dist, "raw.html"), "utf8")).toBe("<html><head></head></html>");
+
+        test("an explicit robots index tag is preserved", () => {
+          const html = page("kept");
+          expect(html).toMatch(robots);
+          expect(html).toContain('<meta name="robots" content="index">');
+          expect(html).not.toContain("noindex");
+        });
+
+        test.each([
+          ["tagged.html", '<html><head><meta name="robots" content="noindex"></head></html>'],
+          ["raw.html", "<html><head></head></html>"],
+        ])("leaves the endpoint %s byte-for-byte", (file, html) => {
+          expect(readFileSync(join(dist, file), "utf8")).toBe(html);
+        });
       });
 
-      test("accepts a page with no head and adds no robots tag", () => {
-        writeFileSync(join(pages, "headless.astro"), "<p>no head</p>\n");
-        // A page without <head> builds.
-        expect(build().status).toBe(0);
-        expect(page("headless")).toContain("no head");
-        expect(page("headless")).not.toMatch(robots);
-        rmSync(join(pages, "headless.astro"));
-      });
-
-      test("keeps an explicit /catalog route beside a catalog at the root", () => {
-        // A page of the site's own at /catalog/ beside a root catalog keeps its place: the catalog
-        // links its home.
-        writeFileSync(join(pages, "catalog", "index.astro"), head("<p>site catalog page</p>"));
-        expect(build().status).toBe(0);
-        expect(page("catalog")).toContain("site catalog page");
-        expect(page("")).toContain('<a class="hw-header-link" href="/" aria-current="page">Fx</a>');
-        rmSync(join(pages, "catalog", "index.astro"));
-      });
-
-      test("puts a catalog under /catalog when the site has its own home", () => {
-        // A site with a home page of its own keeps the catalog at /catalog/; no page gets a robots tag.
-        writeFileSync(join(pages, "index.astro"), head("<p>site home</p>"));
-        writeFileSync(join(pages, "catalog", "extra.astro"), head(""));
-        expect(build().status).toBe(0);
-        expect(page("").includes("site home")).toBe(true);
-        const untagged = ["", "own", "catalog/extra"];
-        expect(untagged.filter((path) => robots.test(page(path)))).toEqual([]);
-        expect(page("catalog")).toContain("fx catalog/stories");
-        expect(page("catalog/dashboard/Parts/box-parts/two")).toContain('href="/catalog/"');
-      });
-    });
-    test("CI rejects a Git LFS pointer in the catalog's copied inputs", () => {
-      // In CI a copied file still a Git LFS pointer fails the build; locally it passes.
-      const ci = build([], { CI: "true" });
-      expect(ci.status).not.toBe(0);
-      expect(`${ci.stdout}${ci.stderr}`).toContain(
-        "catalog copy: still Git LFS pointers: assets/nested/lfs.woff2",
+      test(
+        "accepts a page with no head and adds no robots tag",
+        () => {
+          writeFileSync(join(pages, "headless.astro"), "<p>no head</p>\n");
+          // A page without <head> builds.
+          expect(build().status).toBe(0);
+          expect(page("headless")).toContain("no head");
+          expect(page("headless")).not.toMatch(robots);
+        },
+        limit(60_000),
       );
+
+      test(
+        "keeps an explicit /catalog route beside a catalog at the root",
+        () => {
+          // A page of the site's own at /catalog/ beside a root catalog keeps its place: the catalog
+          // links its home.
+          writeFileSync(join(pages, "catalog", "index.astro"), head("<p>site catalog page</p>"));
+          expect(build().status).toBe(0);
+          expect(page("catalog")).toContain("site catalog page");
+          expect(page("")).toContain(
+            '<a class="hw-header-link" href="/" aria-current="page">Fx</a>',
+          );
+        },
+        limit(60_000),
+      );
+
+      describe("the site with its own home", () => {
+        beforeAll(() => {
+          // A site with a home page of its own keeps the catalog at /catalog/; no page gets a robots tag.
+          writeFileSync(join(pages, "index.astro"), head("<p>site home</p>"));
+          writeFileSync(join(pages, "catalog", "extra.astro"), head(""));
+          const result = build();
+          assert(result.status === 0, result.stdout + result.stderr);
+        }, limit(60_000));
+        afterAll(() => {
+          rmSync(join(pages, "index.astro"), { force: true });
+          rmSync(join(pages, "catalog", "extra.astro"), { force: true });
+        });
+
+        test("puts the catalog under /catalog", () => {
+          expect(page("")).toContain("site home");
+          expect(page("catalog")).toContain("fx catalog/stories");
+          expect(page("catalog/dashboard/Parts/box-parts/two")).toContain('href="/catalog/"');
+        });
+        test.each([[""], ["own"], ["catalog/extra"]])(
+          "does not add a robots tag to /%s",
+          (path) => {
+            expect(page(path)).not.toMatch(robots);
+          },
+        );
+      });
     });
+    test(
+      "CI rejects a Git LFS pointer in the catalog's copied inputs",
+      () => {
+        // In CI a copied file still a Git LFS pointer fails the build; locally it passes.
+        const ci = build([], { CI: "true" });
+        expect(ci.status).not.toBe(0);
+        expect(`${ci.stdout}${ci.stderr}`).toContain(
+          "catalog copy: still Git LFS pointers: assets/nested/lfs.woff2",
+        );
+      },
+      limit(60_000),
+    );
   });
 
   // A repository's head sets attributes on <html> and runs page scripts: Astrobook's client router
@@ -9700,53 +10110,83 @@ describe("check-staged", () => {
     scaffolding: { private: true, skip: { format: "fixture", lint: "fixture" } },
   });
 
-  test("Markdown checks the staged blob and leaves unstaged files alone", () => {
-    const dir = repo({ "package.json": lintPkg, "unrelated.md": "No title.\n" });
-    write(dir, { "new.md": "No title.\n" });
-    expect(sh(dir, ["add", "--", "new.md"]).status).toBe(0);
-    write(dir, { "new.md": "# Working tree title\n" });
-    const red = run(dir, "check-staged");
-    expect({
-      ...red,
-      repair: red.out.trimEnd().split("\n").at(-1),
-    }).toEqual({
-      code: 1,
-      out: matchingText(/^(?![\s\S]*unrelated\.md)[\s\S]*new\.md:1 error MD041/),
-      repair: markdownRepair,
+  describe("Markdown stages one blob", () => {
+    let dir: string;
+    beforeAll(() => {
+      dir = repo({ "package.json": lintPkg, "unrelated.md": "No title.\n" });
     });
-    expect(sh(dir, ["add", "--", "new.md"]).status).toBe(0);
-    write(dir, { "new.md": "An unstaged edit.\n" });
-    const green = run(dir, "check-staged");
-    expect(green).toEqual({ code: 0, out: withoutText(markdownRepair) });
-    expect(readFileSync(join(dir, "new.md"), "utf8")).toBe("An unstaged edit.\n");
+    afterEach(() => {
+      prepareGit(dir, ["reset", "--mixed", "HEAD"]);
+      rmSync(join(dir, "new.md"), { force: true });
+    });
+
+    test("reports the bad staged blob despite a working-tree title", () => {
+      write(dir, { "new.md": "No title.\n" });
+      prepareGit(dir, ["add", "--", "new.md"]);
+      write(dir, { "new.md": "# Working tree title\n" });
+      const result = run(dir, "check-staged");
+      expect(result.code, result.out).toBe(1);
+      expect(result.out).toContain("new.md:1 error MD041");
+      expect(result.out).not.toContain("unrelated.md");
+      expect(result.out.trimEnd().split("\n").at(-1)).toBe(markdownRepair);
+    });
+
+    test("leaves an unstaged Markdown edit alone", () => {
+      write(dir, { "new.md": "# Working tree title\n" });
+      prepareGit(dir, ["add", "--", "new.md"]);
+      write(dir, { "new.md": "An unstaged edit.\n" });
+      const result = run(dir, "check-staged");
+      expect(result.code, result.out).toBe(0);
+      expect(result.out).not.toContain(markdownRepair);
+      expect(readFileSync(join(dir, "new.md"), "utf8")).toBe("An unstaged edit.\n");
+    });
   });
 
-  test("ShellCheck reads the staged shebang, blob and .shellcheckrc", () => {
-    const dir = repo({
-      "package.json": lintPkg,
-      ".shellcheckrc": "# Defaults.\n",
-      "unchanged.sh": shellScript,
+  describe("ShellCheck reads the staged shebang, blob and .shellcheckrc", () => {
+    let dir: string;
+    let env: ReturnType<typeof shellcheckFixture>;
+    const defaults = "# Defaults.\n";
+    const disabled = "disable=SC2034\n";
+    beforeAll(() => {
+      dir = repo({
+        "package.json": lintPkg,
+        ".shellcheckrc": defaults,
+        "unchanged.sh": shellScript,
+      });
+      env = shellcheckFixture(dir);
     });
-    const env = shellcheckFixture(dir);
-    write(dir, { "bin/helper": shellScript, "check-lock.ts": shellScript });
-    expect(sh(dir, ["add", "--", "bin/helper", "check-lock.ts"]).status).toBe(0);
-    write(dir, { "bin/helper": "#!/usr/bin/env python\n", ".shellcheckrc": "disable=SC2034\n" });
-    const red = run(dir, "check-staged", [], env);
-    expect({
-      ...red,
-      repair: red.out.trimEnd().split("\n").at(-1),
-    }).toEqual({
-      code: 1,
-      out: matchingText(
-        /^(?![\s\S]*(?:unchanged\.sh|check-lock\.ts))(?=[\s\S]*In bin\/helper line 2)[\s\S]*SC2034/,
-      ),
-      repair: shellRepair,
+    const stageScripts = () => {
+      write(dir, { "bin/helper": shellScript, "check-lock.ts": shellScript });
+      prepareGit(dir, ["add", "--", "bin/helper", "check-lock.ts"]);
+    };
+    afterEach(() => {
+      prepareGit(dir, ["reset", "--mixed", "HEAD"]);
+      write(dir, { ".shellcheckrc": defaults });
+      rmSync(join(dir, "bin/helper"), { force: true });
+      rmSync(join(dir, "check-lock.ts"), { force: true });
     });
-    expect(sh(dir, ["add", "--", ".shellcheckrc"]).status).toBe(0);
-    write(dir, { ".shellcheckrc": "# Defaults.\n", "bin/helper": shellScript });
-    const green = run(dir, "check-staged", [], env);
-    expect(green).toEqual({ code: 0, out: withoutText(shellRepair) });
-    expect(readFileSync(join(dir, "bin/helper"), "utf8")).toBe(shellScript);
+
+    test("reports the staged shell source and ignores the unstaged config", () => {
+      stageScripts();
+      write(dir, { "bin/helper": "#!/usr/bin/env python\n", ".shellcheckrc": disabled });
+      const result = run(dir, "check-staged", [], env);
+      expect(result.code, result.out).toBe(1);
+      expect(result.out).toContain("In bin/helper line 2");
+      expect(result.out).toContain("SC2034");
+      expect(result.out).not.toMatch(/unchanged\.sh|check-lock\.ts/);
+      expect(result.out.trimEnd().split("\n").at(-1)).toBe(shellRepair);
+    });
+
+    test("honors the staged config without editing the working shell source", () => {
+      stageScripts();
+      write(dir, { ".shellcheckrc": disabled });
+      prepareGit(dir, ["add", "--", ".shellcheckrc"]);
+      write(dir, { ".shellcheckrc": defaults, "bin/helper": shellScript });
+      const result = run(dir, "check-staged", [], env);
+      expect(result.code, result.out).toBe(0);
+      expect(result.out).not.toContain(shellRepair);
+      expect(readFileSync(join(dir, "bin/helper"), "utf8")).toBe(shellScript);
+    });
   });
 
   test("ShellCheck reads an unstaged sourced sibling from the index", () => {
@@ -9760,10 +10200,10 @@ describe("check-staged", () => {
       "lib.sh": "#!/bin/sh\nfalse\n",
       "a.sh": '#!/bin/sh\n. ./lib.sh\nprintf "%s\\n" "$foo"\n',
     });
-    expect(sh(dir, ["add", "--", "a.sh"]).status).toBe(0);
+    prepareGit(dir, ["add", "--", "a.sh"]);
     const result = run(dir, "check-staged", [], env);
     expect(result.code, result.out).toBe(0);
-    expect(sh(dir, ["add", "--", "a.sh", "lib.sh"]).status).toBe(0);
+    prepareGit(dir, ["add", "--", "a.sh", "lib.sh"]);
     const red = run(dir, "check-staged", [], env);
     expect(red.code).toBe(1);
     expect(red.out).toContain("SC2154");
@@ -9774,7 +10214,7 @@ describe("check-staged", () => {
     const dir = repo({ "package.json": lintPkg, "lib/common.inc": "value=from_index\n" });
     const env = await realShellcheckFixture(dir);
     write(dir, { "main.sh": main });
-    expect(sh(dir, ["add", "--", "main.sh"]).status).toBe(0);
+    prepareGit(dir, ["add", "--", "main.sh"]);
     expect(checkedShell(dir, env)).toEqual({ code: 0, out: "" });
     write(dir, {
       "main.sh": "#!/bin/sh\nfalse\n",
@@ -9792,7 +10232,7 @@ describe("check-staged", () => {
     });
     const env = await realShellcheckFixture(dir);
     write(dir, { "main.sh": '#!/bin/sh\n. ./lib/common.inc\nprintf "%s\\n" "$value"\n' });
-    expect(sh(dir, ["add", "--", "main.sh"]).status).toBe(0);
+    prepareGit(dir, ["add", "--", "main.sh"]);
     const result = run(dir, "check-staged", [], env);
     expect(result.code, result.out).toBe(0);
   });
@@ -9801,11 +10241,11 @@ describe("check-staged", () => {
     const dir = repo({ "package.json": lintPkg, "scripts/lib.sh": shellStyleFinding });
     const env = await realShellcheckFixture(dir);
     write(dir, { "scripts/main.sh": "#!/bin/sh\n. ./scripts/lib.sh\n" });
-    expect(sh(dir, ["add", "--", "scripts/main.sh"]).status).toBe(0);
+    prepareGit(dir, ["add", "--", "scripts/main.sh"]);
     const green = run(dir, "check-staged", [], env);
     expect(green.code, green.out).toBe(0);
     write(dir, { "scripts/lib.sh": shellStyleFinding + "true\n" });
-    expect(sh(dir, ["add", "--", "scripts/lib.sh"]).status).toBe(0);
+    prepareGit(dir, ["add", "--", "scripts/lib.sh"]);
     const red = run(dir, "check-staged", [], env);
     expect(red.code, red.out).toBe(1);
     expect(red.out).toMatch(/In scripts\/lib\.sh line 2:[\s\S]*SC2006 \(style\)/);
@@ -9826,36 +10266,45 @@ describe("check-staged", () => {
     expect(run(dir, "check-staged").code).toBe(0);
   });
 
-  test("check:skills reads staged paths, including deletions and both sides of renames", () => {
-    const dir = repo({
-      "package.json": JSON.stringify({
-        scaffolding: { private: true, skip: { format: "fixture", lint: "fixture" } },
-        scripts: { "check:skills": `printf '%s' "$VALIDATE_SKILLS_PATHS" > scope.txt` },
-      }),
-      ".claude/gone.md": "x\n",
-      ".claude/old.md": "# Rename this file\n",
+  describe("check:skills reads staged paths, including deletions and both sides of renames", () => {
+    let dir: string;
+    beforeAll(() => {
+      dir = repo({
+        "package.json": JSON.stringify({
+          scaffolding: { private: true, skip: { format: "fixture", lint: "fixture" } },
+          scripts: { "check:skills": `printf '%s' "$VALIDATE_SKILLS_PATHS" > scope.txt` },
+        }),
+        ".claude/gone.md": "x\n",
+        ".claude/old.md": "# Rename this file\n",
+      });
+      write(dir, { ".claude/new.md": "# New\n", ".claude/half.md": "unstaged\n" });
+      prepareGit(dir, ["rm", "-q", ".claude/gone.md"]);
+      prepareGit(dir, ["add", ".claude/new.md"]);
+      prepareGit(dir, ["config", "diff.renames", "true"]);
+      prepareGit(dir, ["mv", ".claude/old.md", ".claude/renamed.md"]);
     });
-    write(dir, { ".claude/new.md": "# New\n", ".claude/half.md": "unstaged\n" });
-    sh(dir, ["rm", "-q", ".claude/gone.md"]);
-    sh(dir, ["add", ".claude/new.md"]);
-    expect(sh(dir, ["config", "diff.renames", "true"]).status).toBe(0);
-    expect(sh(dir, ["mv", ".claude/old.md", ".claude/renamed.md"]).status).toBe(0);
-    const scope = [".claude/gone.md", ".claude/new.md", ".claude/old.md", ".claude/renamed.md"];
-    const r = run(dir, "check-staged", [], { VALIDATE_SKILLS_PATHS: "elsewhere/x.md" });
-    expect({
-      code: r.code,
-      paths: readFileSync(join(dir, "scope.txt"), "utf8").split("\n").sort(),
-    }).toEqual({ code: 0, paths: scope });
-    rmSync(join(dir, "scope.txt"));
-    const standalone = join(import.meta.dirname, "../.claude/skills/engineering/check-staged.ts");
-    const hook = spawnSync(process.execPath, ["--no-env-file", standalone], {
-      cwd: dir,
-      env: { ...process.env, VALIDATE_SKILLS_PATHS: "elsewhere/x.md" },
+    afterEach(() => rmSync(join(dir, "scope.txt"), { force: true }));
+
+    test.each([
+      ["package hook", bin("check-staged")],
+      [
+        "standalone hook",
+        join(import.meta.dirname, "../.claude/skills/engineering/check-staged.ts"),
+      ],
+    ])("%s", (_, hook) => {
+      const result = spawnSync(process.execPath, ["--no-env-file", hook], {
+        cwd: dir,
+        env: { ...process.env, VALIDATE_SKILLS_PATHS: "elsewhere/x.md" },
+        encoding: "utf8",
+      });
+      expect(result.status, result.stdout + result.stderr).toBe(0);
+      expect(readFileSync(join(dir, "scope.txt"), "utf8").split("\n").sort()).toEqual([
+        ".claude/gone.md",
+        ".claude/new.md",
+        ".claude/old.md",
+        ".claude/renamed.md",
+      ]);
     });
-    expect({
-      code: hook.status,
-      paths: readFileSync(join(dir, "scope.txt"), "utf8").split("\n").sort(),
-    }).toEqual({ code: 0, paths: scope });
   });
 
   const skillsScript = 'printf "%s" "$npm_package_name" > validator.txt';
@@ -9864,53 +10313,46 @@ describe("check-staged", () => {
     scaffolding: { private: true, skip: { format: "fixture", lint: "fixture" } },
     scripts: { "check:skills": skillsScript, other: "true" },
   };
-  const noEdit: Record<string, string> = {};
   const scriptChanged = JSON.stringify({
     ...matchingPackage,
     scripts: { ...matchingPackage.scripts, other: "false" },
   });
+  const checkSkills = (path: string, edit: Record<string, string>) => {
+    const dir = repo({ "package.json": JSON.stringify(matchingPackage) });
+    write(dir, { [path]: "# Staged\n" });
+    prepareGit(dir, ["add", path]);
+    write(dir, edit);
+    const result = run(dir, "check-staged", [], { npm_package_name: "" });
+    return { dir, result: { ...result, out: result.out.trim() } };
+  };
+
   test.each([
-    {
-      scenario: "scripts match",
-      path: ".claude/changed.md",
-      edit: noEdit,
-      result: { code: 0, out: `$ ${skillsScript}` },
-      logs: ["fixture"],
-    },
-    {
-      scenario: "scripts differ",
-      path: ".claude/changed.md",
-      edit: { "package.json": scriptChanged },
-      result: {
+    ["scripts match", {}, "fixture"],
+    [
+      "only package metadata differs",
+      { "package.json": JSON.stringify({ ...matchingPackage, name: "edited" }) },
+      "edited",
+    ],
+  ])("check:skills runs when %s", (_, edit, name) => {
+    const { dir, result } = checkSkills(".claude/changed.md", edit);
+    expect(result).toEqual({ code: 0, out: `$ ${skillsScript}` });
+    expect(readFileSync(join(dir, "validator.txt"), "utf8")).toBe(name);
+  });
+
+  test.each([
+    [
+      "scripts differ",
+      ".claude/changed.md",
+      {
         code: 1,
         out: '[check:staged] package.json script differs between index and working tree: "other". Stage package.json (`git add package.json`) or discard its unstaged script edit so check:skills runs the script version being committed',
       },
-      logs: [],
-    },
-    {
-      scenario: "scripts differ outside a skill commit",
-      path: "notes.md",
-      edit: { "package.json": scriptChanged },
-      result: { code: 0, out: "" },
-      logs: [],
-    },
-    {
-      scenario: "only package metadata differs",
-      path: ".claude/changed.md",
-      edit: { "package.json": JSON.stringify({ ...matchingPackage, name: "edited" }) },
-      result: { code: 0, out: `$ ${skillsScript}` },
-      logs: ["edited"],
-    },
-  ])("check:skills when $scenario", ({ path, edit, result, logs }) => {
-    const dir = repo({ "package.json": JSON.stringify(matchingPackage) });
-    write(dir, { [path]: "# Staged\n" });
-    expect(sh(dir, ["add", path]).status).toBe(0);
-    write(dir, edit);
-    const runResult = run(dir, "check-staged", [], { npm_package_name: "" });
-    expect({ ...runResult, out: runResult.out.trim() }).toEqual(result);
-    const logFiles = globSync("validator.txt", { cwd: dir });
-    expect(logFiles).toHaveLength(logs.length);
-    expect(logFiles.map((log) => readFileSync(join(dir, log), "utf8"))).toEqual(logs);
+    ],
+    ["scripts differ outside a skill commit", "notes.md", { code: 0, out: "" }],
+  ])("check:skills does not run when %s", (_, path, expected) => {
+    const { dir, result } = checkSkills(path, { "package.json": scriptChanged });
+    expect(result).toEqual(expected);
+    expect(existsSync(join(dir, "validator.txt"))).toBe(false);
   });
 
   test.each([
@@ -9927,10 +10369,10 @@ describe("check-staged", () => {
       "old.md": "# Staged\n",
     });
     chmodSync(join(dir, prettier), 0o755);
-    expect(sh(dir, ["config", "diff.renames", "true"]).status).toBe(0);
-    expect(sh(dir, ["add", "old.md"]).status).toBe(0);
+    prepareGit(dir, ["config", "diff.renames", "true"]);
+    prepareGit(dir, ["add", "old.md"]);
     renameSync(join(dir, "old.md"), join(dir, "new.md"));
-    expect(sh(dir, ["add", "-N", "new.md"]).status).toBe(0);
+    prepareGit(dir, ["add", "-N", "new.md"]);
     expect(spawnSync(process.execPath, ["--no-env-file", hook], { cwd: dir }).status).toBe(0);
     expect(readFileSync(join(dir, "checked.txt"), "utf8")).toBe("# Staged\n");
   });
@@ -9962,11 +10404,19 @@ describe("check-staged", () => {
   });
 
   test.each([
-    ["new file", [], []],
-    ["symlink replacement", ["src/a.ts"], [0, 0]],
+    ["new file", (_dir: string) => {}],
+    [
+      "symlink replacement",
+      (dir: string) => {
+        mkdirSync(join(dir, "src"));
+        symlinkSync("../eslint.config.js", join(dir, "src/a.ts"));
+        prepareGit(dir, ["add", "src/a.ts"]);
+        prepareGit(dir, ["commit", "-qm", "add link", "--", "src/a.ts"]);
+      },
+    ],
   ] as const)(
     "oxlint reads the staged source and layer policy after both change in the working tree (%s)",
-    (_, links, statuses) => {
+    (_, arrange) => {
       const config = {
         ...oxlintTemplate,
         overrides: [
@@ -9989,16 +10439,7 @@ describe("check-staged", () => {
         join(import.meta.dirname, "../node_modules/.bin/eslint"),
         join(dir, "node_modules/.bin/eslint"),
       );
-      const setupStatuses: (number | null)[] = [];
-      for (const path of links) {
-        mkdirSync(dirname(join(dir, path)));
-        symlinkSync("../eslint.config.js", join(dir, path));
-        setupStatuses.push(
-          sh(dir, ["add", path]).status,
-          sh(dir, ["commit", "-qm", "add link", "--", path]).status,
-        );
-      }
-      expect(setupStatuses).toEqual(statuses);
+      arrange(dir);
       write(dir, { "src/replacement.ts": 'import "blocked";\n' });
       renameSync(join(dir, "src/replacement.ts"), join(dir, "src/a.ts"));
       sh(dir, ["add", "src/a.ts"]);
@@ -10014,47 +10455,62 @@ describe("check-staged", () => {
     },
   );
 
-  test.each([
+  describe.each([
     ["no-self-assign", "let value = 0;\nvalue = value;\nconsole.log(value);\n"],
     ["no-useless-assignment", "let value = 0;\nvalue = 1;\nconsole.log(value);\n"],
-  ])("staged rule guides print %s once across whole and partial files", (id, broken) => {
+  ])("staged %s guides", (id, broken) => {
+    let dir: string;
     const clean = "console.log(1);\n";
-    const dir = repo({
-      "package.json": JSON.stringify({
-        type: "module",
-        scaffolding: { private: true, skip: { format: "fixture" } },
-      }),
-      ".oxlintrc.json": JSON.stringify(oxlintTemplate),
-      "eslint.config.js": 'export { default } from "@hackersandwizards/scaffolding/eslint";\n',
-      "a.js": clean,
-      "b.js": clean,
+    const repaired = "console.log(2);\n";
+    beforeAll(() => {
+      dir = repo({
+        "package.json": JSON.stringify({
+          type: "module",
+          scaffolding: { private: true, skip: { format: "fixture" } },
+        }),
+        ".oxlintrc.json": JSON.stringify(oxlintTemplate),
+        "eslint.config.js": 'export { default } from "@hackersandwizards/scaffolding/eslint";\n',
+        "a.js": clean,
+        "b.js": clean,
+      });
+      install(dir);
+      symlinkSync(
+        join(import.meta.dirname, "../node_modules/.bin"),
+        join(dir, "node_modules/.bin"),
+      );
     });
-    install(dir);
-    symlinkSync(join(import.meta.dirname, "../node_modules/.bin"), join(dir, "node_modules/.bin"));
-    write(dir, { "a.js": broken });
-    const staged = sh(dir, ["add", "--", "a.js"]);
-    const single = run(dir, "check-staged");
-    expect({ staged: staged.status, checked: single.code }, single.out).toEqual({
-      staged: 0,
-      checked: 1,
+    afterEach(() => {
+      write(dir, { "a.js": clean, "b.js": clean });
+      prepareGit(dir, ["reset", "--mixed", "HEAD"]);
     });
-    expectGuide(single.out, id);
-    write(dir, { "b.js": broken });
-    expect(sh(dir, ["add", "--", "b.js"]).status).toBe(0);
-    write(dir, { "b.js": "console.log(2);\n" });
-    const double = run(dir, "check-staged");
-    expect(
-      {
-        code: double.code,
-        findings: double.out.split("[guide]")[0],
-      },
-      double.out,
-    ).toEqual({ code: 1, findings: containingText("b.js") });
-    expectGuide(double.out, id);
-    write(dir, { "a.js": "console.log(2);\n" });
-    expect(sh(dir, ["add", "--", "a.js", "b.js"]).status).toBe(0);
-    const green = run(dir, "check-staged");
-    expect(green, green.out).toEqual({ code: 0, out: withoutText("[guide] ") });
+
+    test("prints the guide for one staged finding", () => {
+      write(dir, { "a.js": broken });
+      prepareGit(dir, ["add", "--", "a.js"]);
+      const result = run(dir, "check-staged");
+      expect(result.code, result.out).toBe(1);
+      expectGuide(result.out, id);
+    });
+
+    test("prints one guide for both a whole and a partly staged file", () => {
+      write(dir, { "a.js": broken, "b.js": broken });
+      prepareGit(dir, ["add", "--", "a.js", "b.js"]);
+      write(dir, { "b.js": repaired });
+      const result = run(dir, "check-staged");
+      expect(result.code, result.out).toBe(1);
+      const [findings] = result.out.split("[guide]");
+      expect(findings).toContain("a.js");
+      expect(findings).toContain("b.js");
+      expectGuide(result.out, id);
+    });
+
+    test("prints no guide for clean staged files", () => {
+      write(dir, { "a.js": repaired, "b.js": repaired });
+      prepareGit(dir, ["add", "--", "a.js", "b.js"]);
+      const result = run(dir, "check-staged");
+      expect(result.code, result.out).toBe(0);
+      expect(result.out).not.toContain("[guide] ");
+    });
   });
 
   const commentedOxlint = readFileSync(
@@ -10090,7 +10546,7 @@ describe("check-staged", () => {
         join(dir, "node_modules/.bin"),
       );
       write(dir, { ".oxlintrc.json": staged, "a.js": "console.log(2);\n" });
-      expect(sh(dir, ["add", "--", ".oxlintrc.json", "a.js"]).status).toBe(0);
+      prepareGit(dir, ["add", "--", ".oxlintrc.json", "a.js"]);
       write(dir, { ".oxlintrc.json": working });
       const result = run(dir, "check-staged");
       expect(
@@ -10153,61 +10609,56 @@ describe("check-staged", () => {
     [
       "both are declared",
       { devDependencies: { prettier: "3", eslint: "10" } },
-      [],
       1,
       "prettier not installed",
     ],
-    ["neither is declared", {}, [], 1, "prettier not installed"],
-    [
-      "format is skipped",
-      { scaffolding: { skip: { format: "none" } } },
-      [],
-      1,
-      "eslint not installed",
-    ],
+    ["neither is declared", {}, 1, "prettier not installed"],
+    ["format is skipped", { scaffolding: { skip: { format: "none" } } }, 1, "eslint not installed"],
     [
       "format has an empty reason",
       { scaffolding: { skip: { format: "", lint: "none" } } },
-      [],
       1,
       "prettier not installed",
     ],
     [
       "format has a false reason",
       { scaffolding: { skip: { format: false, lint: "none" } } },
-      [],
       1,
       "prettier not installed",
     ],
     [
       "format has an object reason",
       { scaffolding: { skip: { format: {}, lint: "none" } } },
-      [],
       1,
       "prettier not installed",
     ],
-    ["both have reasons", { scaffolding: { skip: { format: "none", lint: "none" } } }, [], 0, /^$/],
-    [
-      "Prettier is installed and lint is skipped",
-      { scaffolding: { skip: { lint: "none" } } },
-      ["prettier"],
-      0,
-      /^(?![\s\S]*not installed)/,
-    ],
+    ["both have reasons", { scaffolding: { skip: { format: "none", lint: "none" } } }, 0, /^$/],
   ] as const)(
     "check-staged resolves required Prettier and ESLint tools when %s",
-    (_, manifest, tools, code, report) => {
+    (_, manifest, code, report) => {
       const dir = repo({ "package.json": JSON.stringify(manifest) });
-      for (const tool of tools) {
-        const path = `node_modules/.bin/${tool}`;
-        write(dir, { [path]: "#!/bin/sh\nexit 0\n" });
-        chmodSync(join(dir, path), 0o755);
-      }
       write(dir, { "a.ts": "export {};\n" });
-      sh(dir, ["add", "a.ts"]);
+      prepareGit(dir, ["add", "a.ts"]);
       const result = run(dir, "check-staged");
       expect(result.code, result.out).toBe(code);
       expect(result.out).toMatch(report);
+    },
+    limit(20_000),
+  );
+
+  test(
+    "uses the installed Prettier when lint is skipped",
+    () => {
+      const dir = repo({
+        "package.json": JSON.stringify({ scaffolding: { skip: { lint: "none" } } }),
+      });
+      const prettier = "node_modules/.bin/prettier";
+      write(dir, { [prettier]: "#!/bin/sh\nexit 0\n", "a.ts": "export {};\n" });
+      chmodSync(join(dir, prettier), 0o755);
+      prepareGit(dir, ["add", "a.ts"]);
+      const result = run(dir, "check-staged");
+      expect(result.code, result.out).toBe(0);
+      expect(result.out).not.toContain("not installed");
     },
     limit(20_000),
   );
@@ -10216,7 +10667,15 @@ describe("check-staged", () => {
     const stylelint = join(import.meta.dirname, "..", "node_modules/stylelint/bin/stylelint.mjs");
     const html = join(import.meta.dirname, "..", "node_modules/postcss-html/lib/index.js");
     const bad = "a { color: #ggg; }\n";
-    const staged = (files: Record<string, string>, styles: unknown, tools: readonly string[]) => {
+    const installStylelint = (dir: string) => {
+      mkdirSync(join(dir, "node_modules/.bin"), { recursive: true });
+      symlinkSync(stylelint, join(dir, "node_modules/.bin/stylelint"));
+    };
+    const staged = (
+      files: Record<string, string>,
+      styles: unknown,
+      arrange: (dir: string) => void,
+    ) => {
       const dir = repo({
         "package.json": JSON.stringify({
           type: "module",
@@ -10225,10 +10684,7 @@ describe("check-staged", () => {
         "stylelint.config.js": `export default { overrides: [{ files: ["**/*.astro"], customSyntax: "${html}" }], rules: { "color-no-invalid-hex": true } };\n`,
         "nested/.stylelintrc.json": "{}",
       });
-      for (const tool of tools) {
-        mkdirSync(join(dir, "node_modules/.bin"), { recursive: true });
-        symlinkSync(tool, join(dir, "node_modules/.bin/stylelint"));
-      }
+      arrange(dir);
       write(dir, files);
       sh(dir, ["add", ...Object.keys(files)]);
       return { dir, ...run(dir, "check-staged") };
@@ -10248,7 +10704,7 @@ describe("check-staged", () => {
     ] as const)(
       "resolves the required binary when %s",
       (_, files, reason, code, report) => {
-        const result = staged(files, reason, []);
+        const result = staged(files, reason, () => {});
         expect(result.code, result.out).toBe(code);
         expect(result.out).toMatch(report);
       },
@@ -10267,7 +10723,7 @@ describe("check-staged", () => {
             ".storybook/d.css": bad,
           },
           undefined,
-          [stylelint],
+          installStylelint,
         );
         expect(red.code, red.out).toBe(1);
         expect(red.out).not.toMatch(/a\.ts:|d\.css/);
@@ -10290,7 +10746,7 @@ describe("check-staged", () => {
     test(
       "uses the staged CSS blob after an unstaged repair",
       () => {
-        const ok = staged({ "a.css": "a { color: #fff; }\n" }, undefined, [stylelint]);
+        const ok = staged({ "a.css": "a { color: #fff; }\n" }, undefined, installStylelint);
         expect(ok.code).toBe(0);
         write(ok.dir, { "a.css": bad });
         sh(ok.dir, ["add", "a.css"]);
@@ -10651,14 +11107,14 @@ describe("check-spaces", () => {
     expect(empty.code).toBe(0);
   });
 
-  test("a closing tag broken before its >, an expression before a tag and punctuation after one", () => {
+  describe("inline spaces around tags and expressions", () => {
     const flagged = (body: string) =>
       lines(
         run(repo({ "src/A.astro": `<p>\n${body}\n</p>\n`, "package.json": "{}" }), "check-spaces")
           .out,
         "spaces",
       ).length;
-    for (const body of [
+    test.each([
       "  <a>x</a\n  >\n  word",
       "  by {name}\n  <a>x</a>",
       "  <a>x</a>\n  {name}",
@@ -10672,9 +11128,11 @@ describe("check-spaces", () => {
       "  <a>x</a>\n  {name}.",
       "  <a>x</a>\n  {name} <em>y</em>",
       '  <a>x</a>\n  {name} <em\n    class="y">z</em>',
-    ])
-      expect([body, flagged(body)]).toEqual([body, 1]);
-    for (const body of [
+    ])("reports one lost space for %#", (body) => {
+      expect(flagged(body), body).toBe(1);
+    });
+
+    test.each([
       '  by {name}{" "}\n  <a>x</a>',
       `  by {name}{' '}\n  <a>x</a>`,
       '  <a>x</a>\n  {" "}\n  word',
@@ -10688,29 +11146,44 @@ describe("check-spaces", () => {
       "  <a>x</a>\n  {list.map((i) => (\n    <b>{i}</b>\n  ))}",
       "  <a>x</a>\n  {items.map(({ name }) => (\n    <b>{name}</b>\n  ))}",
       "  <a>x</a>\n  {Object.entries({ a: 1 }).map(([k, v]) => (\n    <b>{k}</b>\n  ))}",
-    ])
-      expect([body, flagged(body)]).toEqual([body, 0]);
+    ])("preserves spacing for %#", (body) => {
+      expect(flagged(body), body).toBe(0);
+    });
   });
 
-  test("passes where every Astro config sets compressHTML to true or false; the default jsx, or a commented setting, reads", () => {
+  describe("Astro's compressHTML setting", () => {
     const off = "export default {\n  compressHTML: false,\n};\n";
-    const code = (configs: Record<string, string>) =>
-      run(repo({ "src/A.astro": page, "package.json": "{}", ...configs }), "check-spaces").code;
-    expect(code({ "astro.config.mjs": off, "catalog/astro.config.ts": off })).toBe(0);
-    expect(
-      code({
-        "astro.config.mjs": off,
-        "catalog/astro.config.ts": "export default { compressHTML: true };\n",
-      }),
-    ).toBe(0);
-    expect(code({ "astro.config.mjs": 'export default { compressHTML: "jsx" };\n' })).toBe(1);
-    expect(
-      code({ "astro.config.mjs": off, "catalog/astro.config.ts": "export default {};\n" }),
-    ).toBe(1);
-    expect(code({ "astro.config.mts": "// compressHTML: false\nexport default {};\n" })).toBe(1);
+    test.each([
+      ["all false", { "astro.config.mjs": off, "catalog/astro.config.ts": off }, 0],
+      [
+        "all booleans",
+        {
+          "astro.config.mjs": off,
+          "catalog/astro.config.ts": "export default { compressHTML: true };\n",
+        },
+        0,
+      ],
+      ["explicit jsx", { "astro.config.mjs": 'export default { compressHTML: "jsx" };\n' }, 1],
+      [
+        "missing in one config",
+        { "astro.config.mjs": off, "catalog/astro.config.ts": "export default {};\n" },
+        1,
+      ],
+      [
+        "a commented setting",
+        { "astro.config.mts": "// compressHTML: false\nexport default {};\n" },
+        1,
+      ],
+    ] as const)("checks spacing for %s", (_, configs, expected) => {
+      const result = run(
+        repo({ "src/A.astro": page, "package.json": "{}", ...configs }),
+        "check-spaces",
+      );
+      expect(result.code, result.out).toBe(expected);
+    });
   });
 
-  test("reads the components a package ships whatever its own compressHTML, as consumers compile them at jsx", () => {
+  describe("a package that ships components", () => {
     const off = { "astro.config.mjs": "export default { compressHTML: false };\n" };
     const flagged = (
       pkg: object,
@@ -10730,38 +11203,50 @@ describe("check-spaces", () => {
         ).out,
         "spaces",
       ).map((l) => l.match(/\] ([^:]+):/)![1]);
-    // What ships is what bun pm pack lists, which a package declaring none of files, exports or
-    // bin keeps from consumers; with exports, what an exported path names and that imports.
-    expect(flagged({})).toEqual([]);
-    expect(flagged({ files: ["components", "README.md"] })).toEqual(["components/A.astro"]);
-    expect(flagged({ exports: { "./A": { default: "./components/A.astro" } } })).toEqual([
-      "components/A.astro",
-      "lib/B.astro",
-    ]);
-    expect(flagged({ exports: { "./parts/*": "./components/*" } })).toEqual([
-      "components/A.astro",
-      "lib/B.astro",
-    ]);
-    expect(flagged({ exports: { "./x": "./x.ts" } })).toEqual([]);
-    // There a line holding one expression whose first element is inline counts after a closing
-    // tag or text too: the package's pages show the space; at jsx its own pages show it gone.
+    // The pack list and exported imports are the components a consumer can use.
+    test.each([
+      ["no published inputs", {}, []],
+      ["published files", { files: ["components", "README.md"] }, ["components/A.astro"]],
+      [
+        "an exported component",
+        { exports: { "./A": { default: "./components/A.astro" } } },
+        ["components/A.astro", "lib/B.astro"],
+      ],
+      [
+        "wildcard component exports",
+        { exports: { "./parts/*": "./components/*" } },
+        ["components/A.astro", "lib/B.astro"],
+      ],
+      ["only a non-component export", { exports: { "./x": "./x.ts" } }, []],
+    ] as const)("reads the components of %s", (_, pkg, expected) => {
+      expect(flagged(pkg)).toEqual(expected);
+    });
+
     const files = { files: ["components"] };
-    for (const body of [
+    const inline = [
       "  <a>x</a>\n  {cond && <b>y</b>}",
       '  <span>{chapter.title}</span>\n  {toc[i] > 0 && <span class="page">{toc[i]}</span>}',
       "  <a>x</a>\n  {cond && <b t={{ a: 1 }}>y</b>}",
       "  contents\n  {n > 0 && <span>{n}</span>}",
-    ]) {
-      expect([body, flagged(files, body)]).toEqual([body, ["components/A.astro"]]);
-      expect([body, flagged(files, body, {})]).toEqual([body, []]);
-    }
-    for (const body of [
+    ];
+    // These expressions need the package scan at jsx when the package itself keeps the space.
+    describe.each([
+      ["an uncompressed package", off, ["components/A.astro"]],
+      ["default JSX compression", {}, []],
+    ] as const)("an inline expression in %s", (_, config, expected) => {
+      test.each(inline)("checks packaged spacing for %#", (body) => {
+        expect(flagged(files, body, config), body).toEqual(expected);
+      });
+    });
+
+    test.each([
       "  <a>x</a>\n  {cond && <div>y</div>}",
       "  <a>x</a>\n  {cond && <div><span>y</span></div>}",
       "  <a>x</a>\n  {cond && (\n    <b>y</b>\n  )}",
       "  {cond && <b>y</b>}\n  <a>x</a>",
-    ])
-      expect([body, flagged(files, body)]).toEqual([body, []]);
+    ])("keeps layout expressions out of the package findings for %#", (body) => {
+      expect(flagged(files, body), body).toEqual([]);
+    });
   });
 
   test("an allow entry keeps a flex case; a stale one is red", () => {
@@ -10932,37 +11417,50 @@ describe("check-cycles", () => {
     expect(r.out).toContain(`${page} -> src/pages/value.ts -> ${page}`);
   });
 
-  test("the import graph starts from tracked JavaScript, TypeScript and Astro files", () => {
-    const dir = repo({ "a.ts": 'import "./b.ts";\n', "b.ts": 'import "./a.ts";\n' });
-    const mirrorCache = join(dir, "node_modules", ".cache", "scaffolding");
-    const plain = run(dir, "check-cycles");
-    expect({ code: plain.code, out: plain.out, cacheCreated: existsSync(mirrorCache) }).toEqual({
-      code: 1,
-      out: containingText("a.ts -> b.ts -> a.ts"),
-      cacheCreated: false,
+  describe("the import graph starts from tracked JavaScript, TypeScript and Astro files", () => {
+    let dir: string;
+    let mirrorCache: string;
+    beforeAll(() => {
+      dir = repo({ "a.ts": 'import "./b.ts";\n', "b.ts": 'import "./a.ts";\n' });
+      mirrorCache = join(dir, "node_modules", ".cache", "scaffolding");
+    });
+    const addInputs = () =>
+      write(dir, {
+        [page]: "---\nimport './missing-astro.ts';\n---\n<p>Page</p>\n",
+        "untracked.ts": 'import "./missing-ts.ts";\n',
+      });
+    afterEach(() => {
+      prepareGit(dir, ["reset", "--mixed", "HEAD"]);
+      rmSync(join(dir, page), { force: true });
+      rmSync(join(dir, "untracked.ts"), { force: true });
+      rmSync(mirrorCache, { force: true, recursive: true });
     });
 
-    write(dir, {
-      [page]: "---\nimport './missing-astro.ts';\n---\n<p>Page</p>\n",
-      "untracked.ts": 'import "./missing-ts.ts";\n',
+    test("reports a tracked TypeScript cycle without creating an Astro mirror", () => {
+      const result = run(dir, "check-cycles");
+      expect(result.code).toBe(1);
+      expect(result.out).toContain("a.ts -> b.ts -> a.ts");
+      expect(existsSync(mirrorCache)).toBe(false);
     });
-    const untracked = run(dir, "check-cycles");
-    expect({ out: untracked.out, cacheCreated: existsSync(mirrorCache) }).toEqual({
-      out: matchingText(/^(?![\s\S]*missing-)[\s\S]*a\.ts -> b\.ts -> a\.ts/),
-      cacheCreated: false,
+
+    test("ignores untracked imports without creating an Astro mirror", () => {
+      addInputs();
+      const result = run(dir, "check-cycles");
+      expect(result.out).toContain("a.ts -> b.ts -> a.ts");
+      expect(result.out).not.toContain("missing-");
+      expect(existsSync(mirrorCache)).toBe(false);
     });
-    expect(sh(dir, ["add", "--", page, "untracked.ts"]).status).toBe(0);
-    const astro = run(dir, "check-cycles");
-    expect({
-      code: astro.code,
-      cycle: astro.out.includes("a.ts -> b.ts -> a.ts"),
-      unresolved: new Set(astro.out.match(/\.\/missing-(?:astro|ts)\.ts/g)),
-      leftovers: readdirSync(mirrorCache),
-    }).toEqual({
-      code: 1,
-      cycle: true,
-      unresolved: new Set(["./missing-astro.ts", "./missing-ts.ts"]),
-      leftovers: [],
+
+    test("reports staged unresolved imports and removes the Astro mirror", () => {
+      addInputs();
+      prepareGit(dir, ["add", "--", page, "untracked.ts"]);
+      const result = run(dir, "check-cycles");
+      expect(result.code).toBe(1);
+      expect(result.out).toContain("a.ts -> b.ts -> a.ts");
+      expect(new Set(result.out.match(/\.\/missing-(?:astro|ts)\.ts/g))).toEqual(
+        new Set(["./missing-astro.ts", "./missing-ts.ts"]),
+      );
+      expect(readdirSync(mirrorCache)).toEqual([]);
     });
   });
 
@@ -11009,7 +11507,7 @@ describe("check-cycles", () => {
       });
     expect(check().status).toBe(0);
     write(dir, { [page]: "<p>Page</p>\n" });
-    expect(sh(dir, ["add", "--", page]).status).toBe(0);
+    prepareGit(dir, ["add", "--", page]);
     const r = check();
     expect(r.status).toBe(1);
     expect(r.stderr).toContain("[cycles] package.json: cannot load @astrojs/compiler-rs");
@@ -11228,29 +11726,40 @@ describe("check-licenses", () => {
   const reasonRequired =
     'scaffolding.licenses["gsap"] needs a license string and a reason: set { "license": "<SPDX>", "reason": "<conveyed or not, who decided>" } in package.json, or remove the entry if the package is not needed';
   test.each([
-    ["exact package", { gsap: pinned }, 0, []],
-    ["wildcard", { "gs*": pinned }, 0, []],
-    ["changed licence", { gsap: { ...pinned, license: "MIT" } }, 1, [pinnedMismatch]],
-    ["missing reason", { gsap: { license: pinned.license } }, 1, [reasonRequired]],
-    ["non-string reason", { gsap: { ...pinned, reason: {} } }, 1, [reasonRequired]],
-    ["non-string licence", { gsap: { ...pinned, license: true } }, 1, [reasonRequired]],
+    ["exact package", { gsap: pinned }],
+    ["wildcard", { "gs*": pinned }],
+  ])(
+    "accepts the %s licence exception without findings",
+    (_, licenses) => {
+      expect(
+        run(
+          installed({ gsap: license("Standard 'no charge' license") }, { licenses }),
+          "check-licenses",
+        ),
+      ).toEqual({ code: 0, out: "" });
+    },
+    limit(20_000),
+  );
+
+  test.each([
+    ["changed licence", { gsap: { ...pinned, license: "MIT" } }, pinnedMismatch],
+    ["missing reason", { gsap: { license: pinned.license } }, reasonRequired],
+    ["non-string reason", { gsap: { ...pinned, reason: {} } }, reasonRequired],
+    ["non-string licence", { gsap: { ...pinned, license: true } }, reasonRequired],
     [
       "stale entry",
       { gsap: pinned, "left-pad": { license: "MIT", reason: "gone" } },
-      1,
-      ['scaffolding.licenses["left-pad"] matches no installed package'],
+      'scaffolding.licenses["left-pad"] matches no installed package',
     ],
   ])(
-    "validates the licence exception for %s",
-    (_, licenses, status, required) => {
+    "rejects the licence exception for %s",
+    (_, licenses, diagnostic) => {
       const result = run(
         installed({ gsap: license("Standard 'no charge' license") }, { licenses }),
         "check-licenses",
       );
-      expect(result.code, result.out).toBe(status);
-      expect(required.map((diagnostic) => result.out.includes(diagnostic))).toEqual(
-        required.map(() => true),
-      );
+      expect(result.code, result.out).toBe(1);
+      expect(result.out).toContain(diagnostic);
     },
     limit(20_000),
   );
@@ -11365,18 +11874,24 @@ const chromeTestExecutable =
     : "chrome";
 
 describe("chrome", () => {
+  const noInstaller = (_tools: string) => {};
+  const fakeInstaller = (tools: string, script: string) =>
+    writeFileSync(join(tools, "bunx"), `#!/bin/sh\n${script}\n`, { mode: 0o755 });
   test.each([
-    ["cannot start", [], []],
-    ["is killed", ['kill -TERM "$$"'], ["/bin", "/usr/bin"]],
-    ["exceeds its output buffer", ["head -c 4194304 /dev/zero"], ["/bin", "/usr/bin"]],
-  ] as const)("Chrome returns undefined when the installer %s", async (_, scripts, systemPath) => {
+    ["cannot start", noInstaller, []],
+    ["is killed", (tools: string) => fakeInstaller(tools, 'kill -TERM "$$"'), ["/bin", "/usr/bin"]],
+    [
+      "exceeds its output buffer",
+      (tools: string) => fakeInstaller(tools, "head -c 4194304 /dev/zero"),
+      ["/bin", "/usr/bin"],
+    ],
+  ] as const)("Chrome returns undefined when the installer %s", async (_, arrange, systemPath) => {
     const { chromeBinary, chromeBinaryAsync } = await import("../lib/chrome.ts");
     const dir = temp();
     const cache = join(dir, "cache");
     const tools = join(dir, "bin");
     mkdirSync(tools);
-    for (const script of scripts)
-      writeFileSync(join(tools, "bunx"), `#!/bin/sh\n${script}\n`, { mode: 0o755 });
+    arrange(tools);
     const cwd = process.cwd();
     const saved = { ...process.env };
     process.chdir(dir);
@@ -11436,18 +11951,31 @@ printf '%s\\n' "$2/chrome/${build}/chrome-x/chrome"
   );
 
   test.each([
-    ["placement", [], 0, 'printf "%s\\n" "$2/chrome/build/chrome-x/chrome"\n', /ENOENT/],
+    [
+      "placement",
+      (_cache: string, _build: string) => {},
+      0,
+      'printf "%s\\n" "$2/chrome/build/chrome-x/chrome"\n',
+      /ENOENT/,
+    ],
     [
       "retirement",
-      ["chrome/%BUILD%"],
+      (cache: string, build: string) =>
+        mkdirSync(join(cache, "chrome", build), { recursive: true }),
       0,
       'mkdir -p "$2/died"\n: > "$2/died/occupied"\nprintf "%s\\n" "$2/chrome/%BUILD%/chrome-x/chrome"\n',
       /ENOTEMPTY|EEXIST/,
     ],
-    ["cleanup", [], 2, ': > "$2/occupied"\nchmod a-w "$2"\n', /EACCES|EPERM|ENOTEMPTY/],
+    [
+      "cleanup",
+      (_cache: string, _build: string) => {},
+      2,
+      ': > "$2/occupied"\nchmod a-w "$2"\n',
+      /EACCES|EPERM|ENOTEMPTY/,
+    ],
   ] as const)(
     "Chrome %s propagates unexpected install errors",
-    async (_, preexisting, stageCount, script, error) => {
+    async (_, arrange, stageCount, script, error) => {
       const { chromeBinary, chromeBinaryAsync } = await import("../lib/chrome.ts");
       const dir = temp();
       const chromeCache = join(dir, "cache");
@@ -11458,8 +11986,7 @@ printf '%s\\n' "$2/chrome/${build}/chrome-x/chrome"
         `#!/bin/sh\nwhile [ "$1" != --path ]; do shift; done\n${script.replace("%BUILD%", build)}`,
         { mode: 0o755 },
       );
-      for (const folder of preexisting)
-        mkdirSync(join(chromeCache, folder.replace("%BUILD%", build)), { recursive: true });
+      arrange(chromeCache, build);
       const cwd = process.cwd();
       const saved = { ...process.env };
       process.chdir(dir);
@@ -11654,34 +12181,38 @@ printf '%s\\n' "$2/chrome/${build}/chrome-x/chrome"
     limit(30_000),
   );
 
-  // An install that died left its archive beside a half-unpacked build, which a gate took for 15
-  // minutes, and an install in the cache's own folder returned that build as it stood.
-  test.each([
+  // An install that died left its archive beside a half-unpacked build.
+  const oldArchive = (cache: string) => {
+    const archive = join(cache, "chrome", "11.0.1-chrome-x.zip");
+    write(cache, { "chrome/11.0.1-chrome-x.zip": "" });
+    const old = new Date(Date.now() - 600_000);
+    utimesSync(archive, old, old);
+  };
+  describe.each([
     [
       "a half-unpacked build",
-      (rel: string) => ({ [rel]: "half", "chrome/11.0.1-chrome-x.zip": "" }),
-      ["chrome/11.0.1-chrome-x.zip"],
+      (cache: string, rel: string) => {
+        write(cache, { [rel]: "half" });
+        oldArchive(cache);
+      },
     ],
-    [
-      "an archive without a build",
-      () => ({ "chrome/11.0.1-chrome-x.zip": "" }),
-      ["chrome/11.0.1-chrome-x.zip"],
-    ],
+    ["an archive without a build", oldArchive],
     [
       "a build folder without an executable or an archive",
-      (rel: string) => ({ [join(dirname(rel), "partial")]: "" }),
-      [],
+      (cache: string, rel: string) => write(cache, { [join(dirname(rel), "partial")]: "" }),
     ],
-  ] as const)(
-    "Chrome installs into a folder of its own and replaces %s after an install died",
-    async (_, files, archives) => {
+  ] as const)("Chrome replaces %s after an install died", (_, arrange) => {
+    let cache: string;
+    let installed: string | undefined;
+    let cachedBefore: string | undefined;
+    let cachedAfter: string | undefined;
+    let elapsed: number;
+    const rel = join("chrome", `${chromeTestPlatform}-11.0.1`, "chrome-x", chromeTestExecutable);
+    beforeAll(async () => {
       const { cachedChrome, chromeBinary } = await import("../lib/chrome.ts");
       const dir = temp();
-      const cache = join(dir, "cache");
-      const rel = join("chrome", `${chromeTestPlatform}-11.0.1`, "chrome-x", chromeTestExecutable);
-      write(cache, files(rel));
-      const old = new Date(Date.now() - 600_000);
-      for (const archive of archives) utimesSync(join(cache, archive), old, old);
+      cache = join(dir, "cache");
+      arrange(cache, rel);
       // Stands in for @puppeteer/browsers: unpacks into the folder after --path.
       write(dir, {
         "bin/bunx": `#!/bin/sh\nwhile [ "$1" != --path ]; do shift; done\nmkdir -p "$(dirname "$2/${rel}")"\nprintf whole > "$2/${rel}"\necho "$2/${rel}"\n`,
@@ -11692,23 +12223,29 @@ printf '%s\\n' "$2/chrome/${build}/chrome-x/chrome"
       process.env.PUPPETEER_CACHE_DIR = cache;
       delete process.env.CHROME_BINARY;
       try {
-        expect(cachedChrome({ anyBuild: true })).toBeUndefined();
+        cachedBefore = cachedChrome({ anyBuild: true });
         const started = Date.now();
-        const path = chromeBinary();
-        expect(Date.now() - started).toBeLessThan(5_000);
-        expect({
-          path,
-          executable: readFileSync(join(cache, rel), "utf-8"),
-          archive: existsSync(join(cache, "chrome/11.0.1-chrome-x.zip")),
-          stages: readdirSync(cache).filter((name) => name.startsWith(".install-")),
-        }).toEqual({ path: join(cache, rel), executable: "whole", archive: false, stages: [] });
-        expect(cachedChrome({ anyBuild: true })).toBe(join(cache, rel));
+        installed = chromeBinary();
+        elapsed = Date.now() - started;
+        cachedAfter = cachedChrome({ anyBuild: true });
       } finally {
         process.env = saved;
       }
-    },
-    limit(30_000),
-  );
+    }, limit(30_000));
+
+    test("returns and caches the replacement executable within five seconds", () => {
+      expect(cachedBefore).toBeUndefined();
+      expect(elapsed).toBeLessThan(5_000);
+      expect(installed).toBe(join(cache, rel));
+      expect(cachedAfter).toBe(join(cache, rel));
+    });
+
+    test("installs the whole executable and clears interrupted install files", () => {
+      expect(readFileSync(join(cache, rel), "utf-8")).toBe("whole");
+      expect(existsSync(join(cache, "chrome/11.0.1-chrome-x.zip"))).toBe(false);
+      expect(readdirSync(cache).filter((name) => name.startsWith(".install-"))).toEqual([]);
+    });
+  });
 });
 
 /** Observe complete protocol lines while the subprocess keeps its output open. */
@@ -11723,18 +12260,35 @@ function protocolLines(stdout: ReadableStream<Uint8Array>) {
   })();
   const response = async (id: number, method: string, timeoutMs: number) => {
     const marker = `"id":${id}`;
-    await until(
-      () => ended || output.slice(0, output.lastIndexOf("\n")).includes(marker),
-      `the answer to ${method}`,
-      { timeoutMs, intervalMs: 100 },
-    );
-    const lines = output.slice(0, output.lastIndexOf("\n")).split("\n");
-    const line = lines.find((line) => line.includes(marker));
+    const completeLine = () =>
+      output
+        .split("\n")
+        .slice(0, -1)
+        .find((line) => line.includes(marker));
+    await until(() => ended || completeLine() !== undefined, `the answer to ${method}`, {
+      timeoutMs,
+      intervalMs: 100,
+    });
+    const line = completeLine();
     if (line === undefined) throw new Error(`no answer to ${method}`);
     return line;
   };
   return { response, drained };
 }
+
+test("the protocol reader rejects a reply with no terminating newline", async () => {
+  const partial = new ReadableStream<Uint8Array>({
+    start(controller) {
+      controller.enqueue(new TextEncoder().encode('{"jsonrpc":"2.0","id":1,"result":{}}'));
+      controller.close();
+    },
+  });
+  const protocol = protocolLines(partial);
+  expect(await rejection(protocol.response(1, "initialize", 1_000))).toContain(
+    "no answer to initialize",
+  );
+  await protocol.drained;
+});
 
 describe("chrome-mcp", () => {
   test(
@@ -12000,7 +12554,7 @@ test("shell input discovery uses the index shebang and ignores grep.patternType"
     later: "text\n#!/bin/sh\n",
     plain: "text\n",
   });
-  expect(sh(dir, ["config", "grep.patternType", "fixed"]).status).toBe(0);
+  prepareGit(dir, ["config", "grep.patternType", "fixed"]);
   write(dir, { "with space": "#!/usr/bin/env python\n" });
   expect(gitShellShebangs(dir, ["with space", "later", "plain"])).toEqual(["with space"]);
   expect(gitShellShebangs(dir, ["with space", "later"], "HEAD")).toEqual(["with space"]);
@@ -12024,10 +12578,10 @@ test("tracked inputs exclude symlinks, dependencies and unmerged index entries",
   });
   symlinkSync("keep.sh", join(dir, "linked.sh"));
   write(dir, { "node_modules/dependency.sh": "#!/bin/sh\n" });
-  expect(sh(dir, ["add", "-f", "--", "linked.sh", "node_modules/dependency.sh"]).status).toBe(0);
+  prepareGit(dir, ["add", "-f", "--", "linked.sh", "node_modules/dependency.sh"]);
   const hash = sh(dir, ["rev-parse", ":conflict.sh"]).stdout.toString().trim();
   const conflict = `0 ${"0".repeat(hash.length)}\tconflict.sh\n100644 ${hash} 1\tconflict.sh\n`;
-  expect(sh(dir, ["update-index", "--index-info"], conflict).status).toBe(0);
+  prepareGit(dir, ["update-index", "--index-info"], conflict);
   rmSync(join(dir, "missing.sh"));
   expect(indexInputs(dir, "*.sh")).toEqual(["keep.sh", "missing.sh"]);
   expect(trackedInputs(dir, "*.sh")).toEqual(["keep.sh"]);
@@ -12321,7 +12875,7 @@ describe("scaffolding markdown", () => {
       "articles/post.md": "# Post\n",
     });
     write(dir, { "articles/post.md": content });
-    expect(sh(dir, ["add", "--", "articles/post.md"]).status).toBe(0);
+    prepareGit(dir, ["add", "--", "articles/post.md"]);
     write(dir, { "package.json": manifest([]) });
     expect(run(dir, "check-staged").code).toBe(0);
   });
@@ -12358,10 +12912,8 @@ describe("scaffolding markdown", () => {
       "untracked.md": bad,
       "node_modules/tracked-dependency.md": bad,
     });
-    expect(
-      sh(dir, ["add", "-f", "--", "linked.md", "node_modules/tracked-dependency.md"]).status,
-    ).toBe(0);
-    expect(sh(dir, ["update-index", "--add", "--cacheinfo", `160000,${tip},sub`]).status).toBe(0);
+    prepareGit(dir, ["add", "-f", "--", "linked.md", "node_modules/tracked-dependency.md"]);
+    prepareGit(dir, ["update-index", "--add", "--cacheinfo", `160000,${tip},sub`]);
     const r = check(dir);
     expect(r.code).toBe(1);
     expect(r.out.trim().split("\n")).toEqual([
@@ -12371,27 +12923,29 @@ describe("scaffolding markdown", () => {
     ]);
   });
 
-  test("fixes trailing spaces and leaves the unfixable title finding and untracked content intact", () => {
+  describe("trailing spaces beside an unfixable title", () => {
     const text = "Body without a title. \n";
-    const clean = "# Clean\n";
-    const dir = repo({ "tracked.md": text, "clean.md": clean });
-    write(dir, { "untracked.md": text });
-    const before = check(dir);
-    expect({
-      code: before.code,
-      rules: new Set(before.out.match(/MD(?:009|041)/g)),
-    }).toEqual({ code: 1, rules: new Set(["MD009", "MD041"]) });
-    expect(readFileSync(join(dir, "tracked.md"), "utf8")).toBe(text);
+    let dir: string;
+    beforeAll(() => {
+      dir = repo({ "tracked.md": text, "clean.md": "# Clean\n" });
+      write(dir, { "untracked.md": text });
+    });
+    afterEach(() => write(dir, { "tracked.md": text, "untracked.md": text }));
 
-    const fixed = check(dir, "--fix");
-    expect({
-      code: fixed.code,
-      rules: new Set(fixed.out.match(/MD(?:009|041)/g)),
-    }).toEqual({ code: 1, rules: new Set(["MD041"]) });
-    expect(sh(dir, ["diff", "--name-only"]).stdout.toString()).toBe("tracked.md\n");
-    expect({
-      tracked: readFileSync(join(dir, "tracked.md"), "utf8"),
-      untracked: readFileSync(join(dir, "untracked.md"), "utf8"),
-    }).toEqual({ tracked: bad, untracked: text });
+    test("reports both findings and keeps tracked bytes in check mode", () => {
+      const result = check(dir);
+      expect(result.code).toBe(1);
+      expect(new Set(result.out.match(/MD(?:009|041)/g))).toEqual(new Set(["MD009", "MD041"]));
+      expect(readFileSync(join(dir, "tracked.md"), "utf8")).toBe(text);
+    });
+
+    test("fixes trailing spaces without changing untracked content or hiding the title", () => {
+      const result = check(dir, "--fix");
+      expect(result.code).toBe(1);
+      expect(new Set(result.out.match(/MD(?:009|041)/g))).toEqual(new Set(["MD041"]));
+      expect(sh(dir, ["diff", "--name-only"]).stdout.toString()).toBe("tracked.md\n");
+      expect(readFileSync(join(dir, "tracked.md"), "utf8")).toBe(bad);
+      expect(readFileSync(join(dir, "untracked.md"), "utf8")).toBe(text);
+    });
   });
 });
