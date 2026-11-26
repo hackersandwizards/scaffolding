@@ -61,56 +61,73 @@ export function markdownRuleGroups(paths: string[], folders: string[]) {
   ] as const;
 }
 
+export function markdownLintRuns(groups: ReturnType<typeof markdownRuleGroups>) {
+  const runs = [];
+  for (const [group, rules] of groups) {
+    if (!group.length) continue;
+    runs.push({ rules, argv: group.map((path) => `:${path}`) });
+  }
+  return runs;
+}
+
+const markdownCliDefaults = {
+  noGlobs: true,
+  noImport: true,
+  // CLI2 discovers config at each input's directory, even for explicit literal files.
+  fs: {
+    readFile,
+    promises: {
+      access: () => Promise.reject(new Error("no local config")),
+      readFile: promises.readFile,
+      writeFile: promises.writeFile,
+    },
+  },
+};
+
+const markdownRuleDefaults = { noInlineConfig: true, noBanner: true, noProgress: true };
+
 export async function checkMarkdown(root: string, paths: string[], fix = false): Promise<number> {
   const folders = contentFolders(root, readPackage(root).scaffolding?.markdown);
-  return lintMarkdownGroups(markdownRuleGroups(paths, folders), {
-    directory: root,
-    argv: fix ? ["--fix"] : [],
-    fileContents: undefined,
-  });
+  const runs = markdownLintRuns(markdownRuleGroups(paths, folders));
+  if (!runs.length) {
+    console.log("[markdown] no tracked Markdown files");
+    return 0;
+  }
+  const prefix = fix ? ["--fix"] : [];
+  let code = 0;
+  for (const { rules, argv } of runs) {
+    const result = await main({
+      directory: root,
+      argv: [...prefix, ...argv],
+      fileContents: undefined,
+      ...markdownCliDefaults,
+      optionsDefault: { config: rules, ...markdownRuleDefaults },
+      logError: console.error,
+    });
+    code = Math.max(code, result);
+  }
+  return code;
 }
 
 export async function checkStagedMarkdown(
   root: string,
   contents: Record<string, string>,
-  fix = false,
 ): Promise<number> {
   const paths = Object.keys(contents);
   const folders = contentFolders(root, readPackage(root, ":").scaffolding?.markdown);
-  return lintMarkdownGroups(markdownRuleGroups(paths, folders), {
-    directory: root,
-    argv: fix ? ["--fix"] : [],
-    fileContents: contents,
-  });
-}
-
-export async function lintMarkdownGroups(
-  groups: ReturnType<typeof markdownRuleGroups>,
-  invocation: Pick<Parameters<typeof main>[0], "directory" | "argv" | "fileContents">,
-): Promise<number> {
-  if (groups.every(([group]) => !group.length)) {
+  const runs = markdownLintRuns(markdownRuleGroups(paths, folders));
+  if (!runs.length) {
     console.log("[markdown] no tracked Markdown files");
     return 0;
   }
   let code = 0;
-  for (const [group, rules] of groups) {
-    if (!group.length) continue;
+  for (const { rules, argv } of runs) {
     const result = await main({
-      directory: invocation.directory,
-      argv: [...invocation.argv, ...group.map((path) => `:${path}`)],
-      fileContents: invocation.fileContents,
-      noGlobs: true,
-      noImport: true,
-      // CLI2 discovers config at each input's directory, even for explicit literal files.
-      fs: {
-        readFile,
-        promises: {
-          access: () => Promise.reject(new Error("no local config")),
-          readFile: promises.readFile,
-          writeFile: promises.writeFile,
-        },
-      },
-      optionsDefault: { config: rules, noInlineConfig: true, noBanner: true, noProgress: true },
+      directory: root,
+      argv,
+      fileContents: contents,
+      ...markdownCliDefaults,
+      optionsDefault: { config: rules, ...markdownRuleDefaults },
       logError: console.error,
     });
     code = Math.max(code, result);

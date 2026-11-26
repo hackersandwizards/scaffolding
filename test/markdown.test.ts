@@ -1,12 +1,12 @@
 import { rejection } from "@hackersandwizards/scaffolding/rejection";
 import { execFileSync } from "node:child_process";
-import { readFileSync, writeFileSync } from "node:fs";
+import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { expect, test, vi } from "vitest";
 import {
   checkMarkdown,
   checkStagedMarkdown,
-  lintMarkdownGroups,
+  markdownLintRuns,
   markdownRuleGroups,
 } from "../lib/markdown.ts";
 import { installCleanGitEnvHooks } from "./git-env.ts";
@@ -56,21 +56,43 @@ test.each([
 );
 
 test.each([
+  {
+    paths: ["posts/z.md", "report[1].md", "posts/a.md"],
+    argv: [[":report[1].md"], [":posts/z.md", ":posts/a.md"]],
+    inlineHtml: [{ allowed_elements: ["br"] }, false],
+  },
+  { paths: [], argv: [], inlineHtml: [] },
+])(
+  "plans literal arguments and rules for each nonempty group ($paths)",
+  ({ paths, argv, inlineHtml }) => {
+    const runs = markdownLintRuns(markdownRuleGroups(paths, ["posts"]));
+    expect(runs.map((run) => run.argv)).toEqual(argv);
+    expect(runs.map((run) => run.rules.MD033)).toEqual(inlineHtml);
+  },
+);
+
+test.each([
   [
     { "posts/content.md": "# Bad heading \n", "strict.md": "No title.\n" },
     ["strict.md:1", "posts/content.md:1"],
   ],
 ])("runs strict diagnostics before content diagnostics", async (contents, expected) => {
   using temp = testDirectory();
+  const env = Object.fromEntries(
+    Object.entries(process.env).filter(([key]) => !key.startsWith("GIT_")),
+  );
+  mkdirSync(join(temp.folder, "posts"));
+  execFileSync("git", ["init", "-q"], { cwd: temp.folder, env });
+  writeFileSync(
+    join(temp.folder, "package.json"),
+    JSON.stringify({ scaffolding: { markdown: { content: ["posts"] } } }),
+  );
+  execFileSync("git", ["add", "package.json"], { cwd: temp.folder, env });
   const messages: string[] = [];
   using _logError = vi.spyOn(console, "error").mockImplementation((message: string) => {
     messages.push(message.split(/[ :]/u).slice(0, 2).join(":"));
   });
-  const result = await lintMarkdownGroups(markdownRuleGroups(Object.keys(contents), ["posts"]), {
-    directory: temp.folder,
-    argv: [],
-    fileContents: contents,
-  });
+  const result = await checkStagedMarkdown(temp.folder, contents);
   expect(result).toBe(1);
   expect(messages).toEqual(expected);
 });
