@@ -12419,22 +12419,27 @@ describe("check-cycles", () => {
     expect(r.out).toContain(`${page} -> src/pages/value.ts -> ${page}`);
   });
 
-  describe("the import graph starts from tracked JavaScript, TypeScript and Astro files", () => {
+  describe("the import graph includes untracked files and excludes ignored files", () => {
     let dir: string;
     let mirrorCache: string;
     beforeAll(() => {
-      dir = repo({ "a.ts": 'import "./b.ts";\n', "b.ts": 'import "./a.ts";\n' });
+      dir = repo({
+        ".gitignore": "node_modules\n/ignored/\n",
+        "a.ts": 'import "./b.ts";\n',
+        "b.ts": 'import "./a.ts";\n',
+      });
       mirrorCache = join(dir, "node_modules", ".cache", "scaffolding");
     });
-    const addInputs = () =>
+    const addInputs = (prefix = "") =>
       write(dir, {
-        [page]: "---\nimport './missing-astro.ts';\n---\n<p>Page</p>\n",
-        "untracked.ts": 'import "./missing-ts.ts";\n',
+        [prefix + page]: "---\nimport './missing-astro.ts';\n---\n<p>Page</p>\n",
+        [prefix + "untracked.ts"]: 'import "./missing-ts.ts";\n',
       });
     afterEach(() => {
       prepareGit(dir, ["reset", "--mixed", "HEAD"]);
       rmSync(join(dir, page), { force: true });
       rmSync(join(dir, "untracked.ts"), { force: true });
+      rmSync(join(dir, "ignored"), { force: true, recursive: true });
       rmSync(mirrorCache, { force: true, recursive: true });
     });
 
@@ -12445,17 +12450,15 @@ describe("check-cycles", () => {
       expect(existsSync(mirrorCache)).toBe(false);
     });
 
-    test("ignores untracked imports without creating an Astro mirror", () => {
-      addInputs();
+    test("skips ignored imports without creating an Astro mirror", () => {
+      addInputs("ignored/");
       const result = run(dir, [bin("check-cycles")]);
       expect(result.out).toContain("a.ts -> b.ts -> a.ts");
       expect(result.out).not.toContain("missing-");
       expect(existsSync(mirrorCache)).toBe(false);
     });
 
-    test("reports staged unresolved imports and removes the Astro mirror", () => {
-      addInputs();
-      prepareGit(dir, ["add", "--", page, "untracked.ts"]);
+    const expectUnresolvedImports = () => {
       const result = run(dir, [bin("check-cycles")]);
       expect(result.code).toBe(1);
       expect(result.out).toContain("a.ts -> b.ts -> a.ts");
@@ -12463,6 +12466,17 @@ describe("check-cycles", () => {
         new Set(["./missing-astro.ts", "./missing-ts.ts"]),
       );
       expect(readdirSync(mirrorCache)).toEqual([]);
+    };
+
+    test("reports untracked unresolved imports and removes the Astro mirror", () => {
+      addInputs();
+      expectUnresolvedImports();
+    });
+
+    test("reports staged unresolved imports and removes the Astro mirror", () => {
+      addInputs();
+      prepareGit(dir, ["add", "--", page, "untracked.ts"]);
+      expectUnresolvedImports();
     });
   });
 

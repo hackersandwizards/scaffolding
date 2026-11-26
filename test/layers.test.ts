@@ -1,10 +1,42 @@
+import { mkdirSync, writeFileSync } from "node:fs";
+import { join } from "node:path";
 import { expect, test } from "vitest";
 import {
   layerDiagram,
   mergeLayerDeclarations,
   normalizeLayerRestrictions,
   parseLayerOverride,
+  renderLayers,
 } from "../lib/layers.ts";
+import { git } from "../lib/repo.ts";
+import { installCleanGitEnvHooks } from "./git-env.ts";
+import { testDirectory } from "./test-directory.ts";
+
+installCleanGitEnvHooks();
+
+test("counts untracked source imports and skips ignored source imports in the layer map", async () => {
+  using fixture = testDirectory();
+  const { folder } = fixture;
+  git(["init", "-q"], folder);
+  writeFileSync(
+    join(folder, ".oxlintrc.json"),
+    JSON.stringify({
+      overrides: ["a/**", "b/**"].map((glob) => ({
+        files: [glob],
+        rules: { "no-restricted-imports": ["error", "unused"] },
+      })),
+    }),
+  );
+  writeFileSync(join(folder, ".gitignore"), "/a/ignored.ts\n");
+  mkdirSync(join(folder, "a"));
+  mkdirSync(join(folder, "b"));
+  writeFileSync(join(folder, "b/target.ts"), "export const target = 1;\n");
+  git(["add", "b/target.ts"], folder);
+  writeFileSync(join(folder, "a/new.ts"), 'import "../b/target.ts";\n');
+  writeFileSync(join(folder, "a/ignored.ts"), 'import "../b/target.ts";\n');
+
+  expect(await renderLayers(folder)).toContain("  L0 -->|1| L1\n");
+});
 
 test.each([
   [{ group: ["third", "", "first"], message: "Use the public path" }, ["third", "", "first"]],

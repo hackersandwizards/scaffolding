@@ -1,5 +1,4 @@
-import { existsSync, realpathSync } from "node:fs";
-import { join } from "node:path";
+import { realpathSync } from "node:fs";
 import { allExtensions } from "dependency-cruiser";
 import { checkAstroImports } from "./astro-imports.ts";
 import {
@@ -10,7 +9,7 @@ import {
   type GraphResult,
   type VisitImports,
 } from "./import-scan.ts";
-import { git, submodulePaths } from "./repo.ts";
+import { listFiles, submodulePaths } from "./repo.ts";
 
 export async function inspectImportGraph(
   directory: string,
@@ -20,10 +19,7 @@ export async function inspectImportGraph(
   const submodules = submodulePaths(root);
   const insideSubmodule = (path: string) =>
     submodules.some((submodule) => path === submodule || path.startsWith(`${submodule}/`));
-  const files = git(["ls-files", "-z", "--cached", "--deduplicate"], root)
-    .toString()
-    .split("\0")
-    .filter((path) => path && !insideSubmodule(path) && existsSync(join(root, path)));
+  const files = listFiles(root, false).filter((path) => !insideSubmodule(path));
   const sources = files.filter((path) => sourceExtension.test(path));
   const astro = files.filter((path) => path.endsWith(".astro"));
   if (sources.length === 0 && astro.length === 0) return { complete: true, findings: [] };

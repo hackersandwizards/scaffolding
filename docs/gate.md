@@ -58,7 +58,8 @@ the original source paths. Take another repository's code from its published pac
 packages under `node_modules` pass the checkout-boundary check. Relative asset imports resolve
 against the checkout, including assets omitted from the Astro mirror and suffixes such as `?raw`.
 Unresolved package and alias specifiers pass.
-The step starts from tracked JavaScript, TypeScript and Astro files. It compiles those Astro files
+The step starts from tracked JavaScript, TypeScript and Astro files and includes untracked files
+of those types that Git does not ignore. It compiles those Astro files
 before passing them to dependency-cruiser. Imports resolve using the root `tsconfig.json`'s path aliases. Each compiled client
 script is a separate module from its component's server code. The check ignores imports TypeScript
 erases, including `import type`. To fix a runtime cycle, move shared code into a module that
@@ -98,7 +99,7 @@ under the same name. A path matches the glob with the longest literal prefix, su
 alternative in each brace group. If the globs still tie, the alphabetically first layer name wins.
 Unmatched paths use their top-level folder, with
 ` (outside layers)` appended when needed for a unique label. Edge labels count imports between layers
-using the runtime graph from `cycles`.
+using the runtime graph from `cycles`, including untracked sources that Git does not ignore.
 
 Run `bun run scaffolding layers --write` to regenerate the map and commit it with the changes.
 Delete the map when the last layer is removed.
