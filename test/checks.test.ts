@@ -1425,10 +1425,10 @@ describe("scaffold and check-structure", () => {
   sh(dir, ["config", "core.hooksPath", ".githooks"]);
   const hooksPath = (root: string) =>
     sh(root, ["config", "--local", "core.hooksPath"]).stdout.toString().trim();
-  const fixture = (
+  const copyScaffoldFixture = (
     name: string,
     config: Record<string, unknown>,
-    files: Record<string, string | null> = {},
+    files: Record<string, string> = {},
   ) => {
     const other = join(parent, name);
     cpSync(dir, other, {
@@ -1439,15 +1439,32 @@ describe("scaffold and check-structure", () => {
     const pkg = scaffolded(other);
     Object.assign(pkg.scaffolding, config);
     const manifest = JSON.stringify(pkg, null, 2);
-    const changes = Object.entries(files);
-    const present = changes.filter((entry): entry is [string, string] => entry[1] !== null);
-    write(other, { "package.json": manifest, ...Object.fromEntries(present) });
-    for (const [path, text] of changes) {
-      if (text === null) rmSync(join(other, path));
-    }
+    write(other, { "package.json": manifest, ...files });
+    return other;
+  };
+  const fixture = (
+    name: string,
+    config: Record<string, unknown>,
+    files: Record<string, string> = {},
+  ) => {
+    const other = copyScaffoldFixture(name, config, files);
     install(other);
     return other;
   };
+
+  test.each([
+    {
+      files: { "package.json": '{"name":"replacement"}\n' },
+      manifest: '{"name":"replacement"}\n',
+    },
+  ])(
+    "the scaffold fixture copy keeps the supplied manifest bytes and excludes dependencies",
+    ({ files, manifest }) => {
+      const copy = copyScaffoldFixture("manifest-override", { private: true }, files);
+      expect(readFileSync(join(copy, "package.json"), "utf8")).toBe(manifest);
+      expect(existsSync(join(copy, "node_modules"))).toBe(false);
+    },
+  );
 
   test("scaffold writes the manifest's name, Bun floor and prepare script", () => {
     expect(made.code).toBe(0);
@@ -1664,14 +1681,9 @@ describe("scaffold and check-structure", () => {
       const servers = settings.mcpServers;
       assert(isObject(servers), `${changed}: missing mcpServers`);
       content = JSON.stringify({ ...settings, mcpServers: { ...servers, own: { command: "x" } } });
-      consumer = fixture(
-        "agent-configs",
-        {},
-        {
-          [changed]: content,
-          ...Object.fromEntries(removed.map((path) => [path, null])),
-        },
-      );
+      consumer = copyScaffoldFixture("agent-configs", {}, { [changed]: content });
+      for (const path of removed) rmSync(join(consumer, path));
+      install(consumer);
     });
     afterEach(() => {
       write(consumer, { [changed]: content });
@@ -1701,7 +1713,9 @@ describe("scaffold and check-structure", () => {
     };
     let other: string;
     beforeAll(() => {
-      other = fixture("oxlint-structure", {}, { [name]: null });
+      other = copyScaffoldFixture("oxlint-structure", {});
+      rmSync(join(other, name));
+      install(other);
     });
     afterEach(() => rmSync(join(other, name), { force: true }));
 
@@ -2289,11 +2303,14 @@ describe("scaffold and check-structure", () => {
   });
 
   test("LICENSE is required where the repository is public; a private one may have none", () => {
-    const missing = (config: Record<string, unknown>, name: string) =>
-      lines(
-        run(fixture(name, config, { LICENSE: null }), [bin("check-structure")]).out,
-        "check-structure",
-      ).filter((l) => l.includes("LICENSE"));
+    const missing = (config: Record<string, unknown>, name: string) => {
+      const other = copyScaffoldFixture(name, config);
+      rmSync(join(other, "LICENSE"));
+      install(other);
+      return lines(run(other, [bin("check-structure")]).out, "check-structure").filter((l) =>
+        l.includes("LICENSE"),
+      );
+    };
     expect(missing({}, "public-no-license")).toEqual([
       "[check-structure] LICENSE: missing: create this required skeleton file (see @hackersandwizards/scaffolding skeleton.json), or if this is a private repository and LICENSE is missing, set scaffolding.private: true in package.json",
     ]);
@@ -2402,20 +2419,24 @@ describe("scaffold and check-structure", () => {
     const skip = { structure: "custom skeleton files" };
 
     test("skip.structure with a custom hook, missing files and a stale hooks path and mode", () => {
-      const other = fixture(
+      const other = copyScaffoldFixture(
         "skip-public",
         { skip },
         {
           ".githooks/pre-commit": "#!/bin/sh\ncustom\n",
           "bin/x.ts": "export {};\n",
           ".claude/skills/a/SKILL.md": "x\n",
-          ".editorconfig": null,
-          ".npmrc": null,
-          "bunfig.toml": null,
-          ".githooks/commit-msg": null,
-          ".githooks/post-merge": null,
         },
       );
+      for (const path of [
+        ".editorconfig",
+        ".npmrc",
+        "bunfig.toml",
+        ".githooks/commit-msg",
+        ".githooks/post-merge",
+      ])
+        rmSync(join(other, path));
+      install(other);
       const pkg = scaffolded(other);
       write(other, { "package.json": JSON.stringify({ ...pkg, bin: { x: "bin/x.ts" } }) });
       sh(other, ["config", "--unset", "core.hooksPath"]);
@@ -2434,15 +2455,16 @@ describe("scaffold and check-structure", () => {
     ])(
       "skip.structure %s keeps a private repository's commit-msg and older hook",
       (_, reason, suffix) => {
-        const other = fixture(
+        const other = copyScaffoldFixture(
           `skip-private-${suffix}`,
           { skip: { structure: reason }, private: true },
           {
             ".githooks/post-checkout": "#!/bin/sh\nolder\n",
             ".claude/skills/a/SKILL.md": "x\n",
-            "bunfig.toml": null,
           },
         );
+        rmSync(join(other, "bunfig.toml"));
+        install(other);
         const before = state(other);
         expect(run(other, [bin("check-structure"), "--fix"]).code).toBe(0);
         expect(state(other)).toEqual(before);
@@ -2456,15 +2478,16 @@ describe("scaffold and check-structure", () => {
     ] as const)(
       "an allow entry naming %s keeps the file and --fix still repairs the rest",
       (shape, path, hasBunfig) => {
-        const other = fixture(
+        const other = copyScaffoldFixture(
           `allow-${shape.replace(" ", "-")}`,
           { private: true, allow: [{ check: "structure", path, reason: "own hook" }] },
           {
             ".githooks/pre-push": "#!/bin/sh\ncustom\n",
             ".editorconfig": "root = true\n",
-            "bunfig.toml": null,
           },
         );
+        rmSync(join(other, "bunfig.toml"));
+        install(other);
         run(other, [bin("check-structure"), "--fix"]);
         expect(readFileSync(join(other, ".githooks/pre-push"), "utf8")).toBe("#!/bin/sh\ncustom\n");
         expect(existsSync(join(other, "bunfig.toml"))).toBe(hasBunfig);
@@ -3825,46 +3848,43 @@ describe("check-confidential", () => {
       // A PATH holding git alone, so the machine's own git-lfs stays out of reach.
       const bare = temp();
       symlinkSync(Bun.which("git")!, join(bare, "git"));
-      const origin = { remote: "origin", old: "0".repeat(40) };
-      const push = (dir: string, PATH: string, { remote, old } = origin) => {
-        const head = sh(dir, ["rev-parse", "HEAD"]).stdout.toString().trim();
-        return spawnSync(process.execPath, [bin("check-confidential"), "prepush", remote, "x"], {
-          cwd: dir,
-          env: {
-            ...process.env,
-            PATH,
-            LFS_LOG: log,
-            GIT_EXEC_PATH: bare,
-          },
-          input: `refs/heads/main ${head} refs/heads/main ${old}\n`,
-        }).status;
-      };
       writeFileSync(log, "");
       const logged = () => readFileSync(log, "utf8");
-      const capture = (name: string, dir: string, destination = origin) => {
+      const capture = (dir: string, remote = "origin", old = "0".repeat(40)) => {
         const length = logged().length;
-        const installed = push(dir, `${stub}:${bare}`, destination);
-        const unavailable = push(dir, bare, destination);
-        results.set(name, { installed, unavailable, log: logged().slice(length) });
+        const [installed, unavailable] = [`${stub}:${bare}`, bare].map((PATH) => {
+          const head = sh(dir, ["rev-parse", "HEAD"]).stdout.toString().trim();
+          return spawnSync(process.execPath, [bin("check-confidential"), "prepush", remote, "x"], {
+            cwd: dir,
+            env: {
+              ...process.env,
+              PATH,
+              LFS_LOG: log,
+              GIT_EXEC_PATH: bare,
+            },
+            input: `refs/heads/main ${head} refs/heads/main ${old}\n`,
+          }).status;
+        });
+        return { installed, unavailable, log: logged().slice(length) };
       };
       // Nothing of LFS: git-lfs is never started, installed or not; a .lfsconfig and an empty store
       // hold no objects.
-      capture("no LFS metadata", repo({ "package.json": "{}" }));
-      capture("empty LFS config", repo({ "package.json": "{}", ".lfsconfig": "" }));
+      results.set("no LFS metadata", capture(repo({ "package.json": "{}" })));
+      results.set("empty LFS config", capture(repo({ "package.json": "{}", ".lfsconfig": "" })));
       const stored = repo({ "package.json": "{}" });
       mkdirSync(join(stored, ".git/lfs/objects/ab/cd"), { recursive: true });
-      capture("empty local store", stored);
+      results.set("empty local store", capture(stored));
       const moved = repo({ "package.json": "{}" });
       const elsewhere = temp();
       sh(moved, ["config", "lfs.storage", elsewhere]);
-      capture("empty redirected store", moved);
+      results.set("empty redirected store", capture(moved));
       beforeStore = logged();
       // A store holding an object: git-lfs decides and its status is the hook's; without git-lfs the
       // push is refused.
       write(stored, { ".git/lfs/objects/ab/cd/abcd": "x" });
-      capture("local object", stored);
+      results.set("local object", capture(stored));
       write(elsewhere, { "objects/ab/cd/abcd": "x" });
-      capture("redirected object", moved);
+      results.set("redirected object", capture(moved));
       // No store, but a pushed commit changes a path under filter=lfs, committed raw where git-lfs
       // was never installed.
       const raw = repo(
@@ -3880,30 +3900,26 @@ describe("check-confidential", () => {
       rawGit(["add", "-A"]);
       rawGit(["commit", "-qm", "raw"]);
       rawHasStore = existsSync(join(raw, ".git/lfs"));
-      capture("new raw filtered path", raw);
+      results.set("new raw filtered path", capture(raw));
       // The same path committed before the push, already on a remote: nothing to carry.
       write(raw, { "b.md": "b\n" });
       rawGit(["add", "b.md"]);
       rawGit(["commit", "-qm", "b"]);
       sh(raw, ["update-ref", "refs/remotes/origin/main", "HEAD~1"]);
-      capture("already tracked on origin", raw);
+      results.set("already tracked on origin", capture(raw));
       // A second remote lacks what origin holds, so the path is new there.
-      const backup = { ...origin, remote: "backup" };
-      capture("raw filtered path for a second remote", raw, backup);
+      results.set("raw filtered path for a second remote", capture(raw, "backup"));
       // A push to a URL has no tracking refs: the remote's tip from the input counts instead.
-      const untracked = {
-        remote: "/elsewhere.git",
-        old: sh(raw, ["rev-parse", "HEAD~1"]).stdout.toString().trim(),
-      };
-      capture("URL with an existing remote tip", raw, untracked);
+      const before = sh(raw, ["rev-parse", "HEAD~1"]).stdout.toString().trim();
+      results.set("URL with an existing remote tip", capture(raw, "/elsewhere.git", before));
       // .git/info/attributes counts as well.
       const info = repo({ "package.json": "{}", "a.bin": "x" });
       write(info, { ".git/info/attributes": "*.bin filter=lfs\n" });
-      capture("filter from info attributes", info);
+      results.set("filter from info attributes", capture(info));
       // A lockable path: git-lfs refuses a change to a file someone else locked, LFS or not.
-      capture(
+      results.set(
         "lockable path",
-        repo({ "package.json": "{}", ".gitattributes": "*.psd lockable\n", "a.psd": "x" }),
+        capture(repo({ "package.json": "{}", ".gitattributes": "*.psd lockable\n", "a.psd": "x" })),
       );
       const renamed = repo({
         "package.json": "{}",
@@ -3914,7 +3930,7 @@ describe("check-confidential", () => {
       prepareGit(renamed, ["config", "diff.renames", "true"]);
       prepareGit(renamed, ["mv", "a.psd", "a.txt"]);
       prepareGit(renamed, ["commit", "-qm", "rename", "a.psd", "a.txt"]);
-      capture("rename from a lockable path", renamed);
+      results.set("rename from a lockable path", capture(renamed));
       // A merge whose resolution alone changes a lockable path.
       const merged = repo({
         "package.json": "{}",
@@ -3929,7 +3945,7 @@ describe("check-confidential", () => {
       sh(merged, ["merge", "-q", "--no-commit", "side"]);
       write(merged, { "a.psd": "y" });
       sh(merged, ["commit", "-qam", "m"]);
-      capture("merge resolution changes a lockable path", merged);
+      results.set("merge resolution changes a lockable path", capture(merged));
       totalLog = logged();
     }, limit(20_000));
 
