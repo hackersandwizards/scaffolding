@@ -10920,6 +10920,54 @@ describe("shared prettier config", () => {
 });
 
 describe("shared stylelint config", () => {
+  describe("Tailwind directives and Astro style attributes", () => {
+    let dir: string;
+    const config = join(import.meta.dirname, "..", "config", "stylelint.js");
+    const packages = join(import.meta.dirname, "..", "node_modules");
+    const lint = (file: string) =>
+      spawnSync(
+        join(dir, "node_modules/stylelint/bin/stylelint.mjs"),
+        ["--formatter", "compact", file],
+        { cwd: dir, encoding: "utf8" },
+      );
+
+    beforeAll(() => {
+      dir = repo(
+        {
+          "package.json": '{"type":"module"}\n',
+          "stylelint.config.js": `import styles from "${config}";\nexport default styles();\n`,
+          "apply.css": "a { @apply border-border; }\n",
+          "invalid-media.css": "@media (width >) { a { color: red; } }\n",
+          "inline.astro": '<div style="display: grid; gap: 0.5rem"></div>\n',
+          "bare.css": "color: red;\n",
+        },
+        true,
+        temp(cache),
+      );
+      // Isolated installs can give Stylelint and postcss-html different PostCSS instances.
+      const stylelint = join(dir, "node_modules/stylelint");
+      cpSync(join(packages, "stylelint"), stylelint, { recursive: true });
+      cpSync(join(packages, "postcss"), join(stylelint, "node_modules/postcss"), {
+        recursive: true,
+      });
+    });
+
+    test.each(["apply.css", "inline.astro"])("accepts %s", (file) => {
+      const result = lint(file);
+      expect(result.status, result.stdout + result.stderr).toBe(0);
+    });
+
+    test.each([
+      ["invalid-media.css", "media-query-no-invalid"],
+      ["bare.css", "no-invalid-position-declaration"],
+    ])("rejects %s with %s", (file, rule) => {
+      const result = lint(file);
+      const output = result.stdout + result.stderr;
+      expect(result.status, output).toBe(2);
+      expect(output).toContain(`(${rule})`);
+    });
+  });
+
   describe("custom-property definitions", () => {
     let dir: string;
     const config = join(import.meta.dirname, "..", "config", "stylelint.js");

@@ -18,10 +18,14 @@ imports, and `"@typescript/native": "npm:typescript@7…"` for `tsc`. A plain `t
 lint; the alias alone leaves no `tsc`.
 
 The Stylelint base extends `stylelint-config-recommended` and supports Astro’s `:global` and
-Tailwind v4 directives. It runs in repositories with or without brand. When the root
-`package.json` names the package `@hackersandwizards/brand` or declares it in dependencies or
-devDependencies, the token rule reads brand's exported `tokens.root.css` and fails to load if
-that file is missing. The rule also reads any `importFrom` files. In repositories without
+Tailwind v4 directives. The at-rule name and prelude checks share one list of Tailwind directives,
+including `@apply`. In Astro files, the parser reads `style="…"` declarations without a surrounding
+CSS rule, so the base turns off `no-invalid-position-declaration` for `.astro` files. The rule
+still checks declaration placement in stylesheets.
+
+The base runs in repositories with or without brand. When the root `package.json` names the
+package `@hackersandwizards/brand` or declares it in dependencies or devDependencies, the token
+rule reads brand's exported `tokens.root.css` and fails to load if that file is missing. The rule also reads any `importFrom` files. In repositories without
 brand or configured imports, the token rule is off.
 
 An `importFrom` entry starting with `./` or a bare filename identifies a repository file.

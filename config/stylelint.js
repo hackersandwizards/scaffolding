@@ -19,6 +19,18 @@ const astro = {
 
 const recommended = fileURLToPath(import.meta.resolve("stylelint-config-recommended"));
 const brand = "@hackersandwizards/brand";
+const tailwindAtRules = [
+  "tailwind",
+  "theme",
+  "source",
+  "utility",
+  "variant",
+  "custom-variant",
+  "apply",
+  "reference",
+  "config",
+  "plugin",
+];
 
 export default function styles({ importFrom = [] } = {}) {
   const root = process.cwd();
@@ -40,26 +52,18 @@ export default function styles({ importFrom = [] } = {}) {
     extends: [recommended],
     plugins: [unknownProperties],
     ignoreFiles: submodulePaths(root).map((path) => `${path}/**`),
-    overrides: [{ files: ["**/*.astro"], customSyntax: astro }],
+    overrides: [
+      {
+        files: ["**/*.astro"],
+        customSyntax: astro,
+        // postcss-html parses style attribute declarations without a surrounding CSS rule.
+        rules: { "no-invalid-position-declaration": null },
+      },
+    ],
     rules: {
       "selector-pseudo-class-no-unknown": [true, { ignorePseudoClasses: ["global"] }],
-      "at-rule-no-unknown": [
-        true,
-        {
-          ignoreAtRules: [
-            "tailwind",
-            "theme",
-            "source",
-            "utility",
-            "variant",
-            "custom-variant",
-            "apply",
-            "reference",
-            "config",
-            "plugin",
-          ],
-        },
-      ],
+      "at-rule-no-unknown": [true, { ignoreAtRules: tailwindAtRules }],
+      "at-rule-prelude-no-invalid": [true, { ignoreAtRules: tailwindAtRules }],
       "csstools/value-no-unknown-custom-properties": tokens.length
         ? [true, { importFrom: tokens.map(at) }]
         : null,
