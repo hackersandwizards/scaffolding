@@ -9,6 +9,7 @@ import {
   writeFileSync,
 } from "node:fs";
 import { dirname, join } from "node:path";
+import { fileURLToPath } from "node:url";
 import {
   checkImports,
   cycleFinding,
@@ -120,7 +121,8 @@ export async function checkAstroImports(
   files: string[],
   visit?: VisitImports,
 ): Promise<GraphResult> {
-  if (resolveModuleIfAvailable("@astrojs/compiler-rs", import.meta.dir) === undefined)
+  const directoryOfModule = dirname(fileURLToPath(import.meta.url));
+  if (resolveModuleIfAvailable("@astrojs/compiler-rs", directoryOfModule) === undefined)
     return {
       complete: false,
       findings: [cycleFinding("cannot load @astrojs/compiler-rs: run bun install")],

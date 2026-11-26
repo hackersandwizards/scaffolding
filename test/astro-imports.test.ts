@@ -95,9 +95,7 @@ test.each([["node_modules", "the cycles cache path contains a symlink"]])(
     mkdirSync(join(temp.folder, "link-target"));
     symlinkSync(join(temp.folder, "link-target"), join(temp.folder, relative), "dir");
     const visit = vi.fn();
-    const { findings } = await checkAstroImports(temp.folder, ["component.astro"], visit).catch(
-      () => ({ findings: [] }),
-    );
+    const { findings } = await checkAstroImports(temp.folder, ["component.astro"], visit);
     expect(findings).toHaveLength(1);
     expect(findings[0]?.message).toContain(expected);
     expect(visit).not.toHaveBeenCalled();

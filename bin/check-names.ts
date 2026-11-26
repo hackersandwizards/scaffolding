@@ -7,7 +7,14 @@ import skeleton from "../skeleton.json";
 import { renderGuides } from "../lib/guides.ts";
 import { moduleFunctionNames } from "../lib/module-function-names.ts";
 import { oxlintConfig, oxlintFiles, parseOxlintConfig } from "../lib/oxlint.ts";
-import { isObject, isReason, printCheckFindings, repoRoot, TEST, type Finding } from "../lib/repo.ts";
+import {
+  isObject,
+  isReason,
+  printCheckFindings,
+  repoRoot,
+  TEST,
+  type Finding,
+} from "../lib/repo.ts";
 
 const namesSetting = "settings.scaffolding.names";
 const namesConfigFinding = (message: string): Finding => ({

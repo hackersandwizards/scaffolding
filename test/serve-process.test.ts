@@ -33,7 +33,7 @@ test.each([[43210, -43210]])(
     const server = new ServingProcess(child, false);
     Object.defineProperty(child, "pid", { value: pid });
     const kill = vi.spyOn(process, "kill").mockImplementation(() => {
-      throw new Error("finished");
+      throw Object.assign(new Error("finished"), { code: "ESRCH" });
     });
     try {
       server.stop();
