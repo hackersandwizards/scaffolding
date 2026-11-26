@@ -2526,10 +2526,18 @@ describe("scaffold and check-structure", () => {
   });
 
   describe("--fix writes nothing an opt-out covers", () => {
+    function statePaths(root: string, folder = ""): string[] {
+      return readdirSync(join(root, folder), { withFileTypes: true })
+        .filter(({ name }) => folder !== "" || ![".git", "node_modules"].includes(name))
+        .flatMap((entry) => {
+          const path = join(folder, entry.name);
+          return entry.isDirectory() ? [path, ...statePaths(root, path)] : [path];
+        });
+    }
+
     /** Every path with its mode and content or link target, the index and the hooks path. */
     const state = (root: string) => ({
-      seen: (readdirSync(root, { recursive: true, encoding: "utf8" }) as string[])
-        .filter((path) => !/^(\.git|node_modules)(\/|$)/.test(path))
+      seen: statePaths(root)
         .sort()
         .map((path) => {
           const stat = lstatSync(join(root, path));
@@ -6489,6 +6497,8 @@ describe("scaffolding check", () => {
       expect(green.stdout.trim().split("\n")).toEqual([
         'eslint ["--cache","--concurrency=auto",".","--fix"]',
         'prettier ["--write","."]',
+        "[python] no tracked Python files",
+        "[terraform] no tracked Terraform files",
       ]);
       expect(readFileSync(join(dir, "note.md"), "utf8")).toBe("# Note\n\nItems:\n\n- One\n");
     });
@@ -6992,18 +7002,15 @@ describe("scaffolding check", () => {
         type: "module",
         scaffolding: { skip: noStyles },
       }),
-      "node_modules/@hackersandwizards/brand/package.json": JSON.stringify({
-        exports: { "./tokens.root.css": "./tokens.root.css" },
-      }),
-      "node_modules/@hackersandwizards/brand/tokens.root.css": ":root { --color-ink: #000; }\n",
-      "stylelint.config.js": `import styles from "${join(import.meta.dirname, "..", "config", "stylelint.js")}";\nexport default { ...styles(), ignoreFiles: ["nested/**"] };\n`,
+      "src/tokens.css": ":root { --color-ink: #000; }\n",
+      "stylelint.config.js": `import styles from "${join(import.meta.dirname, "..", "config", "stylelint.js")}";\nexport default { ...styles({ importFrom: ["./src/tokens.css"] }), ignoreFiles: ["nested/**"] };\n`,
       "src/bad.css": "a { color: var(--color-nope); }\n",
       "nested/.stylelintrc.json": "{}",
       "nested/Odd.astro": "---\nconst x = 1;\n---\n<p>{x}</p>\n",
       "src/Bad.astro":
         '---\nconst x = "";\n---\n<style set:html={x} />\n<p>a</p>\n<style>\n  p { color: var(--color-astro); }\n</style>\n',
     });
-    mkdirSync(join(dir, "node_modules/.bin"));
+    mkdirSync(join(dir, "node_modules/.bin"), { recursive: true });
     symlinkSync(
       join(import.meta.dirname, "..", "node_modules/stylelint/bin/stylelint.mjs"),
       join(dir, "node_modules/.bin/stylelint"),
@@ -7524,7 +7531,7 @@ describe("skeleton SessionStart hook", () => {
     });
   const head = (dir: string) => sh(dir, ["rev-parse", "HEAD"]).stdout.toString().trim();
   const notMerged =
-    "origin/main is 1 commits ahead of HEAD and was not merged: merge it per git.md before work\n";
+    "origin/main is 1 commits ahead of HEAD and was not merged: update per git.md, whose failed-merge step reads each record from origin/main\n";
 
   describe("a clean checkout and subsequent SessionStart calls", () => {
     let checkout: ReturnType<typeof clone>;
@@ -10922,7 +10929,11 @@ describe("shared stylelint config", () => {
 
     beforeAll(() => {
       dir = repo({
-        "package.json": JSON.stringify({ name: "fx", type: "module" }),
+        "package.json": JSON.stringify({
+          name: "fx",
+          type: "module",
+          dependencies: { "@hackersandwizards/brand": "1.0.0" },
+        }),
         "node_modules/@hackersandwizards/brand/package.json": JSON.stringify({
           exports: { "./tokens.root.css": "./generated/tokens.root.css" },
         }),
@@ -10957,7 +10968,7 @@ describe("shared stylelint config", () => {
       expect(lint("src/B.astro").status).toBe(0);
     });
 
-    test("the preset fails without the package that provides the brand properties", () => {
+    test("the preset fails when the declared brand package is missing", () => {
       const brand = join(dir, "node_modules/@hackersandwizards/brand");
       const absent = `${brand}-absent`;
       renameSync(brand, absent);
@@ -10969,10 +10980,40 @@ describe("shared stylelint config", () => {
     });
   });
 
+  test("the brand package reads its own exported token definitions", () => {
+    const config = join(import.meta.dirname, "..", "config", "stylelint.js");
+    const dir = repo({
+      "package.json": JSON.stringify({
+        name: "@hackersandwizards/brand",
+        type: "module",
+        exports: { "./tokens.root.css": "./generated/tokens.root.css" },
+      }),
+      "generated/tokens.root.css": ":root { --color-ink: #000; }\n",
+      "stylelint.config.js": `import styles from "${config}";\nexport default styles();\n`,
+      "src/ok.css": "a { color: var(--color-ink); }\n",
+      "src/bad.css": "a { color: var(--color-nope); }\n",
+    });
+    const stylelint = join(import.meta.dirname, "..", "node_modules", ".bin", "stylelint");
+    const result = spawnSync(stylelint, ["--formatter", "compact", "src/*.css"], {
+      cwd: dir,
+      encoding: "utf8",
+    });
+    const output = result.stdout + result.stderr;
+    expect(result.status, output).toBe(2);
+    expect(output).toContain(
+      'src/bad.css: line 1, col 16, error - Unexpected custom property "--color-nope" inside declaration "color". (csstools/value-no-unknown-custom-properties)',
+    );
+    expect(output).not.toContain("src/ok.css");
+  });
+
   test("a submodule's files are not linted", () => {
     const config = join(import.meta.dirname, "..", "config", "stylelint.js");
     const dir = repo({
-      "package.json": JSON.stringify({ name: "fx", type: "module" }),
+      "package.json": JSON.stringify({
+        name: "fx",
+        type: "module",
+        dependencies: { "@hackersandwizards/brand": "1.0.0" },
+      }),
       "node_modules/@hackersandwizards/brand/package.json": JSON.stringify({
         exports: { "./tokens.root.css": "./tokens.root.css" },
       }),

@@ -10,6 +10,7 @@ const path = fc
 const paths = fc.array(path);
 const available = [
   "format",
+  "workflows",
   "lint",
   "test",
   "check:docs",
@@ -87,16 +88,21 @@ test.prop([fc.array(mapped), full], {
   },
 );
 
-test.prop([fc.constantFrom("src/package.json", "docs/yarn.lock", ".githooks/pre-push"), full])(
-  "shared configuration paths select exactly the fast steps",
-  (file, fullOnly) => {
-    const result = select([file], fullOnly);
-    expect(result.fallback).toBe(`${JSON.stringify(file)} is a shared configuration path`);
-    expect(new Set(result.steps.keys())).toEqual(
-      new Set(available.filter((step) => !fullOnly.includes(step))),
-    );
-  },
-);
+test.prop([
+  fc.constantFrom(
+    "src/package.json",
+    "docs/yarn.lock",
+    ".githooks/pre-push",
+    ".github/workflows/build.yaml",
+  ),
+  full,
+])("shared configuration paths select exactly the fast steps", (file, fullOnly) => {
+  const result = select([file], fullOnly);
+  expect(result.fallback).toBe(`${JSON.stringify(file)} is a shared configuration path`);
+  expect(new Set(result.steps.keys())).toEqual(
+    new Set(available.filter((step) => !fullOnly.includes(step))),
+  );
+});
 
 const globParts = fc.record(
   {

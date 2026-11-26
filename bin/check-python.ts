@@ -1,0 +1,64 @@
+#!/bin/sh
+// 2>/dev/null; exec bun --no-env-file "$0" "$@"
+import { readFileSync } from "node:fs";
+import { join } from "node:path";
+import { pythonInput } from "../lib/extra-lint-inputs.ts";
+import {
+  lintChunks,
+  lintEnvironment,
+  relativeLintConfig,
+  runTrackedLint,
+} from "../lib/extra-lint.ts";
+import { ruffPin } from "../lib/pinned-binary-assets.ts";
+import { pinnedBinary, scaffoldingCache } from "../lib/pinned-binary.ts";
+import { regularInput } from "../lib/tracked-inputs.ts";
+
+function ruffConfig(root: string) {
+  const standalone = relativeLintConfig(root, [".ruff.toml", "ruff.toml"]);
+  if (standalone) return ["--config", standalone];
+  const pyproject = join(root, "pyproject.toml");
+  if (regularInput(root, "pyproject.toml")) {
+    const parsed = Bun.TOML.parse(readFileSync(pyproject, "utf8")) as { tool?: { ruff?: unknown } };
+    if (parsed.tool?.ruff !== undefined) return ["--config", pyproject];
+  }
+  return ["--isolated"];
+}
+
+async function lintPython(root: string, files: string[]) {
+  const config = ruffConfig(root);
+  const binary = await pinnedBinary(root, "ruff", ruffPin);
+  const env = lintEnvironment(root);
+  const flags = [
+    ...config,
+    "--force-exclude",
+    "--cache-dir",
+    scaffoldingCache(root, ["ruff-cache"], "Ruff"),
+  ];
+  const fix = process.argv[2] === "--fix";
+  const command = { binary, cwd: root, env };
+  const lint = lintChunks(
+    command,
+    [
+      "check",
+      "--output-format",
+      "concise",
+      "--no-fix-only",
+      fix ? "--fix" : "--no-fix",
+      ...flags,
+      "--",
+    ],
+    { files, guide: "ruff" },
+  );
+  const format = lintChunks(command, ["format", ...(fix ? [] : ["--check"]), ...flags, "--"], {
+    files,
+    guide: "ruff",
+  });
+  return lint || format;
+}
+
+process.exit(
+  await runTrackedLint(
+    { step: "python", input: pythonInput, description: "Python files" },
+    lintPython,
+  ),
+);

@@ -67,7 +67,7 @@
     "eslint-plugin-astro": ">=1",
     "astro": ">=7",
     "astrobook": ">=0.13",
-    "stylelint": ">=16"
+    "stylelint": ">=18"
   },
   "peerDependenciesMeta": {
     "typescript": {
@@ -140,7 +140,6 @@
     "test": "test",
     "skip": {
       "catalog": "no surface: the package ships the catalog shell and has no catalog of its own",
-      "styles": "brand is not installed here, so its token file is not there to read; the shell's CSS reads brand's names by rule",
       "admin": "the package keeps no items; its tracking lives in Company OS"
     }
   },
@@ -165,6 +164,7 @@
     "oxlint-tsgolint": "7.0.2008",
     "postcss-html": "2.0.1",
     "prettier-plugin-astro": "1.1.2",
+    "stylelint-config-recommended": "19.1.0",
     "stylelint-value-no-unknown-custom-properties": "6.1.1",
     "typescript-eslint": "8.73.0",
     "vitest": "5.1.0"

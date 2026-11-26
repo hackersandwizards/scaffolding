@@ -146,8 +146,8 @@ export const stylelintFlags = (root: string) => [
   "--allow-empty-input",
   "--ignore-path",
   ".gitignore",
-  "--formatter",
-  "compact",
+  "--custom-formatter",
+  join(import.meta.dir, "stylelint-formatter.ts"),
 ];
 
 /** `term`: the text is a bare term, which an allow entry names whole. */

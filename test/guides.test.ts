@@ -1,6 +1,7 @@
 import { ESLint } from "eslint";
 import { readdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
+import recommendedStyles from "stylelint-config-recommended";
 import { expect, test } from "vitest";
 import ownOxlint from "../.oxlintrc.json";
 import sharedOxlint from "../config/oxlint.json";
@@ -8,7 +9,22 @@ import { guideId, guidesDirectory, renderGuides } from "../lib/guides.ts";
 import { isObject } from "../lib/json.ts";
 import { activeSeverity, type Rules } from "../lib/lint-rule-overlaps.ts";
 
-const ownChecks = ["layers", "import-cycle", "duplicate-function-name", "generic-folder"];
+const ownChecks = [
+  "layers",
+  "import-cycle",
+  "duplicate-function-name",
+  "generic-folder",
+  "ruff",
+  "terraform-fmt",
+  "tflint",
+  "hadolint",
+  "actionlint",
+  "CssSyntaxError",
+];
+const stylelintRules = [
+  ...Object.keys(recommendedStyles.rules),
+  "csstools/value-no-unknown-custom-properties",
+];
 
 const activeRules = (rules: Rules = {}) =>
   Object.keys(rules).filter((rule) => activeSeverity(rules[rule]));
@@ -37,17 +53,20 @@ const eslintRules = async () => {
 const guideFiles = readdirSync(guidesDirectory).filter((file) => file.endsWith(".md"));
 
 test("each rule enforced by the shared configs has a guide", async () => {
-  const missing = [...new Set([...oxlintRules(sharedOxlint), ...(await eslintRules())])].filter(
-    (rule) => !guideFiles.includes(`${guideId(rule)}.md`),
-  );
+  const missing = [
+    ...new Set([...oxlintRules(sharedOxlint), ...(await eslintRules()), ...stylelintRules]),
+  ].filter((rule) => !guideFiles.includes(`${guideId(rule)}.md`));
   expect(missing, "Add a guide under config/guides/ for each rule listed").toEqual([]);
 });
 
 test("each guide is reachable from an enforced rule or own check", async () => {
   const reachable = new Set([
-    ...[...oxlintRules(sharedOxlint), ...oxlintRules(ownOxlint), ...(await eslintRules())].map(
-      guideId,
-    ),
+    ...[
+      ...oxlintRules(sharedOxlint),
+      ...oxlintRules(ownOxlint),
+      ...(await eslintRules()),
+      ...stylelintRules,
+    ].map(guideId),
     ...ownChecks,
   ]);
   expect(
@@ -68,8 +87,16 @@ test("guide ids drop plugin names in ESLint, Oxlint and scaffolding rule names",
       "typescript-eslint(no-explicit-any)",
       "scaffolding/property",
       "vitest/expect-expect",
+      "csstools/value-no-unknown-custom-properties",
     ].map(guideId),
-  ).toEqual(["no-explicit-any", "no-explicit-any", "no-explicit-any", "property", "expect-expect"]);
+  ).toEqual([
+    "no-explicit-any",
+    "no-explicit-any",
+    "no-explicit-any",
+    "property",
+    "expect-expect",
+    "value-no-unknown-custom-properties",
+  ]);
 });
 
 test("guides follow first-seen order, with aliases deduplicated and missing guides skipped", () => {

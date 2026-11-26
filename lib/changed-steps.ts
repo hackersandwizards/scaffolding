@@ -1,4 +1,10 @@
 import type { ChangedFilesResult } from "./changed-paths.ts";
+import {
+  dockerfileInput,
+  pythonInput,
+  terraformInput,
+  workflowInput,
+} from "./extra-lint-inputs.ts";
 import { layerMapPath } from "./layers.ts";
 
 export function validGlob(pattern: string): boolean {
@@ -32,6 +38,14 @@ const always = [
 ];
 const source = ["typecheck", "lint", "oxlint", "cycles", "names", "layers", "test"];
 const defaults = [
+  { glob: { match: pythonInput }, steps: ["python"] },
+  { glob: { match: terraformInput }, steps: ["terraform"] },
+  { glob: { match: dockerfileInput }, steps: ["dockerfile"] },
+  { glob: { match: workflowInput }, steps: ["workflows"] },
+  { glob: new Bun.Glob("{ruff.toml,.ruff.toml,pyproject.toml}"), steps: ["python"] },
+  { glob: new Bun.Glob(".tflint.hcl"), steps: ["terraform"] },
+  { glob: new Bun.Glob(".hadolint.{yaml,yml}"), steps: ["dockerfile"] },
+  { glob: new Bun.Glob(".github/actionlint.{yaml,yml}"), steps: ["workflows"] },
   { glob: new Bun.Glob(layerMapPath), steps: ["layers"] },
   { glob: new Bun.Glob("**/*.{js,jsx,cjs,mjs,ts,tsx,cts,mts,astro,mdx}"), steps: source },
   { glob: new Bun.Glob("**/*.{astro,mdx,css,scss,sass,less}"), steps: ["styles", "test"] },
@@ -61,7 +75,7 @@ const crossCutting = [
   ".gitlab-ci.yml",
 ].map((glob) => new Bun.Glob(glob));
 
-type Mapping = { glob: Bun.Glob; steps: string[] };
+type Mapping = { glob: Pick<Bun.Glob, "match">; steps: string[] };
 
 export const fastSteps = (available: string[], fullOnly: ReadonlyMap<string, string>) =>
   new Set(available.filter((step) => !fullOnly.has(step)));

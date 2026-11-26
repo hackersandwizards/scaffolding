@@ -18,8 +18,9 @@ import { ownEntry } from "../lib/own-entry.ts";
 import { isReason, readPackage, repoRoot, underLock, withoutEnvFile } from "../lib/repo.ts";
 import { machineLoad } from "../lib/serve.ts";
 
+const directChecks = ["shell", "python", "terraform", "dockerfile", "workflows"];
 const usage =
-  "usage: scaffolding check [--changed [<from>..<to>...]] | scaffolding shell | scaffolding markdown [--fix] | scaffolding layers [--write] | scaffolding test [<vitest args>...] | scaffolding fix";
+  "usage: scaffolding check [--changed [<from>..<to>...]] | scaffolding <shell|python|terraform|dockerfile|workflows> | scaffolding markdown [--fix] | scaffolding layers [--write] | scaffolding test [<vitest args>...] | scaffolding fix";
 help("scaffolding", usage);
 withoutEnvFile("scaffolding");
 
@@ -54,25 +55,30 @@ if (command === "test") {
   );
   process.exit(run.status ?? 1);
 }
+function runDirectCheck(step: string, flags: string[]) {
+  const run = spawnSync(
+    process.execPath,
+    ["--no-env-file", join(import.meta.dir, `check-${step}.ts`), ...flags],
+    { stdio: "inherit" },
+  );
+  return run.status ?? 1;
+}
+
+if (fix) {
+  const markdown = runDirectCheck("markdown", ["--fix"]);
+  if (markdown) process.exit(markdown);
+  const python = runDirectCheck("python", ["--fix"]);
+  const terraform = runDirectCheck("terraform", ["--fix"]);
+  process.exit(python || terraform);
+}
+
 const direct =
-  fix ||
-  (command === "shell" && commandArgs.length === 0) ||
+  (command !== undefined && directChecks.includes(command) && commandArgs.length === 0) ||
   (command === "layers" &&
     (commandArgs.length === 0 || (commandArgs.length === 1 && commandArgs[0] === "--write"))) ||
   (command === "markdown" &&
     (commandArgs.length === 0 || (commandArgs.length === 1 && commandArgs[0] === "--fix")));
-if (direct) {
-  const run = spawnSync(
-    process.execPath,
-    [
-      "--no-env-file",
-      join(import.meta.dir, `check-${fix ? "markdown" : command}.ts`),
-      ...(fix ? ["--fix"] : commandArgs),
-    ],
-    { stdio: "inherit" },
-  );
-  process.exit(run.status ?? 1);
-}
+if (direct) process.exit(runDirectCheck(command, commandArgs));
 if (
   command !== "check" ||
   (!changed && args.length > 1) ||

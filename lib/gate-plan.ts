@@ -12,14 +12,7 @@ import {
   vitestRun,
 } from "./gate-config.ts";
 import { ownEntry } from "./own-entry.ts";
-import {
-  isObject,
-  isReason,
-  styleFiles,
-  stylelintFlags,
-  submodulePaths,
-  type Package,
-} from "./repo.ts";
+import { isObject, isReason, submodulePaths, type Package } from "./repo.ts";
 
 type ScaffoldingConfig = NonNullable<Package["scaffolding"]>;
 
@@ -113,13 +106,17 @@ export function buildSharedStepMap(
     // again, which took longer than linting in turn (30 s against 20 s over 540 files).
     lint: `SCAFFOLDING_STAGED_ESLINT=0 bun --bun eslint .${ignored} -f ${shellQuote(join(home, "lib", "eslint-formatter.ts"))}`,
     oxlint: `bun ${shellQuote(join(home, "lib", "oxlint.ts"))}`,
-    styles: `bun --bun stylelint "${styleFiles}" ${stylelintFlags(root).join(" ")}${ignored}`,
+    styles: bin("check-styles"),
     structure: bin("check-structure"),
     coupling: bin("check-coupling"),
     cycles: bin("check-cycles"),
     names: bin("check-names"),
     layers: `${bin("check-layers")} --check`,
     shell: bin("check-shell"),
+    python: bin("check-python"),
+    terraform: bin("check-terraform"),
+    dockerfile: bin("check-dockerfile"),
+    workflows: bin("check-workflows"),
     markdown: bin("check-markdown"),
     spaces: bin("check-spaces"),
     // The index: what the next commit holds, judged by its own allow list.

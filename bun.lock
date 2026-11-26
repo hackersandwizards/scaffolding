@@ -25,6 +25,7 @@
         "oxlint-tsgolint": "7.0.2008",
         "postcss-html": "2.0.1",
         "prettier-plugin-astro": "1.1.2",
+        "stylelint-config-recommended": "19.1.0",
         "stylelint-value-no-unknown-custom-properties": "6.1.1",
         "typescript-eslint": "8.73.0",
         "vitest": "5.1.0",
@@ -47,7 +48,7 @@
         "eslint": ">=10",
         "eslint-plugin-astro": ">=1",
         "prettier": ">=3",
-        "stylelint": ">=16",
+        "stylelint": ">=18",
         "typescript": ">=5 <6.1",
       },
       "optionalPeers": [
@@ -1327,6 +1328,8 @@
     "strip-final-newline": ["strip-final-newline@4.0.0", "", {}, "sha512-aulFJcD6YK8V1G7iRB5tigAP4TsHBZZrOV8pjV++zdUwmeV8uzbY7yn6h9MswN62adStNZFuCIx4haBnRuMDaw=="],
 
     "stylelint": ["stylelint@18.1.0", "", { "dependencies": { "@csstools/css-calc": "^3.4.3", "@csstools/css-parser-algorithms": "^4.0.2", "@csstools/css-syntax-patches-for-csstree": "^1.1.16", "@csstools/css-tokenizer": "^4.0.2", "@csstools/media-query-list-parser": "^5.0.2", "@csstools/selector-resolve-nested": "^4.0.2", "@csstools/selector-specificity": "^6.0.1", "colord": "^2.13.0", "cosmiconfig": "^10.0.1", "css-tree": "^3.2.1", "ignore": "^7.0.14", "import-meta-resolve": "^4.2.0", "picomatch": "^4.0.7", "postcss": "^8.5.33", "postcss-safe-parser": "^7.1.0", "postcss-selector-parser": "^7.2.1", "postcss-value-parser": "^4.2.0", "tinyglobby": "^0.2.17", "write-file-atomic": "^8.0.0" }, "bin": { "stylelint": "bin/stylelint.mjs" } }, "sha512-QbF/IY7KY6lZRhYU/vmPU1KYxc71wgkXdgeptqzTh3lbnZps6WHaskfPjpL6Fh4JaCzwkKKitVcMrpfQTSwwPA=="],
+
+    "stylelint-config-recommended": ["stylelint-config-recommended@19.1.0", "", { "peerDependencies": { "stylelint": "^18.0.0" } }, "sha512-DurXBzvz2cmVX2rM1JMDCbPIq+MRKhIPY743lFk1DjUoyx7giLfN+HR8Hilw+kE2nE5blaXhVf66edvQGnLdwA=="],
 
     "stylelint-value-no-unknown-custom-properties": ["stylelint-value-no-unknown-custom-properties@6.1.1", "", { "dependencies": { "postcss-value-parser": "^4.2.0", "resolve": "^1.22.8" }, "peerDependencies": { "stylelint": ">=16" } }, "sha512-eQ1zidKD5t9zMEaskjGUY4W47lH76qMlmsDSmCAPEwtaGzB4Ls7ORTfysC1D6hamp2zFC+vN1vpQ+GFz3Tw3lw=="],
 

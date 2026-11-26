@@ -60,3 +60,26 @@ test.each([
     ...selector.select({ paths, shellShebangs: paths, sourcedPaths: paths, since: "HEAD" }).steps,
   ]).toEqual(expected);
 });
+
+test.each([
+  ["probe.pyi", "python"],
+  [".ruff.toml", "python"],
+  ["infra/main.tfvars", "terraform"],
+  [".tflint.hcl", "terraform"],
+  ["ops/sidecar.dOcKeRfIlE", "dockerfile"],
+  [".hadolint.yml", "dockerfile"],
+  [".github/actionlint.yaml", "workflows"],
+])("selects the language or infrastructure step for %s", (path, step) => {
+  const selector = new ChangedStepSelector(
+    new Set(["python", "terraform", "dockerfile", "workflows"]),
+    [],
+    [],
+  );
+  const result = selector.select({
+    paths: new Set([path]),
+    shellShebangs: new Set(),
+    sourcedPaths: new Set(),
+    since: "HEAD",
+  });
+  expect(result).toEqual({ steps: new Map([[step, `matches ${JSON.stringify(path)}`]]) });
+});

@@ -17,13 +17,17 @@ compiler API yet: `"typescript": "npm:@typescript/typescript6@…"` for the Type
 imports, and `"@typescript/native": "npm:typescript@7…"` for `tsc`. A plain `typescript` 7 breaks
 lint; the alias alone leaves no `tsc`.
 
-The stylelint base lets a stylesheet, and the `<style>` blocks of an Astro component, read only the
-custom properties brand's `tokens.root.css` (from the repository's installed brand), the files in
-`importFrom` and the same file define. An `importFrom` entry starting with `./`, or a bare file
-name, is a file of the repository; any other path with a slash is a package's. The base cannot load
-without brand installed, so a repository without brand gives `skip.styles` a reason. A property a
-component sets from its markup (a `style` attribute) is read with a fallback,
-`var(--accent, transparent)`.
+The Stylelint base extends `stylelint-config-recommended` and supports Astro’s `:global` and
+Tailwind v4 directives. It runs in repositories with or without brand. When the root
+`package.json` names the package `@hackersandwizards/brand` or declares it in dependencies or
+devDependencies, the token rule reads brand's exported `tokens.root.css` and fails to load if
+that file is missing. The rule also reads any `importFrom` files. In repositories without
+brand or configured imports, the token rule is off.
+
+An `importFrom` entry starting with `./` or a bare filename identifies a repository file.
+Other relative paths containing a slash resolve through the package exports. A custom property
+defined in the same file is available to that stylesheet. Give properties supplied in the
+markup a fallback, for example `var(--accent, transparent)`.
 
 ## Oxlint and ESLint
 
@@ -94,7 +98,7 @@ files under `test/`, `tests/`, `__tests__/`, and `e2e/`, and for names matching 
 
 ### Rule guides
 
-Rule guides live in `config/guides/`. In the gate, Oxlint prints each matching guide once after failures and ESLint after its findings. The layer and cycle checks do the same for stale or missing layer maps and runtime import cycles. The package test fails if the shared Oxlint or ESLint config enforces a rule without a guide.
+Rule guides live in `config/guides/`. In the gate, Oxlint prints each matching guide once after failures and ESLint and Stylelint after their findings. The layer and cycle checks do the same for stale or missing layer maps and runtime import cycles. The package test fails if the shared Oxlint or ESLint config enforces a rule without a guide.
 
 ## Vitest and Stryker
 

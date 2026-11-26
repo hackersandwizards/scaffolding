@@ -49,7 +49,7 @@ if [ "$fetched" -eq 0 ]; then
   } >/dev/null 2>&1; then
     behind=$(git rev-list --count HEAD..origin/main 2>/dev/null)
     [ "${behind:-0}" -eq 0 ] ||
-      echo "origin/main is $behind commits ahead of HEAD and was not merged: merge it per git.md before work"
+      echo "origin/main is $behind commits ahead of HEAD and was not merged: update per git.md, whose failed-merge step reads each record from origin/main"
   fi
 elif [ "$fetched" -eq 124 ]; then
   echo "origin main not fetched within $wait s: fetch and merge per git.md before work"

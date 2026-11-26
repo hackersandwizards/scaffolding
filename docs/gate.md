@@ -2,7 +2,7 @@
 
 `scaffolding check` runs `bun install --frozen-lockfile`, then the shared steps side by side, the
 catalog build and lint once a typecheck that runs Astro has finished (it writes the content types the typed rules read):
-format, lint (ESLint), oxlint, styles (stylelint), typecheck, structure, coupling, cycles, names, layers, shell, markdown, spaces, confidential, licenses, the tests, the catalog build (`bun run build`) and admin (the item files, with the pinned
+format, lint (ESLint), oxlint, styles (stylelint), typecheck, structure, coupling, cycles, names, layers, shell, python, terraform, dockerfile, workflows, markdown, spaces, confidential, licenses, the tests, the catalog build (`bun run build`) and admin (the item files, with the pinned
 `@hackersandwizards/admin`'s `admin-check`; a repository without admin pinned needs `skip.admin`). Once those pass, the full-gate groups run in order. A red group stops the groups after it. Format, lint and styles walk past every
 submodule `.gitmodules` names, which its own repository checks. A shared step drops only with a reason, a
 non-blank string in `skip`:
@@ -113,6 +113,27 @@ Run `bun run scaffolding shell` to check shell scripts on demand. When there are
 gate and pre-commit output end the ShellCheck report with a reminder to repair each finding in the
 script.
 
+## Language and infrastructure linting
+
+Each step checks tracked files and prints a no-input message if none match. Regular files under
+`node_modules` and files inside submodules are outside the input set. The tools print rule names or
+codes and the gate follows findings with a repair guide.
+
+| Step         | Inputs and checks                                                                                                                               | Repository configuration                                                                                             |
+| ------------ | ----------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------- |
+| `styles`     | Stylelint on CSS and Astro, with guides for the [shared base](configs.md).                                                                      | Root Stylelint configuration.                                                                                        |
+| `python`     | Ruff lint and format checks on `*.py` and `*.pyi`, respecting exclusions.                                                                       | Root `.ruff.toml`, `ruff.toml`, or `[tool.ruff]` in `pyproject.toml`. Ruff defaults apply otherwise.                 |
+| `terraform`  | Terraform format check with a diff on `*.tf` and `*.tfvars`. TFLint runs per directory with tracked `*.tf` files and reports at every severity. | Root `.tflint.hcl`, when present, also triggers plugin initialization. The default is the bundled Terraform ruleset. |
+| `dockerfile` | Hadolint at every severity on `Dockerfile`, `Dockerfile.*`, `*.Dockerfile` and `Containerfile`, regardless of case.                             | Root `.hadolint.yaml` or `.hadolint.yml`.                                                                            |
+| `workflows`  | actionlint with pinned ShellCheck on `.github/workflows/*.yml` and `*.yaml`. Pyflakes is disabled.                                              | `.github/actionlint.yaml` or `.github/actionlint.yml`.                                                               |
+
+Run `bun run scaffolding <step>` on demand for `python`, `terraform`, `dockerfile` and
+`workflows`. The gate and pre-push hook run all four where selected. Pre-commit continues to
+run Stylelint on staged CSS and Astro. Ruff, Terraform, TFLint, Hadolint and actionlint run
+with isolated user configuration and keep their default storage under
+`node_modules/.cache/scaffolding/`. Set `scaffolding.skip.<step>` with a reason to skip a
+gate step.
+
 ## Markdown
 
 `bun run scaffolding markdown` checks all tracked `.md` files with
@@ -157,7 +178,7 @@ folders from the staged package manifest.
 `scaffolding check --changed` (`bun run check --changed`) always runs frozen install, then
 each enabled step among format, structure, coupling, spaces, confidential, licenses, admin,
 pins, colours and copies.
-Paths are repository-relative, case-sensitive Bun globs. Every match adds its steps.
+Paths are repository-relative. Matches are case-sensitive except for Dockerfile basenames. Every match adds its steps.
 
 The gate sets `SCAFFOLDING_CHANGED` for each step. A value of `1` marks a changed check and `0`
 marks a full check.
@@ -171,6 +192,10 @@ marks a full check.
 | `{src,app,lib,bin,components,pages,catalog,site,talks,scripts,test,tests,fixtures,data,content,public,assets,e2e}/**` | typecheck, lint, oxlint, styles, cycles, names, layers, test |
 | `**/*.md`                                                                                                             | markdown                                                     |
 | `**/*.{sh,bash}`, `**/.shellcheckrc`, shell shebangs, tracked shell sources                                           | shell                                                        |
+| `**/*.{py,pyi}`, root `ruff.toml`, `.ruff.toml`, `pyproject.toml`                                                     | python                                                       |
+| `**/*.{tf,tfvars}`, root `.tflint.hcl`                                                                                | terraform                                                    |
+| `Dockerfile`, `Dockerfile.*`, `*.Dockerfile`, `Containerfile` at any depth and case, root `.hadolint.{yaml,yml}`      | dockerfile                                                   |
+| `.github/actionlint.{yaml,yml}`                                                                                       | workflows                                                    |
 | `docs/**/*.txt`, `.claude/skills/**/*.{yaml,yml}`                                                                     | Always-run steps only                                        |
 
 The shell and Markdown matches add their steps. A path covered only by those matches still
@@ -457,11 +482,22 @@ list: `coupling`, `confidential`, `never-shown`, `structure` or `spaces`; any ot
 
 The pinned `markdownlint-cli2` 0.24.2 package uses the MIT licence.
 
-The shell step fetches the upstream GPL-3.0 ShellCheck v0.11.0 release for macOS and Linux on
-arm64 and x86-64. It verifies the pinned SHA-256 before extracting the binary into
-`node_modules/.cache/scaffolding/shellcheck/v0.11.0/` and runs it as a separate process.
-The shipped package excludes the binary. An unsupported platform, failed download or
+The gate downloads pinned upstream binaries on demand for macOS and Linux on arm64 and x86-64.
+It verifies both the release asset and the binary against their pinned SHA-256 values, stores the
+binary under `node_modules/.cache/scaffolding/<tool>/<release>/` and runs it as a separate
+process. The published package excludes the binaries. An unsupported platform, failed download or
 checksum mismatch fails the step.
+
+| Tool       | Release | Licence  |
+| ---------- | ------- | -------- |
+| ShellCheck | v0.11.0 | GPL-3.0  |
+| Ruff       | 0.17.6  | MIT      |
+| TFLint     | v0.66.0 | MPL-2.0  |
+| Terraform  | 1.17.2  | BUSL-1.1 |
+| Hadolint   | v2.15.1 | GPL-3.0  |
+| actionlint | v1.7.12 | MIT      |
+
+The `stylelint-config-recommended` 19.1.0 package uses the MIT licence.
 
 `check-licenses` reads bun's own `bun pm licenses --json`: every package of `bun.lock` installed in
 `node_modules`, Git tags included, offline. Each licence must be on the allow list: MIT, MIT-0, ISC,

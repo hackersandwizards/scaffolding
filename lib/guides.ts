@@ -4,7 +4,7 @@ import { restrictionRuleName } from "./oxlint-restrictions.ts";
 export const guidesDirectory = new URL("../config/guides/", import.meta.url);
 
 export function guideId(rule: string) {
-  return /\(([^()]+)\)$/.exec(rule)?.[1] ?? restrictionRuleName(rule);
+  return /\(([^()]+)\)$/.exec(rule)?.[1] ?? restrictionRuleName(rule).replace(/^csstools\//, "");
 }
 
 export function renderGuides(rules: Iterable<string>) {
