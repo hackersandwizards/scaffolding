@@ -78,7 +78,6 @@ function brandNav(
   };
 }
 
-type Mount = ReturnType<CatalogMount["configureMount"]>;
 type Project = ReturnType<typeof readCatalogPackage>;
 type Require = ReturnType<typeof createRequire>;
 
@@ -93,25 +92,90 @@ export function checkCatalogBrandVersion(root: string): void {
     );
 }
 
-export function catalogBrandStyles(options: CatalogOptions, require: Require, root: string) {
-  // brand's hw-focus-ring draws nothing without its focus.css, which a slim list leaves out.
-  // First, so the lists' own sheets, brand's elements.css among them, still follow it.
-  const focus = fromBrand(() => require.resolve(BRAND_FOCUS));
-  const htmlClass = options.htmlClass ?? (focus ? ["hw-focus-ring"] : []);
-  const ring = htmlClass.includes("hw-focus-ring") && focus ? [BRAND_FOCUS] : [];
-  const themeToggle = options.themeToggle ?? true;
-  const toggle = themeToggle && !!fromBrand(() => require.resolve(BRAND_TOGGLE));
+export class CatalogFocusRing {
+  readonly htmlClass: string[];
+  readonly stylesheets: string[];
+
+  constructor(options: Pick<CatalogOptions, "htmlClass">, require: Require) {
+    const focus = fromBrand(() => require.resolve(BRAND_FOCUS));
+    this.htmlClass = options.htmlClass ?? (focus ? ["hw-focus-ring"] : []);
+    // brand's hw-focus-ring draws nothing without its focus.css, which a slim list leaves out.
+    // First, so the lists' own sheets, brand's elements.css among them, still follow it.
+    this.stylesheets = this.htmlClass.includes("hw-focus-ring") && focus ? [BRAND_FOCUS] : [];
+  }
+}
+
+export function catalogToggleComponent(themeToggle: boolean, require: Require): boolean {
+  return themeToggle && !!fromBrand(() => require.resolve(BRAND_TOGGLE));
+}
+
+export function catalogAroundStylesheets(header: NonNullable<CatalogOptions["header"]>): string[] {
+  return [
+    join(import.meta.dirname, "ground.css"),
+    ...(header.css ?? []),
+    join(import.meta.dirname, "chrome.css"),
+  ];
+}
+
+export function catalogStylesheetLists(options: CatalogOptions, ring: string[]) {
   const withRing = (list: string[]) => [...new Set([...ring, ...list])];
-  const lists = {
+  return {
     home: withRing(options.homeCss ?? options.css),
     dashboard: withRing(options.dashboardCss ?? options.css),
     stories: withRing(options.css),
   };
+}
+
+export function catalogStylesheetVersions(
+  lists: ReturnType<typeof catalogStylesheetLists>,
+  root: string,
+): string {
   const sheets = Object.values(lists).flat();
-  const versions = [...new Set(sheets.map(catalogPackageOf).filter((p) => p !== undefined))]
+  return [...new Set(sheets.map(catalogPackageOf).filter((p) => p !== undefined))]
     .map((p) => `${p} v${installed(p, root) ?? "?"}`)
     .join(" · ");
-  return { htmlClass, themeToggle, toggle, lists, versions };
+}
+
+export function catalogBrandTokens(require: Require): Record<string, string> {
+  const brandTokens = fromBrand(() => require("@hackersandwizards/brand/tokens.json"));
+  return Object.fromEntries(
+    Object.entries(
+      isObject(brandTokens) && isObject(brandTokens.tokens) ? brandTokens.tokens : {},
+    ).filter((entry): entry is [string, string] => typeof entry[1] === "string"),
+  );
+}
+
+// A relative specifier counts from the Astro root, as Astrobook reads `head` and `home`.
+export function catalogModuleSpecifier(root: string, specifier: string): string {
+  return JSON.stringify(specifier.startsWith(".") ? join(root, specifier) : specifier);
+}
+
+export function catalogStylesheetModules(
+  root: string,
+  lists: ReturnType<typeof catalogStylesheetLists>,
+  around: string[],
+): Record<string, string> {
+  const imports = (list: string[]) =>
+    list.map((c) => `import ${catalogModuleSpecifier(root, c)};`).join("");
+  return {
+    // Inlined on the home and a state's page: linked, one more render-blocking request.
+    [AROUND]: `${around.map((c, i) => `import c${i} from ${catalogModuleSpecifier(root, `${c}?inline`)};`).join("")}export default ${around.map((_, i) => `c${i}`).join("+")};`,
+    [`${CSS}home`]: imports(lists.home),
+    [`${CSS}dashboard`]: imports(lists.dashboard),
+    [`${CSS}stories`]: imports(lists.stories),
+  };
+}
+
+// Ahead of every stylesheet, which the build puts at the head's end. A state alone in the
+// window, not in a tile's frame, gets the focus ring's room (brand v2.10.0's
+// --hw-focus-room, elements/focus.css) inside Astrobook's <main>, whose scroll box cut a
+// ring at x = 0.
+export function catalogBrandLayers(require: Require): string {
+  return (
+    "@layer hw-catalog-ground;" +
+    (fromBrand(() => readFileSync(require.resolve(BRAND_LAYERS), "utf8").trim()) ?? "") +
+    "@layer hw-catalog-ground{[data-hw-alone] main{padding:var(--hw-focus-room)}}"
+  );
 }
 
 export function validateCatalogHeader(htmlClass: string[], nav: CatalogOptions["nav"]): void {
@@ -125,7 +189,7 @@ export function validateCatalogHeader(htmlClass: string[], nav: CatalogOptions["
 
 export function catalogPageNav(
   nav: CatalogOptions["nav"],
-  mount: Pick<Mount, "base" | "link">,
+  mount: Pick<CatalogMount, "base" | "link">,
 ): CatalogRuntimeConfig["nav"] {
   return nav?.items.map(({ name, href }) =>
     name === nav.current
@@ -156,28 +220,32 @@ export function catalogAdminUrl(
 
 export class CatalogPageModules {
   readonly options: CatalogOptions;
-  private readonly mount: Mount;
+  private readonly mount: CatalogMount;
   private readonly project: Project;
 
-  constructor(options: CatalogOptions, mount: Mount, project: Project) {
+  constructor(options: CatalogOptions, mount: CatalogMount, project: Project) {
     this.options = options;
     this.mount = mount;
     this.project = project;
   }
 
-  runtime(
-    provenance: string,
-    brand: ReturnType<typeof catalogBrandStyles>,
-    nav: CatalogOptions["nav"],
-  ): CatalogRuntimeConfig {
-    const {
-      options,
-      mount,
-      project: { require },
-    } = this;
-    const { base, dev, link, onDisk, params } = mount;
-    const { htmlClass, themeToggle, toggle } = brand;
-    return {
+  sources(params: CatalogSetupEvent) {
+    const { options, mount, project } = this;
+    const { root, stories, base, link, onDisk, dev } = mount;
+    const { name, repo, require } = project;
+    checkCatalogBrandVersion(root);
+    const focus = new CatalogFocusRing(options, require);
+    const themeToggle = options.themeToggle ?? true;
+    const toggle = catalogToggleComponent(themeToggle, require);
+    const lists = catalogStylesheetLists(options, focus.stylesheets);
+    const versions = catalogStylesheetVersions(lists, root);
+    const provenance = [`${name} ${relative(repo, stories)}`, versions].filter(Boolean).join(" · ");
+    const header = options.header ?? BRAND_HEADER;
+    const nav = options.nav ?? brandNav(require, options.product);
+    const tokens = catalogBrandTokens(require);
+    const around = catalogAroundStylesheets(header);
+    validateCatalogHeader(focus.htmlClass, nav);
+    const runtime: CatalogRuntimeConfig = {
       product: options.product,
       href: options.href ?? `${base}/`,
       nav: catalogPageNav(nav, mount),
@@ -191,67 +259,35 @@ export class CatalogPageModules {
       headerToggle: toggle && !!nav,
       onDisk,
       storyScale: options.storyScale,
-      htmlClass,
+      htmlClass: focus.htmlClass,
       groupOrder: options.groupOrder ?? [],
       previewStates: options.previewStates ?? [],
       provenance,
-      // Ahead of every stylesheet, which the build puts at the head's end. A state alone in the
-      // window, not in a tile's frame, gets the focus ring's room (brand v2.10.0's
-      // --hw-focus-room, elements/focus.css) inside Astrobook's <main>, whose scroll box cut a
-      // ring at x = 0.
-      layers:
-        "@layer hw-catalog-ground;" +
-        (fromBrand(() => readFileSync(require.resolve(BRAND_LAYERS), "utf8").trim()) ?? "") +
-        "@layer hw-catalog-ground{[data-hw-alone] main{padding:var(--hw-focus-room)}}",
+      layers: catalogBrandLayers(require),
       slash: catalogStorySlash(params.config),
-      admin: catalogAdminUrl(dev, options, this.project),
+      admin: catalogAdminUrl(dev, options, project),
     };
+    const modules: Record<string, string> = {
+      [OPTIONS]: `export default ${JSON.stringify(runtime)};`,
+      ...this.componentModules(header, toggle),
+      ...catalogStylesheetModules(root, lists, around),
+    };
+    return { modules, tokens };
   }
 
-  sources(stories: string) {
-    const {
-      options,
-      mount: { root },
-      project: { name, repo, require },
-    } = this;
-    checkCatalogBrandVersion(root);
-    const brand = catalogBrandStyles(options, require, root);
-    const { htmlClass, lists, toggle, versions } = brand;
-    const provenance = [`${name} ${relative(repo, stories)}`, versions].filter(Boolean).join(" · ");
-    const header = options.header ?? BRAND_HEADER;
-    // A relative specifier counts from the Astro root, as Astrobook reads `head` and `home`.
-    const spec = (s: string) => JSON.stringify(s.startsWith(".") ? join(root, s) : s);
-    const nav = options.nav ?? brandNav(require, options.product);
-    const brandTokens = fromBrand(() => require("@hackersandwizards/brand/tokens.json"));
-    const tokens = Object.fromEntries(
-      Object.entries(
-        isObject(brandTokens) && isObject(brandTokens.tokens) ? brandTokens.tokens : {},
-      ).filter((entry): entry is [string, string] => typeof entry[1] === "string"),
-    );
-    const around = [
-      join(import.meta.dirname, "ground.css"),
-      ...(header.css ?? []),
-      join(import.meta.dirname, "chrome.css"),
-    ];
-    const imports = (list: string[]) => list.map((c) => `import ${spec(c)};`).join("");
-    validateCatalogHeader(htmlClass, nav);
-    const shared = this.runtime(provenance, brand, nav);
-    const modules: Record<string, string> = {
-      [OPTIONS]: `export default ${JSON.stringify(shared)};`,
+  componentModules(header: NonNullable<CatalogOptions["header"]>, toggle: boolean) {
+    const { root } = this.mount;
+    const { require } = this.project;
+    const spec = (specifier: string) => catalogModuleSpecifier(root, specifier);
+    return {
       [HEADER]: `export { default } from ${spec(header.component)};`,
-      [HEAD]: `export { default } from ${spec(options.head ?? "astrobook/components/head.astro")};`,
+      [HEAD]: `export { default } from ${spec(this.options.head ?? "astrobook/components/head.astro")};`,
       [TOGGLE]: toggle
         ? `export { default } from ${spec(BRAND_TOGGLE)};`
         : "export default undefined;",
       [ICON]: fromBrand(() => require.resolve(BRAND_ICON))
         ? `export { default } from ${spec(`${BRAND_ICON}?url&no-inline`)};`
         : "export default undefined;",
-      // Inlined on the home and a state's page: linked, one more render-blocking request.
-      [AROUND]: `${around.map((c, i) => `import c${i} from ${spec(`${c}?inline`)};`).join("")}export default ${around.map((_, i) => `c${i}`).join("+")};`,
-      [`${CSS}home`]: imports(lists.home),
-      [`${CSS}dashboard`]: imports(lists.dashboard),
-      [`${CSS}stories`]: imports(lists.stories),
     };
-    return { modules, tokens };
   }
 }

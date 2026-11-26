@@ -5,8 +5,8 @@ import type { AstroIntegration } from "astro";
 import { ownEntry } from "../lib/own-entry.ts";
 import { brandFallbacks } from "./fallbacks.ts";
 import { catalogAssetMime, catalogCopyPrefixes, type CatalogCopies } from "./copy-assets.ts";
-import type { CatalogOptions } from "./index.ts";
-import type { CatalogMount } from "./mount.ts";
+import type { CatalogAstroHooks } from "./hooks.ts";
+import type { CatalogMount, CatalogSetupEvent } from "./mount.ts";
 import type { CatalogPageModules } from "./page-modules.ts";
 import { decodeCatalogPath } from "./path.ts";
 import { loadRoute, retitleLayout } from "./route.ts";
@@ -18,12 +18,12 @@ const ROUTER = ["events", "router", "swap-functions", "types"].map(
 );
 
 export function configureCatalogVite(
-  mount: ReturnType<CatalogMount["configureMount"]>,
+  params: CatalogSetupEvent,
+  mount: CatalogMount,
   pages: CatalogPageModules,
-  stories: string,
 ) {
-  const { params, root, own, dev } = mount;
-  const { modules, tokens } = pages.sources(stories);
+  const { root, own, dev, stories } = mount;
+  const { modules, tokens } = pages.sources(params);
   const { options } = pages;
   const codegen = fileURLToPath(params.createCodegenDir());
   params.updateConfig({
@@ -101,11 +101,11 @@ type Server = Parameters<NonNullable<AstroIntegration["hooks"]["astro:server:set
 
 export function catalogAssetMiddleware(
   server: Server,
-  options: CatalogOptions,
-  site: { mount: CatalogMount; copies: CatalogCopies },
+  patterns: string[],
+  site: CatalogAstroHooks,
 ) {
   const { mount, copies } = site;
-  const assets = new CatalogDevAssets(mount, copies, options.copy ?? []);
+  const assets = new CatalogDevAssets(mount, copies, patterns);
   server.middlewares.use((req, res, next) => {
     const url = URL.parse(req.url ?? "", "http://x");
     const to = mount.moved(url?.pathname ?? "");

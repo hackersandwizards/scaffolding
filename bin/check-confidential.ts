@@ -23,191 +23,74 @@
 //                                             --never adds the never section, every name kept;
 //                                             --never - reads it from stdin after a NUL byte
 //   check-confidential purged <sha>...        prints .confidential-purged.json for purged commits
-import {
-  addedLines,
-  decodeEntities,
-  parsePurgedList,
-  parseTermList,
-  type TermList,
-} from "../lib/confidential-input.ts";
 import { spawnSync } from "node:child_process";
-import { createHash, randomBytes } from "node:crypto";
+import { readFileSync } from "node:fs";
+import { join } from "node:path";
+import { fileURLToPath } from "node:url";
 import {
-  existsSync,
-  mkdirSync,
-  mkdtempSync,
-  readdirSync,
-  readFileSync,
-  renameSync,
-  rmSync,
-  statSync,
-  writeFileSync,
-} from "node:fs";
-import { extname, join, resolve } from "node:path";
-import { inflateRawSync } from "node:zlib";
+  detectCompanyOsNav,
+  isBinaryExtension,
+  isLfsPointer,
+  LFS_OID_PATTERN,
+  parseLfsPointer,
+  readLfsContent,
+} from "../lib/confidential-archive.ts";
+import {
+  agentWorkCiFindings,
+  BinaryContentScanner,
+  type BinaryFile,
+} from "../lib/confidential-binaries.ts";
+import {
+  ConfidentialListCache,
+  neverListProblemFindings,
+  publicListProblemFindings,
+} from "../lib/confidential-cache.ts";
+import {
+  parseCatFileBatch,
+  parseIndexEntries,
+  parseNumstatEntries,
+  parseTreeEntries,
+} from "../lib/confidential-git.ts";
+import { addedLines, type TermList } from "../lib/confidential-input.ts";
+import {
+  buildPurgedListJson,
+  buildTermListJson,
+  cliFlagValue,
+  evaluatePrepush,
+  lfsObjectDirs,
+} from "../lib/confidential-subcommands.ts";
+import {
+  ConfidentialTermMatcher,
+  neverBadTermSet,
+  neverTermFinding,
+  parseNeverInput,
+  publicBadTermSet,
+  publicPathFinding,
+  publicTermFinding,
+  stripPackageAllowTargets,
+} from "../lib/confidential-terms.ts";
 import { help } from "../lib/help.ts";
-import {
-  applyAllow,
-  fetchWaitS,
-  finish,
-  git,
-  reader,
-  readPackage,
-  repoRoot,
-  type Finding,
-} from "../lib/repo.ts";
+import { applyAllow, finish, git, readPackage, repoRoot, type Finding } from "../lib/repo.ts";
 
 const USAGE =
   "usage: check-confidential --staged | --message-file <file> [--list-optional] | --commit <rev> | --index | --tree <rev> | never | prepush | fetch | build <terms|-> [--public <file>] [--never <file>] | purged <sha>...";
 help("check-confidential", USAGE);
 
-const TERMS_REPO = "hackersandwizards/confidential-terms";
-const HOUR = 3_600_000;
-const DAY = 24 * HOUR;
-
 const started = performance.now();
 const argv = process.argv.slice(2);
-const arg = (flag: string) => {
-  const i = argv.indexOf(flag);
-  return i === -1 ? undefined : argv[i + 1];
-};
-const hasher = (salt: string) => (s: string) =>
-  createHash("sha256")
-    .update(salt + s)
-    .digest("hex")
-    .slice(0, 32);
+const arg = (flag: string) => cliFlagValue(argv, flag);
 
-// NFKC first: macOS file names and some pasted text arrive decomposed, which splits words at accents.
-const words = (s: string) => s.normalize("NFKC").match(/[\p{L}\p{N}]+/gu) ?? [];
-// A one-word term written in capitals is a name in capitals (an acronym, a brand) and matches only
-// in capitals, so a company called QUUX never flags an ordinary word "quux". Three-letter terms
-// always do.
-const SLUG = /[\p{L}\p{N}]+(?:[-_/.][\p{L}\p{N}]+)+/gu;
-const capitals = (w: string) => /^\p{Lu}[\p{Lu}\p{N}]+$/u.test(w);
+function exitWithResult(result: { stdout?: string; stderr?: string; exitCode: number }): never {
+  if (result.stdout !== undefined) console.log(result.stdout);
+  if (result.stderr !== undefined) console.error(result.stderr);
+  process.exit(result.exitCode);
+}
 
 if (argv[0] === "build") {
-  // One stdin carries both lists: the terms, a NUL byte, then the never names. Under `bun run` the
-  // command cannot open a fourth pipe (/dev/fd/3: EACCES, Bun 1.4.4).
   const stdin = [argv[1], arg("--never")].includes("-") ? readFileSync(0, "utf8") : "";
-  const cut = stdin.includes("\0") ? stdin.indexOf("\0") : stdin.length;
-  const piped = [stdin.slice(0, cut), stdin.slice(cut + 1)];
-  const lines = (file: string, part: number) =>
-    (file === "-" ? piped[part] : readFileSync(file, "utf8"))
-      .split("\n")
-      .map((s) => s.trim())
-      .filter(Boolean);
-  const terms = lines(argv[1], 0);
-  const LEGAL = /\s+(?:gmbh|ag|se|kg|ug|mbh|co|ltd|inc|llc|plc|bv|sa|sarl|gmbh & co\.? kg)\.?$/i;
-  // The scan reads grams of six words at most, so a longer term counts by its first six.
-  const first = (term: string) => words(term).slice(0, 6);
-  const norm = (term: string) => first(term).join(" ").toLowerCase();
-  const variantsOf = (term: string) =>
-    LEGAL.test(term) ? [term, term.replace(LEGAL, "")] : [term];
-  // The names h&w never shows. An empty section would pass every deck, and a name under three
-  // letters, its legal form dropped, would match ordinary words.
-  const neverFile = argv.includes("--never") ? (arg("--never") ?? "") : undefined;
-  const names = neverFile ? lines(neverFile, 1) : [];
-  const short = names.filter((t) =>
-    variantsOf(t).some((v) => norm(v).replaceAll(" ", "").length < 3),
-  );
-  if (neverFile !== undefined && (!names.length || short.length)) {
-    console.error(
-      `[check-confidential] --never: ${short.length ? `under three letters: ${short.join(", ")}` : "no name"}; not building. ${short.length ? "Remove or lengthen the sub-3-letter entries in the --never input (after legal-suffix stripping)" : "Pass at least one name via --never <file> (or after a NUL byte on stdin)"} and re-run \`check-confidential build\``,
-    );
-    process.exit(1);
-  }
-  const dictFile = "/usr/share/dict/words";
-  // Without the dictionary every common word on the list would refuse ordinary text everywhere.
-  if (!existsSync(dictFile)) {
-    console.error(
-      `[check-confidential] no ${dictFile} on this machine: not building. Run \`check-confidential build\` on macOS or install a wordlist package (such as wamerican/words) providing ${dictFile}`,
-    );
-    process.exit(1);
-  }
-  const dict = new Set(readFileSync(dictFile, "utf8").toLowerCase().split("\n"));
-  const publicFile = arg("--public");
-  const published = new Set<string>();
-  if (publicFile) {
-    const p = words(readFileSync(publicFile, "utf8")).map((w) => w.toLowerCase());
-    for (let i = 0; i < p.length; i++)
-      for (let n = 1, gram = p[i]; n <= 6 && i + n <= p.length; gram += ` ${p[i + n]}`, n++)
-        published.add(gram);
-  }
-  const salt = randomBytes(16).toString("hex");
-  const h = hasher(salt);
-  let maxTokens = 1;
-  /** The hash the public scans look up, none for a dictionary word, and the variant's casing. */
-  const hashOf = (variant: string) => {
-    const tokens = first(variant);
-    const n = norm(variant);
-    maxTokens = Math.max(maxTokens, tokens.length);
-    const one = tokens.length === 1;
-    const cased = one && (n.length === 3 || capitals(tokens[0]));
-    const word = one && n.length > 3 && dict.has(n) && !capitals(tokens[0]);
-    return { n, hash: word ? undefined : h(cased ? `cs:${tokens[0]}` : n), anyCase: cased || word };
-  };
-  const hashes = new Set<string>();
-  for (const term of terms) {
-    const variants = variantsOf(term);
-    if (variants.some((v) => published.has(norm(v)))) continue;
-    for (const variant of variants) {
-      const { n, hash } = hashOf(variant);
-      if (n.length >= 3 && hash) hashes.add(hash);
-    }
-  }
-  // No public text drops a never name. A cased one or a dictionary word also gets a hash under
-  // "any:", which only the never scan reads: a public scan keeps the rules above, and a deck still
-  // refuses the name in any case.
-  const never = new Set<string>();
-  for (const name of names)
-    for (const variant of variantsOf(name)) {
-      const { n, hash, anyCase } = hashOf(variant);
-      if (hash) never.add(hash);
-      if (anyCase) never.add(h(`any:${n}`));
-    }
-  const built = new Date().toISOString();
-  console.log(
-    JSON.stringify({
-      built,
-      salt,
-      maxTokens,
-      hashes: [...hashes].sort(),
-      never: neverFile ? [...never].sort() : undefined,
-    }),
-  );
-  process.exit(0);
+  exitWithResult(buildTermListJson(argv, stdin));
 }
-
-if (argv[0] === "purged") {
-  // Adds to the repository's list under its own salt. `> .confidential-purged.json` empties the
-  // file before this runs, so then the index's copy counts.
-  const top = repoRoot();
-  let old: ReturnType<typeof parsePurgedList> | undefined;
-  let malformed = false;
-  for (const read of [reader(top, false), reader(top, true)]) {
-    let text: string;
-    try {
-      text = read(".confidential-purged.json").toString();
-    } catch {
-      continue;
-    }
-    if (!text.trim()) continue;
-    try {
-      old = parsePurgedList(text);
-      break;
-    } catch {
-      malformed = true;
-    }
-  }
-  if (!old && malformed) {
-    console.error("[check-confidential] .confidential-purged.json does not parse: repair it first");
-    process.exit(1);
-  }
-  const salt = old?.salt ?? randomBytes(16).toString("hex");
-  const hashes = new Set([...(old?.hashes ?? []), ...argv.slice(1).map(hasher(salt))]);
-  console.log(JSON.stringify({ salt, hashes: [...hashes].sort() }));
-  process.exit(0);
-}
+if (argv[0] === "purged") exitWithResult(buildPurgedListJson(repoRoot(), argv.slice(1)));
 
 const neverMode = argv[0] === "never";
 // A deploy needs no access, nor a Git checkout.
@@ -216,201 +99,36 @@ if (neverMode && process.env.CI === "true") {
   process.exit(0);
 }
 const root = repoRoot();
-const CACHE_DIR = join(root, "node_modules/.cache/scaffolding");
-const CACHE = join(CACHE_DIR, "confidential-terms.json");
-const ATTEMPT = `${CACHE}.attempt`;
-const findings: Finding[] = [];
-const report = (path: string, text: string, message: string) => {
-  findings.push({ check: "confidential", path, text, message });
-};
-
 if (argv[0] === "prepush") {
   const input = readFileSync(0);
-  const lines = input
-    .toString()
-    .split("\n")
-    .map((line) => line.split(" "));
-  // Git writes the original source expression, which can contain spaces.
-  const sha = (i: number) =>
-    lines.map((line) => line.at(i)).filter((s): s is string => !!s && !/^0+$/.test(s));
-  const locals = sha(-3);
-  const remoteTips = sha(-1);
-  // New to the remote pushed to: a commit another remote already holds may still be missing there.
-  // Its tips from the input cover a push to a URL, which has no tracking refs.
-  const notOnRemote = ["--ignore-missing", "--not", `--remotes=${argv[1]}`, ...remoteTips];
-  // Only the tips the remote reports count as held there: a stale tracking ref or a fetched pull
-  // request may still point into the purged history.
-  const commits = locals.flatMap((local) =>
-    git(["rev-list", local, "--ignore-missing", "--not", ...remoteTips], root)
-      .toString()
-      .split("\n")
-      .filter(Boolean),
-  );
-  const purged: { bad: Set<string>; h: (sha: string) => string }[] = [];
-  const add = (list: string, where: string) => {
-    // `purged <sha> > .confidential-purged.json` leaves the file empty where it fails.
-    if (!list.trim()) return;
-    try {
-      const { salt, hashes } = parsePurgedList(list);
-      purged.push({ bad: new Set(hashes), h: hasher(salt) });
-    } catch {
-      report("push", ".confidential-purged.json", `${where} does not parse: repair it, then push`);
-    }
-  };
-  const file = join(root, ".confidential-purged.json");
-  if (existsSync(file)) add(readFileSync(file, "utf8"), "the list in this checkout");
-  // A clone older than the list carries the purged commits without it, so the list on the remote's
-  // default branch counts too: fetched into a ref of this run's own within fetchWaitS(). A remote
-  // without a list, or out of reach, adds nothing. A fetch past the bound refuses: the old clone
-  // shares no commit with the rewritten history and fetches all of it, which a slow line takes
-  // longer than 20 s for; a fetch of the remote first leaves this one little to fetch.
-  if (commits.length) {
-    const ref = `refs/scaffolding/remote-purged-${process.pid}`;
-    const fetch = ["fetch", "-q", "--no-tags", "--no-write-fetch-head"];
-    const wait = fetchWaitS();
-    const fetched = spawnSync("git", [...fetch, argv[2] ?? argv[1], `+HEAD:${ref}`], {
+  const { findings: prepushFindings, invokeLfs } = evaluatePrepush(argv, root, input.toString());
+  if (invokeLfs) {
+    const lfs = spawnSync("git", ["lfs", "pre-push", ...argv.slice(1)], {
       cwd: root,
-      env: { ...process.env, GIT_TERMINAL_PROMPT: "0" },
-      stdio: "ignore",
-      timeout: wait * 1000,
+      input,
+      stdio: ["pipe", "inherit", "inherit"],
     });
-    if ((fetched.error as { code?: string } | undefined)?.code === "ETIMEDOUT")
-      report(
-        "push",
-        ".confidential-purged.json",
-        `the list on the remote's default branch did not arrive within ${wait} s: run \`git fetch ${argv[1]}\`, then push again`,
-      );
-    const list = spawnSync("git", ["show", `${ref}:.confidential-purged.json`], {
-      cwd: root,
-      encoding: "utf8",
-      maxBuffer: Infinity,
-    });
-    spawnSync("git", ["update-ref", "-d", ref], { cwd: root });
-    if (fetched.status === 0 && list.status === 0)
-      add(list.stdout, "the list on the remote's default branch");
+    process.exit(lfs.status ?? 1);
   }
-  for (const c of commits)
-    if (purged.some(({ bad, h }) => bad.has(h(c))))
-      report(
-        "push",
-        c,
-        "commit purged from this repository's history: clone again and carry your own work over by hand",
-      );
-  if (findings.length) finish("check-confidential", findings, started);
-  // git-lfs stays off unless the push may carry LFS objects or touch a lockable file: it would
-  // verify locks against the remote on every push.
-  // An empty objects folder holds nothing to upload.
-  const holdsFile = (dir: string): boolean =>
-    existsSync(dir) &&
-    readdirSync(dir, { withFileTypes: true }).some(
-      (e) => e.isFile() || e.isSymbolicLink() || (e.isDirectory() && holdsFile(join(dir, e.name))),
-    );
-  const stores = lfsObjectDirs();
-  const lfsPath = (local: string) => {
-    // latin1 keeps a path's bytes as they are, whatever its encoding. -c lists the paths a merge's
-    // resolution changes; what it takes from a side counts through that side's own commits.
-    const changed = git(
-      ["log", "-c", "--format=", "--name-only", "--no-renames", "-z", local, ...notOnRemote],
-      root,
-    )
-      .toString("latin1")
-      .split("\0")
-      .filter(Boolean);
-    if (!changed.length) return false;
-    const paths = Buffer.from(`${[...new Set(changed)].join("\0")}\0`, "latin1");
-    const attrs = (source: string[]) =>
-      spawnSync("git", ["check-attr", ...source, "-z", "--stdin", "filter", "lockable"], {
-        cwd: root,
-        input: paths,
-      });
-    // --source needs Git 2.40; an older git reads the checked-out attributes.
-    let r = attrs([`--source=${local}`]);
-    if (r.status !== 0) r = attrs([]);
-    if (r.status !== 0) throw new Error(`git check-attr: ${r.stderr}`);
-    // git-lfs also refuses a change to a file someone else locked, LFS-tracked or not.
-    const out = r.stdout.toString("latin1").split("\0");
-    return out.some(
-      (v, i) => i % 3 === 2 && ["filter=lfs", "lockable=set"].includes(`${out[i - 1]}=${v}`),
-    );
-  };
-  if (stores.some(holdsFile) || locals.some(lfsPath)) {
-    if (spawnSync("git", ["lfs", "version"], { cwd: root }).status !== 0)
-      report(
-        "push",
-        "",
-        "this push may carry Git LFS content or touch a lockable file, and git-lfs is not on PATH: install git-lfs (brew install git-lfs && git lfs install) and push again",
-      );
-    else {
-      const lfs = spawnSync("git", ["lfs", "pre-push", ...argv.slice(1)], {
-        cwd: root,
-        input,
-        stdio: ["pipe", "inherit", "inherit"],
-      });
-      process.exit(lfs.status ?? 1);
-    }
-  }
-  finish("check-confidential", findings, started);
+  finish("check-confidential", prepushFindings, started);
 }
 
-const age = (file: string) => (existsSync(file) ? Date.now() - statSync(file).mtimeMs : Infinity);
+const CACHE_DIR = join(root, "node_modules/.cache/scaffolding");
+const OCR_SOURCE = join(import.meta.dir, "../lib/ocr.swift");
+const READER_SOURCES = [
+  import.meta.path,
+  fileURLToPath(new URL("../lib/confidential-input.ts", import.meta.url)),
+  fileURLToPath(new URL("../lib/confidential-archive.ts", import.meta.url)),
+  fileURLToPath(new URL("../lib/confidential-binaries.ts", import.meta.url)),
+  OCR_SOURCE,
+];
 const warn = (message: string) => console.error(`[check-confidential] ${message}`);
-
-/** Fetches the list into CACHE with the person's own gh login; answers why not, or undefined. */
-function fetchList(): string | undefined {
-  mkdirSync(CACHE_DIR, { recursive: true });
-  writeFileSync(ATTEMPT, "");
-  const r = spawnSync(
-    "gh",
-    [
-      "api",
-      `repos/${TERMS_REPO}/contents/confidential-terms.json`,
-      "-H",
-      "Accept: application/vnd.github.raw",
-    ],
-    { encoding: "utf8", timeout: 20_000 },
-  );
-  if (r.error) return `gh: ${r.error.message}`;
-  if (r.status !== 0 || !parseTermList(r.stdout))
-    return `gh: ${(r.stderr || r.stdout).trim().replace(/^gh: /, "").split("\n")[0] || `exit ${r.status}`}`;
-  writeFileSync(`${CACHE}.tmp`, r.stdout);
-  renameSync(`${CACHE}.tmp`, CACHE);
-}
-
-/** `optional`: a hook that passes without a list tries gh at most hourly even without a copy, since
- * gh may take 20 s offline; a hook that refuses without one tries on every commit. */
-function loadList(optional = false): { list?: TermList; problem?: string; absent?: boolean } {
-  const file = arg("--list") || process.env.SCAFFOLDING_CONFIDENTIAL_TERMS || undefined;
-  let problem: string | undefined;
-  const due = age(ATTEMPT) >= HOUR || (age(CACHE) === Infinity && !optional);
-  // A copy fetched before Company OS built the never section is fetched again for the never scan.
-  const old =
-    age(CACHE) >= DAY ||
-    (neverMode && existsSync(CACHE) && !parseTermList(readFileSync(CACHE, "utf8"))?.never?.length);
-  if (!file && old && due) {
-    problem = fetchList();
-    if (problem && existsSync(CACHE)) warn(`${problem}; using the copy fetched before`);
-  } else if (!file && old)
-    warn(
-      existsSync(CACHE)
-        ? `copy ${age(CACHE) >= DAY ? "older than a day" : "without a never section"}; next fetch within the hour`
-        : "no copy; next fetch within the hour, or now by `check-confidential fetch`",
-    );
-  const source = file ?? CACHE;
-  const list = existsSync(source) ? parseTermList(readFileSync(source, "utf8")) : undefined;
-  if (!list)
-    return { problem: problem ?? `no valid list at ${source}`, absent: !existsSync(source) };
-  const built = Date.parse(list.built ?? "");
-  if (Number.isNaN(built) || built > Date.now() + HOUR)
-    return { problem: `${source} has no valid build time` };
-  const days = (Date.now() - built) / DAY;
-  if (days > 7) return { problem: `list built ${Math.floor(days)} days ago, more than 7` };
-  if (days > 3) warn(`list built ${Math.floor(days)} days ago; Company OS has not rebuilt it`);
-  return { list };
-}
+const listCache = new ConfidentialListCache(CACHE_DIR, warn);
+const explicitList = arg("--list") || process.env.SCAFFOLDING_CONFIDENTIAL_TERMS || undefined;
 
 if (argv[0] === "fetch") {
-  const problem = fetchList();
-  const loaded = problem ? { problem } : loadList();
+  const problem = listCache.fetchList();
+  const loaded = problem ? { problem } : listCache.loadPublicRequired(explicitList);
   if (loaded.problem) warn(loaded.problem);
   process.exit(loaded.problem ? 1 : 0);
 }
@@ -431,21 +149,13 @@ const skipped = process.env.CI === "true" && Boolean(tree || index);
 // runs in a private repository too: no surface shows those names.
 const pkg = readPackage(root, neverMode ? undefined : (tree ?? commit ?? ":"));
 if (pkg.scaffolding?.private === true && !neverMode) process.exit(0);
-// package.json's allow entries name the very terms and paths they allow, so the file is read without
-// them, each entry's reason kept: whole, as the snapshot holds it, since its added lines alone cannot
-// tell an entry from the rest.
-const ownPackage = JSON.stringify(
-  {
-    ...pkg,
-    scaffolding: pkg.scaffolding && {
-      ...pkg.scaffolding,
-      allow: pkg.scaffolding.allow?.map(({ text: _t, path: _p, ...rest }) => rest),
-    },
-  },
-  null,
-  2,
-);
+const ownPackage = stripPackageAllowTargets(pkg);
 const ownText = (path: string, text: string) => (path === "package.json" ? ownPackage : text);
+
+const findings: Finding[] = [];
+const report = (path: string, text: string, details: string) => {
+  findings.push({ check: "confidential", path, text, message: details });
+};
 
 let list: TermList | undefined;
 // No list reachable under --list-optional: the commit passes unscanned for terms.
@@ -454,301 +164,57 @@ let unscanned = false;
 const listProblem: Finding[] = [];
 if (skipped) warn("CI: term step skipped; the commit hook is the gate");
 else {
-  const loaded = loadList(optional);
+  const loaded = neverMode
+    ? listCache.loadNeverRequired(explicitList)
+    : optional
+      ? listCache.loadPublicOptional(explicitList)
+      : listCache.loadPublicRequired(explicitList);
   list = loaded.list;
   // For a public repository's outside contributors, who cannot fetch the list: no list at all
   // passes, a stale or broken one still refuses.
   unscanned = Boolean(loaded.absent && optional);
   if (unscanned) warn(`${loaded.problem}; --list-optional: terms not scanned`);
-  else if (loaded.problem)
-    listProblem.push({
-      check: CHECK,
-      path: "confidential terms",
-      text: "",
-      message: `${loaded.problem}. Refused: run \`gh auth login\` with an account in the ${TERMS_REPO.split("/")[0]} trainers team, then ${neverMode ? "run it" : "commit"} again`,
-    });
-  // A list without names to look for would pass every deck.
-  else if (neverMode && !list?.never?.length)
-    listProblem.push({
-      check: CHECK,
-      path: "confidential terms",
-      text: "",
-      message:
-        "the list has no never section: Company OS has not built one, or `check-confidential fetch` fetches it now",
-    });
+  else if (neverMode) listProblem.push(...neverListProblemFindings(loaded));
+  else listProblem.push(...publicListProblemFindings(loaded));
 }
-// A public repository's own scans refuse a never name too, under their casing rule.
-const bad = new Set<string>([...(neverMode ? [] : (list?.hashes ?? [])), ...(list?.never ?? [])]);
-const h = hasher(list?.salt ?? "");
+const matcher = list
+  ? new ConfidentialTermMatcher(
+      list.salt,
+      list.maxTokens,
+      neverMode ? neverBadTermSet(list) : publicBadTermSet(list),
+    )
+  : undefined;
 
 /** `inPath`: `texts` is the path `where` itself. Several texts are scanned apart; a name is one finding. */
 function scanText(where: string, texts: string | string[], inPath = false) {
-  if (!list) return;
-  const found = new Set<string>();
-  for (const text of [texts].flat()) {
-    const tokens = words(text);
-    const lower = tokens.map((w) => w.toLowerCase());
-    for (let i = 0; i < tokens.length; i++) {
-      if ((tokens[i].length === 3 || capitals(tokens[i])) && bad.has(h(`cs:${tokens[i]}`)))
-        found.add(tokens[i]);
-      let gram = "";
-      for (let n = 0; n < list.maxTokens && i + n < tokens.length; n++) {
-        gram = n ? `${gram} ${lower[i + n]}` : lower[i];
-        // One word of three letters is a cased term. Two one-character words ("K 2") count only
-        // in capitals, since in lower case they are code (`c => a`).
-        const pair = n === 1 && gram.length === 3;
-        const counts = pair ? capitals(tokens[i] + tokens[i + 1]) : n || gram.length > 3;
-        if ((counts && bad.has(h(gram))) || (neverMode && !n && bad.has(h(`any:${gram}`))))
-          found.add(tokens.slice(i, i + n + 1).join(" "));
-      }
-    }
-    // A slug or path writes a capitalised name in lower case (quux-workshop, clients/quux/): a
-    // lower-case part of a joined token is checked as the name in capitals.
-    for (const [joined] of text.normalize("NFKC").matchAll(SLUG))
-      for (const part of joined.split(/[-_/.]/))
-        if (
-          part.length >= 3 &&
-          part === part.toLowerCase() &&
-          bad.has(h(`cs:${part.toUpperCase()}`))
-        )
-          found.add(part);
-  }
-  for (const name of found)
-    findings.push({
-      check: CHECK,
-      path: where,
-      text: name,
-      message: `${neverMode ? "a name h&w never shows" : "confidential term"} from the company records${inPath ? " in the file's path" : ""}: ${inPath ? "rename the file to a generic or fictitious name" : "remove or anonymise the name with a generic or fictitious placeholder"}.${neverMode ? "" : " Only if this is a verified public false positive, add an allow entry with its reason in package.json scaffolding.allow"}`,
-      term: true,
-      ...(inPath && { name: true as const }),
-    });
-}
-
-const IMAGE = /\.(?:png|jpe?g|webp|gif|heic|heif|avif|tiff?|bmp|ico|icns)$/i;
-// Glyph outlines, no text a scan could read, known by their own signature: WOFF, WOFF2, OpenType,
-// TrueType and a collection at the start, EOT's at byte 34. An Office file's embedded font is
-// obfuscated, so there the name alone tells.
-const FONT = ["wOFF", "wOF2", "OTTO", "\0\x01\0\0", "true", "ttcf"];
-const font = (name: string, data: Buffer, depth: number) =>
-  FONT.includes(data.subarray(0, 4).toString("latin1")) ||
-  data.subarray(34, 36).toString("latin1") === "LP" ||
-  (depth > 0 && /\.odttf$/i.test(name));
-const XML = /\.(?:xml|rels|x?html?|svg)$/i;
-// Paragraphs, breaks, cells and list items of Office, OpenDocument and HTML markup.
-const BLOCK = /<\/?(?:\w+:)?(?:p|h\d?|br|tab|tc|td|th|tr|si|c|li|div|line-break)\b[^>]*>/g;
-const OS_NAV = ["Dashboard", "Deals", "Deliverables", "Assignments", "Invoices"];
-
-const OCR_SOURCE = join(import.meta.dir, "../lib/ocr.swift");
-
-function ocrBinary(): string | undefined {
-  const digest = createHash("sha256").update(readFileSync(OCR_SOURCE)).digest("hex").slice(0, 12);
-  const bin = join(CACHE_DIR, `ocr-${digest}`);
-  if (existsSync(bin)) return bin;
-  if (process.platform !== "darwin") return undefined;
-  const built = spawnSync("swiftc", ["-O", OCR_SOURCE, "-o", bin], { stdio: "ignore" });
-  return built.status === 0 ? bin : undefined;
-}
-
-/** The entries of a zip archive (Office, OpenDocument, iWork, .zip), or why it cannot be read. */
-function unzip(data: Buffer): { name: string; data: Buffer }[] | string {
-  try {
-    return entriesOf(data);
-  } catch (e) {
-    return `damaged zip archive (${(e as Error).message})`;
+  if (!matcher) return;
+  const items = [texts].flat();
+  const found = neverMode ? matcher.matchNeverTexts(items) : matcher.matchPublicTexts(items);
+  for (const name of found) {
+    if (neverMode) findings.push(neverTermFinding(where, name));
+    else findings.push(inPath ? publicPathFinding(where, name) : publicTermFinding(where, name));
   }
 }
 
-function entriesOf(data: Buffer): { name: string; data: Buffer }[] | string {
-  const end = data.lastIndexOf(Buffer.from("PK\x05\x06", "latin1"));
-  if (end < 0) return "no zip directory";
-  const entries: { name: string; data: Buffer }[] = [];
-  let at = data.readUInt32LE(end + 16);
-  for (let n = data.readUInt16LE(end + 10); n > 0; n--) {
-    if (data.readUInt32LE(at) !== 0x02014b50) return "damaged zip directory";
-    const [flags, method] = [data.readUInt16LE(at + 8), data.readUInt16LE(at + 10)];
-    const size = data.readUInt32LE(at + 20);
-    const nameLength = data.readUInt16LE(at + 28);
-    const name = data.toString("utf8", at + 46, at + 46 + nameLength);
-    const local = data.readUInt32LE(at + 42);
-    at += 46 + nameLength + data.readUInt16LE(at + 30) + data.readUInt16LE(at + 32);
-    if (name.endsWith("/")) continue;
-    if (flags & 1) return `${name} is encrypted`;
-    if (size === 0xffffffff || local === 0xffffffff) return "zip64 archive";
-    const from = local + 30 + data.readUInt16LE(local + 26) + data.readUInt16LE(local + 28);
-    const raw = data.subarray(from, from + size);
-    if (method === 0) entries.push({ name, data: raw });
-    else if (method === 8) entries.push({ name, data: inflateRawSync(raw) });
-    else return `${name} uses compression method ${method}`;
-  }
-  return entries;
-}
-
-function scanBinaries(files: { where: string; data: Buffer }[]) {
+function scanBinaries(files: BinaryFile[]) {
   if (!files.length) return;
-  // A review page's images may sit under docs/agent-work once read clean. A CI audit reads none, so
-  // there they stay refused rather than pass unread.
   if (skipped) {
-    for (const { where } of files)
-      if (/(?:^|\/)docs\/agent-work\//.test(where))
-        report(
-          where,
-          "",
-          "binary file in docs/agent-work not read: no OCR in CI. Remove the binary from docs/agent-work/ or replace it with Markdown/text; only if it must live in this public repo, verify it locally on macOS and add an entry with a reason in package.json scaffolding.allow",
-        );
+    findings.push(...agentWorkCiFindings(files));
     return;
   }
-  mkdirSync(CACHE_DIR, { recursive: true });
-  const scratch = mkdtempSync(join(CACHE_DIR, "scan-"));
-  const texts = new Map<string, string>();
-  const add = (where: string, text: string) =>
-    texts.set(where, `${texts.get(where) ?? ""}\n${text}`);
-  const images: { file: string; where: string; entry: string; why: string }[] = [];
-  // Only a file read whole is kept as read: one not read is tried again.
-  const unread = new Set<string>();
-  const refuse = (where: string, entry: string, message: string) => {
-    unread.add(where);
-    report(where, entry, message);
-  };
   // A file this machine lacks the tool to read. Where the commit goes unscanned for terms anyway, it
   // passes with a warning; only the Company OS screenshot check is lost with it.
-  const notRead = (where: string, entry: string, message: string) => {
-    if (!unscanned) return refuse(where, entry, message);
-    unread.add(where);
-    warn(`${where}${entry && ` (${entry})`}: ${message}; --list-optional: passed unread`);
-  };
-  let saved = 0;
-  const save = (data: Buffer, name: string) => {
-    const file = join(scratch, `${saved++}${extname(name)}`);
-    writeFileSync(file, data);
-    return file;
-  };
-  // `name` is the file's own name, inside an archive the entry's; findings name `where`.
-  const read = (where: string, name: string, data: Buffer, depth = 0): void => {
-    const entry = name === where ? "" : name;
-    if (/\.pdf$/i.test(name) || data.subarray(0, 5).toString() === "%PDF-") {
-      const file = save(data, "x.pdf");
-      const pdf = spawnSync("pdftotext", [file, "-"], { maxBuffer: Infinity });
-      if (pdf.status !== 0)
-        return notRead(where, entry, `PDF not read: install poppler for pdftotext`);
-      const pages = pdf.stdout.toString().split("\f").slice(0, -1);
-      add(where, pages.join("\n"));
-      // "page num type width ..." under two header lines, one row per image.
-      const listed = spawnSync("pdfimages", ["-list", file]);
-      if (listed.status !== 0)
-        return notRead(where, entry, `PDF not read: install poppler for pdfimages`);
-      const pictured = new Set(
-        listed.stdout
-          .toString()
-          .split("\n")
-          .slice(2)
-          .map((row) => Number(row.trim().split(/\s+/)[0])),
-      );
-      // A page without a word is a scan, and an image may show text: OCR reads the page's rendering.
-      pages.forEach((page, i) => {
-        if (/[\p{L}\p{N}]/u.test(page) && !pictured.has(i + 1)) return;
-        const out = `${file}-${i + 1}`;
-        const r = spawnSync("pdftoppm", [
-          "-r",
-          "150",
-          "-png",
-          "-singlefile",
-          "-f",
-          `${i + 1}`,
-          "-l",
-          `${i + 1}`,
-          file,
-          out,
-        ]);
-        if (r.status !== 0)
-          notRead(
-            where,
-            entry,
-            `PDF page ${i + 1} holds a scan or an image and was not rendered: install poppler for pdftoppm`,
-          );
-        else
-          images.push({
-            file: `${out}.png`,
-            where,
-            entry,
-            why: `PDF page ${i + 1} holds a scan or an image and was not read: no OCR here (macOS only)`,
-          });
-      });
-    } else if (IMAGE.test(name))
-      images.push({
-        file: save(data, name),
-        where,
-        entry,
-        why: `image not read: not a decodable image, or no OCR here (macOS only)`,
-      });
-    else if (data.subarray(0, 4).toString("latin1") === "PK\x03\x04" && depth < 3) {
-      const entries = unzip(data);
-      if (typeof entries === "string")
-        return refuse(
-          where,
-          entry,
-          `archive not read: ${entries}. Replace the damaged, encrypted, or unsupported archive with plain files or a standard unencrypted ZIP (stored/deflate) so its contents can be scanned, or remove it from the repository`,
-        );
-      add(where, entries.map((e) => e.name).join("\n"));
-      for (const e of entries) read(where, e.name, e.data, depth + 1);
-    } else if (!data.includes(0)) {
-      const text = data.toString("utf8");
-      // Markup read twice: a block's tag as a line break and every other tag dropped joins a word
-      // Word splits across runs; every tag as a space keeps apart what no block tag separates.
-      add(
-        where,
-        XML.test(name) || text.startsWith("<?xml")
-          ? decodeEntities(
-              `${text.replace(/<[^>]*>/g, " ")}\n${text.replace(BLOCK, "\n").replace(/<[^>]*>/g, "")}`,
-            )
-          : text,
-      );
-    } else if (!font(name, data, depth))
-      refuse(
-        where,
-        entry,
-        `binary file not read: remove the binary or replace it with a text or scannable format so confidential terms cannot slip into this public repository. Only if the binary genuinely belongs here and contains no confidential data, add an entry with a reason in package.json scaffolding.allow`,
-      );
-  };
-  // Each file's text is kept by its content and this reader's code, so a gate reads a file again
-  // only once either changes.
-  const reader = createHash("sha256")
-    .update(readFileSync(import.meta.path))
-    .update(readFileSync(new URL("../lib/confidential-input.ts", import.meta.url)))
-    .update(readFileSync(OCR_SOURCE));
-  const kept = files.map(({ data }) =>
-    join(CACHE_DIR, "read", reader.copy().update(data).digest("hex").slice(0, 32)),
+  const onMissingTool = unscanned
+    ? (where: string, entry: string, why: string) =>
+        warn(`${where}${entry && ` (${entry})`}: ${why}; --list-optional: passed unread`)
+    : report;
+  const texts = new BinaryContentScanner(CACHE_DIR, report, onMissingTool).scanAll(
+    files,
+    READER_SOURCES,
+    OCR_SOURCE,
   );
-  files.forEach(({ where, data }, i) =>
-    existsSync(kept[i]) ? add(where, readFileSync(kept[i], "utf8")) : read(where, where, data),
-  );
-  const ocr = images.length ? ocrBinary() : undefined;
-  const blocks = new Map<string, string>();
-  if (ocr) {
-    const out = spawnSync(
-      ocr,
-      images.map((i) => i.file),
-      { maxBuffer: Infinity },
-    );
-    if (out.status === 0)
-      // A recognised line may itself start "== ": only a scratch path opens a block.
-      for (const block of `\n${out.stdout}`.split(`\n== ${scratch}/`).slice(1)) {
-        const [file, ...lines] = block.split("\n");
-        blocks.set(join(scratch, file), lines.join("\n"));
-      }
-  }
-  rmSync(scratch, { recursive: true, force: true });
-  for (const { file, where, entry, why } of images)
-    if (blocks.has(file)) add(where, blocks.get(file)!);
-    else notRead(where, entry, why);
-  mkdirSync(join(CACHE_DIR, "read"), { recursive: true });
-  files.forEach(({ where }, i) => {
-    if (unread.has(where) || existsSync(kept[i])) return;
-    // Renamed into place, so a killed run leaves no part of a text that later reads as whole.
-    writeFileSync(`${kept[i]}.${process.pid}`, texts.get(where) ?? "");
-    renameSync(`${kept[i]}.${process.pid}`, kept[i]);
-  });
   for (const [where, text] of texts) {
-    const nav = OS_NAV.filter((w) => new RegExp(`^${w}$`, "m").test(text));
+    const nav = detectCompanyOsNav(text);
     if (nav.length >= 3)
       report(
         where,
@@ -760,55 +226,27 @@ function scanBinaries(files: { where: string; data: Buffer }[]) {
 }
 
 let full = false;
-const isBinary = (p: string) => IMAGE.test(p) || /\.pdf$/i.test(p);
 /** The blobs `names` (a SHA, `:<path>`, `<rev>:<path>`) name, by one cat-file: a `git show` per
  * file cost 6.6 ms each. An error names the file by its path in `paths`. */
 function objects(names: string[], paths: string[]): Buffer[] {
   if (!names.length) return [];
-  const batch = git(["cat-file", "--batch"], root, names.join("\n") + "\n");
-  let at = 0;
-  return paths.map((path) => {
-    const header = batch.indexOf(10, at);
-    const [, type, length] = batch.subarray(at, header).toString().split(" ");
-    if (type !== "blob") throw new Error(`git cat-file: ${path} not readable (${type})`);
-    const data = batch.subarray(header + 1, header + 1 + Number(length));
-    at = header + 2 + Number(length);
-    return data;
-  });
+  return parseCatFileBatch(git(["cat-file", "--batch"], root, names.join("\n") + "\n"), paths);
 }
-const binaries: { where: string; data: Buffer }[] = [];
-// A pointer is all a blob holds, so a text that only starts like one is still read as text.
-const POINTER =
-  /^version https:\/\/git-lfs\.github\.com\/spec\/v1\n(?:ext-[^\n]*\n)*oid sha256:[0-9a-f]{64}\nsize \d+\n?$/;
-const isLfsPointer = (data: Buffer) => data.length < 1024 && POINTER.test(data.toString());
-const OID = /^oid sha256:([0-9a-f]{64})$/m;
+
+const binaries: BinaryFile[] = [];
 let lfsStores: string[] | undefined;
-/** The folders of the local Git LFS store's objects: the common Git folder's, and lfs.storage's. */
-function lfsObjectDirs(): string[] {
-  const common = resolve(root, git(["rev-parse", "--git-common-dir"], root).toString().trim());
-  const storage = spawnSync("git", ["config", "--type=path", "lfs.storage"], { cwd: root })
-    .stdout.toString()
-    .trim();
-  return [join(common, "lfs/objects"), ...(storage ? [resolve(common, storage, "objects")] : [])];
-}
 
 /** The file a Git LFS pointer names, from the working tree where it matches the pointer's oid,
  * else from the local LFS store; undefined where neither holds it. */
 function lfsContent(where: string, pointer: Buffer): Buffer | undefined {
-  const text = pointer.toString();
-  const oid = OID.exec(text)?.[1];
-  const size = Number(/^size (\d+)$/m.exec(text)?.[1]);
-  if (!oid || !Number.isFinite(size)) return undefined;
-  lfsStores ??= lfsObjectDirs();
-  const at = join(oid.slice(0, 2), oid.slice(2, 4), oid);
-  for (const file of [join(root, where), ...lfsStores.map((dir) => join(dir, at))]) {
-    // The size rules a differing file out without reading it.
-    const found = statSync(file, { throwIfNoEntry: false });
-    if (!found?.isFile() || found.size !== size) continue;
-    const data = readFileSync(file);
-    if (createHash("sha256").update(data).digest("hex") === oid) return data;
-  }
+  const parsed = parseLfsPointer(pointer);
+  if (!parsed) return undefined;
+  lfsStores ??= lfsObjectDirs(root);
+  const at = join(parsed.oid.slice(0, 2), parsed.oid.slice(2, 4), parsed.oid);
+  const candidates = [join(root, where), ...lfsStores.map((dir) => join(dir, at))];
+  return readLfsContent(candidates, parsed);
 }
+
 const take = (where: string, data: Buffer) => {
   if (isLfsPointer(data)) {
     const content = lfsContent(where, data);
@@ -818,9 +256,7 @@ const take = (where: string, data: Buffer) => {
   binaries.push({ where, data });
 };
 
-// Comment lines count: `git commit -m` keeps them. Only the diff below `commit -v`'s scissors goes.
-if (message) scanText("commit message", readFileSync(message, "utf8").split(/^# -+ >8 -+$/m)[0]);
-else if (argv.includes("--staged") || commit) {
+function scanDiffMode(): void {
   const range = commit
     ? ["show", "--format=", "--no-renames", commit]
     : ["diff", "--cached", "--no-renames"];
@@ -833,57 +269,39 @@ else if (argv.includes("--staged") || commit) {
     "--ignore-submodules",
     "--diff-filter=AM",
   ];
-  // "<added>\t<deleted>\t<path>", "-" for a file git diffs as binary, in the patch's order.
-  const files = git([...range, ...options, "--numstat", "-z"], root)
-    .toString()
-    .split("\0")
-    .filter(Boolean)
-    .map((line) => ({ binary: line.startsWith("-\t-\t"), path: line.replace(/^\S+\t\S+\t/, "") }));
-  const paths = files.map((f) => f.path);
+  const files = parseNumstatEntries(
+    git([...range, ...options, "--numstat", "-z"], root).toString(),
+  );
+  const paths = files.map((file) => file.path);
   for (const path of paths) scanText(path, path, true);
   const texts = addedLines(git([...range, ...options, "-U0"], root).toString(), paths);
-  const binary = new Set(files.filter((f) => f.binary || isBinary(f.path)).map((f) => f.path));
+  const binary = new Set(
+    files.filter((file) => file.binary || isBinaryExtension(file.path)).map((file) => file.path),
+  );
   // A Git LFS pointer is text to git, and its oid line changes with the file it names.
-  const read = paths.filter((p) => binary.has(p) || texts.get(p)?.some((l) => OID.test(l)));
+  const toRead = paths.filter(
+    (path) => binary.has(path) || texts.get(path)?.some((line) => LFS_OID_PATTERN.test(line)),
+  );
   const data = objects(
-    read.map((path) => `${commit ?? ""}:${path}`),
-    read,
+    toRead.map((path) => `${commit ?? ""}:${path}`),
+    toRead,
   );
   const taken = new Set<string>();
-  read.forEach((path, i) => {
-    if (!binary.has(path) && !isLfsPointer(data[i])) return;
+  toRead.forEach((path, idx) => {
+    if (!binary.has(path) && !isLfsPointer(data[idx])) return;
     taken.add(path);
-    take(path, data[i]);
+    take(path, data[idx]);
   });
   for (const path of paths)
     if (!taken.has(path)) scanText(path, ownText(path, texts.get(path)?.join("\n") ?? ""));
   if (commit)
     scanText("commit message", git(["log", "-1", "--format=%B", commit], root).toString());
-} else if (neverMode) {
-  function parseStdin(raw: string): unknown {
-    try {
-      return JSON.parse(raw);
-    } catch {
-      return undefined;
-    }
-  }
-  const input = parseStdin(readFileSync(0, "utf8"));
-  // A value may nest: its object keys and every string in it are its text, so a deck goes in whole.
-  const strings = (value: unknown): string[] =>
-    typeof value === "string"
-      ? [value]
-      : value && typeof value === "object"
-        ? Object.entries(value).flatMap(([key, item]) => [
-            ...(Array.isArray(value) ? [] : [key]),
-            ...strings(item),
-          ])
-        : [];
-  const texts =
-    input && typeof input === "object" && !Array.isArray(input)
-      ? Object.entries(input).map(([where, value]) => [where, strings(value)] as const)
-      : [];
+}
+
+function scanNeverMode(): void {
+  const texts = parseNeverInput(readFileSync(0, "utf8"));
   // Kept out of applyAllow like the list's own problems: a broken dump passes nothing.
-  if (!texts.length || texts.some(([, text]) => !text.length))
+  if (!texts) {
     listProblem.push({
       check: CHECK,
       path: "stdin",
@@ -891,44 +309,51 @@ else if (argv.includes("--staged") || commit) {
       message:
         'nothing to scan: stdin holds no {"<where>": <value>} object, each value a string or JSON holding one. Pipe a non-empty JSON object mapping each source key to its string or nested JSON text into `check-confidential never`',
     });
-  else {
-    full = true;
-    // A key may be a slug the deck shows in its address. Each string apart, so two never join into
-    // a name neither shows.
-    for (const [where, text] of texts) scanText(where, [where, ...text]);
+    return;
   }
-} else if (tree || index) {
   full = true;
-  const listed = git(tree ? ["ls-tree", "-r", "-z", tree] : ["ls-files", "-s", "-z"], root)
-    .toString()
-    .split("\0")
-    .filter(Boolean);
-  const entries = listed.map((line) => {
-    if (tree) {
-      const [, type, sha, path] = line.match(/^\d+ (\w+) (\w+)\t(.*)$/s)!;
-      return { type, sha, path };
-    }
-    // "<mode> <sha> <stage>\t<path>"; mode 160000 is a submodule's commit.
-    const [, mode, sha, stage, path] = line.match(/^(\d+) (\w+) (\d)\t(.*)$/s)!;
-    if (stage !== "0") {
-      console.error(
-        `[check-confidential] ${path}: unmerged; resolve the merge, then scan the index`,
-      );
-      process.exit(1);
-    }
-    return { type: mode === "160000" ? "commit" : "blob", sha, path };
-  });
+  // A key may be a slug the deck shows in its address. Each string apart, so two never join into
+  // a name neither shows.
+  for (const [where, text] of texts) scanText(where, [where, ...text]);
+}
+
+function scanSnapshotMode(): void {
+  full = true;
+  const output = git(
+    tree ? ["ls-tree", "-r", "-z", tree] : ["ls-files", "-s", "-z"],
+    root,
+  ).toString();
+  const entries = tree ? parseTreeEntries(output) : readCleanIndexEntries(output);
   for (const { path } of entries) scanText(path, path, true);
-  const blobs = entries.filter((e) => e.type === "blob");
+  const blobs = entries.filter((entry) => entry.type === "blob");
   const data = objects(
-    blobs.map((e) => e.sha),
-    blobs.map((e) => e.path),
+    blobs.map((entry) => entry.sha),
+    blobs.map((entry) => entry.path),
   );
-  blobs.forEach(({ path }, i) => {
-    if (isBinary(path) || data[i].includes(0) || isLfsPointer(data[i])) take(path, data[i]);
-    else scanText(path, ownText(path, data[i].toString("utf8")));
+  blobs.forEach(({ path }, idx) => {
+    if (isBinaryExtension(path) || data[idx].includes(0) || isLfsPointer(data[idx]))
+      take(path, data[idx]);
+    else scanText(path, ownText(path, data[idx].toString("utf8")));
   });
-} else {
+}
+
+function readCleanIndexEntries(output: string) {
+  const parsed = parseIndexEntries(output);
+  if (parsed.unmergedPath) {
+    console.error(
+      `[check-confidential] ${parsed.unmergedPath}: unmerged; resolve the merge, then scan the index`,
+    );
+    process.exit(1);
+  }
+  return parsed.entries;
+}
+
+// Comment lines count: `git commit -m` keeps them. Only the diff below `commit -v`'s scissors goes.
+if (message) scanText("commit message", readFileSync(message, "utf8").split(/^# -+ >8 -+$/m)[0]);
+else if (argv.includes("--staged") || commit) scanDiffMode();
+else if (neverMode) scanNeverMode();
+else if (tree || index) scanSnapshotMode();
+else {
   console.error(USAGE);
   process.exit(2);
 }
