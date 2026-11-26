@@ -224,6 +224,7 @@ test command passes it on, `"test": "bun test --timeout ${SCAFFOLDING_TEST_TIMEO
 vitest takes `--testTimeout=${SCAFFOLDING_TEST_TIMEOUT_MS:-5000}` or reads the variable in its
 config. A test that sets its own timeout passes `limit(ms)` from
 `@hackersandwizards/scaffolding/test-timeout` so its limit scales with the runner's default.
+A fixed 30 s limit timed out under load where the default had stretched.
 Without load scaling every test keeps its 5 s limit however loaded the machine is, so
 `check-structure` requires the test command, a script it runs or a root `vitest.config.*` or
 `vite.config.*` to use `SCAFFOLDING_TEST_TIMEOUT_MS`. A config can export the shared Vitest base

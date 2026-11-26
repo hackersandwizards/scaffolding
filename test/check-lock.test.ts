@@ -24,6 +24,7 @@ import { setTimeout as delay } from "node:timers/promises";
 import { afterAll, assert, describe, expect, it } from "vitest";
 import { jsonObject } from "../lib/json.ts";
 import { limit } from "@hackersandwizards/scaffolding/test-timeout";
+import { until, untilBefore, untilFile, untilPath } from "./wait.ts";
 
 const SCRIPT = resolve(import.meta.dirname, "../template/.githooks/check-lock.ts");
 
@@ -83,51 +84,6 @@ const openWriter = async (fifo: string): Promise<number> => {
   }
   throw new Error(`no reader opened ${fifo}`);
 };
-
-// A process starting on a loaded machine took more than 5 s to write its lock, and the read after
-// a silent timeout failed on a file that was not there yet; so the wait is long and says when it
-// runs out.
-const until = async (ok: () => boolean, what: string, signal?: AbortSignal): Promise<void> => {
-  for (const end = Date.now() + 20_000; !signal?.aborted && !ok(); await Bun.sleep(50))
-    if (Date.now() > end) throw new Error(`still waiting for ${what} after 20 s`);
-};
-
-function untilPath<T>(
-  path: string,
-  read: (path: string) => T,
-  ready: (value: T) => boolean,
-  what: string,
-) {
-  return until(() => {
-    let value: T;
-    try {
-      value = read(path);
-    } catch (error) {
-      if ((error as NodeJS.ErrnoException).code === "ENOENT") return false;
-      throw error;
-    }
-    return ready(value);
-  }, `${what} at ${path}`);
-}
-
-function untilFile(path: string, ready: (value: string) => boolean, what: string) {
-  return untilPath(path, (name) => readFileSync(name, "utf8"), ready, what);
-}
-
-async function untilBefore(
-  ready: () => boolean,
-  what: string,
-  stop: (signal: AbortSignal) => Promise<unknown>,
-) {
-  const controller = new AbortController();
-  const waiter = until(ready, what, controller.signal);
-  try {
-    await Promise.race([waiter, stop(controller.signal)]);
-  } finally {
-    controller.abort();
-    await waiter;
-  }
-}
 
 describe("check-lock serialises the checks", () => {
   // `spawn`, not `execFileSync`: synchronous children would serialise themselves and the assertion

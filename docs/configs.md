@@ -87,18 +87,19 @@ Rule guides live in `config/guides/`. In the gate, Oxlint prints each matching g
 ## Vitest and Stryker
 
 Oxlint checks test assertions, titles and hooks and rejects focused, disabled and commented-out
-tests and imports from `node:test`. It applies these rules to JavaScript and TypeScript tests
+tests and imports from `node:test`. It limits tests to five `expect` calls with `max-expects`
+and rejects conditional logic with `no-conditional-in-test`. It applies these rules to JavaScript and TypeScript tests
 using the same file globs as the shared ESLint config. Oxlint 1.94.0 recognises `test`, `it` and
 `describe` imported from `vitest` or used as globals. Tests declared through a wrapper imported
 from a local module or from `@playwright/test` fall outside these rules. This also applies to the
 curried `test.prop` blocks from the shared wrapper or `@fast-check/vitest` for `expect-expect`, `no-conditional-expect` and
-`no-conditional-in-test`. When enabled, `max-expects` also counts `expect` calls inside callbacks
+`no-conditional-in-test`. `max-expects` also counts `expect` calls inside callbacks
 declared through that wrapper, since it counts them in any function. ESLint's
 `scaffolding/property` rule checks property tests using the shared API.
 
 Import `test` from `vitest` and pass `limit(ms)` from
-`@hackersandwizards/scaffolding/test-timeout` as the timeout argument. A wrapper around `test`
-hides those tests from Oxlint's Vitest rules.
+`@hackersandwizards/scaffolding/test-timeout` as the timeout argument. The export requires
+Scaffolding v5.44.0 or later. A wrapper around `test` hides those tests from Oxlint's Vitest rules.
 
 Scaffolding supplies Vitest 5.1.0 and Stryker core and its Vitest runner at 10.1.1.
 Use a Scaffolding pin of v5.33.0 or later for the setup below. The shared configs and their

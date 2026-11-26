@@ -97,7 +97,9 @@
         "vitest/require-to-throw-message": "error",
         "vitest/valid-title": "error",
         "vitest/no-duplicate-hooks": "error",
-        "vitest/no-import-node-test": "error"
+        "vitest/no-import-node-test": "error",
+        "vitest/max-expects": ["error", { "max": 5 }],
+        "vitest/no-conditional-in-test": "error"
       }
     },
     {

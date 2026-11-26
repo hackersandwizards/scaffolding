@@ -9,15 +9,7 @@ import { isObject } from "../lib/json.ts";
 import { activeSeverity, type Rules } from "../lib/lint-rule-overlaps.ts";
 
 const ownChecks = ["layers", "import-cycle", "duplicate-function-name", "generic-folder"];
-const upcoming = [
-  "complexity",
-  "max-depth",
-  "max-params",
-  "max-lines-per-function",
-  "max-lines",
-  "no-conditional-in-test",
-  "max-expects",
-];
+const upcoming = ["complexity", "max-depth", "max-params", "max-lines-per-function", "max-lines"];
 
 const activeRules = (rules: Rules = {}) =>
   Object.keys(rules).filter((rule) => activeSeverity(rules[rule]));

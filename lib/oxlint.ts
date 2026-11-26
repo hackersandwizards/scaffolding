@@ -6,6 +6,7 @@ import {
   mkdirSync,
   mkdtempSync,
   openSync,
+  readdirSync,
   readFileSync,
   rmSync,
   statSync,
@@ -111,6 +112,14 @@ export function runOxlint(root: string, args: string[], capture = false) {
   // Bun can truncate Oxlint output sent through pipes even when maxBuffer is unlimited.
   const cache = join(root, "node_modules/.cache/scaffolding");
   mkdirSync(cache, { recursive: true });
+  const staleBefore = Date.now() - 3_600_000;
+  for (const name of readdirSync(cache)) {
+    if (!name.startsWith("oxlint-output-")) continue;
+    const path = join(cache, name);
+    const info = lstatSync(path, { throwIfNoEntry: false });
+    if (info?.isDirectory() && info.mtimeMs < staleBefore)
+      rmSync(path, { recursive: true, force: true });
+  }
   const dir = mkdtempSync(join(cache, "oxlint-output-"));
   const paths = [join(dir, "stdout"), join(dir, "stderr")] as const;
   const descriptors: number[] = [];
