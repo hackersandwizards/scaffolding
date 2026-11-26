@@ -2,6 +2,7 @@
 import prettier from "eslint-config-prettier/flat";
 import globals from "globals";
 import tseslint from "typescript-eslint";
+import noCatchFallbackRule from "./no-catch-fallback-rule.js";
 import noEmptyCatchRule from "./no-empty-catch-rule.js";
 import noLintDisableRule from "./no-lint-disable-rule.js";
 import propertyRule from "./property-rule.js";
@@ -12,6 +13,7 @@ const code = "{js,jsx,ts,tsx,mjs,cjs,mts,cts}";
 export const scaffoldingPlugin = {
   rules: {
     property: propertyRule,
+    "no-catch-fallback": noCatchFallbackRule,
     "no-empty-catch": noEmptyCatchRule,
     "no-lint-disable": noLintDisableRule,
   },
@@ -68,6 +70,7 @@ export default [
     plugins: { scaffolding: scaffoldingPlugin },
     rules: {
       "scaffolding/property": ["error", "source"],
+      "scaffolding/no-catch-fallback": "error",
       "scaffolding/no-empty-catch": "error",
       "scaffolding/no-lint-disable": "error",
     },

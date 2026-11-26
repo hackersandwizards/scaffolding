@@ -47,6 +47,9 @@ except for a separate type import, warning comments containing `todo`, `fixme`, 
 literal types. ESLint applies the corresponding block, equality, comment and declaration rules to
 Astro template expressions. Its `scaffolding/no-empty-catch` rule checks comment-only catch
 clauses and empty inline `.catch()` callbacks in JavaScript, TypeScript and Astro.
+`scaffolding/no-catch-fallback` reports returns from catches that ignore the error in the same
+files, including tests. Check whether a fallback is needed before the call. When an API signals
+an expected failure by throwing, handle that error and rethrow the rest.
 
 The shared ESLint presets disable inline configuration with `linterOptions.noInlineConfig`.
 `scaffolding/no-lint-disable` reports ESLint and Oxlint enable and disable directives in comments.

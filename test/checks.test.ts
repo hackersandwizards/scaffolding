@@ -68,6 +68,7 @@ import templateMcp from "../template/.mcp.json";
 import templateSettings from "../template/.claude/settings.json";
 import { limit } from "@hackersandwizards/scaffolding/test-timeout";
 import { fileReady, until } from "./wait.ts";
+import { testDirectory } from "./test-directory.ts";
 
 /** The member of parsed JSON at `path`, undefined where a step meets no object or list. */
 const member = (value: unknown, ...path: (string | number)[]): unknown =>
@@ -228,8 +229,7 @@ function requireFixtureSuccess(command: string, code: number | null, output: str
   throw new Error(`${command} could not prepare the fixture (exit ${code})\n${output}`);
 }
 
-function repo(files: Record<string, string>, commit = true) {
-  const dir = temp();
+function repo(files: Record<string, string>, commit = true, dir = temp()) {
   sh(dir, ["init", "-q", "-b", "main"]);
   write(dir, { ".gitignore": "node_modules\n", ...files });
   if (commit) {
@@ -871,10 +871,12 @@ function fixtureGuide(id: string) {
     .trimEnd();
 }
 
-function expectGuide(out: string, id: string) {
-  const guide = readFileSync(join(import.meta.dirname, "../config/guides", `${id}.md`), "utf8");
-  expect(out).toContain(`\n\n${guide.replace(/^# /, `[guide] ${id}: `)}`);
-  expect(out.match(/^\[guide\] [^:]+/gm)).toEqual([`[guide] ${id}`]);
+function expectGuide(out: string, ...ids: string[]) {
+  for (const id of ids) {
+    const guide = readFileSync(join(import.meta.dirname, "../config/guides", `${id}.md`), "utf8");
+    expect(out).toContain(`\n\n${guide.replace(/^# /, `[guide] ${id}: `)}`);
+  }
+  expect(out.match(/^\[guide\] [^:]+/gm)).toEqual(ids.map((id) => `[guide] ${id}`));
 }
 
 function expectGuideAfter(out: string, id: string, finding: string) {
@@ -7678,15 +7680,20 @@ describe("shared eslint config", () => {
   // The untyped rules alone, as check-staged runs them: these fixtures sit in no tsconfig.
   const untyped = { ...process.env, SCAFFOLDING_LINT_UNTYPED: "1" };
 
-  const lintFixture = () => {
-    const dir = repo({
-      ".oxlintrc.json": JSON.stringify(oxlintTemplate),
-      "eslint.config.js":
-        'export { default } from "@hackersandwizards/scaffolding/eslint/astro";\n',
-      "package.json": '{"type":"module"}',
-      "tsconfig.json": '{"include":["*.ts"]}',
-      "value.ts": "export const value = 1;\nexport const other = 2;\nexport type Value = number;\n",
-    });
+  const lintFixture = (fixtureDir?: string) => {
+    const dir = repo(
+      {
+        ".oxlintrc.json": JSON.stringify(oxlintTemplate),
+        "eslint.config.js":
+          'export { default } from "@hackersandwizards/scaffolding/eslint/astro";\n',
+        "package.json": '{"type":"module"}',
+        "tsconfig.json": '{"include":["*.ts"]}',
+        "value.ts":
+          "export const value = 1;\nexport const other = 2;\nexport type Value = number;\n",
+      },
+      true,
+      fixtureDir,
+    );
     install(dir);
     const lib = join(import.meta.dirname, "../lib");
     const oxlint = () =>
@@ -7963,10 +7970,92 @@ describe("shared eslint config", () => {
     expect(red.stdout).toContain(wording);
     expectGuide(red.stdout, "no-empty-catch");
     write(dir, { "a.js": pass });
-    const green = eslint("a.js");
-    expect(green.status, green.stdout + green.stderr).toBe(0);
-    expect(green.stdout).not.toContain("[guide]");
+    const fallback = eslint("a.js");
+    expect(fallback.status, fallback.stdout + fallback.stderr).toBe(1);
+    expect({
+      summary: fallback.stdout.match(/✖ \d+ problems? \(\d+ errors?, \d+ warnings?\)/)?.[0],
+      guides: fallback.stdout.match(/^\[guide\] [^:]+/gm),
+    }).toEqual({
+      summary: "✖ 1 problem (1 error, 0 warnings)",
+      guides: ["[guide] no-catch-fallback"],
+    });
   });
+
+  test.each([
+    {
+      shape: "clauses with omitted bindings",
+      file: "a.js",
+      hit:
+        wrap("try { return work(); } catch { if (work) return 0; }") +
+        "export function stop(work) { try { work(); } catch { return; } }\n",
+      pass:
+        wrap(
+          "try { return work(); } catch (error) { if (error instanceof SyntaxError) return 0; throw error; }",
+        ) +
+        "export function nested(work) { try { work(); } catch { const next = () => { return 0; }; next(); } }\n",
+      occurrences: 2,
+      wording: "This catch can return without inspecting",
+    },
+    {
+      shape: "callbacks with expression and block returns",
+      file: "a.test.ts",
+      hit: 'Promise.resolve(1).catch(() => 0);\nPromise.resolve(1)["catch"](function (_error, fallback) { if (Date.now()) return fallback; });\n',
+      pass:
+        "Promise.resolve(1).catch((error) => String(error));\n" +
+        "Promise.resolve(1).catch((error, fallback = String(error)) => fallback);\n" +
+        "export class OtherCatch { #catch(handle) { return handle(); } run() { return this.#catch(() => 0); } }\n" +
+        'Promise.resolve(1).catch(({ code }) => { if (code === "ENOENT") return 0; throw new Error(code); });\n' +
+        "Promise.resolve(1).catch(() => { const next = () => { return 0; }; next(); });\n",
+      occurrences: 2,
+      wording: "This .catch() callback can return without inspecting",
+    },
+    ...[
+      ["Astro script", "<script>\n", "</script>\n"],
+      [
+        "Astro inline script",
+        "<script is:inline>\n",
+        "</script>\n",
+        "catch (_error) { if (work) { const _error = 0; return _error; } }",
+      ],
+      ["Astro frontmatter", "---\n", "---\n<p>ready</p>\n"],
+      ["Astro template expression", "{(() => {", "})()}\n"],
+    ].map(([shape, open, close, handler = "catch { return 0; }"]) => ({
+      shape,
+      file: "a.astro",
+      hit:
+        open +
+        `function checked(work = () => 1) { try { return work(); } ${handler} }\nchecked();\n` +
+        close,
+      pass:
+        open +
+        "function checked(work = () => 1) { try { return work(); } catch (error) { if (error instanceof SyntaxError) return 0; throw error; } }\nchecked();\n" +
+        close,
+      occurrences: 1,
+      wording: "This catch can return without inspecting",
+    })),
+  ])(
+    "ESLint refuses ignored catch fallbacks in $shape",
+    ({ file, hit, pass, occurrences, wording }) => {
+      using fixture = testDirectory();
+      const { dir, eslint } = lintFixture(fixture.folder);
+      write(dir, { [file]: hit });
+      const red = eslint(file);
+      expect(
+        {
+          findings: red.stdout.match(/scaffolding\/no-catch-fallback/g)?.length,
+          summary: red.stdout.match(/✖ (\d+) problems?/)?.[1],
+        },
+        red.stdout + red.stderr,
+      ).toEqual({ findings: occurrences, summary: String(occurrences) });
+      expect(red.status, red.stdout + red.stderr).toBe(1);
+      expect(red.stdout).toContain(wording);
+      expectGuide(red.stdout, "no-catch-fallback");
+      write(dir, { [file]: pass });
+      const green = eslint(file);
+      expect(green.status, green.stdout + green.stderr).toBe(0);
+      expect(green.stdout).not.toContain("[guide]");
+    },
+  );
 
   test.each([
     ["script", "<script>\n", "</script>\n"],
@@ -7988,9 +8077,9 @@ describe("shared eslint config", () => {
     expect(native.status, native.stdout + native.stderr).toBe(1);
     expect(fallback.status, fallback.stdout + fallback.stderr).toBe(1);
     expect(reported(native.stdout)).toEqual(["empty.astro"]);
-    expect(reported(fallback.stdout)).toEqual(["commented.astro"]);
+    expect(reported(fallback.stdout)).toEqual(["commented.astro", "recovery.astro"]);
     expectGuide(native.stdout, "no-empty");
-    expectGuide(fallback.stdout, "no-empty-catch");
+    expectGuide(fallback.stdout, "no-empty-catch", "no-catch-fallback");
   });
 
   test("Astro template expressions get the small rules and both catch checks", () => {
@@ -8026,9 +8115,15 @@ describe("shared eslint config", () => {
 {(() => { const x = 1; /* explanation */ return x; })()}
 {(() => { try { return a; } catch { return 0; } })()}\n`,
     });
-    const green = eslint("a.astro");
-    expect(green.status, green.stdout + green.stderr).toBe(0);
-    expect(green.stdout).not.toContain("[guide]");
+    const fallback = eslint("a.astro");
+    expect(fallback.status, fallback.stdout + fallback.stderr).toBe(1);
+    expect({
+      summary: fallback.stdout.match(/✖ \d+ problems? \(\d+ errors?, \d+ warnings?\)/)?.[0],
+      guides: fallback.stdout.match(/^\[guide\] [^:]+/gm),
+    }).toEqual({
+      summary: "✖ 1 problem (1 error, 0 warnings)",
+      guides: ["[guide] no-catch-fallback"],
+    });
   });
 
   test("oxlint owns physical TypeScript's typed rules and rejects files outside the project", () => {
@@ -12243,13 +12338,18 @@ test.each([
     ],
   },
 ])("check-names $title", ({ config, extraFiles, expectedCode, expectedFindings }) => {
-  const dir = repo({
-    ".oxlintrc.json": `// Repository lint settings\n${JSON.stringify({ ...oxlintTemplate, ...config })}\n`,
-    "src/exercises/start.mjs": exerciseSource,
-    "src/exercises/solution/start.mjs": exerciseSource,
-    "src/live.mjs": exerciseSource,
-    ...extraFiles,
-  });
+  using fixture = testDirectory();
+  const dir = repo(
+    {
+      ".oxlintrc.json": `// Repository lint settings\n${JSON.stringify({ ...oxlintTemplate, ...config })}\n`,
+      "src/exercises/start.mjs": exerciseSource,
+      "src/exercises/solution/start.mjs": exerciseSource,
+      "src/live.mjs": exerciseSource,
+      ...extraFiles,
+    },
+    true,
+    fixture.folder,
+  );
   install(dir);
   const result = run(dir, [bin("check-names")]);
   expect(result.code, result.out).toBe(expectedCode);

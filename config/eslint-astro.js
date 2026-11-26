@@ -136,6 +136,7 @@ export default [
     languageOptions: { parserOptions: { parser: tseslint.parser } },
     rules: {
       ...componentRules,
+      "scaffolding/no-catch-fallback": "error",
       "scaffolding/no-empty-catch": "error",
       "scaffolding/no-lint-disable": "error",
     },
