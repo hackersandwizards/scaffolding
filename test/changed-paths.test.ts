@@ -6,8 +6,10 @@ import { expect, test } from "vitest";
 import {
   collectRangeChanges,
   collectRangeChangesWithShell,
+  collectShellRefs,
   collectWorkingTreeChanges,
   collectWorkingTreeChangesWithShell,
+  formatSince,
   parseNulPaths,
   readShellTreeInputs,
   readWorkingTreeShellInputs,
@@ -97,6 +99,38 @@ test("collectRangeChangesWithShell lists changed paths and shell trees across pu
       shellShebangs: new Set(),
       sourcedPaths: new Set(["helper.env"]),
       since: firstSha.slice(0, 9),
+    });
+  });
+});
+
+test.each([
+  { label: "single range", ranges: ["123456789abcdef..fedcba"], expected: "123456789" },
+  {
+    label: "multiple ranges",
+    ranges: ["111111111aaaa..222222222bbbb", "333333333cccc..444444444dddd"],
+    expected: "111111111, 333333333",
+  },
+  { label: "empty list", ranges: [], expected: "" },
+])("formatSince: $label", ({ ranges, expected }) => {
+  expect(formatSince(ranges)).toBe(expected);
+});
+
+test.each<{
+  label: string;
+  pickRefs: (firstSha: string, secondSha: string) => string[];
+  expectedSourced: string[];
+}>([
+  { label: "empty refs", pickRefs: () => [], expectedSourced: [] },
+  {
+    label: "two refs",
+    pickRefs: (firstSha, secondSha) => [firstSha, secondSha],
+    expectedSourced: ["helper.env", "helper.env"],
+  },
+])("collectShellRefs: $label", ({ pickRefs, expectedSourced }) => {
+  withTempGitRepo((dir, firstSha, secondSha) => {
+    expect(collectShellRefs(dir, pickRefs(firstSha, secondSha))).toEqual({
+      shebangs: [],
+      sourced: expectedSourced,
     });
   });
 });

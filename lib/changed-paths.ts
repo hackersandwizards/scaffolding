@@ -75,20 +75,17 @@ export function resolveRangePaths(
   return { base: resolved.base, head: resolved.head, touched: parseNulPaths(diff.stdout) };
 }
 
-function formatSince(ranges: readonly string[]): string {
+export function formatSince(ranges: readonly string[]): string {
   return ranges.map((r) => r.split("..")[0].slice(0, 9)).join(", ");
 }
 
-function collectShellRefs(
+export function collectShellRefs(
   root: string,
   refs: readonly string[],
-  seenRefs: Set<string>,
 ): { shebangs: string[]; sourced: string[] } {
   const shebangs: string[] = [];
   const sourced: string[] = [];
   for (const ref of refs) {
-    if (seenRefs.has(ref)) continue;
-    seenRefs.add(ref);
     const inputs = readShellTreeInputs(root, ref);
     shebangs.push(...inputs.shebangs);
     sourced.push(...inputs.sourced);
@@ -124,8 +121,10 @@ export function collectRangeChangesWithShell(
     if ("fallback" in resolved) return resolved;
     for (const path of resolved.touched) paths.add(path);
     if (!resolved.touched.length) continue;
+    const refs = [...new Set([resolved.base, resolved.head])].filter((ref) => !seenRefs.has(ref));
+    for (const ref of refs) seenRefs.add(ref);
     try {
-      const inputs = collectShellRefs(root, [resolved.base, resolved.head], seenRefs);
+      const inputs = collectShellRefs(root, refs);
       for (const path of inputs.shebangs) shellShebangs.add(path);
       for (const path of inputs.sourced) sourcedPaths.add(path);
     } catch {
