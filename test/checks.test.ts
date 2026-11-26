@@ -262,6 +262,16 @@ function write(dir: string, files: Record<string, string>) {
   }
 }
 
+function pathWithoutBunNode() {
+  const bun = realpathSync(process.execPath);
+  return process.env.PATH?.split(delimiter)
+    .filter((dir) => {
+      const node = join(dir, "node");
+      return !existsSync(node) || realpathSync(node) !== bun;
+    })
+    .join(delimiter);
+}
+
 function exploreFixture(runtime: "node" | "bun", folder?: string) {
   const dir = temp(cache);
   const property = "sample.prop.test.ts";
@@ -341,14 +351,7 @@ test("example must stay out of exploration", () => { throw new Error("example ra
     join(commands, "scaffolding-explore"),
   );
   symlinkSync(join(home, "node_modules", ".bin", "vitest"), join(commands, "vitest"));
-  const bun = realpathSync(process.execPath);
-  const path = process.env.PATH?.split(delimiter)
-    .filter((dir) => {
-      const node = join(dir, "node");
-      return !existsSync(node) || realpathSync(node) !== bun;
-    })
-    .join(delimiter);
-  return { dir, property, path };
+  return { dir, property, path: pathWithoutBunNode() };
 }
 
 test("ordinary Node property tests still enforce the coverage threshold", () => {
@@ -10924,6 +10927,16 @@ describe("shared stylelint config", () => {
     let dir: string;
     const config = join(import.meta.dirname, "..", "config", "stylelint.js");
     const packages = join(import.meta.dirname, "..", "node_modules");
+    const lateImport = 'a { color: red; }\n@import "./component.css";\n';
+    const cardPad = `@utility card-pad-* {
+  --hw-card-pad: --spacing(--value(integer));
+  --hw-card-pad: --spacing(--value(integer)) --spacing(--modifier(integer));
+}
+`;
+    const duplicate = "a { --a: 1; --a: 2; }\n";
+    const tailwind = '@import "tailwindcss";\n';
+    const duplicateRule = "declaration-block-no-duplicate-custom-properties";
+    const valueRule = "declaration-property-value-no-unknown";
     const lint = (file: string) =>
       spawnSync(
         join(dir, "node_modules/stylelint/bin/stylelint.mjs"),
@@ -10940,6 +10953,33 @@ describe("shared stylelint config", () => {
           "invalid-media.css": "@media (width >) { a { color: red; } }\n",
           "inline.astro": '<div style="display: grid; gap: 0.5rem"></div>\n',
           "bare.css": "color: red;\n",
+          "tailwind.css": `@import "tailwindcss";\n${lateImport}`,
+          "tailwind.astro": `<style>\n@import 'tailwindcss' layer(utilities) source(none);\n${lateImport}</style>\n`,
+          "late-import.css": lateImport,
+          "tailwind-subpath.css": `@import "tailwindcss/theme.css";\n${lateImport}`,
+          "mixed.astro": `<style>\n@import "tailwindcss";\n</style>\n<style>\n${lateImport}</style>\n`,
+          "injected.astro": "<style is:inline set:html={answerCss}></style>\n",
+          "injected-whitespace.astro":
+            '<style set:html={answerCss} data-label=">">\n  \n</style>\n',
+          "empty.astro": "<style></style>\n",
+          "empty.css": "",
+          "attribute-text.astro": '<style data-label=" set:html "></style>\n',
+          "unquoted-attribute.astro": "<style data-label= set:html ></style>\n",
+          "tailwind-utility.css": `${tailwind}${cardPad}`,
+          "tailwind-utility.astro": `<style>\n${tailwind}${cardPad}</style>\n`,
+          "tailwind-duplicate.css": `${tailwind}${duplicate}`,
+          "utility.css": cardPad,
+          "utility-sibling.astro": `<style>\n${tailwind}</style>\n<style>\n${cardPad}</style>\n`,
+          "utility-nested.css": `${tailwind}@utility nested {\n${duplicate}}\n`,
+          "foreign-value.css":
+            ".a { --hw-table-held: none; } .b { position: var(--hw-table-held, sticky); }\n",
+          "unknown-fallback.css": ".a { position: var(--missing, nonsense); }\n",
+          "invalid-position.css": ".c { position: nonsense; }\n",
+          "local-value.css": ".a { --held: none; position: var(--held, sticky); }\n",
+          "mixed-values.css":
+            ".a { --held: sticky; } .b { --held: none; position: var(--held); }\n",
+          "typed-value.css":
+            '@property --held { syntax: "<color>"; inherits: true; initial-value: red; }\n.a { position: var(--held); }\n',
         },
         true,
         temp(cache),
@@ -10952,7 +10992,18 @@ describe("shared stylelint config", () => {
       });
     });
 
-    test.each(["apply.css", "inline.astro"])("accepts %s", (file) => {
+    test.each([
+      "apply.css",
+      "inline.astro",
+      "tailwind.css",
+      "tailwind.astro",
+      "injected.astro",
+      "injected-whitespace.astro",
+      "tailwind-utility.css",
+      "tailwind-utility.astro",
+      "foreign-value.css",
+      "unknown-fallback.css",
+    ])("accepts %s", (file) => {
       const result = lint(file);
       expect(result.status, result.stdout + result.stderr).toBe(0);
     });
@@ -10960,6 +11011,21 @@ describe("shared stylelint config", () => {
     test.each([
       ["invalid-media.css", "media-query-no-invalid"],
       ["bare.css", "no-invalid-position-declaration"],
+      ["late-import.css", "no-invalid-position-at-import-rule"],
+      ["tailwind-subpath.css", "no-invalid-position-at-import-rule"],
+      ["mixed.astro", "no-invalid-position-at-import-rule"],
+      ["empty.astro", "no-empty-source"],
+      ["empty.css", "no-empty-source"],
+      ["attribute-text.astro", "no-empty-source"],
+      ["unquoted-attribute.astro", "no-empty-source"],
+      ["tailwind-duplicate.css", duplicateRule],
+      ["utility.css", duplicateRule],
+      ["utility-sibling.astro", duplicateRule],
+      ["utility-nested.css", duplicateRule],
+      ["invalid-position.css", valueRule],
+      ["local-value.css", valueRule],
+      ["mixed-values.css", valueRule],
+      ["typed-value.css", valueRule],
     ])("rejects %s with %s", (file, rule) => {
       const result = lint(file);
       const output = result.stdout + result.stderr;
@@ -11661,10 +11727,64 @@ describe("check-staged", () => {
     const stylelint = join(import.meta.dirname, "..", "node_modules/stylelint/bin/stylelint.mjs");
     const html = join(import.meta.dirname, "..", "node_modules/postcss-html/lib/index.js");
     const bad = "a { color: #ggg; }\n";
+    const good = "a {\n  color: #fff;\n}\n";
+    let env: Record<string, string>;
+    beforeAll(() => {
+      const terms = join(temp(cache), "terms.json");
+      writeFileSync(
+        terms,
+        JSON.stringify({
+          built: new Date().toISOString(),
+          salt: "fixture",
+          maxTokens: 1,
+          hashes: [],
+        }),
+      );
+      env = { SCAFFOLDING_CONFIDENTIAL_TERMS: terms };
+    });
     const installStylelint = (dir: string) => {
       mkdirSync(join(dir, "node_modules/.bin"), { recursive: true });
       symlinkSync(stylelint, join(dir, "node_modules/.bin/stylelint"));
     };
+
+    test.each([
+      { scenario: "whole file", workingTree: good },
+      { scenario: "partly staged file", workingTree: bad },
+    ])(
+      "loads the installed TypeScript formatter for a $scenario",
+      ({ workingTree }) => {
+        const dir = repo(
+          {
+            "package.json": '{"type":"module"}',
+            "eslint.config.js": "export default [{ rules: {} }];\n",
+            "stylelint.config.js": 'export default { rules: { "color-no-invalid-hex": true } };\n',
+          },
+          true,
+          temp(cache),
+        );
+        const source = join(import.meta.dirname, "..");
+        const installed = join(dir, "node_modules/@hackersandwizards/scaffolding");
+        for (const entry of ["bin", "config", "lib", "template/.oxlintrc.json"])
+          cpSync(join(source, entry), join(installed, entry), { recursive: true });
+        installStylelint(dir);
+        for (const tool of ["eslint", "prettier"])
+          symlinkSync(
+            join(source, "node_modules/.bin", tool),
+            join(dir, "node_modules/.bin", tool),
+          );
+
+        write(dir, { "a.css": good });
+        prepareGit(dir, ["add", "a.css"]);
+        write(dir, { "a.css": workingTree });
+        const result = run(dir, [join(installed, "bin/check-staged.ts")], {
+          ...env,
+          PATH: defined(pathWithoutBunNode(), "PATH"),
+        });
+        expect(result.code, result.out).toBe(0);
+      },
+      limit(20_000),
+    );
+
     const staged = (
       files: Record<string, string>,
       styles: unknown,
@@ -11681,7 +11801,7 @@ describe("check-staged", () => {
       arrange(dir);
       write(dir, files);
       sh(dir, ["add", ...Object.keys(files)]);
-      return { dir, ...run(dir, [bin("check-staged")]) };
+      return { dir, ...run(dir, [bin("check-staged")], env) };
     };
 
     test.each<{
@@ -11769,7 +11889,7 @@ describe("check-staged", () => {
         write(ok.dir, { "a.css": bad });
         sh(ok.dir, ["add", "a.css"]);
         write(ok.dir, { "a.css": "a { color: #000; }\n" });
-        const partial = run(ok.dir, [bin("check-staged")]);
+        const partial = run(ok.dir, [bin("check-staged")], env);
         expect(partial).toEqual({
           code: 1,
           out: containingText("[check:staged] stylelint: a.css as staged"),

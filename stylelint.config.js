@@ -10,7 +10,7 @@ export default {
       // The catalog build expands the brand-value() macro in these two properties. See docs/catalog.md.
       files: ["catalog/chrome.css"],
       rules: {
-        "declaration-property-value-no-unknown": [
+        "scaffolding/declaration-property-value-no-unknown": [
           true,
           {
             ignoreProperties: {

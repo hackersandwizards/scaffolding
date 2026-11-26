@@ -168,9 +168,12 @@ function stagedContent(path: string): Buffer {
 
 function runStagedLint(tool: string, args: string[], stdin?: Buffer): Promise<ToolRun> {
   const bin = `node_modules/.bin/${tool}`;
-  return pool.run(() =>
-    tool === "eslint" ? spawnStagedEslint(bin, args, stdin) : spawnStagedProcess(bin, args, stdin),
-  );
+  return pool.run(() => {
+    if (tool === "eslint") return spawnStagedEslint(bin, args, stdin);
+    if (tool === "stylelint")
+      return spawnStagedProcess(process.execPath, ["--bun", bin, ...args], stdin);
+    return spawnStagedProcess(bin, args, stdin);
+  });
 }
 
 // Run what the gate runs: each tool unless scaffolding.skip gives its gate step a reason, declared
