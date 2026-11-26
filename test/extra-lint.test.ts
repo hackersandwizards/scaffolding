@@ -188,6 +188,47 @@ describe.each(lintFixtures)("$step", (fixture) => {
   });
 });
 
+describe("python target version", () => {
+  const file = "main.py";
+  const utc = "import datetime\n\nNOW = datetime.timezone.utc\n";
+  let binaries: Record<string, string>;
+
+  beforeAll(async () => {
+    binaries = { ruff: await pinnedBinary(root, "ruff", ruffPin) };
+  }, 90_000);
+
+  test("accepts datetime.timezone.utc without Ruff config", () => {
+    using repo = testDirectory();
+    lintFixtureGit(repo.folder, ["init", "-q"]);
+    addLintFixture(repo.folder, file, utc);
+    const result = runLintFixture(repo.folder, "python", binaries);
+    expect(result.code, result.output).toBe(0);
+  });
+
+  test("reports FA102 for a union annotation without Ruff config", () => {
+    using repo = testDirectory();
+    lintFixtureGit(repo.folder, ["init", "-q"]);
+    addLintFixture(repo.folder, file, "def f(x: int | None) -> None:\n    pass\n");
+    const result = runLintFixture(repo.folder, "python", binaries);
+    expect(result.code, result.output).not.toBe(0);
+    expect(result.output).toContain("FA102");
+  });
+
+  test("reports UP017 when the project requires Python 3.11", () => {
+    using repo = testDirectory();
+    lintFixtureGit(repo.folder, ["init", "-q"]);
+    addLintFixture(repo.folder, "pyproject.toml", '[project]\nrequires-python = ">=3.11"\n');
+    addLintFixture(repo.folder, file, utc);
+    const result = runLintFixture(repo.folder, "python", binaries);
+    expect(result.code, result.output).not.toBe(0);
+    expect(result.output).toContain("UP017");
+
+    addLintFixture(repo.folder, "pyproject.toml", '[project]\nrequires-python = ">=3.10,<4"\n');
+    const olderTarget = runLintFixture(repo.folder, "python", binaries);
+    expect(olderTarget.code, olderTarget.output).toBe(0);
+  });
+});
+
 describe("workflows runner labels", () => {
   const file = ".github/workflows/test.yaml";
   const repoConfig = "self-hosted-runner:\n  labels: [local-arm]\nconfig-variables: []\n";

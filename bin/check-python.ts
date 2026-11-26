@@ -11,17 +11,33 @@ import {
 } from "../lib/extra-lint.ts";
 import { ruffPin } from "../lib/pinned-binary-assets.ts";
 import { pinnedBinary, scaffoldingCache } from "../lib/pinned-binary.ts";
-import { regularInput } from "../lib/tracked-inputs.ts";
+import { regularInput, trackedInputs } from "../lib/tracked-inputs.ts";
+
+function ruffTargetVersion(requiresPython: unknown) {
+  if (typeof requiresPython !== "string") return "py39";
+  let minor = -1;
+  for (const [, bound] of requiresPython.matchAll(/(?:^|,)\s*(?:>=?|~=|==)\s*3\.(\d+)\b/g)) {
+    minor = Math.max(minor, Number(bound));
+  }
+  return minor < 0 ? "py39" : `py3${minor}`;
+}
 
 function ruffConfig(root: string) {
   const standalone = relativeLintConfig(root, [".ruff.toml", "ruff.toml"]);
   if (standalone) return ["--config", standalone];
   const pyproject = join(root, "pyproject.toml");
+  let requiresPython: unknown;
   if (regularInput(root, "pyproject.toml")) {
-    const parsed = Bun.TOML.parse(readFileSync(pyproject, "utf8")) as { tool?: { ruff?: unknown } };
+    const parsed = Bun.TOML.parse(readFileSync(pyproject, "utf8")) as {
+      tool?: { ruff?: unknown };
+      project?: { "requires-python"?: unknown };
+    };
     if (parsed.tool?.ruff !== undefined) return ["--config", pyproject];
+    if (trackedInputs(root, "pyproject.toml").length) {
+      requiresPython = parsed.project?.["requires-python"];
+    }
   }
-  return ["--isolated"];
+  return ["--isolated", "--target-version", ruffTargetVersion(requiresPython)];
 }
 
 async function lintPython(root: string, files: string[]) {
