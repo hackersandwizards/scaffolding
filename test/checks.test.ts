@@ -559,12 +559,12 @@ const expectedValueCases = `${vitestImports}
 const identity = (value) => value;
 const numeric = (value) => Number([value].join(""));
 test.each([
-  ["a positive input", identity, 1, 1],
-  ["zero", identity, 0, 0],
-  ["null", identity, null, null],
-  ["undefined", identity, undefined, undefined],
-  ["the numeric fallback", numeric, undefined, 0],
-])("uses the expected value for %s", (_, resolve, input, expected) => {
+  [identity, 1, 1],
+  [identity, 0, 0],
+  [identity, null, null],
+  [identity, undefined, undefined],
+  [numeric, undefined, 0],
+])("uses the expected value for case %#", (resolve, input, expected) => {
   expect(resolve(input)).toBe(expected);
 });`;
 test.each([
@@ -639,6 +639,65 @@ test.each([
   expect(result.status, result.stdout + result.stderr).toBe(code);
   expect(diagnostics, report).toEqual(findings);
   expect(guideBlocks.map((guide) => guide.trimEnd())).toEqual(guides.map(fixtureGuide));
+});
+
+const branchChecks = 'if (open) console.log("open");\n';
+const nestedChecks = (depth: number) =>
+  `export function visit(open) { ${"if (open) { ".repeat(depth)}console.log(open); ${"} ".repeat(depth)}}\n`;
+const functionLines = (count: number) =>
+  `export function report() {\n// Report one sample per line.\n\n${'console.log("sample");\n'.repeat(count)}}\n`;
+const fileLines = (count: number) =>
+  "// Export the available values.\n\n" +
+  Array.from({ length: count }, (_, index) => `export const value${index} = ${index};\n`).join("");
+
+test.each<{ rule: string; failing: string; passing: Record<string, string> }>([
+  {
+    rule: "complexity",
+    failing: `export function visit(open) {\n${branchChecks.repeat(10)}}\n`,
+    passing: { "src/example.js": `export function visit(open) {\n${branchChecks.repeat(9)}}\n` },
+  },
+  {
+    rule: "max-depth",
+    failing: nestedChecks(5),
+    passing: { "src/example.js": nestedChecks(4) },
+  },
+  {
+    rule: "max-params",
+    failing: "export function add(a, b, c, d) { return a + b + c + d; }\n",
+    passing: { "src/example.js": "export function add(a, b, c) { return a + b + c; }\n" },
+  },
+  {
+    rule: "max-lines-per-function",
+    failing: functionLines(49),
+    passing: { "src/example.js": functionLines(48), "example.spec.js": functionLines(49) },
+  },
+  {
+    rule: "max-lines",
+    failing: fileLines(301),
+    passing: { "src/example.js": fileLines(300), "test/nested/example.js": fileLines(301) },
+  },
+])("Oxlint checks consumer code design for $rule", ({ rule, failing, passing }) => {
+  const dir = repo({
+    ".oxlintrc.json": JSON.stringify(oxlintTemplate),
+    "src/example.js": failing,
+  });
+  install(dir);
+  const check = () =>
+    spawnSync(process.execPath, ["--no-env-file", join(import.meta.dirname, "../lib/oxlint.ts")], {
+      cwd: dir,
+      encoding: "utf8",
+    });
+  const red = check();
+  expect(red.status, red.stdout + red.stderr).toBe(1);
+  const [report, ...guides] = red.stdout.split(/\n\n(?=\[guide\] )/);
+  const findings = Array.from(report.matchAll(/: error [\w-]+\(([\w-]+)\):/g), ([, id]) => id);
+  expect(findings, report).toEqual([rule]);
+  expect(guides.map((guide) => guide.trimEnd())).toEqual([fixtureGuide(rule)]);
+
+  write(dir, passing);
+  const green = check();
+  expect(green.status, green.stdout + green.stderr).toBe(0);
+  expect(green.stdout).not.toContain("[guide]");
 });
 
 test("Oxlint enforces expect-expect in test folders and stays out of non-test files", () => {
@@ -7689,9 +7748,10 @@ describe("shared eslint config", () => {
 
   test("Oxlint prints one guide for a diagnostic stream larger than one megabyte", () => {
     const findings = 4000;
+    const probe = "probe.test.js";
     const dir = repo({
       ".oxlintrc.json": JSON.stringify(oxlintTemplate),
-      "probe.js": "debugger;\n".repeat(findings),
+      [probe]: "debugger;\n".repeat(findings),
     });
     install(dir);
     const output = join(dir, "oxlint.log");
@@ -7715,7 +7775,7 @@ describe("shared eslint config", () => {
     expect(result.stderr).not.toMatch(/^\[oxlint\]/m);
     expectGuideAfter(readFileSync(output, "utf8"), "no-debugger", "eslint(no-debugger)");
 
-    const json = runOxlint(dir, ["-f", "json", "probe.js"], true);
+    const json = runOxlint(dir, ["-f", "json", probe], true);
     expect(Buffer.byteLength(json.stdout)).toBeGreaterThan(1024 * 1024);
     expect(jsonObject(json.stdout).diagnostics).toHaveLength(findings);
     expect(readdirSync(join(dir, "node_modules/.cache/scaffolding"))).toEqual([]);

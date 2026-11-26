@@ -9,7 +9,6 @@ import { isObject } from "../lib/json.ts";
 import { activeSeverity, type Rules } from "../lib/lint-rule-overlaps.ts";
 
 const ownChecks = ["layers", "import-cycle", "duplicate-function-name", "generic-folder"];
-const upcoming = ["complexity", "max-depth", "max-params", "max-lines-per-function", "max-lines"];
 
 const activeRules = (rules: Rules = {}) =>
   Object.keys(rules).filter((rule) => activeSeverity(rules[rule]));
@@ -44,17 +43,16 @@ test("each rule enforced by the shared configs has a guide", async () => {
   expect(missing, "Add a guide under config/guides/ for each rule listed").toEqual([]);
 });
 
-test("each guide is reachable from an enforced rule, own check or upcoming rule", async () => {
+test("each guide is reachable from an enforced rule or own check", async () => {
   const reachable = new Set([
     ...[...oxlintRules(sharedOxlint), ...oxlintRules(ownOxlint), ...(await eslintRules())].map(
       guideId,
     ),
     ...ownChecks,
-    ...upcoming,
   ]);
   expect(
     guideFiles.filter((file) => !reachable.has(file.slice(0, -3))),
-    "Check the rule configuration and the list of own checks and upcoming rules for each guide listed",
+    "Check the rule configuration and the list of own checks for each guide listed",
   ).toEqual([]);
 });
 

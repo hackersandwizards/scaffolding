@@ -29,7 +29,7 @@ Use it to tell the reader where the import belongs or what to write instead.
 rules on files both linters select, including Astro frontmatter and extracted client scripts. A rule enabled as a
 warning or an error in both linters for the same code fails structure. The finding names the
 file and both rule IDs. Adjust the local config so one linter owns the rule there. See
-[Configs](configs.md).
+[Configs](configs.md) for the shared settings and [code design limits](configs.md#code-design).
 
 The typed rules flag unhandled promises, promises used where a value or a void callback is
 expected, `await` on a non-promise, incomplete switches over unions, and unsafe assignments, member

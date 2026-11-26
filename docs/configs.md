@@ -81,6 +81,13 @@ In an Astro `<script is:inline>`, type helper parameters with JSDoc, for example
 Remove `baseUrl` from a TypeScript project that uses it and write each path target relative to
 `tsconfig.json`, for example `"@/*": ["./src/*"]`. Oxlint's TypeScript companion rejects `baseUrl`.
 
+### Code design
+
+The shared Oxlint config limits cyclomatic complexity to 10, nesting to four levels, and
+function parameters to three. It also limits production functions to 50 lines and production
+files to 300 lines. Both length rules skip blank lines and comments. The Vitest file globs
+turn off both length rules.
+
 ### Rule guides
 
 Rule guides live in `config/guides/`. In the gate, Oxlint prints each matching guide once after failures and ESLint after its findings. The layer and cycle checks do the same for stale or missing layer maps and runtime import cycles. The package test fails if the shared Oxlint or ESLint config enforces a rule without a guide.

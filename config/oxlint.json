@@ -3,6 +3,14 @@
     "correctness": "off"
   },
   "rules": {
+    "complexity": ["error", { "max": 10 }],
+    "max-depth": ["error", { "max": 4 }],
+    "max-params": ["error", { "max": 3 }],
+    "max-lines-per-function": [
+      "error",
+      { "max": 50, "skipBlankLines": true, "skipComments": true }
+    ],
+    "max-lines": ["error", { "max": 300, "skipBlankLines": true, "skipComments": true }],
     "typescript/ban-ts-comment": "error",
     "no-array-constructor": "error",
     "typescript/no-duplicate-enum-values": "error",
@@ -83,6 +91,8 @@
       ],
       "plugins": ["vitest"],
       "rules": {
+        "max-lines-per-function": "off",
+        "max-lines": "off",
         "vitest/expect-expect": [
           "error",
           {
