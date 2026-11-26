@@ -2,7 +2,7 @@ import { spawnSync } from "node:child_process";
 import { mkdtempSync, realpathSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { expect, test } from "vitest";
+import { afterEach, beforeEach, expect, test } from "vitest";
 import {
   buildPurgedListJson,
   buildTermListJson,
@@ -16,6 +16,24 @@ import {
 } from "../lib/confidential-subcommands.ts";
 import { createTermHasher } from "../lib/confidential-terms.ts";
 import { defined } from "../lib/defined.ts";
+
+let savedGitEnv: [string, string | undefined][] = [];
+
+function clearGitEnv(): void {
+  savedGitEnv = Object.entries(process.env).filter(([key]) => key.startsWith("GIT_"));
+  for (const [key] of savedGitEnv) delete process.env[key];
+}
+
+function restoreGitEnv(): void {
+  for (const [key, value] of savedGitEnv) {
+    if (value === undefined) delete process.env[key];
+    else process.env[key] = value;
+  }
+  savedGitEnv = [];
+}
+
+beforeEach(clearGitEnv);
+afterEach(restoreGitEnv);
 
 function cleanGitEnv(): NodeJS.ProcessEnv {
   return Object.fromEntries(Object.entries(process.env).filter(([key]) => !key.startsWith("GIT_")));

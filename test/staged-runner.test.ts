@@ -7,6 +7,8 @@ import {
   findDifferingScript,
   hasNoPrettierParser,
   parseEslintRuleMetadata,
+  resolvePartialPrettierResult,
+  resolvePartialToolResult,
   spawnStagedEslint,
   spawnStagedProcess,
   spawnStagedWithEnv,
@@ -170,4 +172,77 @@ test.each<{
   },
 ])("findDifferingScript: $label", ({ staged, working, expected }) => {
   expect(findDifferingScript(staged, working)).toBe(expected);
+});
+
+test.each<{
+  label: string;
+  verdict: "pass" | "fail";
+  run: ToolRun;
+  expected: ToolRun;
+}>([
+  {
+    label: "clears output when prettier passes",
+    verdict: "pass",
+    run: { out: "formatted\n", code: 0, stdout: Buffer.from("formatted\n") },
+    expected: { out: "", code: 0, stdout: Buffer.from("formatted\n") },
+  },
+  {
+    label: "reports not formatted and exit 1 when code is 0",
+    verdict: "fail",
+    run: { out: "diff\n", code: 0, stdout: Buffer.from("diff\n") },
+    expected: {
+      out: "[check:staged] prettier: a.ts as staged\nnot formatted\n",
+      code: 1,
+      stdout: Buffer.from("diff\n"),
+    },
+  },
+  {
+    label: "preserves stderr and non-zero exit code on syntax error",
+    verdict: "fail",
+    run: { out: "SyntaxError\n", code: 2, stdout: Buffer.alloc(0) },
+    expected: {
+      out: "[check:staged] prettier: a.ts as staged\nSyntaxError\n",
+      code: 2,
+      stdout: Buffer.alloc(0),
+    },
+  },
+])("resolvePartialPrettierResult: $label", ({ verdict, run, expected }) => {
+  expect(resolvePartialPrettierResult("a.ts", verdict, run)).toEqual(expected);
+});
+
+test.each<{
+  label: string;
+  tool: string;
+  run: ToolRun;
+  expected: ToolRun;
+}>([
+  {
+    label: "clears output for clean eslint run",
+    tool: "eslint",
+    run: { out: "ignored\n", code: 0, stdout: Buffer.alloc(0) },
+    expected: { out: "", code: 0, stdout: Buffer.alloc(0) },
+  },
+  {
+    label: "keeps output when eslint reported rules with exit 0",
+    tool: "eslint",
+    run: { out: "warning\n", code: 0, stdout: Buffer.alloc(0), rules: ["no-var"] },
+    expected: {
+      out: "[check:staged] eslint: a.ts as staged\nwarning\n",
+      code: 0,
+      stdout: Buffer.alloc(0),
+      rules: ["no-var"],
+    },
+  },
+  {
+    label: "prefixes header when tool exits non-zero",
+    tool: "stylelint",
+    run: { out: "bad css\n", code: 2, stdout: Buffer.alloc(0) },
+    expected: {
+      out: "[check:staged] stylelint: a.ts as staged\nbad css\n",
+      code: 2,
+      stdout: Buffer.alloc(0),
+    },
+  },
+])("resolvePartialToolResult: $label", ({ tool, run, expected }) => {
+  expect(resolvePartialToolResult(tool, "a.ts", run)).toEqual(expected);
 });

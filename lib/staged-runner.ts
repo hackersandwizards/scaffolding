@@ -73,7 +73,7 @@ export function spawnStagedProcess(
   stdin?: Buffer,
 ): Promise<ToolRun> {
   const child = spawn(bin, [...args], {
-    stdio: ["pipe", "pipe", "pipe"],
+    stdio: ["pipe", "pipe", "pipe", "ignore"],
   }) as ChildProcessWithoutNullStreams;
   return collectChildOutput(child, stdin);
 }
@@ -84,7 +84,7 @@ export function spawnStagedWithEnv(
   env: Record<string, string>,
 ): Promise<ToolRun> {
   const child = spawn(bin, [...args], {
-    stdio: ["pipe", "pipe", "pipe"],
+    stdio: ["pipe", "pipe", "pipe", "ignore"],
     env: { ...process.env, ...env },
   }) as ChildProcessWithoutNullStreams;
   return collectChildOutput(child);
@@ -120,6 +120,25 @@ export function classifyPrettierStdin(
 
 export function hasNoPrettierParser(info: ToolRun): boolean {
   return !info.code && jsonObject(info.stdout).inferredParser === null;
+}
+
+export function resolvePartialPrettierResult(
+  path: string,
+  verdict: "pass" | "fail",
+  run: ToolRun,
+): ToolRun {
+  if (verdict === "pass") return { ...run, out: "", code: 0 };
+  const why = !run.code ? "not formatted\n" : run.out;
+  return {
+    ...run,
+    out: `[check:staged] prettier: ${path} as staged\n${why}`,
+    code: run.code || 1,
+  };
+}
+
+export function resolvePartialToolResult(tool: string, path: string, run: ToolRun): ToolRun {
+  if (!run.code && !run.rules?.length) return { ...run, out: "", code: 0 };
+  return { ...run, out: `[check:staged] ${tool}: ${path} as staged\n${run.out}` };
 }
 
 export function findDifferingScript(

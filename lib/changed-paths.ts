@@ -64,22 +64,12 @@ function diffNameOnly(root: string, revs: readonly string[]) {
   ]);
 }
 
-export function collectRangeChanges(
+function collectResolvedRanges(
   root: string,
   ranges: readonly string[],
-  checkShell: boolean,
-): ChangedFilesResult {
+): { paths: Set<string>; touchedRefs: string[]; since: string } | { fallback: string } {
   const paths = new Set<string>();
-  const shellShebangs = new Set<string>();
-  const sourcedPaths = new Set<string>();
-  const checkedTrees = new Set<string>();
-  const recordTree = (ref: string) => {
-    if (checkedTrees.has(ref)) return;
-    const { shebangs, sourced } = readShellTreeInputs(root, ref);
-    for (const path of shebangs) shellShebangs.add(path);
-    for (const path of sourced) sourcedPaths.add(path);
-    checkedTrees.add(ref);
-  };
+  const touchedRefs: string[] = [];
   for (const range of ranges) {
     const resolved = verifyCommitRange(root, range);
     if ("fallback" in resolved) return resolved;
@@ -87,17 +77,41 @@ export function collectRangeChanges(
     if (diff.status !== 0) return { fallback: "git could not list the changes" };
     const touched = parseNulPaths(diff.stdout);
     for (const path of touched) paths.add(path);
-    if (checkShell && touched.length) {
-      try {
-        recordTree(resolved.base);
-        recordTree(resolved.head);
-      } catch {
-        return { fallback: "git could not read shell inputs in the pushed ranges" };
-      }
-    }
+    if (touched.length) touchedRefs.push(resolved.base, resolved.head);
   }
   const since = ranges.map((r) => r.split("..")[0].slice(0, 9)).join(", ");
-  return { paths, shellShebangs, sourcedPaths, since };
+  return { paths, touchedRefs, since };
+}
+
+export function collectRangeChanges(root: string, ranges: readonly string[]): ChangedFilesResult {
+  const collected = collectResolvedRanges(root, ranges);
+  if ("fallback" in collected) return collected;
+  return {
+    paths: collected.paths,
+    shellShebangs: new Set(),
+    sourcedPaths: new Set(),
+    since: collected.since,
+  };
+}
+
+export function collectRangeChangesWithShell(
+  root: string,
+  ranges: readonly string[],
+): ChangedFilesResult {
+  const collected = collectResolvedRanges(root, ranges);
+  if ("fallback" in collected) return collected;
+  const shellShebangs = new Set<string>();
+  const sourcedPaths = new Set<string>();
+  try {
+    for (const ref of new Set(collected.touchedRefs)) {
+      const { shebangs, sourced } = readShellTreeInputs(root, ref);
+      for (const path of shebangs) shellShebangs.add(path);
+      for (const path of sourced) sourcedPaths.add(path);
+    }
+  } catch {
+    return { fallback: "git could not read shell inputs in the pushed ranges" };
+  }
+  return { paths: collected.paths, shellShebangs, sourcedPaths, since: collected.since };
 }
 
 export function readWorkingTreeShellInputs(
@@ -119,7 +133,9 @@ export function readWorkingTreeShellInputs(
   return { shellShebangs, sourcedPaths };
 }
 
-export function collectWorkingTreeChanges(root: string, checkShell: boolean): ChangedFilesResult {
+function collectWorkingTreeBase(
+  root: string,
+): { base: string; paths: Set<string>; since: string } | { fallback: string } {
   const upstream = runGitText(root, ["rev-parse", "--verify", "-q", "@{upstream}"]).stdout.trim();
   const base = upstream ? runGitText(root, ["merge-base", upstream, "HEAD"]).stdout.trim() : "HEAD";
   const diff = diffNameOnly(root, [base]);
@@ -127,12 +143,37 @@ export function collectWorkingTreeChanges(root: string, checkShell: boolean): Ch
   if (!base || diff.status !== 0 || untracked.status !== 0)
     return { fallback: "git could not list the changes" };
   const paths = new Set([...parseNulPaths(diff.stdout), ...parseNulPaths(untracked.stdout)]);
-  const since = upstream ? upstream.slice(0, 9) : "HEAD";
-  if (!checkShell || !paths.size)
-    return { paths, shellShebangs: new Set(), sourcedPaths: new Set(), since };
+  return { base, paths, since: upstream ? upstream.slice(0, 9) : "HEAD" };
+}
+
+export function collectWorkingTreeChanges(root: string): ChangedFilesResult {
+  const collected = collectWorkingTreeBase(root);
+  if ("fallback" in collected) return collected;
+  return {
+    paths: collected.paths,
+    shellShebangs: new Set(),
+    sourcedPaths: new Set(),
+    since: collected.since,
+  };
+}
+
+export function collectWorkingTreeChangesWithShell(root: string): ChangedFilesResult {
+  const collected = collectWorkingTreeBase(root);
+  if ("fallback" in collected) return collected;
+  if (!collected.paths.size)
+    return {
+      paths: collected.paths,
+      shellShebangs: new Set(),
+      sourcedPaths: new Set(),
+      since: collected.since,
+    };
   try {
-    const { shellShebangs, sourcedPaths } = readWorkingTreeShellInputs(root, base, paths);
-    return { paths, shellShebangs, sourcedPaths, since };
+    const { shellShebangs, sourcedPaths } = readWorkingTreeShellInputs(
+      root,
+      collected.base,
+      collected.paths,
+    );
+    return { paths: collected.paths, shellShebangs, sourcedPaths, since: collected.since };
   } catch {
     return { fallback: "could not read shell inputs in the base commit or working tree" };
   }

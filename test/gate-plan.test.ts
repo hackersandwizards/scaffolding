@@ -1,13 +1,11 @@
 import { join } from "node:path";
 import { expect, test } from "vitest";
 import {
-  addBrandSteps,
   brandElementsCommand,
   buildChangedMappings,
   buildFullOnlyMap,
   buildSharedStepMap,
-  findUnusedBrandKey,
-  findUnusedConfigKey,
+  GatePlan,
   packageScriptCommand,
   resolveBrandStepCommand,
   resolveLocalReplacement,
@@ -181,87 +179,79 @@ test.each([
   expect(resolveBrandStepCommand(step, config, "/home")).toEqual(expected);
 });
 
-test("addBrandSteps records replacements and fills shared and full brand steps", () => {
-  const shared: Record<string, string> = {};
-  const full = new Map<string, string>();
-  const replacements = new Map<string, string>();
-  const err = addBrandSteps(
+test("GatePlan.addBrandSteps records replacements and fills shared and full brand steps", () => {
+  const plan = new GatePlan({});
+  const err = plan.addBrandSteps(
     {
       dependencies: { "@hackersandwizards/brand": "1.0.0" },
       scripts: { "check:colours": "bun run my-colours" },
       scaffolding: { check: ["check:colours"] },
     },
     "/home",
-    { shared, full, replacements },
   );
   expect(err).toBeUndefined();
-  expect(replacements.get("colours")).toBe("check:colours");
-  expect(shared.copies).toBe("brand-copies");
-  expect(full.has("elements")).toBe(true);
+  expect(plan.replacements.get("colours")).toBe("check:colours");
+  expect(plan.shared.copies).toBe("brand-copies");
+  expect(plan.full.has("elements")).toBe(true);
 });
 
 test.each<{
   label: string;
   brand: ScaffoldingConfig["brand"];
-  steps: { shared: Record<string, string>; full: Map<string, string> };
+  shared: Record<string, string>;
   expected: string | undefined;
 }>([
   {
     label: "flags unused brand.retired",
     brand: { retired: ["a"] },
-    steps: { shared: {}, full: new Map<string, string>() },
+    shared: {},
     expected: "brand.retired",
   },
   {
     label: "flags unused brand.directory",
     brand: { directory: "web" },
-    steps: { shared: {}, full: new Map<string, string>() },
+    shared: {},
     expected: "brand.directory",
   },
   {
     label: "allows brand.directory when colours runs",
     brand: { directory: "web" },
-    steps: { shared: { colours: "brand-colours" }, full: new Map<string, string>() },
+    shared: { colours: "brand-colours" },
     expected: undefined,
   },
-])("findUnusedBrandKey: $label", ({ brand, steps, expected }) => {
-  expect(findUnusedBrandKey(brand, steps)).toBe(expected);
+])("GatePlan.unusedBrandKey: $label", ({ brand, shared, expected }) => {
+  const plan = new GatePlan(shared);
+  expect(plan.unusedBrandKey(brand)).toBe(expected);
 });
 
 test.each<{
   label: string;
   config: ScaffoldingConfig;
-  steps: {
-    shared: Record<string, string>;
-    full: Map<string, string>;
-    replacements: Map<string, string>;
-  };
+  replacements: [string, string][];
   expected: string | undefined;
 }>([
   {
     label: "flags unused linkSkips",
     config: { linkSkips: ["/draft"] },
-    steps: { shared: {}, full: new Map<string, string>(), replacements: new Map<string, string>() },
+    replacements: [],
     expected: "linkSkips",
   },
   {
     label: "allows server when links uses local replacement",
     config: { server: { command: "bun start" } },
-    steps: {
-      shared: {},
-      full: new Map<string, string>(),
-      replacements: new Map([["links", "check:links"]]),
-    },
+    replacements: [["links", "check:links"]],
     expected: undefined,
   },
   {
     label: "flags unused server",
     config: { server: { command: "bun start" } },
-    steps: { shared: {}, full: new Map<string, string>(), replacements: new Map<string, string>() },
+    replacements: [],
     expected: "server",
   },
-])("findUnusedConfigKey: $label", ({ config, steps, expected }) => {
-  expect(findUnusedConfigKey(config, steps)).toBe(expected);
+])("GatePlan.unusedConfigKey: $label", ({ config, replacements, expected }) => {
+  const plan = new GatePlan({});
+  for (const [step, replacement] of replacements) plan.replacements.set(step, replacement);
+  expect(plan.unusedConfigKey(config)).toBe(expected);
 });
 
 test.each([

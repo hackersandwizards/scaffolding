@@ -200,12 +200,7 @@ for (const [path, keys] of Object.entries(skeleton.entries)) {
 }
 
 if (existsSync(at("package.json"))) {
-  const expectedPkg = {
-    ...skeleton.package,
-    packageManager: own.packageManager,
-    catalogScripts: skeleton.catalog.scripts,
-  };
-  for (const hit of structureConfig.packageManifestFindings(pkg, expectedPkg))
+  for (const hit of structureConfig.packageManifestFindings(pkg, skeleton, own.packageManager))
     add(hit.path, hit.message, hit.text);
   const strykerConfigs = listFiles(root, false).filter(structureConfig.isStrykerConfigPath);
   const hasStryker = structureConfig.hasStrykerDependency(pkg) || strykerConfigs.length > 0;
@@ -259,8 +254,11 @@ if (existsSync(at("package.json"))) {
     // An Astro app in any folder, rooted at its config's folder.
     const { configs, preset } = skeleton.catalog;
     const found = listFiles(root, false).filter((p) => configs.includes(basename(p)));
-    const texts = found.map((path) => readFileSync(at(path), "utf8"));
-    if (!structureConfig.hasCatalogPresetImport(texts, preset))
+    if (
+      !found.some((path) =>
+        structureConfig.importsCatalogPreset(readFileSync(at(path), "utf8"), preset),
+      )
+    )
       add(found[0] ?? `catalog/${configs[0]}`, structureConfig.catalogPresetMissingMessage(preset));
   }
 }

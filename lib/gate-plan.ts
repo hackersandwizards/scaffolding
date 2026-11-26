@@ -191,63 +191,52 @@ export function resolveBrandStepCommand(
   return brandElementsCommand(config, directory, home);
 }
 
-export function addBrandSteps(
-  pkg: Package,
-  home: string,
-  target: {
-    shared: Record<string, string>;
-    full: Map<string, string>;
-    replacements: Map<string, string>;
-  },
-): string | undefined {
-  if (!pinsPackage(pkg, "@hackersandwizards/brand")) return undefined;
-  const config = pkg.scaffolding ?? {};
-  const local = (config.check ?? []).flat().filter((step) => !placedSteps.has(step));
-  for (const step of brandSteps) {
-    const { replacement, problem } = resolveLocalReplacement(step, local, pkg.scripts);
-    if (problem) return problem;
-    if (replacement) {
-      target.replacements.set(step, replacement);
-      continue;
-    }
-    const resolved = resolveBrandStepCommand(step, config, home);
-    if ("problem" in resolved) return resolved.problem;
-    if (resolved.kind === "shared") target.shared[step] = resolved.command;
-    else target.full.set(step, resolved.command);
+export class GatePlan {
+  readonly shared: Record<string, string>;
+  readonly full = new Map<string, string>();
+  readonly replacements = new Map<string, string>();
+
+  constructor(shared: Record<string, string>) {
+    this.shared = shared;
   }
-  return undefined;
-}
 
-export function findUnusedBrandKey(
-  brand: ScaffoldingConfig["brand"],
-  steps: {
-    shared: Record<string, string>;
-    full: ReadonlyMap<string, string>;
-  },
-): string | undefined {
-  if (!brand) return undefined;
-  const serverElements = brand.elements === "server" && steps.full.has("elements");
-  if (brand.retired !== undefined && !steps.full.has("retired")) return "brand.retired";
-  if (brand.elements !== undefined && !serverElements) return "brand.elements";
-  if (brand.directory !== undefined && !steps.shared.colours && !steps.full.has("elements"))
-    return "brand.directory";
-  return undefined;
-}
+  addBrandSteps(pkg: Package, home: string): string | undefined {
+    if (!pinsPackage(pkg, "@hackersandwizards/brand")) return undefined;
+    const config = pkg.scaffolding ?? {};
+    const local = (config.check ?? []).flat().filter((step) => !placedSteps.has(step));
+    for (const step of brandSteps) {
+      const { replacement, problem } = resolveLocalReplacement(step, local, pkg.scripts);
+      if (problem) return problem;
+      if (replacement) {
+        this.replacements.set(step, replacement);
+        continue;
+      }
+      const resolved = resolveBrandStepCommand(step, config, home);
+      if ("problem" in resolved) return resolved.problem;
+      if (resolved.kind === "shared") this.shared[step] = resolved.command;
+      else this.full.set(step, resolved.command);
+    }
+    return undefined;
+  }
 
-export function findUnusedConfigKey(
-  config: ScaffoldingConfig,
-  steps: {
-    shared: Record<string, string>;
-    full: ReadonlyMap<string, string>;
-    replacements: ReadonlyMap<string, string>;
-  },
-): string | undefined {
-  const unusedBrand = findUnusedBrandKey(config.brand, steps);
-  if (unusedBrand) return unusedBrand;
-  if (config.linkSkips !== undefined && !steps.full.has("links")) return "linkSkips";
-  const serverElements = config.brand?.elements === "server" && steps.full.has("elements");
-  const serverUsed = steps.full.has("links") || steps.replacements.has("links") || serverElements;
-  return config.server !== undefined && !serverUsed ? "server" : undefined;
+  unusedBrandKey(brand: ScaffoldingConfig["brand"]): string | undefined {
+    if (!brand) return undefined;
+    const serverElements = brand.elements === "server" && this.full.has("elements");
+    if (brand.retired !== undefined && !this.full.has("retired")) return "brand.retired";
+    if (brand.elements !== undefined && !serverElements) return "brand.elements";
+    if (brand.directory !== undefined && !this.shared.colours && !this.full.has("elements"))
+      return "brand.directory";
+    return undefined;
+  }
+
+  unusedConfigKey(config: ScaffoldingConfig): string | undefined {
+    const unusedBrand = this.unusedBrandKey(config.brand);
+    if (unusedBrand) return unusedBrand;
+    if (config.linkSkips !== undefined && !this.full.has("links")) return "linkSkips";
+    const serverElements = config.brand?.elements === "server" && this.full.has("elements");
+    const serverUsed = this.full.has("links") || this.replacements.has("links") || serverElements;
+    return config.server !== undefined && !serverUsed ? "server" : undefined;
+  }
 }
 
 export function validatePlacedStepEntries(

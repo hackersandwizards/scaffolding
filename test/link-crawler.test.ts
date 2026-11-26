@@ -1,8 +1,8 @@
+import { createServer } from "node:net";
 import { expect, test } from "vitest";
 import {
   brokenLinkLines,
   extractHtmlUrls,
-  fetchPageLinks,
   formatBrokenLink,
   isHtmlResponse,
   isInternalUrl,
@@ -11,6 +11,12 @@ import {
 } from "../lib/link-crawler.ts";
 
 const site = new URL("http://127.0.0.1:4321/");
+
+function listeningPort(server: ReturnType<typeof createServer>): number {
+  const address = server.address();
+  if (typeof address !== "object" || address === null) throw new Error("server not bound");
+  return address.port;
+}
 
 test.each([
   ["http://127.0.0.1:4321/about", [], true],
@@ -50,8 +56,9 @@ test.each([
   ],
 ] as const)("extractHtmlUrls parses %s", async (body, pageUrl, expected) => {
   const response = new Response(body, { headers: { "content-type": "text/html" } });
-  const urls = await extractHtmlUrls(response, pageUrl);
-  expect(urls.map((url) => url.href)).toEqual(expected);
+  const urls: string[] = [];
+  await extractHtmlUrls(response, pageUrl, (url) => urls.push(url.href));
+  expect(urls).toEqual(expected);
 });
 
 test.each([
@@ -59,45 +66,91 @@ test.each([
     label: "redirect with location",
     path: "/redir",
     handler: () => new Response(null, { status: 302, headers: { location: "/next" } }),
-    expectedFor: (origin: string) => ({ status: 302, redirect: new URL("/next", origin) }),
+    expectedStatus: 302,
+    expectedRedirect: "/next",
+    expectedQueued: true,
+    expectedLinks: 0,
   },
   {
     label: "redirect without location header",
     path: "/bare-redir",
     handler: () => new Response(null, { status: 302 }),
-    expectedFor: () => ({ status: 302 }),
+    expectedStatus: 302,
+    expectedRedirect: undefined,
+    expectedQueued: false,
+    expectedLinks: 0,
   },
   {
     label: "non-HTML 200 response",
     path: "/data.json",
     handler: () => new Response('{"ok":true}', { headers: { "content-type": "application/json" } }),
-    expectedFor: () => ({ status: 200 }),
+    expectedStatus: 200,
+    expectedRedirect: undefined,
+    expectedQueued: false,
+    expectedLinks: 0,
   },
   {
     label: "HTML 200 response",
     path: "/page",
     handler: () =>
-      new Response('<a href="/child">child</a>', { headers: { "content-type": "text/html" } }),
-    expectedFor: (origin: string) => ({ status: 200, links: [new URL("/child", origin)] }),
+      new Response('<a href="/child">child</a><a href="https://example.com/out">out</a>', {
+        headers: { "content-type": "text/html" },
+      }),
+    expectedStatus: 200,
+    expectedRedirect: undefined,
+    expectedQueued: true,
+    expectedLinks: 1,
   },
-])("fetchPageLinks handles $label", async ({ path, handler, expectedFor }) => {
-  const server = Bun.serve({
-    hostname: "127.0.0.1",
-    port: 0,
-    fetch: handler,
-  });
-  try {
-    const outcome = await fetchPageLinks(new URL(path, server.url).href);
-    expect(outcome).toEqual(expectedFor(server.url.origin));
-  } finally {
-    await server.stop(true);
-  }
+])(
+  "LinkCrawl.visitPage handles $label",
+  async ({ path, handler, expectedStatus, expectedRedirect, expectedQueued, expectedLinks }) => {
+    const server = Bun.serve({ hostname: "127.0.0.1", port: 0, fetch: handler });
+    try {
+      const crawl = new LinkCrawl(new URL("/", server.url), []);
+      await crawl.visitPage(path, new URL(path, server.url).href);
+      expect(crawl.status.get(path)).toBe(expectedStatus);
+      expect(crawl.redirects.get(path)).toBe(expectedRedirect);
+      expect(crawl.queue.size > 1).toBe(expectedQueued);
+      expect(crawl.links).toBe(expectedLinks);
+    } finally {
+      await server.stop(true);
+    }
+  },
+);
+
+test("LinkCrawl.visitPage records an error status when fetch rejects", async () => {
+  const crawl = new LinkCrawl(site, []);
+  await crawl.visitPage("/unreachable", "http://127.0.0.1:0/unreachable");
+  expect(typeof crawl.status.get("/unreachable")).toBe("string");
 });
 
-test("fetchPageLinks returns an error outcome when fetch rejects", async () => {
-  const outcome = await fetchPageLinks("http://127.0.0.1:0/unreachable");
-  expect(Object.keys(outcome)).toEqual(["error"]);
-  expect(typeof Object.values(outcome)[0]).toBe("string");
+test("LinkCrawl.visitPage keeps links streamed before a mid-body socket reset", async () => {
+  const chunk = '<a href="/x">x</a>';
+  const server = createServer((socket) => {
+    socket.once("data", () => {
+      socket.write(
+        "HTTP/1.1 200 OK\r\n" +
+          "Content-Type: text/html\r\n" +
+          "Transfer-Encoding: chunked\r\n\r\n" +
+          `${chunk.length.toString(16)}\r\n${chunk}\r\n`,
+        () => {
+          setTimeout(() => socket.destroy(), 20);
+        },
+      );
+    });
+  });
+  await new Promise<void>((ready) => server.listen(0, "127.0.0.1", ready));
+  const port = listeningPort(server);
+  try {
+    const base = new URL(`http://127.0.0.1:${port}/`);
+    const crawl = new LinkCrawl(base, []);
+    await crawl.visitPage("/", base.href);
+    expect(typeof crawl.status.get("/")).toBe("string");
+    expect(crawl.queue.has("/x")).toBe(true);
+    expect(crawl.links).toBe(1);
+  } finally {
+    await new Promise<void>((done) => server.close(() => done()));
+  }
 });
 
 test.each([
@@ -191,17 +244,4 @@ test("LinkCrawl.enqueue deduplicates pathnames and keeps first query string", ()
   expect(crawl.enqueue(new URL("http://127.0.0.1:4321/item?a=2"), "/other")).toBe("/item");
   expect(crawl.queue.get("/item")).toBe("http://127.0.0.1:4321/item?a=1");
   expect(crawl.referrers.get("/item")).toEqual(new Set(["/", "/other"]));
-});
-
-test("LinkCrawl.recordOutcome updates status, redirects, and internal link count", () => {
-  const crawl = new LinkCrawl(site, []);
-  crawl.recordOutcome("/err", { error: "boom" });
-  crawl.recordOutcome("/go", { status: 302, redirect: new URL("http://127.0.0.1:4321/target") });
-  crawl.recordOutcome("/page", {
-    status: 200,
-    links: [new URL("http://127.0.0.1:4321/a"), new URL("https://example.com/out")],
-  });
-  expect(crawl.status.get("/err")).toBe("boom");
-  expect(crawl.redirects.get("/go")).toBe("/target");
-  expect(crawl.links).toBe(1);
 });

@@ -113,7 +113,7 @@ test.each([
     run: { status: 0, stdout: '{"MIT":[{"name":"a"}]}', stderr: "" },
     missing: undefined,
     expectedProblems: [
-      "bun pm licenses --json changed shape: an entry lacks a name or licence string. Check `bun --version` against packageManager in package.json, run `bun pm licenses --json` to inspect the malformed entry, and update check-licenses.ts if Bun changed its schema",
+      "bun pm licenses --json changed shape: an entry lacks a name or licence string. Check `bun --version` against packageManager in package.json, run `bun pm licenses --json` to inspect the malformed entry, and update lib/license-audit.ts if Bun changed its schema",
     ],
   },
 ])("parseLicenseCommandOutput handles $label", ({ run, missing, expectedProblems }) => {

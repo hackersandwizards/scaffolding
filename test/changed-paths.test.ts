@@ -2,22 +2,38 @@ import { spawnSync } from "node:child_process";
 import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { expect, test } from "vitest";
+import { afterEach, beforeEach, expect, test } from "vitest";
 import {
   collectRangeChanges,
+  collectRangeChangesWithShell,
   collectWorkingTreeChanges,
+  collectWorkingTreeChangesWithShell,
   parseNulPaths,
   readShellTreeInputs,
   readWorkingTreeShellInputs,
   verifyCommitRange,
 } from "../lib/changed-paths.ts";
 
-function cleanGitEnv(): NodeJS.ProcessEnv {
-  return Object.fromEntries(Object.entries(process.env).filter(([key]) => !key.startsWith("GIT_")));
+let savedGitEnv: [string, string | undefined][] = [];
+
+function clearGitEnv(): void {
+  savedGitEnv = Object.entries(process.env).filter(([key]) => key.startsWith("GIT_"));
+  for (const [key] of savedGitEnv) delete process.env[key];
 }
 
+function restoreGitEnv(): void {
+  for (const [key, value] of savedGitEnv) {
+    if (value === undefined) delete process.env[key];
+    else process.env[key] = value;
+  }
+  savedGitEnv = [];
+}
+
+beforeEach(clearGitEnv);
+afterEach(restoreGitEnv);
+
 function runGit(cwd: string, args: string[]): string {
-  const res = spawnSync("git", args, { cwd, env: cleanGitEnv(), encoding: "utf8" });
+  const res = spawnSync("git", args, { cwd, env: process.env, encoding: "utf8" });
   return res.stdout.trim();
 }
 
@@ -74,9 +90,21 @@ test("verifyCommitRange accepts fast-forward and falls back on zero or reversed 
   });
 });
 
-test("collectRangeChanges lists changed paths and shell trees across pushed ranges", () => {
+test("collectRangeChanges lists changed paths without reading shell trees", () => {
   withTempGitRepo((dir, firstSha, secondSha) => {
-    const result = collectRangeChanges(dir, [`${firstSha}..${secondSha}`], true);
+    const result = collectRangeChanges(dir, [`${firstSha}..${secondSha}`]);
+    expect(result).toEqual({
+      paths: new Set(["app.ts"]),
+      shellShebangs: new Set(),
+      sourcedPaths: new Set(),
+      since: firstSha.slice(0, 9),
+    });
+  });
+});
+
+test("collectRangeChangesWithShell lists changed paths and shell trees across pushed ranges", () => {
+  withTempGitRepo((dir, firstSha, secondSha) => {
+    const result = collectRangeChangesWithShell(dir, [`${firstSha}..${secondSha}`]);
     expect("fallback" in result).toBe(false);
     expect(result).toEqual({
       paths: new Set(["app.ts"]),
@@ -99,7 +127,7 @@ test("readWorkingTreeShellInputs detects untracked shebang shell scripts", () =>
 test("collectWorkingTreeChanges includes untracked files and falls back outside a git repo", () => {
   withTempGitRepo((dir) => {
     writeFileSync(join(dir, "extra.txt"), "hello\n");
-    const result = collectWorkingTreeChanges(dir, false);
+    const result = collectWorkingTreeChanges(dir);
     expect(result).toEqual({
       paths: new Set(["extra.txt"]),
       shellShebangs: new Set(),
@@ -109,10 +137,23 @@ test("collectWorkingTreeChanges includes untracked files and falls back outside 
   });
   const plain = mkdtempSync(join(tmpdir(), "non-git-dir-"));
   try {
-    expect(collectWorkingTreeChanges(plain, false)).toEqual({
+    expect(collectWorkingTreeChanges(plain)).toEqual({
       fallback: "git could not list the changes",
     });
   } finally {
     rmSync(plain, { recursive: true, force: true });
   }
+});
+
+test("collectWorkingTreeChangesWithShell includes shell inputs for changed working tree files", () => {
+  withTempGitRepo((dir) => {
+    writeFileSync(join(dir, "tool"), "#!/usr/bin/env bash\necho hi\n");
+    const result = collectWorkingTreeChangesWithShell(dir);
+    expect(result).toEqual({
+      paths: new Set(["tool"]),
+      shellShebangs: new Set(["tool"]),
+      sourcedPaths: new Set(["helper.env"]),
+      since: "HEAD",
+    });
+  });
 });

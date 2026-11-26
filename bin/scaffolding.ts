@@ -3,7 +3,12 @@
 import { spawnSync } from "node:child_process";
 import { existsSync } from "node:fs";
 import { join } from "node:path";
-import { collectRangeChanges, collectWorkingTreeChanges } from "../lib/changed-paths.ts";
+import {
+  collectRangeChanges,
+  collectRangeChangesWithShell,
+  collectWorkingTreeChanges,
+  collectWorkingTreeChangesWithShell,
+} from "../lib/changed-paths.ts";
 import { allChangedSteps, fastSteps, selectChangedSteps } from "../lib/changed-steps.ts";
 import { browserTestProblem, pinsPackage, placedSteps, vitestRun } from "../lib/gate-config.ts";
 import * as gatePlan from "../lib/gate-plan.ts";
@@ -88,14 +93,13 @@ const configProblem =
   gatePlan.validateGateIntegrations(pkg);
 if (configProblem) fail(configProblem);
 
-const shared = gatePlan.buildSharedStepMap(pkg, root, home);
+const plan = new gatePlan.GatePlan(gatePlan.buildSharedStepMap(pkg, root, home));
+const { shared, full, replacements } = plan;
 const skip = { ...config.skip };
 const entries = (config.check ?? []).flat();
 const local = entries.filter((step) => !placedSteps.has(step));
-const full = new Map<string, string>();
-const replacements = new Map<string, string>();
 
-const brandErr = gatePlan.addBrandSteps(pkg, home, { shared, full, replacements });
+const brandErr = plan.addBrandSteps(pkg, home);
 if (brandErr) fail(brandErr);
 
 const checkReplacement = (step: string) => {
@@ -133,7 +137,7 @@ for (const [step, reason] of Object.entries(skip)) {
   if (step === "lint") delete shared.oxlint;
 }
 
-const unusedKey = gatePlan.findUnusedConfigKey(config, { shared, full, replacements });
+const unusedKey = plan.unusedConfigKey(config);
 if (unusedKey) fail(`scaffolding.${unusedKey} is unused`);
 const placedErr = gatePlan.validatePlacedStepEntries(entries, replacements, named);
 if (placedErr) fail(placedErr);
@@ -152,8 +156,12 @@ const fast = fastSteps([...Object.keys(shared), ...local], fullOnly);
 
 function resolveChangedSteps(): Map<string, string> {
   const collected = ranges.length
-    ? collectRangeChanges(root, ranges, fast.has("shell"))
-    : collectWorkingTreeChanges(root, fast.has("shell"));
+    ? fast.has("shell")
+      ? collectRangeChangesWithShell(root, ranges)
+      : collectRangeChanges(root, ranges)
+    : fast.has("shell")
+      ? collectWorkingTreeChangesWithShell(root)
+      : collectWorkingTreeChanges(root);
   if ("fallback" in collected) {
     console.error(`[scaffolding] --changed: ${collected.fallback}: all fast steps run`);
     return allChangedSteps(fast, collected.fallback);

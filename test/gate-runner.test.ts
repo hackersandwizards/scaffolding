@@ -1,3 +1,4 @@
+import { spawn } from "node:child_process";
 import { expect, test, vi } from "vitest";
 import {
   formatStepLine,
@@ -79,4 +80,54 @@ test("GateStepRunner.runOrdered enforces after dependencies and runs slow steps 
     writeSpy.mockRestore();
     errorSpy.mockRestore();
   }
+});
+
+test("GateStepRunner.runStep flushes buffered output ahead of its status line and turns signal exit into code 1", async () => {
+  const writes: string[] = [];
+  const writeSpy = vi.spyOn(process.stderr, "write").mockImplementation((chunk) => {
+    writes.push(String(chunk));
+    return true;
+  });
+  const errorSpy = vi.spyOn(console, "error").mockImplementation((line: string) => {
+    writes.push(line);
+  });
+  try {
+    const runner = new GateStepRunner(process.cwd(), process.env, Infinity);
+    const ok = await runner.runStep("echo", "echo hello", true);
+    expect(ok.code).toBe(0);
+    expect(writes[0]).toBe("hello\n");
+    expect(writes[1]).toContain("[scaffolding] ok   echo");
+
+    const killed = await runner.runStep("sig", "kill -TERM $$", true);
+    expect(killed.code).toBe(1);
+    expect(runner.results.map((r) => r.name)).toEqual(["echo", "sig"]);
+  } finally {
+    writeSpy.mockRestore();
+    errorSpy.mockRestore();
+  }
+});
+
+test("GateStepRunner.installSignalHandlers reports running steps and re-raises SIGTERM", async () => {
+  const script = [
+    'import { GateStepRunner } from "./lib/gate-runner.ts";',
+    "const runner = new GateStepRunner(process.cwd(), process.env, Infinity);",
+    "runner.installSignalHandlers();",
+    'void runner.runStep("nap", "echo started; sleep 10", true);',
+    'process.stdout.write("READY\\n");',
+  ].join("\n");
+  const child = spawn(process.execPath, ["-e", script], {
+    cwd: process.cwd(),
+    stdio: ["ignore", "pipe", "pipe"],
+  });
+  let stderr = "";
+  child.stderr.on("data", (chunk: Buffer) => (stderr += chunk.toString()));
+  await new Promise<void>((ready) => {
+    child.stdout.once("data", () => ready());
+  });
+  child.kill("SIGTERM");
+  const exit = await new Promise<{ code: number | null; signal: NodeJS.Signals | null }>((done) => {
+    child.on("close", (code, signal) => done({ code, signal }));
+  });
+  expect(exit.signal).toBe("SIGTERM");
+  expect(stderr).toContain("[scaffolding] stopped nap by SIGTERM");
 });

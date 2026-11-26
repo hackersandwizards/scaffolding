@@ -62,6 +62,9 @@ test("PackageRegistry.manifest caches reads and publishes distinguishes disk vs 
     (root) => {
       const registry = new PackageRegistry(root, {}, "@hackersandwizards/app");
       expect(registry.manifest("missing-pkg")).toBeNull();
+      const first = registry.manifest("@hackersandwizards/brand");
+      rmSync(join(root, pkgPath("brand", "package.json")));
+      expect(registry.manifest("@hackersandwizards/brand")).toBe(first);
       expect(registry.publishes("@hackersandwizards/brand", "tokens.css", false)).toBe(true);
       expect(registry.publishes("@hackersandwizards/brand", "dist/tokens.css", true)).toBe(true);
       expect(registry.publishes("@hackersandwizards/brand", "private.css", false)).toBe(false);

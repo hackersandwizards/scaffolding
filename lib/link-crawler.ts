@@ -1,9 +1,3 @@
-export type PageOutcome =
-  | { status: number; redirect: URL | null }
-  | { status: number; links: URL[] }
-  | { status: number }
-  | { error: string };
-
 export type CrawlSummary = {
   status: Map<string, number | string>;
   referrers: Map<string, Set<string>>;
@@ -19,9 +13,12 @@ export function isInternalUrl(url: URL, site: URL, skips: readonly string[]): bo
   );
 }
 
-export async function extractHtmlUrls(response: Response, pageUrl: string): Promise<URL[]> {
+export async function extractHtmlUrls(
+  response: Response,
+  pageUrl: string,
+  onUrl: (url: URL) => void,
+): Promise<void> {
   let base: string | URL | undefined;
-  const urls: URL[] = [];
   const parser = new HTMLRewriter().on("[href]", {
     element(element) {
       const raw = element.getAttribute("href");
@@ -33,34 +30,15 @@ export async function extractHtmlUrls(response: Response, pageUrl: string): Prom
       }
       if (!href || href.startsWith("#")) return;
       const resolved = URL.parse(href, base ?? pageUrl);
-      if (resolved) urls.push(resolved);
+      if (resolved) onUrl(resolved);
     },
   });
   await parser.transform(response).arrayBuffer();
-  return urls;
 }
 
 export function isHtmlResponse(response: Response): boolean {
   const contentType = response.headers.get("content-type");
   return contentType !== null && contentType.toLowerCase().includes("html");
-}
-
-export async function fetchPageLinks(pageUrl: string): Promise<PageOutcome> {
-  try {
-    const res = await fetch(pageUrl, { redirect: "manual" });
-    const location = res.headers.get("location");
-    if (res.status >= 300 && res.status < 400 && location) {
-      await res.body?.cancel();
-      return { status: res.status, redirect: URL.parse(location, pageUrl) };
-    }
-    if (res.ok && isHtmlResponse(res)) {
-      return { status: res.status, links: await extractHtmlUrls(res, pageUrl) };
-    }
-    await res.body?.cancel();
-    return { status: res.status };
-  } catch (error: unknown) {
-    return { error: error instanceof Error ? error.message : String(error) };
-  }
 }
 
 export function traceReferrers(
@@ -129,17 +107,31 @@ export class LinkCrawl {
     return target;
   }
 
-  recordOutcome(path: string, outcome: PageOutcome): void {
-    if ("error" in outcome) {
-      this.status.set(path, outcome.error);
-      return;
-    }
-    this.status.set(path, outcome.status);
-    if ("redirect" in outcome && outcome.redirect) {
-      const target = this.enqueue(outcome.redirect, path);
-      if (target !== undefined) this.redirects.set(path, target);
-    } else if ("links" in outcome) {
-      for (const url of outcome.links) if (this.enqueue(url, path) !== undefined) this.links++;
+  private recordRedirect(path: string, pageUrl: string, location: string): void {
+    const resolved = URL.parse(location, pageUrl);
+    const target = resolved ? this.enqueue(resolved, path) : undefined;
+    if (target !== undefined) this.redirects.set(path, target);
+  }
+
+  async visitPage(path: string, pageUrl: string): Promise<void> {
+    try {
+      const res = await fetch(pageUrl, { redirect: "manual" });
+      this.status.set(path, res.status);
+      const location = res.headers.get("location");
+      if (res.status >= 300 && res.status < 400 && location) {
+        await res.body?.cancel();
+        this.recordRedirect(path, pageUrl, location);
+        return;
+      }
+      if (!res.ok || !isHtmlResponse(res)) {
+        await res.body?.cancel();
+        return;
+      }
+      await extractHtmlUrls(res, pageUrl, (url) => {
+        if (this.enqueue(url, path) !== undefined) this.links++;
+      });
+    } catch (error: unknown) {
+      this.status.set(path, error instanceof Error ? error.message : String(error));
     }
   }
 }

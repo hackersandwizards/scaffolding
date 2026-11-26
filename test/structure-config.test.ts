@@ -5,9 +5,9 @@ import {
   catalogPresetMissingMessage,
   checkStepFindings,
   findGenericFolders,
-  hasCatalogPresetImport,
   hasStrykerDependency,
   hookIndexMode,
+  importsCatalogPreset,
   isStrykerConfigPath,
   loadPrettier,
   mergeSkeletonEntries,
@@ -221,11 +221,7 @@ test("packageManifestFindings reports type, engines, packageManager, and missing
     scripts: {},
     scaffolding: { skip: { catalog: "no catalog" } },
   };
-  const hits = packageManifestFindings(pkg, {
-    ...skeleton.package,
-    packageManager: "bun@1.4.5",
-    catalogScripts: skeleton.catalog.scripts,
-  });
+  const hits = packageManifestFindings(pkg, skeleton, "bun@1.4.5");
   expect(hits[0]?.message).toContain("type must be module");
   expect(hits[1]?.message).toContain("engines.npm must be please-use-bun");
   expect(hits[2]?.message).toContain("packageManager must be bun@1.4.5");
@@ -377,17 +373,17 @@ test.each([
 
 test.each([
   {
-    texts: ['import { catalog } from "@hackersandwizards/scaffolding/catalog";'],
+    text: 'import { catalog } from "@hackersandwizards/scaffolding/catalog";',
     preset: "@hackersandwizards/scaffolding/catalog",
     expected: true,
   },
   {
-    texts: ['import other from "other/catalog";'],
+    text: 'import other from "other/catalog";',
     preset: "@hackersandwizards/scaffolding/catalog",
     expected: false,
   },
-])("hasCatalogPresetImport checks $expected", ({ texts, preset, expected }) => {
-  expect(hasCatalogPresetImport(texts, preset)).toBe(expected);
+])("importsCatalogPreset checks $expected", ({ text, preset, expected }) => {
+  expect(importsCatalogPreset(text, preset)).toBe(expected);
 });
 
 test("catalogPresetMissingMessage names the preset and skip escape hatch", () => {

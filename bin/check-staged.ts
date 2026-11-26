@@ -27,6 +27,8 @@ import {
   ConcurrencyPool,
   findDifferingScript,
   hasNoPrettierParser,
+  resolvePartialPrettierResult,
+  resolvePartialToolResult,
   spawnStagedEslint,
   spawnStagedProcess,
   spawnStagedWithEnv,
@@ -205,16 +207,9 @@ async function checkPartialFile(tool: string, path: string): Promise<ToolRun> {
             spawnStagedProcess(`node_modules/.bin/${tool}`, ["--file-info", path]),
           ),
         ));
-    if (passed) return { ...result, out: "", code: 0 };
-    const why = !result.code ? "not formatted\n" : result.out;
-    return {
-      ...result,
-      out: `[check:staged] ${tool}: ${path} as staged\n${why}`,
-      code: result.code || 1,
-    };
+    return resolvePartialPrettierResult(path, passed ? "pass" : "fail", result);
   }
-  if (!result.code && !result.rules?.length) return { ...result, out: "", code: 0 };
-  return { ...result, out: `[check:staged] ${tool}: ${path} as staged\n${result.out}` };
+  return resolvePartialToolResult(tool, path, result);
 }
 
 const runs = active.flatMap(([tool, args]) => [

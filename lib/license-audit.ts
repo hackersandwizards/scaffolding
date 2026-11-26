@@ -66,7 +66,7 @@ export function parseLicenseCommandOutput(
   }
   if (packages.length < listed.length)
     problems.push(
-      "bun pm licenses --json changed shape: an entry lacks a name or licence string. Check `bun --version` against packageManager in package.json, run `bun pm licenses --json` to inspect the malformed entry, and update check-licenses.ts if Bun changed its schema",
+      "bun pm licenses --json changed shape: an entry lacks a name or licence string. Check `bun --version` against packageManager in package.json, run `bun pm licenses --json` to inspect the malformed entry, and update lib/license-audit.ts if Bun changed its schema",
     );
   return { packages, problems };
 }

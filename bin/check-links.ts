@@ -2,7 +2,7 @@
 // 2>/dev/null; exec bun --no-env-file "$0" "$@"
 import { parseArgs } from "node:util";
 import { help } from "../lib/help.ts";
-import { brokenLinkLines, fetchPageLinks, LinkCrawl } from "../lib/link-crawler.ts";
+import { brokenLinkLines, LinkCrawl } from "../lib/link-crawler.ts";
 
 const usage = "usage: check-links <base url> [--skip <path prefix>]... [--concurrency <n>]";
 help("check-links", usage);
@@ -44,9 +44,7 @@ async function crawlSite(site: URL): Promise<number> {
     for (const [path, pageUrl] of crawl.queue) {
       if (inFlight.size >= concurrency) break;
       crawl.queue.delete(path);
-      const visit = fetchPageLinks(pageUrl)
-        .then((outcome) => crawl.recordOutcome(path, outcome))
-        .finally(() => inFlight.delete(visit));
+      const visit = crawl.visitPage(path, pageUrl).finally(() => inFlight.delete(visit));
       inFlight.add(visit);
     }
     await Promise.race(inFlight);

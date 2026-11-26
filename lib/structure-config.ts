@@ -5,12 +5,15 @@ import { placedSteps } from "./gate-config.ts";
 import { isObject, isReason, type Package } from "./repo.ts";
 
 export type StructureHit = { path: string; message: string; text: string };
-export type PackageExpectations = {
-  type: string;
-  "engines.npm": string;
-  packageManager: string;
-  scripts: readonly string[];
-  catalogScripts: readonly string[];
+export type SkeletonManifest = {
+  package: {
+    type: string;
+    "engines.npm": string;
+    scripts: readonly string[];
+  };
+  catalog: {
+    scripts: readonly string[];
+  };
 };
 
 function sameJson(a: unknown, b: unknown): boolean {
@@ -209,8 +212,10 @@ export function missingScriptsFindings(
 
 export function packageManifestFindings(
   pkg: Package,
-  expected: PackageExpectations,
+  skeleton: SkeletonManifest,
+  packageManager: string,
 ): StructureHit[] {
+  const expected = skeleton.package;
   const hits: StructureHit[] = [];
   if (pkg.type !== expected.type)
     hits.push({
@@ -224,13 +229,13 @@ export function packageManifestFindings(
       message: `engines.npm must be ${expected["engines.npm"]}: set "engines": { "npm": ${JSON.stringify(expected["engines.npm"])} } in package.json`,
       text: "",
     });
-  if (pkg.packageManager !== expected.packageManager)
+  if (pkg.packageManager !== packageManager)
     hits.push({
       path: "package.json",
-      message: `packageManager must be ${expected.packageManager}: set "packageManager": ${JSON.stringify(expected.packageManager)} in package.json`,
+      message: `packageManager must be ${packageManager}: set "packageManager": ${JSON.stringify(packageManager)} in package.json`,
       text: String(pkg.packageManager),
     });
-  return [...hits, ...missingScriptsFindings(pkg, expected.scripts, expected.catalogScripts)];
+  return [...hits, ...missingScriptsFindings(pkg, expected.scripts, skeleton.catalog.scripts)];
 }
 
 export function missingSkeletonFileMessage(path: string): string {
@@ -285,9 +290,9 @@ export function hookIndexMode(lsFilesOutput: string): { mode?: string; blob?: st
   return { mode: match?.[1], blob: match?.[2] };
 }
 
-export function hasCatalogPresetImport(configTexts: readonly string[], preset: string): boolean {
+export function importsCatalogPreset(text: string, preset: string): boolean {
   const uses = new RegExp(`from\\s*["']${preset.replace(/[/.]/g, "\\$&")}["']`);
-  return configTexts.some((text) => uses.test(text));
+  return uses.test(text);
 }
 
 export function catalogPresetMissingMessage(preset: string): string {
