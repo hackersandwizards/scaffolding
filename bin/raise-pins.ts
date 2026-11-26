@@ -45,7 +45,7 @@ const changed = () =>
 // A path git lists may be a directory: a submodule or an untracked nested repository.
 const read = (path: string) =>
   statSync(path, { throwIfNoEntry: false })?.isFile() ? readFileSync(path, "utf8") : undefined;
-const MANIFESTS = ["package.json", "bun.lock"];
+const MANIFESTS = ["package.json", "bun.lock"] as const;
 if (!existsSync("bun.lock")) {
   say("no bun.lock: run bun install and commit it first");
   process.exit(1);
@@ -86,7 +86,7 @@ for (let rest = pins; rest.length;) {
 // Read side by side: each read may wait its full bound.
 const newest = await Promise.all(ordered.map(({ url }) => newestTag(url.slice("git+".length))));
 const raised: string[] = [];
-const paths = new Set(MANIFESTS);
+const paths = new Set<string>(MANIFESTS);
 // A pin kept at its version leaves the others' raise whole. A skeleton half written, a file of
 // someone else's that --fix rewrote, or node_modules not put back blocks the commit.
 let failed = false;
@@ -102,12 +102,8 @@ for (const [at, { name, spec, url, from }] of ordered.entries()) {
     say(`${name}: ${from}, the newest`);
     continue;
   }
-  const packageBytes = readFileSync("package.json");
-  const kept: readonly (readonly [string, Buffer])[] = [
-    ["package.json", packageBytes],
-    ["bun.lock", readFileSync("bun.lock")],
-  ];
-  const text = packageBytes.toString();
+  const kept = MANIFESTS.map((path) => [path, readFileSync(path)] as const);
+  const text = readFileSync(MANIFESTS[0], "utf8");
   const pinned = `${JSON.stringify(name)}: ${JSON.stringify(spec)}`;
   if (!text.includes(pinned)) {
     say(`${name}: package.json does not hold ${pinned} as written, kept ${from}`);

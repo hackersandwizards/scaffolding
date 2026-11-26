@@ -40,7 +40,7 @@ const started = performance.now();
 const files = lstatSync(join(root, oxlintConfig), { throwIfNoEntry: false })
   ? oxlintFiles(root)
   : [];
-const declared = new Map<string, string[]>();
+const declared = new Map<string, [string, ...string[]]>();
 for (const file of files.sort()) {
   if (
     !/\.(?:[cm]?[jt]s|[jt]sx)$/.test(file) ||
@@ -57,14 +57,14 @@ for (const file of files.sort()) {
   const source = ts.createSourceFile(file, text.toString(), ts.ScriptTarget.Latest);
   for (const name of new Set(moduleFunctionNames(source))) {
     if (frameworkNames.has(name)) continue;
-    const paths = declared.get(name) ?? [];
-    paths.push(file);
-    declared.set(name, paths);
+    const paths = declared.get(name);
+    if (paths) paths.push(file);
+    else declared.set(name, [file]);
   }
 }
 const findings: Finding[] = [];
 for (const [name, [path, ...others]] of declared)
-  if (path !== undefined && others.length)
+  if (others.length)
     findings.push({
       check: "names",
       path,
