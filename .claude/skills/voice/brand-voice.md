@@ -87,6 +87,10 @@ Every training runs in the coding agent the client's team already uses: Claude C
 Copilot, Gemini CLI or Cursor. Copy never names one of them as the training's tool or the example
 the others transfer from.
 
+An outward text names no main AI tool of h&w. Asked which tool we work with, the answer stays
+tool-neutral: we are not tied to one tool, the client's conditions decide, and Claude, Codex,
+OpenCode and pi are examples.
+
 ## Measures and figures
 
 Where the reader needs a measure (a proposal, an assessment, a CTO asking how to tell whether it
