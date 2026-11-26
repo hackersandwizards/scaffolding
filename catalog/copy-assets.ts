@@ -26,7 +26,7 @@ const TYPES = new Map(
   }),
 );
 export const catalogAssetMime = (file: string) =>
-  TYPES.get(file.split(".").pop()!.toLowerCase()) ?? "application/octet-stream";
+  TYPES.get(file.slice(file.lastIndexOf(".") + 1).toLowerCase()) ?? "application/octet-stream";
 
 export const catalogPackageOf = (spec: string) =>
   spec.startsWith(".") || spec.startsWith("/")
@@ -88,12 +88,15 @@ export class CatalogCopies {
   copied(pattern: string, fresh = false): [string, string][] {
     const file = this.resolved.get(pattern);
     if (file) return [[pattern, file]];
-    if (fresh || !this.globbed.has(pattern))
-      this.globbed.set(
-        pattern,
-        globSync(pattern, { cwd: this.repo }).map((match) => [match, join(this.repo, match)]),
-      );
-    return this.globbed.get(pattern)!;
+    let entries = fresh ? undefined : this.globbed.get(pattern);
+    if (!entries) {
+      entries = globSync(pattern, { cwd: this.repo }).map((match) => [
+        match,
+        join(this.repo, match),
+      ]);
+      this.globbed.set(pattern, entries);
+    }
+    return entries;
   }
 
   servePath(file: string, fixed: [string, string][]): string | undefined {

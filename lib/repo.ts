@@ -52,12 +52,14 @@ export const SIGNALS = ["SIGINT", "SIGTERM", "SIGHUP", "SIGQUIT"] as const;
  */
 export async function underLock(root: string, args: string[]): Promise<void> {
   if (process.argv.includes("--locked")) return;
+  const entry = process.argv[1];
+  if (!entry) throw new Error("underLock: cannot resolve entry script from process.argv[1]");
   const lock = spawn(
     process.execPath,
     [
       join(import.meta.dir, "..", "template/.githooks/check-lock.ts"),
       process.execPath,
-      process.argv[1]!,
+      entry,
       ...args,
       "--locked",
     ],

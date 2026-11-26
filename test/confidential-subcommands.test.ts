@@ -15,6 +15,7 @@ import {
   validateNeverBuildNames,
 } from "../lib/confidential-subcommands.ts";
 import { createTermHasher } from "../lib/confidential-terms.ts";
+import { defined } from "../lib/defined.ts";
 
 function cleanGitEnv(): NodeJS.ProcessEnv {
   return Object.fromEntries(Object.entries(process.env).filter(([key]) => !key.startsWith("GIT_")));
@@ -69,7 +70,7 @@ test("buildTermListJson builds hashed terms and never hashes", () => {
     writeFileSync(dict, "apple\n");
     const built = buildTermListJson(["build", "-", "--never", "-"], "Xylophon\0QUUX", dict);
     expect(built.exitCode).toBe(0);
-    const parsed = JSON.parse(built.stdout!) as {
+    const parsed = JSON.parse(defined(built.stdout, "buildTermListJson stdout")) as {
       hashes: string[];
       never: string[];
       maxTokens: number;
@@ -108,7 +109,7 @@ test("readExistingPurgedList and buildPurgedListJson fall back to index and reje
     });
     const built = buildPurgedListJson(dir, ["deadbeef"]);
     expect(built.exitCode).toBe(0);
-    expect(JSON.parse(built.stdout!)).toEqual({
+    expect(JSON.parse(defined(built.stdout, "buildPurgedListJson stdout"))).toEqual({
       salt: "fixed-salt",
       hashes: ["existing", createTermHasher("fixed-salt")("deadbeef")].sort(),
     });

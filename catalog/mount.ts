@@ -83,7 +83,7 @@ export class CatalogMount {
   onDisk = false;
   // Where an old link points, as dev serves it now: without the Pages base, and without /catalog
   // where the catalog moved to the root; undefined for a current path.
-  moved = (_: string): string | undefined => undefined;
+  moved: (path: string) => string | undefined = () => undefined;
 
   configureMount(inParams: CatalogSetupEvent): CatalogSetupEvent {
     // `base` exists for the Pages host only (https://<owner>.github.io/<repo>/): dev serves at

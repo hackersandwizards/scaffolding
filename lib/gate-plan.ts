@@ -269,7 +269,9 @@ export function validatePlacedStepEntries(
 export function buildFullOnlyMap(
   config: ScaffoldingConfig,
   local: readonly string[],
-): { fullOnly?: Map<string, string>; problem?: string } {
+):
+  | { fullOnly: Map<string, string>; problem?: undefined }
+  | { fullOnly?: undefined; problem: string } {
   const fullOnly = new Map([["catalog", "builds the catalog"], ...fullOnlySteps]);
   if (config.fullOnly !== undefined && !isObject(config.fullOnly))
     return { problem: "scaffolding.fullOnly must be a map of steps to reasons" };
@@ -285,7 +287,9 @@ export function buildFullOnlyMap(
 export function buildChangedMappings(
   config: ScaffoldingConfig,
   named: ReadonlySet<string>,
-): { mappings?: { glob: Bun.Glob; steps: string[] }[]; problem?: string } {
+):
+  | { mappings: { glob: Bun.Glob; steps: string[] }[]; problem?: undefined }
+  | { mappings?: undefined; problem: string } {
   if (config.changed !== undefined && !isObject(config.changed))
     return { problem: "scaffolding.changed must be a map of paths to steps" };
   const mappings: { glob: Bun.Glob; steps: string[] }[] = [];

@@ -45,8 +45,9 @@ for (const m of named.sort((a, b) => a.label.localeCompare(b.label))) {
   if (!first) continue;
   states += m.stories.length;
   const group = m.directory?.split("/")[0] || "Components";
-  if (!groups.has(group)) groups.set(group, []);
-  groups.get(group)!.push({
+  const items = groups.get(group) ?? [];
+  groups.set(group, items);
+  items.push({
     name: m.label,
     search: m.name,
     href: url(config.dashboardBase, first.id),

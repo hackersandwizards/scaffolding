@@ -6,7 +6,8 @@ import { join } from "node:path";
 export function help(name: string, usage?: string) {
   if (process.argv[2] !== "--help") return;
   const doc = readFileSync(join(import.meta.dir, "..", "docs", "commands.md"), "utf8");
-  const row = doc.split("\n").find((line) => new RegExp(`^\\| \`${name}[ \`]`).test(line))!;
+  const row = doc.split("\n").find((line) => new RegExp(`^\\| \`${name}[ \`]`).test(line));
+  if (!row) throw new Error(`docs/commands.md has no row for ${name}`);
   const [synopsis, runs, checks] = row
     .split("|")
     .slice(1, -1)

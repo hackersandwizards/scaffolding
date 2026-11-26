@@ -44,11 +44,14 @@ export type CatalogData = {
   labels?: { search?: string; groups?: string };
 };
 
-const escapeCatalog = (s: string) =>
-  s.replace(
-    /[&<>"']/g,
-    (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[c]!,
-  );
+const HTML_ESCAPES: Record<string, string> = {
+  "&": "&amp;",
+  "<": "&lt;",
+  ">": "&gt;",
+  '"': "&quot;",
+  "'": "&#39;",
+};
+const escapeCatalog = (s: string) => s.replace(/[&<>"']/g, (c) => HTML_ESCAPES[c] ?? c);
 // Each part one box with the separator after it, so a line breaks between parts.
 const provenanceParts = (line: string) =>
   `<span>${line.split(" · ").filter(Boolean).map(escapeCatalog).join(" ·</span> <span>")}</span>`;

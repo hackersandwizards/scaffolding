@@ -1,5 +1,6 @@
 import ts from "typescript";
 import { expect, test } from "vitest";
+import { defined } from "../lib/defined.ts";
 import {
   hoistedVariableDeclarations,
   isFunctionInitializer,
@@ -39,9 +40,9 @@ test.each([
   ["namespace Ns { var inside = () => 1; }", []],
 ] as const)("hoistedVariableDeclarations collects only hoisted vars from %s", (code, expected) => {
   const source = parseSource(code);
-  const names = hoistedVariableDeclarations(source.statements[0]!).map((decl) =>
-    decl.name.getText(source),
-  );
+  const names = hoistedVariableDeclarations(
+    defined(source.statements[0], "first parsed statement"),
+  ).map((decl) => decl.name.getText(source));
   expect(names).toEqual(expected);
 });
 

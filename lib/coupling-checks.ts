@@ -108,7 +108,8 @@ export function installedPackageViolation(
 ): string | undefined {
   if (!STYLES.test(path))
     return "hard-coded path into an installed package: resolve it through the package's exports with import.meta.resolve (use ./package.json for the package folder), run its command from node_modules/.bin, or serve a catalog asset by its package path in the catalog preset's copy. Only if no export or bin fits, record the exception with a concrete reason in package.json scaffolding.allow";
-  const pkgName = match[1]!;
+  const pkgName = match[1];
+  if (!pkgName) throw new Error("installedPackageViolation: match has no package name");
   const file = match[2]?.slice(1) && posix.normalize(match[2].slice(1));
   if (!file || (!file.endsWith(".css") && !registry.publishes(pkgName, file, true)))
     return `a stylesheet names a disk path only to a file ${pkgName} exports: import an exported path of ${pkgName} instead, or export the file in ${pkgName}'s package.json exports and release a new tag; do not silence with scaffolding.allow`;
@@ -128,9 +129,11 @@ export function installedPathHits(
   const hits: CouplingHit[] = [];
   for (const line of stripCouplingComments(path, text).split("\n")) {
     for (const match of line.matchAll(INSTALLED)) {
+      const pkgName = match[1];
       if (
-        !registry.isOurs(match[1]!) ||
-        match[1] === registry.own ||
+        !pkgName ||
+        !registry.isOurs(pkgName) ||
+        pkgName === registry.own ||
         line.slice(0, match.index).includes("@source")
       )
         continue;
@@ -190,11 +193,12 @@ export function dependencyPinViolation(
   if (/^(?:file|link|portal):/.test(entry.spec))
     return "local path dependency: replace the file:/link:/portal: specifier in package.json with a pinned Git tag (git+https://...#vX.Y.Z) or registry version, then run bun install";
   if (!GIT.test(entry.spec)) return undefined;
-  if (!TAG.test(entry.spec))
+  const tagMatch = TAG.exec(entry.spec);
+  if (!tagMatch)
     return "Git dependency not pinned to a version tag: append a semver tag (#vX.Y.Z) to the Git URL in package.json (or run raise-pins), then run bun install";
   // A stale install renders with the old engine while every file reads the new pin.
   if (field === "peerDependencies") return undefined;
-  const pinned = TAG.exec(entry.spec)![0].replace(/^#(?:semver:)?v?/, "");
+  const pinned = tagMatch[0].replace(/^#(?:semver:)?v?/, "");
   const installed = (registry.manifest(entry.name)?.version as string | undefined) ?? "nothing";
   return installed !== pinned
     ? `node_modules holds ${installed}, not the pinned ${pinned}: bun install`

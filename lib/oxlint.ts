@@ -121,13 +121,17 @@ export function runOxlint(root: string, args: string[], capture = false) {
       rmSync(path, { recursive: true, force: true });
   }
   const dir = mkdtempSync(join(cache, "oxlint-output-"));
-  const paths = [join(dir, "stdout"), join(dir, "stderr")] as const;
+  const stdoutPath = join(dir, "stdout");
+  const stderrPath = join(dir, "stderr");
   const descriptors: number[] = [];
   try {
-    for (const path of paths) descriptors.push(openSync(path, "wx"));
-    const result = run(["ignore", descriptors[0]!, descriptors[1]!]);
-    const stdout = readFileSync(paths[0], "utf8");
-    const stderr = readFileSync(paths[1], "utf8");
+    const stdoutFd = openSync(stdoutPath, "wx");
+    descriptors.push(stdoutFd);
+    const stderrFd = openSync(stderrPath, "wx");
+    descriptors.push(stderrFd);
+    const result = run(["ignore", stdoutFd, stderrFd]);
+    const stdout = readFileSync(stdoutPath, "utf8");
+    const stderr = readFileSync(stderrPath, "utf8");
     return { ...result, stdout, stderr, output: [null, stdout, stderr] };
   } finally {
     try {

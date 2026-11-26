@@ -87,8 +87,8 @@ export class GateStepRunner {
     const settled: StepResult[] = [];
     // One at a time, a step writes straight to the terminal.
     const worker = async () => {
-      while (queue.length) {
-        const [name, cmd] = queue.shift()!;
+      for (let next = queue.shift(); next; next = queue.shift()) {
+        const [name, cmd] = next;
         settled.push(await this.runStep(name, cmd, this.width > 1 && steps.length > 1));
       }
     };

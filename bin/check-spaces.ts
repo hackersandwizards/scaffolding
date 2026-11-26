@@ -42,7 +42,8 @@ function consumable(root: string, pkg: Package): Set<string> {
     for (const [, spec] of readFileSync(join(root, file), "utf8").matchAll(
       /(?:from|import)\s*["'](\.{1,2}\/[^"']+)["']/g,
     )) {
-      const dep = posix.join(posix.dirname(file), spec!);
+      if (!spec) continue;
+      const dep = posix.join(posix.dirname(file), spec);
       if (!packed.has(dep) || reached.has(dep)) continue;
       reached.add(dep);
       queue.push(dep);

@@ -15,6 +15,7 @@ import {
   stripCouplingComments,
   stripUnquotedComments,
 } from "../lib/coupling-checks.ts";
+import { defined } from "../lib/defined.ts";
 import { commentSyntax } from "../lib/repo.ts";
 import oxlintTemplate from "../template/.oxlintrc.json";
 
@@ -147,15 +148,18 @@ test("installedPackageViolation distinguishes code paths from stylesheet disk pa
     },
     (root) => {
       const registry = new PackageRegistry(root, {});
-      const cssMatch = /node_modules\/(@[\w.-]+\/[\w.-]+)(\/\S+)?/.exec(
-        pkgPath("brand", "dist/a.css"),
-      )!;
-      const exportedMatch = /node_modules\/(@[\w.-]+\/[\w.-]+)(\/\S+)?/.exec(
-        pkgPath("brand", "dist/theme.json"),
-      )!;
-      const privateMatch = /node_modules\/(@[\w.-]+\/[\w.-]+)(\/\S+)?/.exec(
-        pkgPath("brand", "dist/secret.json"),
-      )!;
+      const cssMatch = defined(
+        /node_modules\/(@[\w.-]+\/[\w.-]+)(\/\S+)?/.exec(pkgPath("brand", "dist/a.css")),
+        "css package path match",
+      );
+      const exportedMatch = defined(
+        /node_modules\/(@[\w.-]+\/[\w.-]+)(\/\S+)?/.exec(pkgPath("brand", "dist/theme.json")),
+        "exported package path match",
+      );
+      const privateMatch = defined(
+        /node_modules\/(@[\w.-]+\/[\w.-]+)(\/\S+)?/.exec(pkgPath("brand", "dist/secret.json")),
+        "private package path match",
+      );
       expect(installedPackageViolation("src/app.css", cssMatch, registry)).toBeUndefined();
       expect(installedPackageViolation("src/app.css", exportedMatch, registry)).toBeUndefined();
       expect(installedPackageViolation("src/app.css", privateMatch, registry)).toContain(

@@ -96,7 +96,7 @@ export function collectRangeChanges(
       }
     }
   }
-  const since = ranges.map((r) => r.split("..")[0]!.slice(0, 9)).join(", ");
+  const since = ranges.map((r) => r.split("..")[0].slice(0, 9)).join(", ");
   return { paths, shellShebangs, sourcedPaths, since };
 }
 

@@ -27,7 +27,8 @@ export function treeInputs(root: string, ref: string): string[] {
 
 export function regularInput(root: string, path: string): boolean {
   const parts = path.split("/");
-  const leaf = parts.pop()!;
+  const leaf = parts.pop();
+  if (leaf === undefined) return false;
   let directory = root;
   for (const part of parts) {
     directory = join(directory, part);

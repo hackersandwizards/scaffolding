@@ -4,6 +4,7 @@ import { CatalogDevAssets, catalogAssetMiddleware, configureCatalogVite } from "
 import { CatalogAstroHooks } from "../catalog/hooks.ts";
 import { CatalogMount } from "../catalog/mount.ts";
 import { CatalogPageModules } from "../catalog/page-modules.ts";
+import { defined } from "../lib/defined.ts";
 import { catalogRequire, catalogSetupEvent, sampleCatalog } from "./catalog-fixtures.ts";
 import { testDirectory } from "./test-directory.ts";
 
@@ -30,13 +31,16 @@ test.each([{ base: "/parent/catalog", expected: false }])(
     const params = mount.configureMount(catalogSetupEvent(folder, base));
     const project = { ...readCatalogPackage(folder), require: catalogRequire() };
     configureCatalogVite(params, mount, new CatalogPageModules(sampleCatalog, mount, project));
-    const update = vi.mocked(params.updateConfig).mock.lastCall![0];
-    expect(update.vite!.publicDir).toBe(expected);
+    const update = defined(vi.mocked(params.updateConfig).mock.lastCall, "updateConfig call")[0];
+    expect(defined(update.vite, "vite config").publicDir).toBe(expected);
   },
 );
 
-test.each([{ url: "/old?x=1", target: "/new", expected: "/new?x=1" }])(
-  "redirects a legacy URL before a middleware can serve a copied file",
+test.each([
+  { url: "/old?x=1", target: "/new", expected: "/new?x=1" },
+  { url: "http://[", target: "/new", expected: "/new" },
+])(
+  "redirects a legacy URL before a middleware can serve a copied file ($url)",
   ({ url, target, expected }) => {
     const site = new CatalogAstroHooks(sampleCatalog);
     site.mount.moved = () => target;
@@ -50,7 +54,7 @@ test.each([{ url: "/old?x=1", target: "/new", expected: "/new?x=1" }])(
       typeof catalogAssetMiddleware
     >[0];
     catalogAssetMiddleware(server, [], site);
-    use.mock.calls[0]![0](request, response, next);
+    defined(use.mock.calls[0], "registered catalog middleware call")[0](request, response, next);
     expect(writeHead).toHaveBeenCalledWith(307, { Location: expected });
     expect(next).not.toHaveBeenCalled();
   },
@@ -68,7 +72,7 @@ test.each([
     typeof catalogAssetMiddleware
   >[0];
   catalogAssetMiddleware(server, [pattern], site);
-  use.mock.calls[0]![0]({ url }, {}, next);
+  defined(use.mock.calls[0], "registered catalog middleware call")[0]({ url }, {}, next);
   expect(site.copies.servePath).toHaveBeenCalledWith("assets/logo.svg", expected);
   expect(next).toHaveBeenCalledTimes(1);
 });

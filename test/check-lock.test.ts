@@ -22,6 +22,7 @@ import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { setTimeout as delay } from "node:timers/promises";
 import { afterAll, assert, describe, expect, it } from "vitest";
+import { defined } from "../lib/defined.ts";
 import { jsonObject } from "../lib/json.ts";
 import { limit } from "@hackersandwizards/scaffolding/test-timeout";
 import { fileReady, pathReady, until, untilBefore } from "./wait.ts";
@@ -737,7 +738,7 @@ describe("check-lock wraps a consumer's build", () => {
       expect(readFileSync(lock, "utf8")).toContain('"group"');
       // Reaped first: a zombie holder would read as live through its pid alone.
       const reaped = new Promise((go) => check.on("close", go));
-      process.kill(-check.pid!, "SIGKILL");
+      process.kill(-defined(check.pid, "the check-lock process pid"), "SIGKILL");
       await reaped;
       const next = run(lock, [SCRIPT, "sh", "-c", `test -e ${done} && echo built`], {
         CHECK_LOCK_WAIT_MS: "15000",
@@ -764,7 +765,7 @@ describe("check-lock wraps a consumer's build", () => {
       );
       const { group } = JSON.parse(readFileSync(lock, "utf8")) as { group: number };
       const reaped = new Promise((go) => check.on("close", go));
-      process.kill(-check.pid!, "SIGKILL");
+      process.kill(-defined(check.pid, "the check-lock process pid"), "SIGKILL");
       await reaped;
       try {
         const next = run(lock, [SCRIPT, "echo", "ran"], { CHECK_LOCK_WAIT_MS: "10000" });

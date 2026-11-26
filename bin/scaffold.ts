@@ -109,7 +109,7 @@ for (const file of filled) {
     path,
     readFileSync(path, "utf8").replace(/\{\{(\w+)\}\}/g, (_, key: string) => {
       if (!Object.hasOwn(values, key)) throw new Error(`${file}: no value for {{${key}}}`);
-      return values[key]!;
+      return values[key];
     }),
   );
 }
@@ -135,7 +135,11 @@ pkg.engines = { bun: own.engines.bun, ...pkg.engines };
 pkg.scripts = { prepare: own.scripts.prepare, ...pkg.scripts };
 pkg.devDependencies = Object.fromEntries(
   [
-    ...tools.map((t): [string, string] => [t, ownPins[t]!]),
+    ...tools.map((t): [string, string] => {
+      if (!Object.hasOwn(ownPins, t))
+        throw new Error(`scaffold: missing devDependency pin for ${t}`);
+      return [t, ownPins[t]];
+    }),
     company("scaffolding", `v${own.version}`),
     ...Object.entries(pins).map(([repo, tag]) => company(repo, tag)),
   ].sort(([a], [b]) => a.localeCompare(b)),

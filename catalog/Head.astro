@@ -29,15 +29,19 @@ type State = (typeof all)[number];
 // Above FOLD states a menu groups them by a word three or more names share, the first word before
 // the last: "BlockImage" under "Block", "AccentTheme" under "Theme"; the rest come last.
 const menu = all.length > FOLD;
+const edgeWords = (words: string[]): string[] => {
+  const first = words[0];
+  const last = words.at(-1);
+  return words.length > 1 && first !== undefined && last !== undefined
+    ? [...new Set([first, last])]
+    : [];
+};
 const tally = new Map<string, number>();
-for (const w of all.flatMap((s) =>
-  s.words.length > 1 ? [...new Set([s.words[0], s.words.at(-1)!])] : [],
-))
-  tally.set(w, (tally.get(w) ?? 0) + 1);
+for (const w of all.flatMap((s) => edgeWords(s.words))) tally.set(w, (tally.get(w) ?? 0) + 1);
 const groups = new Map<string, State[]>();
 const rest: State[] = [];
 for (const s of all) {
-  const key = s.words.length > 1 && [s.words[0], s.words.at(-1)!].find((w) => tally.get(w)! >= 3);
+  const key = edgeWords(s.words).find((w) => (tally.get(w) ?? 0) >= 3);
   if (!key) rest.push(s);
   else groups.set(key, [...(groups.get(key) ?? []), s]);
 }

@@ -57,7 +57,7 @@ export function configureCatalogVite(
           },
           // Every stylesheet beside this file is the shell's.
           transform: (code: string, id: string) => {
-            const file = id.split("?")[0]!;
+            const [file = ""] = id.split("?");
             return dirname(file) === import.meta.dirname && file.endsWith(".css")
               ? brandFallbacks(code, tokens)
               : undefined;
@@ -112,7 +112,7 @@ export function catalogAssetMiddleware(
     const path = decodeCatalogPath(url?.pathname ?? "");
     if (to) {
       // Temporary: dev ports pass between repositories, and a browser keeps a 301 for the port.
-      res.writeHead(307, { Location: `${to}${url!.search}` });
+      res.writeHead(307, { Location: `${to}${url?.search ?? ""}` });
       return res.end();
     }
     if (!assets.respond(path, res)) return next();

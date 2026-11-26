@@ -240,7 +240,8 @@ export class BinaryContentScanner {
     const blocks = this.runOcrBinary(ocr);
     rmSync(this.scratch, { recursive: true, force: true });
     for (const { file, where, entry, why } of this.images) {
-      if (blocks.has(file)) this.appendText(where, blocks.get(file)!);
+      const text = blocks.get(file);
+      if (text !== undefined) this.appendText(where, text);
       else this.markToolMissing(where, entry, why);
     }
   }

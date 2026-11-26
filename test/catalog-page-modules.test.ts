@@ -1,6 +1,7 @@
 import { mkdirSync, writeFileSync } from "node:fs";
 import { basename, join } from "node:path";
 import { expect, test, vi } from "vitest";
+import { defined } from "../lib/defined.ts";
 import { jsonObject } from "../lib/json.ts";
 import { readCatalogPackage } from "../catalog/copy-assets.ts";
 import { CatalogMount } from "../catalog/mount.ts";
@@ -129,7 +130,10 @@ test.each([
     admin: true,
   };
   const pages = new CatalogPageModules(options, mount, project);
-  const source = pages.sources(params).modules["virtual:scaffolding/catalog"]!;
+  const source = defined(
+    pages.sources(params).modules["virtual:scaffolding/catalog"],
+    "catalog virtual module",
+  );
   expect(Object.keys(jsonObject(source.slice("export default ".length, -1)))).toEqual(expected);
 });
 

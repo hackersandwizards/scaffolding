@@ -54,8 +54,9 @@ export function addedLines(diff: string, paths: string[]) {
     if (line.startsWith("diff --git ")) [path, hunk] = [paths[++file], false];
     else if (line.startsWith("@@")) hunk = true;
     else if (hunk && path !== undefined && line.startsWith("+")) {
-      if (!added.has(path)) added.set(path, []);
-      added.get(path)!.push(line.slice(1));
+      const lines = added.get(path);
+      if (lines) lines.push(line.slice(1));
+      else added.set(path, [line.slice(1)]);
     }
   }
   return added;

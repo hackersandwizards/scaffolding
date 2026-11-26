@@ -51,7 +51,8 @@ const sourceDirective = new RegExp(
   "g",
 );
 
-function literalWord(word: string): string | undefined {
+function literalWord(word: string | undefined): string | undefined {
+  if (word === undefined) return undefined;
   let value = "";
   for (const [part, single, double, escaped] of word.matchAll(
     /'([^']*)'|"((?:\\.|[^"\\])*)"|\\(.)|[^"'\\]+/g,
@@ -82,18 +83,18 @@ export function shellSources(
     .split("\n")
     .flatMap((line) => [...line.matchAll(sourceDirective)])
     .filter(([, key]) => key === "source-path")
-    .map(([, , word]) => literalWord(word!));
+    .map(([, , word]) => literalWord(word));
   for (const script of pending) {
     const content = read(script).toString().replace(/\\\n/g, "");
     const names: (string | undefined)[] = [];
     const directories = [".", ...rcPaths];
     for (const line of content.split("\n")) {
-      const directive = /^\s*#\s*shellcheck\s+(.*)$/.exec(line);
-      if (directive) {
-        for (const [, key, word] of directive[1]!.matchAll(sourceDirective))
-          (key === "source" ? names : directories).push(literalWord(word!));
+      const directive = /^\s*#\s*shellcheck\s+(.*)$/.exec(line)?.[1];
+      if (directive !== undefined) {
+        for (const [, key, word] of directive.matchAll(sourceDirective))
+          (key === "source" ? names : directories).push(literalWord(word));
       } else if (!/^\s*#/.test(line)) {
-        for (const [, word] of line.matchAll(sourceLine)) names.push(literalWord(word!));
+        for (const [, word] of line.matchAll(sourceLine)) names.push(literalWord(word));
       }
     }
     for (const name of names) {

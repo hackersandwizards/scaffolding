@@ -35,7 +35,8 @@ function parseHolder(raw: string | undefined): Holder | undefined {
     const holder = JSON.parse(raw ?? "") as Holder;
     if (typeof holder.pid !== "number") return undefined;
     // kill(-1) and kill(0) address every process or this one's group, never the command's.
-    if (!(Number.isInteger(holder.group) && holder.group! > 1)) delete holder.group;
+    if (!(typeof holder.group === "number" && Number.isInteger(holder.group) && holder.group > 1))
+      delete holder.group;
     return holder;
   } catch {
     return undefined;
@@ -61,10 +62,11 @@ export function running(pid: number): boolean {
 }
 
 // A command that exits on its own may leave a process behind on purpose, which holds nothing.
-const commandRuns = ({ group, signalled }: Holder): boolean =>
-  running(signalled ? -group! : group!);
+const commandRuns = (group: number, signalled: true | undefined): boolean =>
+  running(signalled ? -group : group);
 const live = (holder: Holder): boolean =>
-  running(holder.pid) || (holder.group !== undefined && commandRuns(holder));
+  running(holder.pid) ||
+  (holder.group !== undefined && commandRuns(holder.group, holder.signalled));
 // An unreadable lock is a half-written or corrupt one, and nobody can prove it is live. A live
 // holder is never reclaimed on age: a slow run under load outlasted any bound and a second check
 // ran beside it. A reused pid reads as live too, which ends in the wait timeout, not an overlap.

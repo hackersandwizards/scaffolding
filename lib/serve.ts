@@ -39,8 +39,10 @@ export async function serve(
 ): Promise<{ url: string; stop: () => void }> {
   const port = await freePort();
   const url = `http://127.0.0.1:${port}`;
+  const [executable, ...args] = command;
+  if (!executable) throw new Error("serve: command must not be empty");
   // In a group of its own, so stop() reaches a server a wrapper such as `bun run` starts too.
-  const server = spawn(command[0]!, command.slice(1), {
+  const server = spawn(executable, args, {
     env: { ...process.env, ...env, HOST: "127.0.0.1", PORT: String(port) },
     stdio: ["ignore", "ignore", "pipe"],
     detached: true,

@@ -33,8 +33,8 @@ export function catalogFileLinks(html: string, out: string, base: string): strin
     /(\s(?:href|src|data-src|value)=")(\/(?!\/)[^"?#]*)([^"]*")/g,
   )) {
     const [, attr, path, rest] = match;
-    if (path !== base && !path!.startsWith(`${base}/`)) continue;
-    const at = decodeCatalogPath(path!.slice(base.length + 1));
+    if (!path || (path !== base && !path.startsWith(`${base}/`))) continue;
+    const at = decodeCatalogPath(path.slice(base.length + 1));
     if (at.split("/").includes("..")) continue;
     const target = [at, join(at, "index.html"), `${at.replace(/\/$/, "")}.html`]
       .map((file) => join(out, file))

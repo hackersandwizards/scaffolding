@@ -50,8 +50,9 @@ export function mergeSkeletonEntry(
   for (const part of key.slice(0, -1))
     holder = isObject(holder) ? (holder[part] ??= {}) : undefined;
   const want = key.reduce<unknown>((v, k) => (v as Record<string, unknown>)[k], template);
+  const leaf = key.at(-1);
+  if (leaf === undefined) throw new Error("skeleton entry key must not be empty");
   if (!isObject(holder)) return "invalid-parent";
-  const leaf = key.at(-1)!;
   const has = holder[leaf];
   const next = Array.isArray(want) ? mergeSkeletonList(has, want) : want;
   if (sameJson(has, next)) return "ok";
@@ -270,7 +271,9 @@ export function nonExecutableIndexEntries(
 ): { mode: string; blob: string; path: string }[] {
   const entries: { mode: string; blob: string; path: string }[] = [];
   for (const entry of lsFilesOutput.split("\0").filter(Boolean)) {
-    const [, mode, blob, stage, path] = /^(\d+) (\S+) (\d)\t(.*)$/s.exec(entry)!;
+    const match = /^(\d+) (\S+) (\d)\t(.*)$/s.exec(entry);
+    if (!match) throw new Error(`unexpected git ls-files entry: ${entry}`);
+    const [, mode, blob, stage, path] = match;
     // An unmerged path waits for its merge.
     if (mode === "100644" && stage === "0") entries.push({ mode, blob, path });
   }

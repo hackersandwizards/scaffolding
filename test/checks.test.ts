@@ -38,6 +38,7 @@ import {
 } from "../lib/oxlint.ts";
 import { ESLint } from "eslint";
 import { activeSeverity } from "../lib/lint-rule-overlaps.ts";
+import { defined } from "../lib/defined.ts";
 import { rejection } from "../lib/rejection.ts";
 import { gitShellShebangs, shellInput } from "../lib/shell-inputs.ts";
 import { shellcheckBinary } from "../lib/shellcheck.ts";
@@ -3335,9 +3336,12 @@ describe("check-confidential", () => {
       const jpeg = readFileSync(join(dir, "figure.jpg"));
       const [width, height] = ["pixelWidth", "pixelHeight"].map((key) =>
         Number(
-          new RegExp(`${key}: (\\d+)`).exec(
-            spawnSync("sips", ["-g", key, "figure.jpg"], { cwd: dir }).stdout.toString(),
-          )![1],
+          defined(
+            new RegExp(`${key}: (\\d+)`).exec(
+              spawnSync("sips", ["-g", key, "figure.jpg"], { cwd: dir }).stdout.toString(),
+            ),
+            `sips ${key} output`,
+          )[1],
         ),
       );
       const content = "q 612 0 0 792 0 0 cm /Im1 Do Q BT /F1 10 Tf 280 20 Td (Figure 1) Tj ET";
@@ -3847,7 +3851,7 @@ describe("check-confidential", () => {
       writeFileSync(join(stub, "git-lfs"), lfs, { mode: 0o755 });
       // A PATH holding git alone, so the machine's own git-lfs stays out of reach.
       const bare = temp();
-      symlinkSync(Bun.which("git")!, join(bare, "git"));
+      symlinkSync(defined(Bun.which("git"), "git binary on PATH"), join(bare, "git"));
       writeFileSync(log, "");
       const logged = () => readFileSync(log, "utf8");
       const capture = (dir: string, remote = "origin", old = "0".repeat(40)) => {
@@ -5962,7 +5966,7 @@ describe("scaffolding check", () => {
       gateRun.stderr.on("data", (d) => (out += d));
       await until(() => fileReady(lock, (text) => text.length > 0), `the gate's lock at ${lock}`);
       await Bun.sleep(1_000);
-      process.kill(-gateRun.pid!, "SIGINT");
+      process.kill(-defined(gateRun.pid, "the gate process pid"), "SIGINT");
       await new Promise((done) => gateRun.on("close", done));
       expect(out).toContain("stopped check:slow by SIGINT");
       expect(existsSync(lock)).toBe(false);
@@ -8689,7 +8693,9 @@ describe("catalog", () => {
         ...html.matchAll(/<style[^>]*>([\s\S]*?)<\/style>/g).map((m) => m[1]),
         ...html
           .matchAll(/<link rel="stylesheet" href="\/_astro\/([^"]+)"/g)
-          .map((m) => readFileSync(join(dist, "_astro", m[1]!), "utf8")),
+          .map((m) =>
+            readFileSync(join(dist, "_astro", defined(m[1], "stylesheet filename")), "utf8"),
+          ),
       ].join("");
     const links = (html: string, rel: string) =>
       [...html.matchAll(new RegExp(`<link rel="${rel}" href="([^"]*)"`, "g"))].map((m) => m[1]);
@@ -11805,7 +11811,9 @@ describe("check-spaces", () => {
     const r = run(repo({ "src/A.astro": page, "package.json": "{}" }), [bin("check-spaces")]);
     expect(r.code).toBe(1);
     expect(
-      lines(r.out, "spaces").map((l) => l.match(/line (\d+):.*?meets <(\w+)>/)!.slice(1)),
+      lines(r.out, "spaces").map((l) =>
+        defined(l.match(/line (\d+):.*?meets <(\w+)>/), "spaces finding line").slice(1),
+      ),
     ).toEqual([
       ["6", "code"],
       ["7", "code"],
@@ -11917,7 +11925,7 @@ describe("check-spaces", () => {
           [bin("check-spaces")],
         ).out,
         "spaces",
-      ).map((l) => l.match(/\] ([^:]+):/)![1]);
+      ).map((l) => defined(l.match(/\] ([^:]+):/), "spaces finding path")[1]);
     // The pack list and exported imports are the components a consumer can use.
     test.each([
       ["no published inputs", {}, []],

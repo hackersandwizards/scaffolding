@@ -32,8 +32,8 @@ process.chdir(root);
 await underLock(root, args);
 
 const say = (line: string) => console.log(`[raise-pins] ${line}`);
-const succeeds = (command: string[]) =>
-  spawnSync(command[0]!, command.slice(1), { stdio: "inherit" }).status === 0;
+const succeeds = ([command, ...commandArgs]: [string, ...string[]]) =>
+  spawnSync(command, commandArgs, { stdio: "inherit" }).status === 0;
 const changed = () =>
   new Set(
     git(["status", "--porcelain=v1", "-z", "--untracked-files=all", "--no-renames"], root)
@@ -61,7 +61,8 @@ const pkg = readPackage(root);
 const pins = FIELDS.flatMap((field) =>
   Object.entries((pkg[field] ?? {}) as Record<string, string>).flatMap(([name, spec]) => {
     const pin = PIN.exec(spec);
-    return pin && ourRepository(pin[1]!) ? [{ name, spec, url: pin[1]!, from: `v${pin[2]}` }] : [];
+    const url = pin?.[1];
+    return url && ourRepository(url) ? [{ name, spec, url, from: `v${pin[2]}` }] : [];
   }),
 );
 
@@ -101,8 +102,12 @@ for (const [at, { name, spec, url, from }] of ordered.entries()) {
     say(`${name}: ${from}, the newest`);
     continue;
   }
-  const kept = MANIFESTS.map((path) => [path, readFileSync(path)] as const);
-  const text = kept[0]![1].toString();
+  const packageBytes = readFileSync("package.json");
+  const kept: readonly (readonly [string, Buffer])[] = [
+    ["package.json", packageBytes],
+    ["bun.lock", readFileSync("bun.lock")],
+  ];
+  const text = packageBytes.toString();
   const pinned = `${JSON.stringify(name)}: ${JSON.stringify(spec)}`;
   if (!text.includes(pinned)) {
     say(`${name}: package.json does not hold ${pinned} as written, kept ${from}`);

@@ -41,7 +41,9 @@ export function parseTreeEntries(output: string): SnapshotEntry[] {
     .split("\0")
     .filter(Boolean)
     .map((line) => {
-      const [, type, sha, path] = line.match(/^\d+ (\w+) (\w+)\t(.*)$/s)!;
+      const match = /^\d+ (\w+) (\w+)\t(.*)$/s.exec(line);
+      if (!match) throw new Error(`unexpected git ls-tree line: ${line}`);
+      const [, type, sha, path] = match;
       return { type, sha, path };
     });
 }
@@ -53,7 +55,9 @@ export function parseIndexEntries(output: string): {
   const entries: SnapshotEntry[] = [];
   for (const line of output.split("\0").filter(Boolean)) {
     // "<mode> <sha> <stage>\t<path>"; mode 160000 is a submodule's commit.
-    const [, mode, sha, stage, path] = line.match(/^(\d+) (\w+) (\d)\t(.*)$/s)!;
+    const match = /^(\d+) (\w+) (\d)\t(.*)$/s.exec(line);
+    if (!match) throw new Error(`unexpected git ls-files line: ${line}`);
+    const [, mode, sha, stage, path] = match;
     if (stage !== "0") return { entries, unmergedPath: path };
     entries.push({ type: mode === "160000" ? "commit" : "blob", sha, path });
   }

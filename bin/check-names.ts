@@ -64,10 +64,10 @@ for (const file of files.sort()) {
 }
 const findings: Finding[] = [];
 for (const [name, [path, ...others]] of declared)
-  if (others.length)
+  if (path !== undefined && others.length)
     findings.push({
       check: "names",
-      path: path!,
+      path,
       text: "",
       message: `function \`${name}\` is also declared in ${others.join(", ")}`,
     });

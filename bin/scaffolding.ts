@@ -141,12 +141,12 @@ for (const [step, replacement] of replacements)
   console.error(`[scaffolding] ${step} uses local ${replacement}`);
 
 const fullOnlyBuilt = gatePlan.buildFullOnlyMap(config, local);
-if (fullOnlyBuilt.problem) fail(fullOnlyBuilt.problem);
-const fullOnly = fullOnlyBuilt.fullOnly!;
+if (fullOnlyBuilt.problem !== undefined) fail(fullOnlyBuilt.problem);
+const fullOnly = fullOnlyBuilt.fullOnly;
 
 const mappingsBuilt = gatePlan.buildChangedMappings(config, named);
-if (mappingsBuilt.problem) fail(mappingsBuilt.problem);
-const mappings = mappingsBuilt.mappings!;
+if (mappingsBuilt.problem !== undefined) fail(mappingsBuilt.problem);
+const mappings = mappingsBuilt.mappings;
 
 const fast = fastSteps([...Object.keys(shared), ...local], fullOnly);
 
