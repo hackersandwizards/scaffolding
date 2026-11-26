@@ -6,7 +6,9 @@ import {
   beforeEach,
   describe,
   expect,
+  onTestFinished,
   test,
+  TestRunner,
   vi,
 } from "vitest";
 import { auditAllow } from "../lib/allow-entries.ts";
@@ -81,7 +83,8 @@ const member = (value: unknown, ...path: (string | number)[]): unknown =>
 const bin = (name: string) => join(import.meta.dirname, "..", "bin", `${name}.ts`);
 const PREVIEW = 'ASTRO_PREVIEW_BACKGROUND=1 bun --bun astro preview --root "$PWD/catalog"';
 const made: string[] = [];
-afterAll(() => made.forEach((dir) => rmSync(dir, { recursive: true, force: true })));
+const removeFixture = (dir: string) => rmSync(dir, { recursive: true, force: true });
+afterAll(() => made.forEach(removeFixture));
 
 const cache = join(import.meta.dirname, "..", "node_modules", ".cache", "scaffolding");
 // A stopped run skips afterAll: the next run removes its folders once an hour old, so a run still
@@ -101,9 +104,23 @@ for (const root of [tmpdir(), cache]) sweepFixtures(root);
 function temp(root = tmpdir()) {
   mkdirSync(root, { recursive: true });
   const dir = mkdtempSync(join(root, "scaffolding-test-"));
-  made.push(dir);
+  if (TestRunner.getCurrentTest()) onTestFinished(() => removeFixture(dir));
+  else made.push(dir);
   return dir;
 }
+
+describe("test fixture lifetime", () => {
+  let dir: string;
+
+  test("creates a temporary directory for the running test", () => {
+    dir = temp();
+    expect(existsSync(dir)).toBe(true);
+  });
+
+  afterAll(() => {
+    expect(existsSync(dir)).toBe(false);
+  });
+});
 
 test("fixture cleanup propagates filesystem errors besides disappearance", () => {
   const dir = temp();
