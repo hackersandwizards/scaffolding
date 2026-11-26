@@ -145,4 +145,4 @@ the person names that scope.
 
 ## Mirrors and sync
 
-Before editing a rule or skill the hub mirrors into other repositories, and before syncing, read `mirrors.md`.
+Before editing a rule or skill the hub mirrors into other repositories, adding one to a participant repository, sweeping every repository, or syncing, read `mirrors.md`.

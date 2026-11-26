@@ -154,4 +154,4 @@ remains.
 
 ## Shared checkout or worktree
 
-The shared checkout is the default. Before giving a delegate a worktree or releasing beside another session, read `worktree.md`.
+The shared checkout is the default. Before giving a delegate a worktree, working inside one, removing one or releasing beside another session, read `worktree.md`.

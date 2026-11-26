@@ -53,6 +53,11 @@ Prefer `fd` (`bfs` for `find` syntax), `rg` (`ugrep` inside archives, compressed
 
 **JavaScript/TypeScript:**
 
+- `playwright install` deletes every build in the shared Playwright cache that no installation
+  registered in its `.links/` folder needs. List the cache before and after; restore a build that
+  vanished with `node node_modules/playwright-core/cli.js install <browser>` in the repository that
+  needs it, which also registers it. Install every browser the `playwright.config` projects name,
+  and `launch()` each from the repository's own `node_modules` before a gate.
 - bun is the package manager in every repository of ours: `bun install`, `bun run`, `bun.lock`,
   `"packageManager": "bun@<version>"`, and those lines in its README and CLAUDE.md. A participant
   repository, a training repository without our `CLAUDE.md` at its root that participants build in
