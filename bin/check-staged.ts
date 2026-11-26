@@ -25,9 +25,10 @@ import { stagedDiff, stagedPaths } from "../lib/staged-paths.ts";
 import {
   classifyPrettierStdin,
   ConcurrencyPool,
+  failPartialPrettierResult,
   findDifferingScript,
   hasNoPrettierParser,
-  resolvePartialPrettierResult,
+  passPartialPrettierResult,
   resolvePartialToolResult,
   spawnStagedEslint,
   spawnStagedProcess,
@@ -207,7 +208,7 @@ async function checkPartialFile(tool: string, path: string): Promise<ToolRun> {
             spawnStagedProcess(`node_modules/.bin/${tool}`, ["--file-info", path]),
           ),
         ));
-    return resolvePartialPrettierResult(path, passed ? "pass" : "fail", result);
+    return passed ? passPartialPrettierResult(result) : failPartialPrettierResult(path, result);
   }
   return resolvePartialToolResult(tool, path, result);
 }

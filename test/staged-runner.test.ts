@@ -4,10 +4,11 @@ import {
   classifyPrettierStdin,
   collectChildOutput,
   ConcurrencyPool,
+  failPartialPrettierResult,
   findDifferingScript,
   hasNoPrettierParser,
   parseEslintRuleMetadata,
-  resolvePartialPrettierResult,
+  passPartialPrettierResult,
   resolvePartialToolResult,
   spawnStagedEslint,
   spawnStagedProcess,
@@ -174,21 +175,19 @@ test.each<{
   expect(findDifferingScript(staged, working)).toBe(expected);
 });
 
+test("passPartialPrettierResult clears output and sets exit code 0", () => {
+  expect(
+    passPartialPrettierResult({ out: "formatted\n", code: 0, stdout: Buffer.from("formatted\n") }),
+  ).toEqual({ out: "", code: 0, stdout: Buffer.from("formatted\n") });
+});
+
 test.each<{
   label: string;
-  verdict: "pass" | "fail";
   run: ToolRun;
   expected: ToolRun;
 }>([
   {
-    label: "clears output when prettier passes",
-    verdict: "pass",
-    run: { out: "formatted\n", code: 0, stdout: Buffer.from("formatted\n") },
-    expected: { out: "", code: 0, stdout: Buffer.from("formatted\n") },
-  },
-  {
     label: "reports not formatted and exit 1 when code is 0",
-    verdict: "fail",
     run: { out: "diff\n", code: 0, stdout: Buffer.from("diff\n") },
     expected: {
       out: "[check:staged] prettier: a.ts as staged\nnot formatted\n",
@@ -198,7 +197,6 @@ test.each<{
   },
   {
     label: "preserves stderr and non-zero exit code on syntax error",
-    verdict: "fail",
     run: { out: "SyntaxError\n", code: 2, stdout: Buffer.alloc(0) },
     expected: {
       out: "[check:staged] prettier: a.ts as staged\nSyntaxError\n",
@@ -206,8 +204,8 @@ test.each<{
       stdout: Buffer.alloc(0),
     },
   },
-])("resolvePartialPrettierResult: $label", ({ verdict, run, expected }) => {
-  expect(resolvePartialPrettierResult("a.ts", verdict, run)).toEqual(expected);
+])("failPartialPrettierResult: $label", ({ run, expected }) => {
+  expect(failPartialPrettierResult("a.ts", run)).toEqual(expected);
 });
 
 test.each<{

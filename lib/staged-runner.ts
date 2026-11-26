@@ -122,12 +122,11 @@ export function hasNoPrettierParser(info: ToolRun): boolean {
   return !info.code && jsonObject(info.stdout).inferredParser === null;
 }
 
-export function resolvePartialPrettierResult(
-  path: string,
-  verdict: "pass" | "fail",
-  run: ToolRun,
-): ToolRun {
-  if (verdict === "pass") return { ...run, out: "", code: 0 };
+export function passPartialPrettierResult(run: ToolRun): ToolRun {
+  return { ...run, out: "", code: 0 };
+}
+
+export function failPartialPrettierResult(path: string, run: ToolRun): ToolRun {
   const why = !run.code ? "not formatted\n" : run.out;
   return {
     ...run,
