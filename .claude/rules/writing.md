@@ -2,8 +2,8 @@
 
 Load the `voice` skill before the first text a human reads in a session, this conversation,
 records and documents included. Messages between agents, agent memory, instruction artifacts and
-scratch files follow only this file. A text that leaves the session for a reader is written by Neon
-as the `delegation` skill says.
+scratch files follow only this file. A text that leaves the session for a reader, and public web
+research, go to Neon: load `delegation` before the first one and follow its `writing.md`.
 
 - In a reply, lead with the answer, challenge a wrong assumption in the first sentence, and end on
   what the reader must act on; a report that closes a task ends on what stays open and who moves
