@@ -83,51 +83,49 @@ export function formatAllowFinding(check: string, entry: AllowEntry, message: st
   return { check, path: "package.json", text: JSON.stringify(entry), message };
 }
 
+export function allowEntryProblem(
+  check: string,
+  entry: AllowEntry,
+  usable: AllowEntry[],
+): Finding | undefined {
+  if (!usable.includes(entry))
+    return formatAllowFinding(
+      check,
+      entry,
+      "allow entry's path and text are strings or lists of strings: fix this entry in package.json scaffolding.allow so path and text (when set) are each a string or string[]",
+    );
+  if (!isReason(entry.reason))
+    return formatAllowFinding(
+      check,
+      entry,
+      'allow entry without a reason: fix the underlying finding and remove this package.json scaffolding.allow entry, or add a non-empty "reason" explaining why the exception is required',
+    );
+}
+
 /** The package.json is from the same snapshot as the findings, so a commit can add a case
- * and its entry together. A complete review can also detect an exception whose case vanished. */
-export class CheckAllowEntries {
-  private readonly entries: AllowEntry[];
-  private readonly usable: AllowEntry[];
-  private readonly check: string;
-
-  constructor(pkg: Package, check: string) {
-    this.check = check;
-    const allow = pkg.scaffolding?.allow ?? [];
-    this.entries = allow.filter((entry) => entry.check === check);
-    this.usable = this.entries.filter((entry) => allowText(entry.path) && allowText(entry.text));
+ * and its entry together. */
+export function applyAllow(pkg: Package, check: string, findings: Finding[]): Finding[] {
+  const entries = (pkg.scaffolding?.allow ?? []).filter((entry) => entry.check === check);
+  const usable = entries.filter((entry) => allowText(entry.path) && allowText(entry.text));
+  const left = findings.filter((finding) => !usable.some((entry) => covers(entry, finding)));
+  for (const entry of entries) {
+    const problem = allowEntryProblem(check, entry, usable);
+    if (problem) left.push(problem);
   }
+  return left;
+}
 
-  apply(findings: Finding[]) {
-    return this.review(findings);
+/** A complete review can also detect an exception whose case vanished. */
+export function auditAllow(pkg: Package, check: string, findings: Finding[]): Finding[] {
+  const entries = (pkg.scaffolding?.allow ?? []).filter((entry) => entry.check === check);
+  const usable = entries.filter((entry) => allowText(entry.path) && allowText(entry.text));
+  const left = findings.filter((finding) => !usable.some((entry) => covers(entry, finding)));
+  for (const entry of entries) {
+    const problem = allowEntryProblem(check, entry, usable);
+    if (problem) left.push(problem);
+    else
+      for (const item of unmatchedAllowItems(entry, findings))
+        left.push(formatAllowFinding(check, item, staleMessage));
   }
-
-  audit(findings: Finding[]) {
-    return this.review(findings, unmatchedAllowItems);
-  }
-
-  private review(findings: Finding[], unused?: typeof unmatchedAllowItems): Finding[] {
-    const left = findings.filter((finding) => !this.usable.some((entry) => covers(entry, finding)));
-    for (const entry of this.entries) {
-      if (!this.usable.includes(entry))
-        left.push(
-          formatAllowFinding(
-            this.check,
-            entry,
-            "allow entry's path and text are strings or lists of strings: fix this entry in package.json scaffolding.allow so path and text (when set) are each a string or string[]",
-          ),
-        );
-      else if (!isReason(entry.reason))
-        left.push(
-          formatAllowFinding(
-            this.check,
-            entry,
-            'allow entry without a reason: fix the underlying finding and remove this package.json scaffolding.allow entry, or add a non-empty "reason" explaining why the exception is required',
-          ),
-        );
-      else if (unused)
-        for (const item of unused(entry, findings))
-          left.push(formatAllowFinding(this.check, item, staleMessage));
-    }
-    return left;
-  }
+  return left;
 }

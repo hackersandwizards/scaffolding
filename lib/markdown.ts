@@ -61,28 +61,44 @@ export function markdownRuleGroups(paths: string[], folders: string[]) {
   ] as const;
 }
 
-export async function checkMarkdown(
+export async function checkMarkdown(root: string, paths: string[], fix = false): Promise<number> {
+  const folders = contentFolders(root, readPackage(root).scaffolding?.markdown);
+  return lintMarkdownGroups(markdownRuleGroups(paths, folders), {
+    directory: root,
+    argv: fix ? ["--fix"] : [],
+    fileContents: undefined,
+  });
+}
+
+export async function checkStagedMarkdown(
   root: string,
-  source: string[] | Record<string, string>,
+  contents: Record<string, string>,
   fix = false,
 ): Promise<number> {
-  const paths = Array.isArray(source) ? source : Object.keys(source);
-  const fileContents = Array.isArray(source) ? undefined : source;
-  const folders = contentFolders(
-    root,
-    readPackage(root, fileContents ? ":" : undefined).scaffolding?.markdown,
-  );
-  if (!paths.length) {
+  const paths = Object.keys(contents);
+  const folders = contentFolders(root, readPackage(root, ":").scaffolding?.markdown);
+  return lintMarkdownGroups(markdownRuleGroups(paths, folders), {
+    directory: root,
+    argv: fix ? ["--fix"] : [],
+    fileContents: contents,
+  });
+}
+
+export async function lintMarkdownGroups(
+  groups: ReturnType<typeof markdownRuleGroups>,
+  invocation: Pick<Parameters<typeof main>[0], "directory" | "argv" | "fileContents">,
+): Promise<number> {
+  if (groups.every(([group]) => !group.length)) {
     console.log("[markdown] no tracked Markdown files");
     return 0;
   }
   let code = 0;
-  for (const [group, rules] of markdownRuleGroups(paths, folders)) {
+  for (const [group, rules] of groups) {
     if (!group.length) continue;
     const result = await main({
-      directory: root,
-      argv: [...(fix ? ["--fix"] : []), ...group.map((path) => `:${path}`)],
-      fileContents,
+      directory: invocation.directory,
+      argv: [...invocation.argv, ...group.map((path) => `:${path}`)],
+      fileContents: invocation.fileContents,
       noGlobs: true,
       noImport: true,
       // CLI2 discovers config at each input's directory, even for explicit literal files.

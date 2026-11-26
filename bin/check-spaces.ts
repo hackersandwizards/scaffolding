@@ -5,7 +5,7 @@
 // {" "} where a space is meant; this finds the line breaks that still carry one. compressHTML true
 // and false keep the break as a space, so where every Astro config sets one of them the check reads
 // only the components the package ships, which a consumer compiles under its own setting.
-import { CheckAllowEntries } from "../lib/allow-entries.ts";
+import { auditAllow } from "../lib/allow-entries.ts";
 import { lostSpaceTag, spaceTemplateLines } from "../lib/astro-spaces.ts";
 import { readFileSync } from "node:fs";
 import { join, posix } from "node:path";
@@ -78,4 +78,4 @@ for (const file of files.filter((f) => f.endsWith(".astro") && reads(f))) {
       });
   });
 }
-finish("spaces", new CheckAllowEntries(pkg, "spaces").audit(found), started);
+finish("spaces", auditAllow(pkg, "spaces", found), started);

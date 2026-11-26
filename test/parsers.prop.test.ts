@@ -1,4 +1,4 @@
-import { CheckAllowEntries } from "../lib/allow-entries.ts";
+import { auditAllow } from "../lib/allow-entries.ts";
 import { fc, test, unicodeString } from "@hackersandwizards/scaffolding/property";
 import { describe, expect, vi } from "vitest";
 import { jsonObject, isStrings } from "../lib/json.ts";
@@ -207,8 +207,10 @@ test.prop([segment, word])(
     const otherFile = { ...finding, path: `test/${file}.ts` };
     const otherCheck = { ...finding, check: "structure" };
     const otherText = { ...finding, text: "9" };
-    expect(
-      new CheckAllowEntries(pkg, check).audit([finding, otherFile, otherCheck, otherText]),
-    ).toEqual([otherFile, otherCheck, otherText]);
+    expect(auditAllow(pkg, check, [finding, otherFile, otherCheck, otherText])).toEqual([
+      otherFile,
+      otherCheck,
+      otherText,
+    ]);
   },
 );

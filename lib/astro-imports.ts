@@ -88,26 +88,43 @@ export class AstroModuleMirror {
     this.originals.set(module, path);
   }
 
-  compileComponent(path: string, readFrontmatter: boolean): Finding[] {
+  compileComponent(path: string): Finding[] {
     const code = readFileSync(join(this.root, path), "utf8");
     const result = this.compiler.transform(code, { filename: path });
     const errors = result.diagnostics.filter(({ severity }) => severity === "error");
     if (errors.length) return errors.map(({ text }) => cycleFinding(text, path));
-    const findings: Finding[] = [];
 
+    const serverProblem = this.writeAstroServer(path, result.code);
+    const scriptProblems = this.writeAstroScripts(path, result.scripts);
+    return serverProblem ? [serverProblem, ...scriptProblems] : scriptProblems;
+  }
+
+  compileComponentWithFrontmatter(path: string): Finding[] {
+    const code = readFileSync(join(this.root, path), "utf8");
+    const result = this.compiler.transform(code, { filename: path });
+    const errors = result.diagnostics.filter(({ severity }) => severity === "error");
+    if (errors.length) return errors.map(({ text }) => cycleFinding(text, path));
+
+    const serverProblem = this.writeAstroServer(path, result.code);
+    // The server bundle repeats frontmatter imports to populate Astro's metadata.
+    this.frontmatter.set(
+      join(this.directory, `${path}.ts`),
+      astroFrontmatterCode(code, this.compiler.parse(code).ast),
+    );
+    const scriptProblems = this.writeAstroScripts(path, result.scripts);
+    return serverProblem ? [serverProblem, ...scriptProblems] : scriptProblems;
+  }
+
+  writeAstroServer(path: string, code: string): Finding | undefined {
     // Compiler-generated virtual imports resolve back to the component.
     const virtualImport = `import ${JSON.stringify(path).slice(0, -1)}?astro&type=`;
-    const server = result.code.split("\n").filter((line) => !line.startsWith(virtualImport));
-    const module = `${path}.ts`;
-    const serverProblem = this.writeModule(module, path, server.join("\n"));
-    if (serverProblem) findings.push(serverProblem);
-    // The server bundle repeats frontmatter imports to populate Astro's metadata.
-    if (readFrontmatter)
-      this.frontmatter.set(
-        join(this.directory, module),
-        astroFrontmatterCode(code, this.compiler.parse(code).ast),
-      );
-    for (const [index, script] of result.scripts.entries()) {
+    const server = code.split("\n").filter((line) => !line.startsWith(virtualImport));
+    return this.writeModule(`${path}.ts`, path, server.join("\n"));
+  }
+
+  writeAstroScripts(path: string, scripts: readonly { code?: string }[]): Finding[] {
+    const findings: Finding[] = [];
+    for (const [index, script] of scripts.entries()) {
       if (!script.code) continue;
       const problem = this.writeModule(`${path}.script-${index}.ts`, path, script.code);
       if (problem) findings.push(problem);
@@ -146,7 +163,11 @@ export async function checkAstroImports(
     mirror.copySources(files);
     const findings: Finding[] = [];
     for (const path of files) {
-      if (path.endsWith(".astro")) findings.push(...mirror.compileComponent(path, Boolean(visit)));
+      if (!path.endsWith(".astro")) continue;
+      const problems = visit
+        ? mirror.compileComponentWithFrontmatter(path)
+        : mirror.compileComponent(path);
+      findings.push(...problems);
     }
     if (findings.length) return { complete: false, findings };
     const visitSource: VisitImports | undefined =

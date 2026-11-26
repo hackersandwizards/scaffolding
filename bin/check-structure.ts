@@ -1,6 +1,6 @@
 #!/bin/sh
 // 2>/dev/null; exec bun --no-env-file "$0" "$@"
-import { CheckAllowEntries } from "../lib/allow-entries.ts";
+import { auditAllow } from "../lib/allow-entries.ts";
 import { spawnSync } from "node:child_process";
 import {
   chmodSync,
@@ -277,7 +277,7 @@ if (hooks !== skeleton.hooksPath)
     () => git(["config", "core.hooksPath", skeleton.hooksPath], root),
   );
 
-const left = new CheckAllowEntries(pkg, "structure").audit(findings);
+const left = auditAllow(pkg, "structure", findings);
 if (fix)
   for (const f of left)
     try {

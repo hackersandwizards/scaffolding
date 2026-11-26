@@ -9,7 +9,7 @@ import {
   test,
   vi,
 } from "vitest";
-import { CheckAllowEntries } from "../lib/allow-entries.ts";
+import { auditAllow } from "../lib/allow-entries.ts";
 import { spawn, spawnSync } from "node:child_process";
 import { createHash } from "node:crypto";
 import {
@@ -965,12 +965,11 @@ test.each([
   },
 ] as const)("allow entries cover or explain $scenario", ({ entries, findings, expected }) => {
   expect(
-    new CheckAllowEntries(
-      { scaffolding: { allow: [...entries] } } as ConstructorParameters<
-        typeof CheckAllowEntries
-      >[0],
+    auditAllow(
+      { scaffolding: { allow: [...entries] } } as Parameters<typeof auditAllow>[0],
       "x",
-    ).audit(findings.map(([path, text]) => rawFinding(path, text))),
+      findings.map(([path, text]) => rawFinding(path, text)),
+    ),
   ).toEqual(expected);
 });
 

@@ -153,6 +153,7 @@ if (mappingsBuilt.problem !== undefined) fail(mappingsBuilt.problem);
 const mappings = mappingsBuilt.mappings;
 
 const fast = fastSteps([...Object.keys(shared), ...local], fullOnly);
+const changedStepSelector = new ChangedStepSelector(fast, local, mappings);
 
 function resolveChangedSteps(): Map<string, string> {
   const collected = ranges.length
@@ -166,7 +167,7 @@ function resolveChangedSteps(): Map<string, string> {
     console.error(`[scaffolding] --changed: ${collected.fallback}: all fast steps run`);
     return allChangedSteps(fast, collected.fallback);
   }
-  const { steps, fallback: why } = new ChangedStepSelector(fast, local, mappings).select(collected);
+  const { steps, fallback: why } = changedStepSelector.select(collected);
   if (why !== undefined) console.error(`[scaffolding] --changed: ${why}: all fast steps run`);
   else
     console.error(

@@ -23,7 +23,7 @@
 //                                             --never adds the never section, every name kept;
 //                                             --never - reads it from stdin after a NUL byte
 //   check-confidential purged <sha>...        prints .confidential-purged.json for purged commits
-import { CheckAllowEntries } from "../lib/allow-entries.ts";
+import { applyAllow, auditAllow } from "../lib/allow-entries.ts";
 import { spawnSync } from "node:child_process";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
@@ -364,9 +364,6 @@ scanBinaries(binaries);
 // A full scan (the index, the gate's step, a tree, or the never scan, handed every string the caller
 // shows) sees every case, so an allow entry matching nothing there is stale. A partial scan (staged, one commit, a message) or one without the list
 // cannot tell.
-const exceptions = new CheckAllowEntries(pkg, CHECK);
-finish(
-  "check-confidential",
-  [...listProblem, ...(full && list ? exceptions.audit(findings) : exceptions.apply(findings))],
-  started,
-);
+const allowedFindings =
+  full && list ? auditAllow(pkg, CHECK, findings) : applyAllow(pkg, CHECK, findings);
+finish("check-confidential", [...listProblem, ...allowedFindings], started);

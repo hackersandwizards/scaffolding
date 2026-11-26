@@ -77,7 +77,7 @@ test.each([["page.astro", ["page.astro.ts", "parse", "page.astro.script-1.ts"]]]
       calls.push(module);
       return undefined;
     });
-    expect(mirror.compileComponent(path, true)).toEqual([]);
+    expect(mirror.compileComponentWithFrontmatter(path)).toEqual([]);
     expect(calls).toEqual(expected);
     expect(mirror.writeModule).toHaveBeenNthCalledWith(
       1,
@@ -85,6 +85,75 @@ test.each([["page.astro", ["page.astro.ts", "parse", "page.astro.script-1.ts"]]]
       path,
       "const server = 1;",
     );
+  },
+);
+
+test.each([["plain.astro", "plain.astro.script-0.ts"]])(
+  "writes client scripts without parsing frontmatter for a plain compile",
+  (path, expectedScript) => {
+    using temp = testDirectory();
+    using directory = testDirectory();
+    writeFileSync(join(temp.folder, path), "<script>console.log(1);</script>");
+    const parse: typeof compiler.parse = () => {
+      throw new Error("plain compile must not parse frontmatter");
+    };
+    const mirror = new AstroModuleMirror(temp.folder, directory.folder, {
+      parse,
+      transform: compiler.transform,
+    });
+    expect(mirror.compileComponent(path)).toEqual([]);
+    expect(mirror.originals.get(expectedScript)).toBe(path);
+  },
+);
+
+test.each([
+  [
+    'import "page.astro?astro&type=script";\nimport "other.astro?astro&type=script";',
+    'import "other.astro?astro&type=script";',
+  ],
+])("leaves virtual imports for other components in the server output", (source, expected) => {
+  using temp = testDirectory();
+  using directory = testDirectory();
+  const mirror = new AstroModuleMirror(temp.folder, directory.folder, compiler);
+  expect(mirror.writeAstroServer("page.astro", source)).toBeUndefined();
+  expect(readFileSync(join(directory.folder, "page.astro.ts"), "utf8")).toBe(expected);
+});
+
+test.each([
+  [
+    [{ code: "first();" }, {}, { code: "" }, { code: "third();" }],
+    ["first();", "third();"],
+  ],
+])("returns script write problems in script order", (scripts, expected) => {
+  using temp = testDirectory();
+  using directory = testDirectory();
+  const mirror = new AstroModuleMirror(temp.folder, directory.folder, compiler);
+  using writeModule = vi.spyOn(mirror, "writeModule").mockImplementation((module, path, code) => ({
+    check: "cycles",
+    text: module,
+    path,
+    message: code,
+  }));
+  const findings = mirror.writeAstroScripts("page.astro", scripts);
+  expect(findings.map(({ message }) => message)).toEqual(expected);
+  expect(writeModule).toHaveBeenCalledTimes(2);
+});
+
+test.each([["page.astro", "frontmatter parse failed", "page.astro.ts"]])(
+  "surfaces the frontmatter parse error before writing any client script",
+  (path, expectedError, serverModule) => {
+    using temp = testDirectory();
+    using directory = testDirectory();
+    writeFileSync(join(temp.folder, path), "<script>console.log(1);</script>");
+    const parse: typeof compiler.parse = () => {
+      throw new Error(expectedError);
+    };
+    const mirror = new AstroModuleMirror(temp.folder, directory.folder, {
+      parse,
+      transform: compiler.transform,
+    });
+    expect(() => mirror.compileComponentWithFrontmatter(path)).toThrow(expectedError);
+    expect([...mirror.originals.keys()]).toEqual([serverModule]);
   },
 );
 
