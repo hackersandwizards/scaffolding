@@ -41,8 +41,10 @@ choice to please: agreement carries its reason.
 - A negative needs the surface that enumerates the thing, read whole: a command's help and schema
   for a flag, every table for a question of ownership, a page's markup rather than WebFetch's
   paraphrase. A search across it is not enough.
-- Verify a rename or relocation by listing every stored reference, across every tool that keeps
-  such references, and testing each against reality.
+- A correction, rename or relocation reaches every instance of its kind and every artifact that
+  carries it (code, docs, drafts and their attachments, trackers, records): list them across every
+  tool that keeps such references, change each your access and approval reach, put the rest up for
+  release, test each against reality, and name the list in the reply.
 - Never print, copy, commit or summarize the contents of a `.env` file, a token, Terraform state or a
   CI variable.
 - Never weaken a check to make it pass. Fix what the gate caught, or report that you could not. An

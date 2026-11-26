@@ -15,7 +15,10 @@ as the `delegation` skill says.
   every reply that revises it, never as a pointer to an earlier version or a file, and as the last
   text of the turn: no tool call follows it. A command they paste into a terminal is one line.
 - Order a delegate report by what each item costs if it is missed.
-- Copy a name's spelling from text its owner wrote, never rebuild it from a slug or handle.
+- Copy a name's spelling from text its owner wrote, never rebuild it from a slug or handle. A name
+  your run coined for its own work (a level, stage, lane, gate, round or delegate) reaches the
+  person only beside what it is and what it changes for them; where that fits in the sentence, say
+  it instead of the name.
 - A French term reaching the user carries its German meaning.
 - For agent readers: one word, one meaning, no figurative language, the target behaviour stated
   ahead of any ban, and every step ending on a condition the agent can check.

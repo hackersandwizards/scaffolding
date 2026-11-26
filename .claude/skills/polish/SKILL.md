@@ -2,8 +2,10 @@
 name: polish
 description: >-
   Full-repo quality pass (comment sweep, quality, performance and security review, /simplify, a
-  second review, commit and push): on request, and at the end of a session that changed several
-  repositories, once in each with `since <the session's first commit there>`.
+  second review, commit and push): on request, after each deploy of a batch other than its own to a
+  shared test environment with `since <the HEAD the session's last polish ended on, else its first
+  commit>`, and at the end of a session that changed several repositories, once in each with
+  `since <the session's first commit there>`.
 ---
 
 # Polish
@@ -18,9 +20,9 @@ An argument narrows what each phase covers, never which phases run. Report what 
 The argument `recent` scopes the run to everything committed since the earlier of two days back
 and the `Window start:` its instruction carries. Where it carries `Window start: none` or no such
 line, take the two days and say so; the report names the start it reached.
-`BASE=$(git log --until="<that start>" -1 --format=%H)`, then `$BASE..HEAD`. Where `BASE` is
-`HEAD`, say in one line that nothing was committed in the window and stop. The argument
-`since <commit>` sets `BASE` to that commit.
+`BASE=$(git log --until="<that start>" -1 --format=%H)`, then `$BASE..HEAD`. The argument
+`since <commit>` sets `BASE` to that commit. Where `BASE` is `HEAD`, say in one line that nothing
+was committed in the window and stop.
 
 The argument also scopes where you hunt for defects, never which proven defects you may correct.
 Once a fact is verified false, fix every live copy of it, the generator that produced them
@@ -57,7 +59,7 @@ folder its `CLAUDE.md` names for documents, written with today's date, deleting 
 from a detached worktree on the commit before the fix, measure before and after back to back so each
 pair shares its load, and write the 1-minute load average beside each series.
 
-Hand one reviewer per module or top-level directory to a model that wrote none of its code, as `delegation` hands work over and `blind-review` chooses, to review it for minimalism, design, performance and security, with the path of `references/failure-modes.md` in its prompt to read in full. Reviewers report and do not edit.
+Hand one reviewer per module or top-level directory to a model that wrote none of its code, as `delegation` hands work over and `blind-review` chooses, to review it for minimalism, design, coupling between modules, performance and security, with the path of `references/failure-modes.md` in its prompt to read in full. Reviewers report and do not edit.
 
 Review the instruction artifacts as their own module, yourself: `.claude/` rules, agents, and skills, plus `CLAUDE.md`. Measure what every session here starts with, the bytes of the rules without `paths:`, `CLAUDE.md`, the agent files, the memory indexes and the skill descriptions, and report it before and after this run's cuts. Look for a pointer to a path that no longer exists, a cap or boundary that contradicts an always-on rule, one rule stated twice inside a single skill or among the artifacts that are not skills, and any skill pointing outside its own directory at another skill, rule, agent or memory file by link or by name, other than a channel's reference skill it loads or a skill it runs as a step.
 Load `agent-feedback` before fixing one: it says where the fix to a mirrored file goes and how the
