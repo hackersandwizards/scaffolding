@@ -10,6 +10,9 @@ allowed-tools: Read, Glob, Grep, Bash
 
 # Voice: postures over a layered stack
 
+A text that leaves the session for a reader goes to the Neon writer: load `delegation` and follow
+its `writing.md`. Write it yourself only where a brief names you its writer.
+
 Drafting into an existing conversation: read it first. Greeting, sign-off, one block or a stream, and the sender's own unanswered questions come from the thread, not from the request.
 
 Transcribing a person into a durable artifact, drop a leading reference code or restated question
