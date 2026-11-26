@@ -140,21 +140,37 @@ timed event>`.
 8. Every message the person types shows them reading now, one that says they are going away again
    included: in that turn, put the open `decision` items to them in one AskUserQuestion call, options
    read from the item, and report the rest
-   from the items, all ordered by what each costs if missed. Before
-   ending the session, read the transcript from its first message: every item of the first
-   report, every question put and its answer, every promise. Check: each unfinished one has an
-   item.
+   from the items, all ordered by what each costs if missed.
 
 ## While the person is away
 
 When the person says they are away, the session works unattended between their messages: every
 question for the person becomes an item (step 2), put to them at their next message (step 8). The
 session steers: it writes briefs, reads reports, keeps items current, and hands every ready batch
-to a delegate. Every message to the person while the goal runs ends with three lines in their
-terms, placed before any text they must send or paste: what finished since their last message,
-what remains per done criterion, and the top priority. When a delegate finishes, stop the servers
-and browsers it started and delete its scratch then, not at session end. Check: no process or
-scratch folder of a finished delegate remains.
+to a delegate. Every message to the person while the goal runs ends, in their terms and before
+any text they must send or paste, on what finished since their last message, the Closing table and
+the top priority.
+
+## Closing
+
+A batch is closed when, each read in that turn:
+
+1. every commit's reviewer, by model, is the one `blind-review` names for its author;
+2. every suite the gate leaves out that the batch's files can break (e2e, visual, smoke; read from
+   `package.json` and the CI workflow) has run once, or the report names the CI run that ran it;
+3. a defect the batch fixed is swept for its class in every repository the same change reached;
+4. its item is deleted or current, and the delegate's servers, browsers and scratch are gone.
+
+The session is closed when every batch is, and:
+
+5. `polish` has run once in each repository the session changed;
+6. every hub rule or skill the session changed is synced;
+7. the transcript is read from its first message: every plan step, every item of the first
+   report, every question put and its answer, every promise. Each unfinished one has an item.
+
+A reply that calls a plan, a job or the session done, and every answer to what is open or remains,
+gives the steps still open as one table (step, who, waits on), these seven included, then what
+waits for the person.
 
 ## Shared checkout or worktree
 

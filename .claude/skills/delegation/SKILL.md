@@ -40,8 +40,8 @@ Only where none reaches it, call the target's CLI: `claude -p`, `codex exec`, `a
   complete, and naming the script overrides the skill's choices. A brief whose result feeds a reply
   names that reply's thread.
 - After a stall, timeout or resume, reconcile the delegate's commits and working tree against its
-  report and hand back any contradiction. Before relaying a defect as fixed, sweep the repository
-  for its class.
+  report and hand back any contradiction. Before relaying a defect as fixed, sweep every repository
+  the same change reached for its class.
 - A brief for code work asks the report to list every assertion, threshold, fixture or pinned
   expectation the run changed, each with its old and new value and the reason. One a review finds
   unlisted is a finding, whatever the suite reports. It also asks that each test the run adds is

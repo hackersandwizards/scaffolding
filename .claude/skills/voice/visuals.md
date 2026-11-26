@@ -15,8 +15,8 @@ under one sentence saying what to see in it. Prose carries only what no form hol
 | When | Table sorted by time | Table | Table |
 
 - A subject keeps its names, their order and, per medium, its form every time it is shown. A subject that
-  outlasts the conversation is drawn once in a committed file and changed there; the reply gives
-  the path.
+  outlasts the conversation is drawn once in a committed file and changed there; the reply shows
+  its chat form and gives the path, again in the reply that reports a change to it.
 - A diagram goes in a file, where T3's preview and GitHub render it; where the chat renders HTML
   (T3's `html_render`), a reply about structure, order or dependency also renders its diagram
   there as HTML, unasked. Elsewhere a chat reply uses the last column. No generated image.

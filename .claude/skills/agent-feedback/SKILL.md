@@ -103,6 +103,8 @@ the agent to use the site's own control, not script logic or stub tests. A rule 
 writing voice says when a practice helps and when not, from fetched research where it borrows a
 best practice: an absolute is a defect. Before reporting a fix, walk the person's own example
 through it with today's state: no marker, no record, the run that starts tomorrow.
+Before telling the person how a setup now works, have a model that wrote none of the change list
+where the changed files differ from the reply, and fix each difference in the file or the reply.
 
 A cleanup of skills and rules has three equal goals: cut what another owner states or what only
 narrates history, collapse special cases, and leave no two passages contradicting each other,
