@@ -23,6 +23,7 @@
 //                                             --never adds the never section, every name kept;
 //                                             --never - reads it from stdin after a NUL byte
 //   check-confidential purged <sha>...        prints .confidential-purged.json for purged commits
+import { CheckAllowEntries } from "../lib/allow-entries.ts";
 import { spawnSync } from "node:child_process";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
@@ -71,7 +72,7 @@ import {
   stripPackageAllowTargets,
 } from "../lib/confidential-terms.ts";
 import { help } from "../lib/help.ts";
-import { applyAllow, finish, git, readPackage, repoRoot, type Finding } from "../lib/repo.ts";
+import { finish, git, readPackage, repoRoot, type Finding } from "../lib/repo.ts";
 
 const USAGE =
   "usage: check-confidential --staged | --message-file <file> [--list-optional] | --commit <rev> | --index | --tree <rev> | never | prepush | fetch | build <terms|-> [--public <file>] [--never <file>] | purged <sha>...";
@@ -161,7 +162,7 @@ const report = (path: string, text: string, details: string) => {
 let list: TermList | undefined;
 // No list reachable under --list-optional: the commit passes unscanned for terms.
 let unscanned = false;
-// Kept out of applyAllow: no allow entry may switch the list requirement off.
+// Kept out of the allow check: no allow entry may switch the list requirement off.
 const listProblem: Finding[] = [];
 if (skipped) warn("CI: term step skipped; the commit hook is the gate");
 else {
@@ -304,7 +305,7 @@ function scanDiffMode(): void {
 
 function scanNeverMode(): void {
   const texts = parseNeverInput(readFileSync(0, "utf8"));
-  // Kept out of applyAllow like the list's own problems: a broken dump passes nothing.
+  // Kept out of the allow check like the list's own problems: a broken dump passes nothing.
   if (!texts) {
     listProblem.push({
       check: CHECK,
@@ -366,8 +367,9 @@ scanBinaries(binaries);
 // A full scan (the index, the gate's step, a tree, or the never scan, handed every string the caller
 // shows) sees every case, so an allow entry matching nothing there is stale. A partial scan (staged, one commit, a message) or one without the list
 // cannot tell.
+const exceptions = new CheckAllowEntries(pkg, CHECK);
 finish(
   "check-confidential",
-  [...listProblem, ...applyAllow(pkg, CHECK, findings, full && Boolean(list))],
+  [...listProblem, ...(full && list ? exceptions.audit(findings) : exceptions.apply(findings))],
   started,
 );

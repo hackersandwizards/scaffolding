@@ -32,10 +32,7 @@ export function oxlintExtends(root: string) {
   return resolve(root) === resolve(own) ? "./config/oxlint.json" : template.extends[0];
 }
 
-export function oxlintConfiguration(root: string) {
-  const file = join(root, oxlintConfig);
-  if (!lstatSync(file).isFile()) throw new Error("must be a regular file");
-  const config = parseOxlintConfig(readFileSync(file, "utf8"));
+export function validateOxlintRuntimeOptions(config: Record<string, unknown>) {
   if (!isObject(config.options) || config.options.typeAware !== true)
     throw new Error("options.typeAware must be true");
   const ignores = config.ignorePatterns;
@@ -43,6 +40,13 @@ export function oxlintConfiguration(root: string) {
     throw new Error("ignorePatterns must include the shared patterns");
   if (!isStrings(config.plugins) || !config.plugins.includes("typescript"))
     throw new Error('plugins must include "typescript"');
+}
+
+export function oxlintConfiguration(root: string) {
+  const file = join(root, oxlintConfig);
+  if (!lstatSync(file).isFile()) throw new Error("must be a regular file");
+  const config = parseOxlintConfig(readFileSync(file, "utf8"));
+  validateOxlintRuntimeOptions(config);
   const env = config.env;
   if (!isObject(env) || Object.keys(template.env).some((name) => env[name] !== true))
     throw new Error("env must include the shared browser, Node and Bun globals");
@@ -51,6 +55,36 @@ export function oxlintConfiguration(root: string) {
     throw new Error(`extends must list "${expected}"`);
   return config;
 }
+
+export function* importRestrictionGuidance(location: string, options: unknown[]) {
+  for (const { item, suffix, example } of restrictedImports(options)) {
+    if (isObject(item) && isReason(item.message)) continue;
+    const pattern = isObject(item) ? (item.name ?? item.regex ?? item.group ?? item) : item;
+    const guidance =
+      typeof item === "string"
+        ? `replace the string with { ${example}, "message": ... } and say where code that needs this import belongs`
+        : "needs a message saying where code that needs this import belongs";
+    yield { message: `${location}${suffix} ${guidance}`, text: JSON.stringify(pattern) };
+  }
+}
+
+export function* syntaxRestrictionGuidance(location: string, options: unknown[]) {
+  for (const option of options) {
+    if (isObject(option) && isReason(option.message)) continue;
+    const selector = isObject(option) ? option.selector : option;
+    if (typeof selector !== "string") continue;
+    const guidance =
+      typeof option === "string"
+        ? 'replace the string with { "selector": ..., "message": ... } and say what to write instead'
+        : "needs a message saying what to write instead";
+    yield { message: `${location} ${guidance}`, text: JSON.stringify(selector) };
+  }
+}
+
+const restrictionGuidance = new Map([
+  ["no-restricted-imports", importRestrictionGuidance],
+  ["no-restricted-syntax", syntaxRestrictionGuidance],
+]);
 
 export function* oxlintRestrictionFindings(config: Record<string, unknown>) {
   const overrides: unknown[] = Array.isArray(config.overrides) ? config.overrides : [];
@@ -64,31 +98,8 @@ export function* oxlintRestrictionFindings(config: Record<string, unknown>) {
       if (!Array.isArray(setting) || !activeSeverity(setting)) continue;
       const options: unknown[] = setting.slice(1);
       const location = `${block}.${rule}`;
-      switch (restrictionRuleName(rule)) {
-        case "no-restricted-imports":
-          for (const { item, suffix, example } of restrictedImports(options)) {
-            if (isObject(item) && isReason(item.message)) continue;
-            const pattern = isObject(item) ? (item.name ?? item.regex ?? item.group ?? item) : item;
-            const guidance =
-              typeof item === "string"
-                ? `replace the string with { ${example}, "message": ... } and say where code that needs this import belongs`
-                : "needs a message saying where code that needs this import belongs";
-            yield { message: `${location}${suffix} ${guidance}`, text: JSON.stringify(pattern) };
-          }
-          break;
-        case "no-restricted-syntax":
-          for (const option of options) {
-            if (isObject(option) && isReason(option.message)) continue;
-            const selector = isObject(option) ? option.selector : option;
-            if (typeof selector !== "string") continue;
-            const guidance =
-              typeof option === "string"
-                ? 'replace the string with { "selector": ..., "message": ... } and say what to write instead'
-                : "needs a message saying what to write instead";
-            yield { message: `${location} ${guidance}`, text: JSON.stringify(selector) };
-          }
-          break;
-      }
+      const guidance = restrictionGuidance.get(restrictionRuleName(rule));
+      if (guidance) yield* guidance(location, options);
     }
   }
 }

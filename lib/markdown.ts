@@ -48,12 +48,26 @@ function contentFolders(root: string, markdown: unknown): string[] {
   });
 }
 
+export function markdownRuleGroups(paths: string[], folders: string[]) {
+  const strict: string[] = [];
+  const content: string[] = [];
+  for (const path of paths) {
+    const group = folders.some((folder) => path.startsWith(`${folder}/`)) ? content : strict;
+    group.push(path);
+  }
+  return [
+    [strict, config],
+    [content, contentConfig],
+  ] as const;
+}
+
 export async function checkMarkdown(
   root: string,
-  paths: string[],
+  source: string[] | Record<string, string>,
   fix = false,
-  fileContents?: Record<string, string>,
 ): Promise<number> {
+  const paths = Array.isArray(source) ? source : Object.keys(source);
+  const fileContents = Array.isArray(source) ? undefined : source;
   const folders = contentFolders(
     root,
     readPackage(root, fileContents ? ":" : undefined).scaffolding?.markdown,
@@ -62,17 +76,8 @@ export async function checkMarkdown(
     console.log("[markdown] no tracked Markdown files");
     return 0;
   }
-  const strict: string[] = [];
-  const content: string[] = [];
-  for (const path of paths) {
-    const group = folders.some((folder) => path.startsWith(`${folder}/`)) ? content : strict;
-    group.push(path);
-  }
   let code = 0;
-  for (const [group, rules] of [
-    [strict, config],
-    [content, contentConfig],
-  ] as const) {
+  for (const [group, rules] of markdownRuleGroups(paths, folders)) {
     if (!group.length) continue;
     const result = await main({
       directory: root,

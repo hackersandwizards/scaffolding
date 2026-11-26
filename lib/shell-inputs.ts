@@ -70,6 +70,21 @@ function literalWord(word: string | undefined): string | undefined {
   return value;
 }
 
+export function parseShellSourceWords(content: string) {
+  const names: (string | undefined)[] = [];
+  const directories: (string | undefined)[] = [];
+  for (const line of content.split("\n")) {
+    const directive = /^\s*#\s*shellcheck\s+(.*)$/.exec(line)?.[1];
+    if (directive !== undefined) {
+      for (const [, key, word] of directive.matchAll(sourceDirective))
+        (key === "source" ? names : directories).push(literalWord(word));
+    } else if (!/^\s*#/.test(line)) {
+      for (const [, word] of line.matchAll(sourceLine)) names.push(literalWord(word));
+    }
+  }
+  return { names, directories };
+}
+
 export function shellSources(
   scripts: string[],
   paths: string[],
@@ -86,20 +101,11 @@ export function shellSources(
     .map(([, , word]) => literalWord(word));
   for (const script of pending) {
     const content = read(script).toString().replace(/\\\n/g, "");
-    const names: (string | undefined)[] = [];
-    const directories = [".", ...rcPaths];
-    for (const line of content.split("\n")) {
-      const directive = /^\s*#\s*shellcheck\s+(.*)$/.exec(line)?.[1];
-      if (directive !== undefined) {
-        for (const [, key, word] of directive.matchAll(sourceDirective))
-          (key === "source" ? names : directories).push(literalWord(word));
-      } else if (!/^\s*#/.test(line)) {
-        for (const [, word] of line.matchAll(sourceLine)) names.push(literalWord(word));
-      }
-    }
+    const { names, directories } = parseShellSourceWords(content);
+    const search = [".", ...rcPaths, ...directories];
     for (const name of names) {
       if (!name || posix.isAbsolute(name)) continue;
-      for (const directory of directories) {
+      for (const directory of search) {
         if (!directory || posix.isAbsolute(directory)) continue;
         const base = directory.replace(/^SCRIPTDIR(?=\/|$)/, posix.dirname(script));
         const path = posix.join(base, name);
@@ -110,6 +116,19 @@ export function shellSources(
     }
   }
   return sources;
+}
+
+export function matchGitShellShebangs(
+  stdout: string,
+  wanted: ReadonlySet<string>,
+  ref?: string,
+): string[] {
+  const scripts: string[] = [];
+  for (const [, name, line, text] of stdout.matchAll(/([^\0]+)\0(\d+)\0([^\n]*)\n/g)) {
+    const path = ref ? name.slice(ref.length + 1) : name;
+    if (line === "1" && wanted.has(path) && shellShebang(text)) scripts.push(path);
+  }
+  return scripts;
 }
 
 export function gitShellShebangs(root: string, candidates: string[], ref?: string): string[] {
@@ -139,10 +158,7 @@ export function gitShellShebangs(root: string, candidates: string[], ref?: strin
     );
     if (r.status === 1) continue;
     if (r.status !== 0) throw new Error("git grep could not read shell shebangs");
-    for (const [, name, line, text] of r.stdout.matchAll(/([^\0]+)\0(\d+)\0([^\n]*)\n/g)) {
-      const path = ref ? name.slice(ref.length + 1) : name;
-      if (line === "1" && wanted.has(path) && shellShebang(text)) scripts.push(path);
-    }
+    scripts.push(...matchGitShellShebangs(r.stdout, wanted, ref));
   }
   return scripts;
 }

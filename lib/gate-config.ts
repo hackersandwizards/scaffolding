@@ -41,34 +41,47 @@ function relativePath(path: unknown): path is string {
   );
 }
 
+export function brandSettingsProblem(brand: Record<string, unknown>): string | undefined {
+  if (Object.keys(brand).some((key) => !["directory", "retired", "elements"].includes(key)))
+    return "scaffolding.brand accepts directory, retired and elements";
+  if (brand.directory !== undefined && !relativePath(brand.directory))
+    return "scaffolding.brand.directory must be a repository-relative path";
+  if (
+    brand.retired !== undefined &&
+    (!Array.isArray(brand.retired) || !brand.retired.length || !brand.retired.every(relativePath))
+  )
+    return "scaffolding.brand.retired must be a non-empty list of repository-relative paths";
+  if (brand.elements !== undefined && brand.elements !== "server")
+    return 'scaffolding.brand.elements must be "server" when declared';
+}
+
 export function brandProblem(pkg: Package): string | undefined {
   const config = pkg.scaffolding;
   const brand = config?.brand;
   if (brand !== undefined) {
     if (!pinsPackage(pkg, "@hackersandwizards/brand"))
       return "scaffolding.brand requires a brand pin";
-    if (
-      !isObject(brand) ||
-      Object.keys(brand).some((key) => !["directory", "retired", "elements"].includes(key))
-    )
-      return "scaffolding.brand accepts directory, retired and elements";
-    if (brand.directory !== undefined && !relativePath(brand.directory))
-      return "scaffolding.brand.directory must be a repository-relative path";
-    if (
-      brand.retired !== undefined &&
-      (!Array.isArray(brand.retired) || !brand.retired.length || !brand.retired.every(relativePath))
-    )
-      return "scaffolding.brand.retired must be a non-empty list of repository-relative paths";
-    if (brand.elements !== undefined && brand.elements !== "server")
-      return 'scaffolding.brand.elements must be "server" when declared';
+    if (!isObject(brand)) return "scaffolding.brand accepts directory, retired and elements";
+    const problem = brandSettingsProblem(brand);
+    if (problem !== undefined) return problem;
   }
+  if (pinsPackage(pkg, "@hackersandwizards/brand")) return brandRetiredRequirement(config, brand);
+}
+
+export function brandRetiredRequirement(
+  config: Package["scaffolding"],
+  brand: NonNullable<Package["scaffolding"]>["brand"],
+): string | undefined {
   if (
-    pinsPackage(pkg, "@hackersandwizards/brand") &&
     brand?.retired === undefined &&
     !(config?.check ?? []).flat().includes("check:retired") &&
     !isReason(config?.skip?.retired)
   )
     return "@hackersandwizards/brand is pinned: declare scaffolding.brand.retired, list check:retired, or give skip.retired a reason";
+}
+
+export function serverTimeoutFits(seconds: unknown): boolean {
+  return typeof seconds === "number" && seconds > 0 && Math.ceil(seconds * 1000) <= 2_147_483_647;
 }
 
 export function serverProblem(
@@ -81,14 +94,7 @@ export function serverProblem(
     !isReason(server.command)
   )
     return "scaffolding.server requires a command and accepts timeout and stderr";
-  if (
-    server.timeout !== undefined &&
-    !(
-      typeof server.timeout === "number" &&
-      server.timeout > 0 &&
-      Math.ceil(server.timeout * 1000) <= 2_147_483_647
-    )
-  )
+  if (server.timeout !== undefined && !serverTimeoutFits(server.timeout))
     return "scaffolding.server.timeout must be a positive number of seconds within the timer range";
   if (server.stderr !== undefined && typeof server.stderr !== "boolean")
     return "scaffolding.server.stderr must be a boolean";

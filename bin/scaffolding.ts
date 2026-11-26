@@ -9,7 +9,7 @@ import {
   collectWorkingTreeChanges,
   collectWorkingTreeChangesWithShell,
 } from "../lib/changed-paths.ts";
-import { allChangedSteps, fastSteps, selectChangedSteps } from "../lib/changed-steps.ts";
+import { allChangedSteps, ChangedStepSelector, fastSteps } from "../lib/changed-steps.ts";
 import { browserTestProblem, pinsPackage, placedSteps, vitestRun } from "../lib/gate-config.ts";
 import * as gatePlan from "../lib/gate-plan.ts";
 import { GateStepRunner, stepConcurrencyLimit } from "../lib/gate-runner.ts";
@@ -166,14 +166,7 @@ function resolveChangedSteps(): Map<string, string> {
     console.error(`[scaffolding] --changed: ${collected.fallback}: all fast steps run`);
     return allChangedSteps(fast, collected.fallback);
   }
-  const { steps, fallback: why } = selectChangedSteps(
-    [...collected.paths],
-    fast,
-    local,
-    mappings,
-    collected.shellShebangs,
-    collected.sourcedPaths,
-  );
+  const { steps, fallback: why } = new ChangedStepSelector(fast, local, mappings).select(collected);
   if (why !== undefined) console.error(`[scaffolding] --changed: ${why}: all fast steps run`);
   else
     console.error(

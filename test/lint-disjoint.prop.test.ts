@@ -1,11 +1,26 @@
 import { fc, test } from "@hackersandwizards/scaffolding/property";
 import { expect } from "vitest";
-import { lintRuleOverlaps } from "../lib/lint-disjoint.ts";
+import { labelLintOverlaps, lintRuleOverlaps } from "../lib/lint-rule-overlaps.ts";
 
 const name = fc.stringMatching(/^[a-z]{1,10}$/);
-const severity = fc.constantFrom(0, 1, 2, "off", "warn", "error", "deny");
+const ruleSettings = fc.constantFrom(
+  [0, false, false],
+  [0, true, false],
+  [1, false, false],
+  [1, true, true],
+  [2, false, false],
+  [2, true, true],
+  ["off", false, false],
+  ["off", true, false],
+  ["warn", false, false],
+  ["warn", true, true],
+  ["error", false, false],
+  ["error", true, true],
+  ["deny", false, false],
+  ["deny", true, true],
+);
 
-test.prop([fc.dictionary(name, fc.tuple(severity, fc.boolean())), name])(
+test.prop([fc.dictionary(name, ruleSettings), name])(
   "reports exactly the active shared rules for the file",
   (settings, file) => {
     const path = `src/${file}.ts`;
@@ -18,7 +33,7 @@ test.prop([fc.dictionary(name, fc.tuple(severity, fc.boolean())), name])(
         .map(([rule]) => rule),
     );
     const shared = Object.entries(settings)
-      .filter(([, [level, enabled]]) => enabled && level !== 0 && level !== "off")
+      .filter(([, [, , overlap]]) => overlap)
       .map(([rule]) => ({
         check: "structure",
         path,
@@ -26,7 +41,7 @@ test.prop([fc.dictionary(name, fc.tuple(severity, fc.boolean())), name])(
         message: `ESLint rule ${rule} overlaps Oxlint rule ${rule}. Enable the rule in only one linter for this code`,
       }));
     expect(lintRuleOverlaps(path, native, { rules })).toEqual(shared);
-    expect(lintRuleOverlaps(path, native, { rules }, "frontmatter")).toEqual(
+    expect(labelLintOverlaps(lintRuleOverlaps(path, native, { rules }), "frontmatter")).toEqual(
       shared.map((finding) => ({ ...finding, text: "frontmatter" })),
     );
     expect(

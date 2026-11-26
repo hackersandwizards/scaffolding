@@ -1,3 +1,4 @@
+import type { AllowEntry } from "./allow-entries.ts";
 import { fetchWaitS } from "./repo-inputs.ts";
 import { jsonObject } from "./json.ts";
 import { spawn, spawnSync } from "node:child_process";
@@ -160,12 +161,6 @@ export type Finding = {
   term?: true;
   name?: true;
 };
-type AllowEntry = {
-  check?: string;
-  path?: string | string[];
-  text?: string | string[];
-  reason?: unknown;
-};
 
 export function git(args: string[], cwd = process.cwd(), input?: string): Buffer {
   const r = spawnSync("git", args, { cwd, input, maxBuffer: Infinity });
@@ -268,113 +263,15 @@ export function readPackage(root: string, rev?: string): Package {
   return jsonObject(git(["show", `${index ? "" : rev}:package.json`], root));
 }
 
-// `**/` also stands for no folder at all, as in Git and Bun.Glob: `**/x.ts` covers the root's x.ts.
-const glob = (pattern: string) =>
-  new RegExp(
-    `^${pattern
-      .split(/(\*\*\/?)/)
-      .map((part) =>
-        part === "**/"
-          ? "(?:.*/)?"
-          : part === "**"
-            ? ".*"
-            : part
-                .split("*")
-                .map((s) => s.replace(/[.+?^${}()|[\]\\]/g, "\\$&"))
-                .join("[^/]*"),
-      )
-      .join("")}$`,
-  );
-
-// Folded as the confidential scan reads text: NFKC words joined by one space, in lower case.
-const fold = (s: string) =>
-  (s.normalize("NFKC").match(/[\p{L}\p{N}]+/gu) ?? []).join(" ").toLowerCase();
-
-// A longer term containing the entry's ("<name> Consulting") stays red.
-const textCovers = (text: string, f: Finding) =>
-  f.term ? fold(f.text) === fold(text) : f.text.includes(text);
-
-// "file names" in `path` keeps the entry to terms in a file's path: alone in every file, beside
-// paths in those files only, so a term in the same files' text stays red.
-const NAMES = "file names";
-const covers = (entry: AllowEntry, f: Finding, text = entry.text) => {
-  const paths = entry.path === undefined ? [] : [entry.path].flat();
-  const globs = paths.filter((p) => p !== NAMES);
-  return (
-    entry.check === f.check &&
-    (!paths.includes(NAMES) || f.name === true) &&
-    (!globs.length || globs.some((p) => glob(p).test(f.path))) &&
-    (text === undefined || [text].flat().some((t) => textCovers(t, f)))
-  );
-};
-
-/**
- * Drops each finding a `scaffolding.allow` entry of `pkg` covers, and reports every entry of this
- * check without a reason. `pkg` is the package.json of the snapshot the findings come from, so a
- * commit adding a case and its entry together is judged as one. With `stale`, a full run also
- * reports every entry that covers nothing, so an exception dies with the case it was written for.
- */
-export function applyAllow(
-  pkg: Package,
-  check: string,
-  findings: Finding[],
-  stale: boolean,
-): Finding[] {
-  const allow: AllowEntry[] = pkg.scaffolding?.allow ?? [];
-  // A path or text that is not a string, or a list of strings, threw inside the match.
-  const text = (v: unknown) =>
-    v === undefined ||
-    typeof v === "string" ||
-    (Array.isArray(v) && v.every((x) => typeof x === "string"));
-  const mine = allow.filter((e) => e.check === check);
-  const usable = mine.filter((e) => text(e.path) && text(e.text));
-  const left = findings.filter((f) => !usable.some((e) => covers(e, f)));
-  const report = (e: AllowEntry, message: string) =>
-    left.push({ check, path: "package.json", text: JSON.stringify(e), message });
-  for (const e of mine) {
-    if (!usable.includes(e))
-      report(
-        e,
-        "allow entry's path and text are strings or lists of strings: fix this entry in package.json scaffolding.allow so path and text (when set) are each a string or string[]",
-      );
-    else if (!isReason(e.reason))
-      report(
-        e,
-        'allow entry without a reason: fix the underlying finding and remove this package.json scaffolding.allow entry, or add a non-empty "reason" explaining why the exception is required',
-      );
-    else if (stale && !findings.some((f) => covers(e, f)))
-      report(
-        e,
-        "allow entry matches nothing: remove this stale entry (or unused path/text item) from package.json scaffolding.allow",
-      );
-    else if (stale) {
-      // Each text and each path of a list is its own exception and dies with its own case.
-      const items = (v: string | string[] | undefined) => (Array.isArray(v) ? v : []);
-      // "file names" qualifies the paths beside it, which each keep it.
-      const names = items(e.path).includes(NAMES) ? [NAMES] : [];
-      for (const path of items(e.path).filter((p) => p !== NAMES))
-        if (!findings.some((f) => covers({ ...e, path: [...names, path] }, f)))
-          report(
-            { ...e, path },
-            "allow entry matches nothing: remove this stale entry (or unused path/text item) from package.json scaffolding.allow",
-          );
-      for (const t of items(e.text))
-        if (!findings.some((f) => covers(e, f, t)))
-          report(
-            { ...e, text: t },
-            "allow entry matches nothing: remove this stale entry (or unused path/text item) from package.json scaffolding.allow",
-          );
-    }
-  }
-  return left;
-}
-
-export function finish(check: string, findings: Finding[], started: number, footer = ""): never {
+export function printCheckFindings(check: string, findings: Finding[], started: number) {
   for (const f of findings)
     console.error(`[${f.prefix ?? check}] ${f.path}: ${f.message}${f.text ? ` (${f.text})` : ""}`);
   const ms = Math.round(performance.now() - started);
   if (findings.length) console.error(`[${check}] ${findings.length} findings, ${ms} ms`);
-  if (footer) process.stderr.write(footer);
+}
+
+export function finish(check: string, findings: Finding[], started: number): never {
+  printCheckFindings(check, findings, started);
   process.exit(findings.length ? 1 : (process.exitCode ?? 0));
 }
 

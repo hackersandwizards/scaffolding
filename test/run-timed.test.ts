@@ -1,8 +1,8 @@
 import { mkdtempSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { expect, test } from "vitest";
-import { runTimed } from "../lib/run-timed.ts";
+import { expect, test, vi } from "vitest";
+import { runTimed, signalTimedGroup } from "../lib/run-timed.ts";
 
 const cases = [
   { exits: true, limitMs: 500, graceMs: 100, graceToCount: 0 },
@@ -41,6 +41,21 @@ test.each(cases)(
       expect(elapsed).toBeGreaterThanOrEqual(minimumElapsed);
     } finally {
       rmSync(dir, { recursive: true, force: true });
+    }
+  },
+);
+
+test.each([[98765, "SIGINT", -98765] as const])(
+  "ignores a vanished subprocess group",
+  (pid, signal, target) => {
+    const kill = vi.spyOn(process, "kill").mockImplementation(() => {
+      throw Object.assign(new Error("vanished"), { code: "ESRCH" });
+    });
+    try {
+      expect(() => signalTimedGroup({ pid }, signal)).not.toThrow();
+      expect(kill).toHaveBeenCalledWith(target, signal);
+    } finally {
+      kill.mockRestore();
     }
   },
 );

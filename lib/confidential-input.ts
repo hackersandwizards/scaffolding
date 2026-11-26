@@ -14,16 +14,17 @@ export type TermList = {
   hashes: string[];
   never?: string[];
 };
+export function validTermTokenLimit(value: unknown): value is number {
+  return typeof value === "number" && Number.isInteger(value) && value >= 1 && value <= 6;
+}
+
 export const parseTermList = (text: string): TermList | undefined => {
   try {
     const { built, salt, maxTokens, hashes, never } = jsonObject(text);
     return isStrings(hashes) &&
       (never === undefined || isStrings(never)) &&
       typeof salt === "string" &&
-      typeof maxTokens === "number" &&
-      Number.isInteger(maxTokens) &&
-      maxTokens >= 1 &&
-      maxTokens <= 6
+      validTermTokenLimit(maxTokens)
       ? { built: typeof built === "string" ? built : undefined, salt, maxTokens, hashes, never }
       : undefined;
   } catch {
@@ -38,10 +39,16 @@ const ENTITY = new Map([
   ["apos", "'"],
 ]);
 const fromCode = (code: number, m: string) => (code <= 0x10ffff ? String.fromCodePoint(code) : m);
-export const decodeEntities = (s: string) =>
-  s.replace(/&(?:#(\d+)|#x([\da-f]+)|(\w+));/gi, (m, d?: string, x?: string, name?: string) =>
-    d || x ? fromCode(parseInt(d || x || "", d ? 10 : 16), m) : (ENTITY.get(name ?? "") ?? m),
-  );
+export function decodeEntity(entity: string): string {
+  const value = entity.slice(1, -1);
+  if (value.startsWith("#")) {
+    if (/^#x/i.test(value)) return fromCode(parseInt(value.slice(2), 16), entity);
+    return fromCode(parseInt(value.slice(1), 10), entity);
+  }
+  return ENTITY.get(value) ?? entity;
+}
+
+export const decodeEntities = (s: string) => s.replace(/&(?:#\d+|#x[\da-f]+|\w+);/gi, decodeEntity);
 
 /** Added lines per path; `paths` are the diff's files in its order, one per `diff --git` line. */
 export function addedLines(diff: string, paths: string[]) {

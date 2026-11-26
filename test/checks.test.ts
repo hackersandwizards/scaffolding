@@ -1,3 +1,4 @@
+import { CheckAllowEntries } from "../lib/allow-entries.ts";
 import { afterAll, afterEach, assert, beforeAll, beforeEach, describe, expect, test } from "vitest";
 import { spawn, spawnSync } from "node:child_process";
 import { createHash } from "node:crypto";
@@ -27,7 +28,7 @@ import { availableParallelism, tmpdir } from "node:os";
 import { delimiter, dirname, join, relative } from "node:path";
 import { pathToFileURL } from "node:url";
 import { brandFallbacks } from "../catalog/fallbacks.ts";
-import { selectChangedSteps } from "../lib/changed-steps.ts";
+import { ChangedStepSelector } from "../lib/changed-steps.ts";
 import { catalogPath } from "../catalog/path.ts";
 import { loadRoute, readRouteUntilRewritten, rewriteRoute } from "../catalog/route.ts";
 import {
@@ -44,7 +45,6 @@ import { gitShellShebangs, shellInput } from "../lib/shell-inputs.ts";
 import { shellcheckBinary } from "../lib/shellcheck.ts";
 import { indexInputs, trackedInputs } from "../lib/tracked-inputs.ts";
 import {
-  applyAllow,
   installedCommit,
   isObject,
   jsonObject,
@@ -867,12 +867,12 @@ test.each([
   },
 ] as const)("allow entries cover or explain $scenario", ({ entries, findings, expected }) => {
   expect(
-    applyAllow(
-      { scaffolding: { allow: [...entries] } } as Parameters<typeof applyAllow>[0],
+    new CheckAllowEntries(
+      { scaffolding: { allow: [...entries] } } as ConstructorParameters<
+        typeof CheckAllowEntries
+      >[0],
       "x",
-      findings.map(([path, text]) => rawFinding(path, text)),
-      true,
-    ),
+    ).audit(findings.map(([path, text]) => rawFinding(path, text))),
   ).toEqual(expected);
 });
 
@@ -5120,7 +5120,12 @@ describe("scaffolding check", () => {
     [layerMap, true],
     ["docs/other.md", false],
   ])("layers selection for %s", (path, selected) => {
-    const result = selectChangedSteps([path], new Set(["layers", "cycles"]), [], []);
+    const result = new ChangedStepSelector(new Set(["layers", "cycles"]), [], []).select({
+      paths: new Set([path]),
+      shellShebangs: new Set(),
+      sourcedPaths: new Set(),
+      since: "HEAD",
+    });
     expect(result.steps.has("layers")).toBe(selected);
   });
 
@@ -12215,7 +12220,8 @@ describe("check-cycles", () => {
     const lib = join(import.meta.dirname, "..", "lib");
     mkdirSync(join(installation, "lib"));
     symlinkSync(join(lib, "guides.ts"), join(installation, "lib", "guides.ts"));
-    copyFileSync(join(lib, "import-graph.ts"), join(installation, "lib", "import-graph.ts"));
+    for (const file of ["import-graph.ts", "import-scan.ts", "astro-imports.ts"])
+      copyFileSync(join(lib, file), join(installation, "lib", file));
     symlinkSync(join(lib, "repo.ts"), join(installation, "lib", "repo.ts"));
     const modules = join(installation, "node_modules");
     mkdirSync(modules);
@@ -12229,6 +12235,9 @@ describe("check-cycles", () => {
     const check = () =>
       spawnSync(process.execPath, ["--no-install", "--no-env-file", entry], {
         cwd: dir,
+        env: Object.fromEntries(
+          Object.entries(process.env).filter(([key]) => !key.startsWith("GIT_")),
+        ),
         encoding: "utf8",
       });
     expect(check().status).toBe(0);

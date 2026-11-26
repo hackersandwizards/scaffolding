@@ -67,6 +67,43 @@ function removeAbandoned(cache: string) {
   }
 }
 
+export async function downloadShellcheckArchive(target: string, checksum: string) {
+  const asset = `shellcheck-${release}.${target}.tar.gz`;
+  const response = await fetch(
+    `https://github.com/koalaman/shellcheck/releases/download/${release}/${asset}`,
+    { credentials: "omit", signal: AbortSignal.timeout(30_000) },
+  );
+  if (!response.ok) throw new Error(`HTTP ${response.status}`);
+  const archive = Buffer.from(await response.arrayBuffer());
+  if (sha256(archive) !== checksum) throw new Error("archive checksum mismatch");
+  return archive;
+}
+
+export function extractShellcheckBinary(scratch: string, archive: Buffer, checksum: string) {
+  // Read only the verified member so tar never sets permissions or writes other archive paths.
+  const archiveName = "shellcheck.tar.gz";
+  writeFileSync(join(scratch, archiveName), archive, { mode: 0o600, flag: "wx" });
+  const candidate = join(scratch, "shellcheck");
+  const output = openSync(candidate, "wx", 0o600);
+  let unpacked;
+  try {
+    unpacked = spawnSync("tar", ["-xOzf", archiveName, `shellcheck-${release}/shellcheck`], {
+      cwd: scratch,
+      env: { PATH: "/usr/bin:/bin" },
+      stdio: ["ignore", output, "pipe"],
+    });
+  } finally {
+    closeSync(output);
+  }
+  if (unpacked.status !== 0)
+    throw new Error(
+      `tar could not extract the ShellCheck binary: ${unpacked.error?.message ?? unpacked.stderr?.toString().trim() ?? "unknown error"}`,
+    );
+  if (sha256(readFileSync(candidate)) !== checksum) throw new Error("binary checksum mismatch");
+  chmodSync(candidate, 0o755);
+  return candidate;
+}
+
 export async function shellcheckBinary(root: string): Promise<string> {
   const arch =
     process.arch === "arm64" ? "aarch64" : process.arch === "x64" ? "x86_64" : process.arch;
@@ -92,37 +129,8 @@ export async function shellcheckBinary(root: string): Promise<string> {
 
   const scratch = shellcheckScratch(cache, "download");
   try {
-    const asset = `shellcheck-${release}.${target}.tar.gz`;
-    const response = await fetch(
-      `https://github.com/koalaman/shellcheck/releases/download/${release}/${asset}`,
-      { credentials: "omit", signal: AbortSignal.timeout(30_000) },
-    );
-    if (!response.ok) throw new Error(`HTTP ${response.status}`);
-    const archive = Buffer.from(await response.arrayBuffer());
-    if (sha256(archive) !== hashes.archive) throw new Error("archive checksum mismatch");
-
-    // Read only the verified member so tar never sets permissions or writes other archive paths.
-    const archiveName = "shellcheck.tar.gz";
-    writeFileSync(join(scratch, archiveName), archive, { mode: 0o600, flag: "wx" });
-    const candidate = join(scratch, "shellcheck");
-    const output = openSync(candidate, "wx", 0o600);
-    let unpacked;
-    try {
-      unpacked = spawnSync("tar", ["-xOzf", archiveName, `shellcheck-${release}/shellcheck`], {
-        cwd: scratch,
-        env: { PATH: "/usr/bin:/bin" },
-        stdio: ["ignore", output, "pipe"],
-      });
-    } finally {
-      closeSync(output);
-    }
-    if (unpacked.status !== 0)
-      throw new Error(
-        `tar could not extract the ShellCheck binary: ${unpacked.error?.message ?? unpacked.stderr?.toString().trim() ?? "unknown error"}`,
-      );
-    if (sha256(readFileSync(candidate)) !== hashes.binary)
-      throw new Error("binary checksum mismatch");
-    chmodSync(candidate, 0o755);
+    const archive = await downloadShellcheckArchive(target, hashes.archive);
+    const candidate = extractShellcheckBinary(scratch, archive, hashes.binary);
     renameSync(candidate, binary);
     return binary;
   } catch (error) {

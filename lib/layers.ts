@@ -13,7 +13,7 @@ export const layerMapPath = "docs/architecture/layers.md";
 
 const compareLayers = (a: string, b: string) => (a < b ? -1 : a > b ? 1 : 0);
 type Restriction = { pattern: string; message: string };
-type Layer = { name: string };
+export type Layer = { name: string };
 type LayerScope = { include: string[]; exclude: Bun.Glob[] };
 type DeclaredLayer = Layer & { scopes: LayerScope[]; restrictions: Restriction[] };
 
@@ -42,40 +42,64 @@ function declaredLayers(root: string): DeclaredLayer[] {
   if (overrides === undefined) return [];
   if (!Array.isArray(overrides)) throw new Error(`${oxlintConfig}: overrides must be an array`);
 
-  const layers = new Map<string, DeclaredLayer>();
-  for (const override of overrides as unknown[]) {
-    if (!isObject(override) || !isObject(override.rules)) continue;
-    const rules = Object.entries(override.rules).filter(
-      ([rule, setting]) =>
-        restrictionRuleName(rule) === "no-restricted-imports" && activeSeverity(setting),
-    );
-    if (!rules.length) continue;
-    if (!isStrings(override.files) || !override.files.length || override.files.includes(""))
-      throw new Error(`${oxlintConfig}: each layer must declare files globs`);
-    const exclude = override.excludeFiles ?? [];
-    if (!isStrings(exclude) || exclude.includes(""))
-      throw new Error(`${oxlintConfig}: layer excludeFiles must list non-empty globs`);
-    const globs = override.files.map(normalizeLayerGlob);
-    const name = [...new Set(globs.map(({ display }) => display.replace(/\/\*\*$/, "")))]
-      .sort(compareLayers)
-      .join(", ");
-    const layer = layers.get(name) ?? { name, scopes: [], restrictions: [] };
-    layers.set(name, layer);
-    layer.scopes.push({
-      include: globs.map(({ match }) => match),
-      exclude: exclude.map((pattern) => new Bun.Glob(normalizeLayerGlob(pattern).match)),
-    });
-    for (const [, setting] of rules) {
-      if (!Array.isArray(setting)) continue;
-      for (const { item } of restrictedImports(setting.slice(1))) {
-        const value = isObject(item) ? (item.name ?? item.regex ?? item.group) : item;
-        const message = isObject(item) && typeof item.message === "string" ? item.message : "";
-        if (typeof value === "string") layer.restrictions.push({ pattern: value, message });
-        else if (isStrings(value)) {
-          for (const pattern of value) layer.restrictions.push({ pattern, message });
-        }
-      }
+  return mergeLayerDeclarations(overrides);
+}
+
+export function normalizeLayerRestrictions(setting: unknown[]): Restriction[] {
+  const restrictions: Restriction[] = [];
+  for (const { item } of restrictedImports(setting.slice(1))) {
+    const value = isObject(item) ? (item.name ?? item.regex ?? item.group) : item;
+    const message = isObject(item) && typeof item.message === "string" ? item.message : "";
+    if (typeof value === "string") restrictions.push({ pattern: value, message });
+    else if (isStrings(value)) {
+      for (const pattern of value) restrictions.push({ pattern, message });
     }
+  }
+
+  return restrictions;
+}
+
+export function parseLayerOverride(override: unknown): DeclaredLayer | undefined {
+  if (!isObject(override) || !isObject(override.rules)) return;
+  const rules = Object.entries(override.rules).filter(
+    ([rule, setting]) =>
+      restrictionRuleName(rule) === "no-restricted-imports" && activeSeverity(setting),
+  );
+  if (!rules.length) return;
+  if (!isStrings(override.files) || !override.files.length || override.files.includes(""))
+    throw new Error(`${oxlintConfig}: each layer must declare files globs`);
+  const exclude = override.excludeFiles ?? [];
+  if (!isStrings(exclude) || exclude.includes(""))
+    throw new Error(`${oxlintConfig}: layer excludeFiles must list non-empty globs`);
+  const globs = override.files.map(normalizeLayerGlob);
+  const name = [...new Set(globs.map(({ display }) => display.replace(/\/\*\*$/, "")))]
+    .sort(compareLayers)
+    .join(", ");
+  return {
+    name,
+    scopes: [
+      {
+        include: globs.map(({ match }) => match),
+        exclude: exclude.map((pattern) => new Bun.Glob(normalizeLayerGlob(pattern).match)),
+      },
+    ],
+    restrictions: rules
+      .map(([, setting]) => setting)
+      .filter(Array.isArray)
+      .flatMap(normalizeLayerRestrictions),
+  };
+}
+
+export function mergeLayerDeclarations(overrides: unknown[]): DeclaredLayer[] {
+  const layers = new Map<string, DeclaredLayer>();
+  for (const override of overrides) {
+    const declaration = parseLayerOverride(override);
+    if (!declaration) continue;
+    const existing = layers.get(declaration.name);
+    if (existing) {
+      existing.scopes.push(...declaration.scopes);
+      existing.restrictions.push(...declaration.restrictions);
+    } else layers.set(declaration.name, declaration);
   }
   return [...layers.values()].sort((a, b) => compareLayers(a.name, b.name));
 }
@@ -189,35 +213,11 @@ function restrictionTable(restrictions: Restriction[]) {
   return [line(header), line(widths.map((width) => "-".repeat(width))), ...rows.map(line)];
 }
 
-export async function renderLayers(root: string) {
-  const layers = declaredLayers(root);
-  if (!layers.length) return;
-  const { inspectImportGraph } = await import("./import-graph.ts");
-  const layerFor = layerForPath(layers);
-  const nodes = new Set<Layer>(layers);
-  const edges = new Map<Layer, Map<Layer, number>>();
-  const { complete, findings } = await inspectImportGraph(
-    root,
-    (source, file, imports, sourceCode) => {
-      const from = layerFor(source);
-      const otherLayers = imports
-        .map((dependency) => ({ ...dependency, to: layerFor(dependency.target) }))
-        .filter(({ to }) => from !== to);
-      if (!otherLayers.length) return;
-      const occurrences = importOccurrences(source, file, sourceCode);
-      const targets = edges.get(from) ?? new Map<Layer, number>();
-      edges.set(from, targets);
-      nodes.add(from);
-      for (const { to, specifier, system } of otherLayers) {
-        nodes.add(to);
-        const count = occurrences.get(`${system}:${specifier}`) ?? 1;
-        targets.set(to, (targets.get(to) ?? 0) + count);
-      }
-    },
-  );
-  if (!complete)
-    throw new Error(findings.map(({ path, message }) => `${path}: ${message}`).join("\n"));
-
+export function layerDiagram(
+  layers: Layer[],
+  nodes: ReadonlySet<Layer>,
+  edges: ReadonlyMap<Layer, ReadonlyMap<Layer, number>>,
+): string[] {
   const declaredNames = new Set(layers.map(({ name }) => name));
   const usedNames = new Set([...nodes].map(({ name }) => name));
   for (const layer of nodes) {
@@ -239,6 +239,39 @@ export async function renderLayers(root: string) {
       if (count) graph.push(`  L${i} -->|${count}| L${j}`);
     }
   }
+  return graph;
+}
+
+export async function renderLayers(root: string) {
+  const layers = declaredLayers(root);
+  if (!layers.length) return;
+  const { inspectImportGraph } = await import("./import-graph.ts");
+  const layerFor = layerForPath(layers);
+  const nodes = new Set<Layer>(layers);
+  const edges = new Map<Layer, Map<Layer, number>>();
+  const { complete, findings } = await inspectImportGraph(
+    root,
+    ({ source, file, imports, sourceCode }) => {
+      const from = layerFor(source);
+      const otherLayers = imports
+        .map((dependency) => ({ ...dependency, to: layerFor(dependency.target) }))
+        .filter(({ to }) => from !== to);
+      if (!otherLayers.length) return;
+      const occurrences = importOccurrences(source, file, sourceCode);
+      const targets = edges.get(from) ?? new Map<Layer, number>();
+      edges.set(from, targets);
+      nodes.add(from);
+      for (const { to, specifier, system } of otherLayers) {
+        nodes.add(to);
+        const count = occurrences.get(`${system}:${specifier}`) ?? 1;
+        targets.set(to, (targets.get(to) ?? 0) + count);
+      }
+    },
+  );
+  if (!complete)
+    throw new Error(findings.map(({ path, message }) => `${path}: ${message}`).join("\n"));
+
+  const graph = layerDiagram(layers, nodes, edges);
 
   const sections = layers.flatMap(({ name, restrictions }) => [
     "",

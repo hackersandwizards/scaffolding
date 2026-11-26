@@ -21,7 +21,7 @@ try {
   const contents = staged
     ? Object.fromEntries(paths.map((path) => [path, read(path).toString()]))
     : undefined;
-  const code = await checkMarkdown(root, paths, mode === "--fix", contents);
+  const code = await checkMarkdown(root, contents ?? paths, mode === "--fix");
   if (code === 1)
     console.error(
       "Run bun run scaffolding markdown --fix to apply markdownlint's fixes. Repair remaining findings in the file by changing only Markdown structure and preserving every word.",

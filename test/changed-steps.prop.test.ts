@@ -1,6 +1,6 @@
 import { fc, test } from "@hackersandwizards/scaffolding/property";
 import { describe, expect } from "vitest";
-import { fastSteps, selectChangedSteps, validGlob } from "../lib/changed-steps.ts";
+import { ChangedStepSelector, fastSteps, validGlob } from "../lib/changed-steps.ts";
 
 const name = fc.stringMatching(/^[a-z]{1,10}$/);
 const path = fc
@@ -24,12 +24,16 @@ const local = ["check:docs", "check:source", "check:general", "test"];
 const full = fc.subarray(["test", "check:docs", "check:source", "catalog"]);
 
 const select = (files: string[], fullOnly: string[]) =>
-  selectChangedSteps(
-    files,
+  new ChangedStepSelector(
     fastSteps(available, new Map(fullOnly.map((step) => [step, "builds"]))),
     local,
     mappings,
-  );
+  ).select({
+    paths: files,
+    shellShebangs: new Set(),
+    sourcedPaths: new Set(),
+    since: "HEAD",
+  });
 
 test.prop([paths, name, full])(
   "an unmapped path selects exactly the fast steps",
@@ -43,6 +47,13 @@ test.prop([paths, name, full])(
 );
 
 const mapped = fc.tuple(fc.constantFrom("docs", "src"), name);
+const expectedScopes = {
+  docs: { extension: "md", steps: ["check:docs"] },
+  src: { extension: "ts", steps: ["check:source", "lint", "test"] },
+};
+type MappedFolder = keyof typeof expectedScopes;
+const scopedPath = (folder: MappedFolder, file: string) =>
+  `${folder}/${file}.${expectedScopes[folder].extension}`;
 
 test.prop([fc.array(mapped), full], {
   examples: [
@@ -52,18 +63,19 @@ test.prop([fc.array(mapped), full], {
 })(
   "mapped paths select their steps, the always-on checks, and no unrelated steps",
   (files, fullOnly) => {
-    const named = files.map(([dir, file]) =>
-      dir === "src" ? `src/${file}.ts` : `docs/${file}.md`,
-    );
-    const expected = new Map([
+    const named = files.map(([folder, file]) => scopedPath(folder, file));
+    const reasons = [
       ["format", "runs on every changed check"],
       ["check:general", "no path scope configured"],
-    ]);
-    for (const file of named) {
-      const steps = file.startsWith("docs/") ? ["check:docs"] : ["check:source", "lint", "test"];
-      for (const step of steps)
-        if (!expected.has(step)) expected.set(step, `matches ${JSON.stringify(file)}`);
-    }
+      ...files.flatMap(([folder, file]) =>
+        expectedScopes[folder].steps.map((step) => [
+          step,
+          `matches ${JSON.stringify(scopedPath(folder, file))}`,
+        ]),
+      ),
+    ];
+    const grouped = Map.groupBy(reasons, ([step]) => step);
+    const expected = new Map([...grouped].map(([step, entries]) => [step, entries[0]![1]]));
     for (const step of fullOnly) expected.delete(step);
     expect(select(named, fullOnly)).toEqual({ steps: expected });
   },

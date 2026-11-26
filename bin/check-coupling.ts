@@ -1,5 +1,6 @@
 #!/bin/sh
 // 2>/dev/null; exec bun --no-env-file "$0" "$@"
+import { CheckAllowEntries } from "../lib/allow-entries.ts";
 import { existsSync, realpathSync } from "node:fs";
 import { homedir } from "node:os";
 import { basename, dirname, join, posix, relative, resolve } from "node:path";
@@ -11,7 +12,6 @@ import {
 } from "../lib/coupling-checks.ts";
 import { exported } from "../lib/package-exports.ts";
 import {
-  applyAllow,
   finish,
   git,
   isObject,
@@ -137,4 +137,5 @@ if (!staged || listFiles(root, true).includes("package.json")) {
   for (const hit of dependencyPinHits(pkg, registry)) flag("package.json", hit.text, hit.message);
 }
 
-finish("check-coupling", applyAllow(pkg, "coupling", findings, !staged), started);
+const exceptions = new CheckAllowEntries(pkg, "coupling");
+finish("check-coupling", staged ? exceptions.apply(findings) : exceptions.audit(findings), started);

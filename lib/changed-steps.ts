@@ -1,3 +1,4 @@
+import type { ChangedFilesResult } from "./changed-paths.ts";
 import { layerMapPath } from "./layers.ts";
 
 export function validGlob(pattern: string): boolean {
@@ -68,39 +69,55 @@ export const fastSteps = (available: string[], fullOnly: ReadonlyMap<string, str
 export const allChangedSteps = (fast: ReadonlySet<string>, why: string) =>
   new Map([...fast].map((step) => [step, why]));
 
-export function selectChangedSteps(
-  paths: string[],
-  fast: ReadonlySet<string>,
-  local: string[],
-  mappings: Mapping[],
-  shellShebangs: ReadonlySet<string> = new Set(),
-  sourcedPaths: ReadonlySet<string> = new Set(),
-): { steps: Map<string, string>; fallback?: string } {
-  const fallback = (why: string) => ({ steps: allChangedSteps(fast, why), fallback: why });
-  const steps = new Map(
-    always.filter((step) => fast.has(step)).map((step) => [step, "runs on every changed check"]),
-  );
-  const scoped = new Set(mappings.flatMap(({ steps }) => steps));
-  for (const step of local)
-    if (step.startsWith("check:") && !scoped.has(step) && fast.has(step))
-      steps.set(step, "no path scope configured");
-  const map = [...defaults, ...mappings];
-  for (const path of paths) {
-    if (crossCutting.some((glob) => glob.match(path)))
-      return fallback(`${JSON.stringify(path)} is a shared configuration path`);
-    const hits = map.filter(({ glob }) => glob.match(path));
-    if (!hits.length) return fallback(`${JSON.stringify(path)} matches no path glob`);
-    const shell = shellShebangs.has(path);
-    if (shell && fast.has("shell") && !steps.has("shell"))
-      steps.set("shell", `matches shell shebang in ${JSON.stringify(path)}`);
-    if (sourcedPaths.has(path) && fast.has("shell") && !steps.has("shell"))
-      steps.set("shell", `sources ${JSON.stringify(path)}`);
-    for (const { steps: matched } of [
-      ...hits,
-      ...additional.filter(({ glob }) => glob.match(path)),
-    ])
-      for (const step of matched)
-        if (fast.has(step) && !steps.has(step)) steps.set(step, `matches ${JSON.stringify(path)}`);
+type ChangedFiles = Omit<Exclude<ChangedFilesResult, { fallback: string }>, "paths"> & {
+  paths: Iterable<string>;
+};
+
+export function configuredPathMatches(path: string, mappings: Mapping[]): Mapping[] | string {
+  if (crossCutting.some((glob) => glob.match(path)))
+    return `${JSON.stringify(path)} is a shared configuration path`;
+  const hits = mappings.filter(({ glob }) => glob.match(path));
+  if (!hits.length) return `${JSON.stringify(path)} matches no path glob`;
+  return hits;
+}
+
+export function* changedPathReasons(path: string, hits: Mapping[], changes: ChangedFiles) {
+  if (changes.shellShebangs.has(path))
+    yield { step: "shell", reason: `matches shell shebang in ${JSON.stringify(path)}` };
+  if (changes.sourcedPaths.has(path))
+    yield { step: "shell", reason: `sources ${JSON.stringify(path)}` };
+  for (const { steps } of [...hits, ...additional.filter(({ glob }) => glob.match(path))]) {
+    for (const step of steps) yield { step, reason: `matches ${JSON.stringify(path)}` };
   }
-  return { steps };
+}
+
+export class ChangedStepSelector {
+  private readonly fast: ReadonlySet<string>;
+  private readonly local: string[];
+  private readonly mappings: Mapping[];
+
+  constructor(fast: ReadonlySet<string>, local: string[], mappings: Mapping[]) {
+    this.fast = fast;
+    this.local = local;
+    this.mappings = mappings;
+  }
+
+  select(changes: ChangedFiles): { steps: Map<string, string>; fallback?: string } {
+    const { fast } = this;
+    const steps = new Map(
+      always.filter((step) => fast.has(step)).map((step) => [step, "runs on every changed check"]),
+    );
+    const scoped = new Set(this.mappings.flatMap(({ steps }) => steps));
+    for (const step of this.local)
+      if (step.startsWith("check:") && !scoped.has(step) && fast.has(step))
+        steps.set(step, "no path scope configured");
+    const map = [...defaults, ...this.mappings];
+    for (const path of changes.paths) {
+      const hits = configuredPathMatches(path, map);
+      if (typeof hits === "string") return { steps: allChangedSteps(fast, hits), fallback: hits };
+      for (const { step, reason } of changedPathReasons(path, hits, changes))
+        if (fast.has(step) && !steps.has(step)) steps.set(step, reason);
+    }
+    return { steps };
+  }
 }

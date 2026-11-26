@@ -4,6 +4,7 @@
 import { spawn } from "node:child_process";
 import { createServer } from "node:net";
 import { availableParallelism, loadavg } from "node:os";
+import { ServingProcess } from "./serving-process.ts";
 
 /** The machine's one-minute load against its cores (SCAFFOLDING_LOAD stands in for the load), and
  * how many times a wait for wall time stretches under it: 1 up to one waiting process per core,
@@ -47,51 +48,8 @@ export async function serve(
     stdio: ["ignore", "ignore", "pipe"],
     detached: true,
   });
-  // Where this process dies without stop(), killed by a signal included, the watcher's stdin
-  // closes and it stops the server's group. In a group of its own and deaf to the signals that
-  // end this process, so a signal to this process or its group never takes the watcher along.
-  const watcher = server.pid
-    ? spawn("/bin/sh", ["-c", `trap '' INT TERM HUP; cat >/dev/null; kill -- -${server.pid}`], {
-        stdio: ["pipe", "ignore", "ignore"],
-        detached: true,
-      }).on("error", () => {})
-    : undefined;
-  let said = "";
-  server.stderr?.on("data", (chunk: Buffer) => {
-    if (stderr) process.stderr.write(chunk);
-    said = (said + chunk).slice(-2000);
-  });
-  let exited = "";
-  server.on("exit", (code, signal) => (exited = `, it exited with ${signal ?? `code ${code}`}`));
-  server.on("error", (error) => (exited = `, it exited: ${error.message}`));
-  const signalGroup = (signal: NodeJS.Signals | 0) => {
-    const pid = server.pid;
-    try {
-      return pid !== undefined && process.kill(-pid, signal);
-    } catch {
-      return false;
-    }
-  };
-  let stopping = false;
-  const stop = () => {
-    if (stopping) return;
-    stopping = true;
-    if (!signalGroup("SIGTERM")) {
-      watcher?.kill("SIGKILL");
-      return;
-    }
-    const timer = setTimeout(() => {
-      signalGroup("SIGKILL");
-      watcher?.kill("SIGKILL");
-    }, 2000).unref();
-    // Keep the watcher alive if the wrapper exits and a descendant closes stderr.
-    server.once("close", () => {
-      if (signalGroup(0)) return;
-      clearTimeout(timer);
-      watcher?.kill("SIGKILL");
-    });
-  };
-  for (const end = Date.now() + timeoutMs; Date.now() < end && !exited;) {
+  const running = new ServingProcess(server, stderr);
+  for (const end = Date.now() + timeoutMs; Date.now() < end && !running.exited;) {
     const answered = await fetch(url, {
       signal: AbortSignal.timeout(Math.max(1, end - Date.now())),
     }).then(
@@ -99,13 +57,13 @@ export async function serve(
       () => false,
     );
     // An answer after the server exited came from another process that took the port meanwhile.
-    if (answered && !exited) return { url, stop };
+    if (answered && !running.exited) return { url, stop: running.stop };
     await new Promise((r) => setTimeout(r, 200));
   }
-  stop();
+  running.stop();
   // The stream can trail the exit event by a tick; its last lines say why.
   await new Promise((r) => setTimeout(r, 50));
   throw new Error(
-    `${command.join(" ")}: no answer on ${url}${exited}${said && `\n${said.trimEnd()}`}`,
+    `${command.join(" ")}: no answer on ${url}${running.exited}${running.said && `\n${running.said.trimEnd()}`}`,
   );
 }

@@ -1,5 +1,6 @@
 #!/bin/sh
 // 2>/dev/null; exec bun --no-env-file "$0" "$@"
+import { CheckAllowEntries } from "../lib/allow-entries.ts";
 import { spawnSync } from "node:child_process";
 import {
   chmodSync,
@@ -24,8 +25,7 @@ import { help } from "../lib/help.ts";
 import { lintOverlaps } from "../lib/lint-disjoint.ts";
 import { oxlintConfig, oxlintConfiguration, oxlintRestrictionFindings } from "../lib/oxlint.ts";
 import {
-  applyAllow,
-  finish,
+  printCheckFindings,
   git,
   installedCommit,
   isReason,
@@ -44,7 +44,7 @@ const fix = process.argv.includes("--fix");
 const root = repoRoot();
 const home = join(import.meta.dir, "..");
 const findings: Finding[] = [];
-// Repairs run after applyAllow, so --fix never writes a path an allow entry keeps.
+// Repairs run after the allow audit, so --fix never writes a path an allow entry keeps.
 const repairs = new Map<Finding, () => unknown>();
 const add = (path: string, message: string, text = ""): Finding => {
   const finding: Finding = { check: "structure", path, text, message };
@@ -277,7 +277,7 @@ if (hooks !== skeleton.hooksPath)
     () => git(["config", "core.hooksPath", skeleton.hooksPath], root),
   );
 
-const left = applyAllow(pkg, "structure", findings, true);
+const left = new CheckAllowEntries(pkg, "structure").audit(findings);
 if (fix)
   for (const f of left)
     try {
@@ -310,9 +310,7 @@ for (const folder of genericFolders)
     message: `folder named \`${posix.basename(folder)}\``,
     text: "",
   });
-finish(
-  "check-structure",
-  remaining,
-  started,
-  genericFolders.length ? renderGuides(["generic-folder"]) : "",
-);
+const footer = genericFolders.length ? renderGuides(["generic-folder"]) : "";
+printCheckFindings("check-structure", remaining, started);
+if (footer) process.stderr.write(footer);
+process.exit(remaining.length ? 1 : (process.exitCode ?? 0));

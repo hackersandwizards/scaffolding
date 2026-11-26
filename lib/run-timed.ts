@@ -1,5 +1,14 @@
-import { spawn } from "node:child_process";
+import { spawn, type ChildProcess } from "node:child_process";
 import { SIGNALS } from "./repo.ts";
+
+export function signalTimedGroup(child: Pick<ChildProcess, "pid">, signal: NodeJS.Signals) {
+  if (child.pid === undefined) return;
+  try {
+    process.kill(-child.pid, signal);
+  } catch (error) {
+    if (!(error instanceof Error && "code" in error && error.code === "ESRCH")) throw error;
+  }
+}
 
 export async function runTimed(
   [command, ...args]: [string, ...string[]],
@@ -19,14 +28,7 @@ export async function runTimed(
 ): Promise<number> {
   // Signal the subprocess workers as well as the child.
   const child = spawn(command, args, { detached: true, stdio: "inherit", env });
-  const stop = (signal: NodeJS.Signals) => {
-    if (child.pid === undefined) return;
-    try {
-      process.kill(-child.pid, signal);
-    } catch (error) {
-      if (!(error instanceof Error && "code" in error && error.code === "ESRCH")) throw error;
-    }
-  };
+  const stop = (signal: NodeJS.Signals) => signalTimedGroup(child, signal);
   const handlers = SIGNALS.map((signal) => {
     const forward = () => stop(signal);
     process.on(signal, forward);

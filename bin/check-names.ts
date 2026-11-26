@@ -7,7 +7,7 @@ import skeleton from "../skeleton.json";
 import { renderGuides } from "../lib/guides.ts";
 import { moduleFunctionNames } from "../lib/module-function-names.ts";
 import { oxlintConfig, oxlintFiles } from "../lib/oxlint.ts";
-import { finish, repoRoot, TEST, type Finding } from "../lib/repo.ts";
+import { printCheckFindings, repoRoot, TEST, type Finding } from "../lib/repo.ts";
 
 const frameworkNames = new Set([
   "GET",
@@ -71,9 +71,7 @@ for (const [name, [path, ...others]] of declared)
       text: "",
       message: `function \`${name}\` is also declared in ${others.join(", ")}`,
     });
-finish(
-  "names",
-  findings,
-  started,
-  findings.length ? renderGuides(["duplicate-function-name"]) : "",
-);
+const footer = findings.length ? renderGuides(["duplicate-function-name"]) : "";
+printCheckFindings("names", findings, started);
+if (footer) process.stderr.write(footer);
+process.exit(findings.length ? 1 : (process.exitCode ?? 0));

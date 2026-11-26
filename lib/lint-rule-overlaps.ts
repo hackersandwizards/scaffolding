@@ -56,7 +56,6 @@ export function lintRuleOverlaps(
   path: string,
   native: ReadonlySet<string>,
   eslintConfig: ESLintConfig,
-  region = "",
 ): Finding[] {
   const findings: Finding[] = [];
   for (const [rule, setting] of Object.entries(eslintConfig.rules ?? {})) {
@@ -66,9 +65,13 @@ export function lintRuleOverlaps(
     findings.push({
       check: "structure",
       path,
-      text: region,
+      text: "",
       message: `ESLint rule ${rule} overlaps Oxlint rule ${match}. Enable the rule in only one linter for this code`,
     });
   }
   return findings;
+}
+
+export function labelLintOverlaps(findings: Finding[], region: string): Finding[] {
+  return findings.map((finding) => ({ ...finding, text: region }));
 }

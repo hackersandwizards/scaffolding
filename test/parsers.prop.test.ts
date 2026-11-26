@@ -1,16 +1,10 @@
+import { CheckAllowEntries } from "../lib/allow-entries.ts";
 import { fc, test, unicodeString } from "@hackersandwizards/scaffolding/property";
 import { describe, expect, vi } from "vitest";
 import { jsonObject, isStrings } from "../lib/json.ts";
 import { licenceAllowed } from "../lib/licence-expression.ts";
 import { exported, targeted } from "../lib/package-exports.ts";
-import {
-  applyAllow,
-  commentSyntax,
-  exportTargets,
-  fetchWaitS,
-  ourRepository,
-  styled,
-} from "../lib/repo.ts";
+import { commentSyntax, exportTargets, fetchWaitS, ourRepository, styled } from "../lib/repo.ts";
 
 const word = fc.stringMatching(/^[a-z]{1,10}$/);
 const segment = fc.stringMatching(/^[a-z][a-z0-9-]{0,12}$/);
@@ -213,10 +207,8 @@ test.prop([segment, word])(
     const otherFile = { ...finding, path: `test/${file}.ts` };
     const otherCheck = { ...finding, check: "structure" };
     const otherText = { ...finding, text: "9" };
-    expect(applyAllow(pkg, check, [finding, otherFile, otherCheck, otherText], true)).toEqual([
-      otherFile,
-      otherCheck,
-      otherText,
-    ]);
+    expect(
+      new CheckAllowEntries(pkg, check).audit([finding, otherFile, otherCheck, otherText]),
+    ).toEqual([otherFile, otherCheck, otherText]);
   },
 );

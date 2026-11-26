@@ -92,26 +92,26 @@ test.each([
 
 test.each(
   [
-    { line: "42{name}", next: "<a>", kept: false, tag: "a" },
-    { line: "値{name}", next: "<a>", kept: false, tag: "a" },
-    { line: "!{name}", next: "<a>", kept: false, tag: false },
-    { line: "<strong>{name}", next: "<a>", kept: false, tag: false },
-    { line: "} word {name}", next: "<a>", kept: false, tag: false },
-    { line: "text", next: "  {<a />}", kept: true, tag: "a" },
-    { line: "text", next: "{<div />}", kept: true, tag: undefined },
-    { line: "text", next: "{name}", kept: true, tag: undefined },
-    { line: "text", next: "prefix {<a />}", kept: true, tag: undefined },
-    { line: "text", next: "{<a />} tail", kept: true, tag: undefined },
-    { line: "</a>", next: "<div>", kept: true, tag: undefined },
-    { line: "</a>", next: "", kept: false, tag: false },
-    { line: "> ", next: "text", kept: false, tag: "a" },
-    { line: "> extra", next: "text", kept: false, tag: undefined },
+    { source: "</a\n42{name}\n<a>", kept: false, tag: "a" },
+    { source: "</a\n値{name}\n<a>", kept: false, tag: "a" },
+    { source: "</a\n!{name}\n<a>", kept: false, tag: false },
+    { source: "</a\n<strong>{name}\n<a>", kept: false, tag: false },
+    { source: "</a\n} word {name}\n<a>", kept: false, tag: false },
+    { source: "</a\ntext\n  {<a />}", kept: true, tag: "a" },
+    { source: "</a\ntext\n{<div />}", kept: true, tag: undefined },
+    { source: "</a\ntext\n{name}", kept: true, tag: undefined },
+    { source: "</a\ntext\nprefix {<a />}", kept: true, tag: undefined },
+    { source: "</a\ntext\n{<a />} tail", kept: true, tag: undefined },
+    { source: "</a\n</a>\n<div>", kept: true, tag: undefined },
+    { source: "</a\n</a>\n", kept: false, tag: false },
+    { source: "</a\n> \ntext", kept: false, tag: "a" },
+    { source: "</a\n> extra\ntext", kept: false, tag: undefined },
   ].map((row) => ({
     ...row,
-    name: `${JSON.stringify(row.line)} and ${JSON.stringify(row.next)} with kept=${row.kept}`,
+    name: `${JSON.stringify(row.source)} with kept=${row.kept}`,
   })),
-)("detects inline whitespace between $name", ({ line, next, kept, tag }) => {
-  expect(lostSpaceTag(line, next, "</a", kept)).toBe(tag);
+)("detects inline whitespace between $name", ({ source, kept, tag }) => {
+  expect(lostSpaceTag(spaceTemplateLines(source), 1, kept)).toBe(tag);
 });
 
 test.each([

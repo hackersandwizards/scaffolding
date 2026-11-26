@@ -16,57 +16,70 @@ const line = fc.oneof(
   unicodeString.filter((text) => !text.includes("\n")),
 );
 
-type BoundaryInput = (
-  text: string,
-  tag: string,
-  indent: string,
-) => [string, string, string, boolean];
-const detectedBoundaries: [string, BoundaryInput][] = [
-  ["indented opening tag", (text, tag, indent) => [text, `${indent}<${tag}>`, "", false]],
+type BoundarySource = (text: string, tag: string, indent: string) => string;
+const detectedBoundaries: { name: string; source: BoundarySource; index: number; kept: boolean }[] =
   [
-    "words before an expression",
-    (text, tag, indent) => [`${text} {name}`, `${indent}<${tag}>`, "", false],
-  ],
-  ["kept inline expression after text", (text, tag) => [text, `{<${tag} />}`, "", true]],
-  [
-    "kept inline expression after a closing tag",
-    (_, tag) => [`</${tag}>`, `{<${tag} />}`, "", true],
-  ],
-  [
-    "closing tag before indented text",
-    (text, tag, indent) => [`</${tag}>`, indent + text, "", false],
-  ],
-  [
-    "wrapped closing tag before indented text",
-    (text, tag, indent) => [">", indent + text, `</${tag}`, false],
-  ],
-];
+    {
+      name: "indented opening tag",
+      source: (text, tag, indent) => `${text}\n${indent}<${tag}>`,
+      index: 0,
+      kept: false,
+    },
+    {
+      name: "words before an expression",
+      source: (text, tag, indent) => `${text} {name}\n${indent}<${tag}>`,
+      index: 0,
+      kept: false,
+    },
+    {
+      name: "kept inline expression after text",
+      source: (text, tag) => `${text}\n{<${tag} />}`,
+      index: 0,
+      kept: true,
+    },
+    {
+      name: "kept inline expression after a closing tag",
+      source: (_, tag) => `</${tag}>\n{<${tag} />}`,
+      index: 0,
+      kept: true,
+    },
+    {
+      name: "closing tag before indented text",
+      source: (text, tag, indent) => `</${tag}>\n${indent}${text}`,
+      index: 0,
+      kept: false,
+    },
+    {
+      name: "wrapped closing tag before indented text",
+      source: (text, tag, indent) => `</${tag}\n>\n${indent}${text}`,
+      index: 1,
+      kept: false,
+    },
+  ];
 
-describe.each(detectedBoundaries)("inline boundary at %s", (_, input) => {
+describe.each(detectedBoundaries)("inline boundary at $name", ({ source, index, kept }) => {
   test.prop([word, fc.constantFrom("a", "code", "span"), fc.nat(8)])(
     "reports the generated tag",
     (text, tag, spaces) => {
-      expect(lostSpaceTag(...input(text, tag, " ".repeat(spaces)))).toBe(tag);
+      const lines = spaceTemplateLines(source(text, tag, " ".repeat(spaces)));
+      expect(lostSpaceTag(lines, index, kept)).toBe(tag);
     },
   );
 });
 
-const absentBoundaries: [string, BoundaryInput, false | undefined][] = [
-  [
-    "explicit space",
-    (text, tag, indent) => [`${text}{" "}`, `${indent}<${tag}>`, "", false],
-    false,
-  ],
-  ["bare expression", (_, tag, indent) => ["{name}", `${indent}<${tag}>`, "", false], false],
-  ["discarded expression", (text, tag) => [text, `{<${tag} />}`, "", false], false],
-  ["adjacent text", (text, _, indent) => [text, indent + text, "", false], undefined],
+const absentBoundaries: [string, BoundarySource, false | undefined][] = [
+  ["explicit space", (text, tag, indent) => `${text}{" "}\n${indent}<${tag}>`, false],
+  ["bare expression", (_, tag, indent) => `{name}\n${indent}<${tag}>`, false],
+  ["discarded expression", (text, tag) => `${text}\n{<${tag} />}`, false],
+  ["adjacent text", (text, _, indent) => `${text}\n${indent}${text}`, undefined],
 ];
 
-describe.each(absentBoundaries)("inline boundary at %s", (_, input, expected) => {
+describe.each(absentBoundaries)("inline boundary at %s", (_, source, expected) => {
   test.prop([word, fc.constantFrom("a", "code", "span"), fc.nat(8)])(
     "reports no lost space",
     (text, tag, spaces) => {
-      expect(lostSpaceTag(...input(text, tag, " ".repeat(spaces)))).toBe(expected);
+      const lines = spaceTemplateLines(source(text, tag, " ".repeat(spaces)));
+      expect(lostSpaceTag(lines, 0, false)).toBe(expected);
     },
   );
 });

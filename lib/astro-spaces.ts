@@ -56,12 +56,20 @@ export function spaceTemplateLines(text: string): string[] {
   );
 }
 
-export function lostSpaceTag(line: string, next: string, previous: string, kept: boolean) {
-  // Prettier wraps a closing tag before its > where the line runs out.
-  const closing = /^\s*>\s*$/.test(line) ? `${previous}>` : line;
+export function openingWhitespaceTag(line: string, next: string, kept: boolean) {
   return (
-    ((endsInText.test(line) || (endsInExpression.test(line) && holdsWords(line))) &&
-      (next.match(opens)?.[1] || (kept && drawsInline(next)))) ||
+    (endsInText.test(line) || (endsInExpression.test(line) && holdsWords(line))) &&
+    (next.match(opens)?.[1] || (kept && drawsInline(next)))
+  );
+}
+
+export function lostSpaceTag(lines: readonly string[], index: number, kept: boolean) {
+  const line = lines[index];
+  const next = lines[index + 1] ?? "";
+  // Prettier wraps a closing tag before its > where the line runs out.
+  const closing = /^\s*>\s*$/.test(line) ? (lines[index - 1] ?? "") + ">" : line;
+  return (
+    openingWhitespaceTag(line, next, kept) ||
     ((startsInText.test(next) || (kept && drawsInline(next))) && closing.match(closes)?.[1])
   );
 }

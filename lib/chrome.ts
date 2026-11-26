@@ -3,19 +3,20 @@
 // window. A caller starting the binary itself passes chromeArgs; puppeteer takes
 // the binary as `executablePath` and NO_KEYCHAIN as args.
 import { execFile, execFileSync } from "node:child_process";
-import {
-  existsSync,
-  mkdirSync,
-  mkdtempSync,
-  readdirSync,
-  renameSync,
-  rmSync,
-  statSync,
-} from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readdirSync, rmSync } from "node:fs";
 import { createRequire } from "node:module";
 import { homedir } from "node:os";
+import {
+  installedChromeRelativePath,
+  moveChromeBuild,
+  pruneChromeBuildArchives,
+  retireChromeBuild,
+  stateOf,
+  UNPACK_WAIT_MS,
+  writtenAgo,
+} from "./chrome-installation.ts";
 import { isObject } from "./json.ts";
-import { join, relative, sep } from "node:path";
+import { join, sep } from "node:path";
 import { promisify } from "node:util";
 
 type Options = { shell?: boolean };
@@ -48,28 +49,7 @@ const install = (shell?: boolean, path = cache()) => [
   "{{path}}",
 ];
 
-// @puppeteer/browsers downloads <build id>-<file> beside the build's folder, unpacks it there and
-// deletes it after, so the folder holds the executable long before it is whole. An archive written
-// within UNPACK_WAIT_MS is an unpack under way; an older one is an install that died or hangs: one
-// hung 15 minutes while gates took its half-unpacked build.
-const UNPACK_WAIT_MS = 120_000;
 const UNPACK_POLL_MS = 500;
-const writtenAgo = (path: string) => {
-  try {
-    return Date.now() - statSync(path).mtimeMs;
-  } catch {
-    return 0;
-  }
-};
-const archivesOf = (build: string, names: string[]) =>
-  names.filter((name) => name.startsWith(`${build.slice(build.indexOf("-") + 1)}-`));
-function stateOf(folder: string, build: string, names = readdirSync(folder)) {
-  const archives = archivesOf(build, names);
-  if (archives.length === 0) return "whole";
-  return archives.some((name) => writtenAgo(join(folder, name)) < UNPACK_WAIT_MS)
-    ? "unpacking"
-    : "died";
-}
 
 /** The build puppeteer-core pins, else, without puppeteer-core, the newest build in the cache for
  * this platform. `shell` takes chrome-headless-shell, which printed in 2 s on a Mac where the full
@@ -139,9 +119,8 @@ function stage(): string | undefined {
 /** The installed executable, moved from `staged` into the cache in place of a build whose install
  * died; undefined where the install failed or another job's unpack of the build is under way. */
 function place(staged: string, output: string): string | undefined {
-  const installed = output.trim();
-  const rel = relative(staged, installed);
-  if (!installed || rel.startsWith("..")) return undefined;
+  const rel = installedChromeRelativePath(staged, output);
+  if (rel === undefined) return undefined;
   const [kind, build] = rel.split(sep);
   const folder = join(cache(), kind);
   mkdirSync(folder, { recursive: true });
@@ -151,23 +130,9 @@ function place(staged: string, output: string): string | undefined {
   if (state === "unpacking") return undefined;
   const path = join(cache(), rel);
   const died = state === "died" || (state === "whole" && !existsSync(path));
-  for (const name of archivesOf(build, readdirSync(folder)))
-    if (writtenAgo(join(folder, name)) >= UNPACK_WAIT_MS)
-      rmSync(join(folder, name), { force: true });
-  try {
-    if (died) renameSync(join(folder, build), join(staged, "died"));
-  } catch (error) {
-    if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
-  }
-  try {
-    renameSync(join(staged, kind, build), join(folder, build));
-  } catch (error) {
-    const { code } = error as NodeJS.ErrnoException;
-    if (code !== "EEXIST" && code !== "ENOTEMPTY") throw error;
-    // A competing unpack can start after the first look at the destination.
-    if (stateOf(folder, build) === "unpacking") return undefined;
-    if (!existsSync(path)) throw error;
-  }
+  pruneChromeBuildArchives(folder, build);
+  if (died) retireChromeBuild(join(folder, build), staged);
+  if (!moveChromeBuild(join(staged, kind, build), join(folder, build), path)) return undefined;
   return existsSync(path) && stateOf(folder, build) === "whole" ? path : undefined;
 }
 
