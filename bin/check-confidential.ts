@@ -358,10 +358,7 @@ if (message) scanText("commit message", readFileSync(message, "utf8").split(/^# 
 else if (argv.includes("--staged") || commit) scanDiffMode();
 else if (neverMode) scanNeverMode();
 else if (tree || index) scanSnapshotMode();
-else {
-  console.error(USAGE);
-  process.exit(2);
-}
+else exitWithResult({ stderr: USAGE, exitCode: 2 });
 scanBinaries(binaries);
 
 // A full scan (the index, the gate's step, a tree, or the never scan, handed every string the caller

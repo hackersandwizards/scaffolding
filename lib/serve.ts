@@ -1,10 +1,9 @@
 // A server a gate step starts for itself, on a port the system hands out, so two steps or two
 // sessions never meet on one fixed port: two checks defaulting to one port redded each other,
 // and a server left over from an earlier run answered for the new build.
-import { spawn } from "node:child_process";
 import { createServer } from "node:net";
 import { availableParallelism, loadavg } from "node:os";
-import { ServingProcess } from "./serving-process.ts";
+import { spawnServingCommand, ServingProcess } from "./serving-process.ts";
 
 /** The machine's one-minute load against its cores (SCAFFOLDING_LOAD stands in for the load), and
  * how many times a wait for wall time stretches under it: 1 up to one waiting process per core,
@@ -40,15 +39,7 @@ export async function serve(
 ): Promise<{ url: string; stop: () => void }> {
   const port = await freePort();
   const url = `http://127.0.0.1:${port}`;
-  const [executable, ...args] = command;
-  if (!executable) throw new Error("serve: command must not be empty");
-  // In a group of its own, so stop() reaches a server a wrapper such as `bun run` starts too.
-  const server = spawn(executable, args, {
-    env: { ...process.env, ...env, HOST: "127.0.0.1", PORT: String(port) },
-    stdio: ["ignore", "ignore", "pipe"],
-    detached: true,
-  });
-  const running = new ServingProcess(server, stderr);
+  const running = new ServingProcess(spawnServingCommand(command, port, env), stderr);
   for (const end = Date.now() + timeoutMs; Date.now() < end && !running.exited;) {
     const answered = await fetch(url, {
       signal: AbortSignal.timeout(Math.max(1, end - Date.now())),

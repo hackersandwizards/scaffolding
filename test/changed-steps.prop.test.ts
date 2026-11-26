@@ -1,3 +1,4 @@
+import { defined } from "@hackersandwizards/scaffolding/defined";
 import { fc, test } from "@hackersandwizards/scaffolding/property";
 import { describe, expect } from "vitest";
 import { ChangedStepSelector, fastSteps, validGlob } from "../lib/changed-steps.ts";
@@ -75,7 +76,12 @@ test.prop([fc.array(mapped), full], {
       ),
     ];
     const grouped = Map.groupBy(reasons, ([step]) => step);
-    const expected = new Map([...grouped].map(([step, entries]) => [step, entries[0]![1]]));
+    const expected = new Map(
+      [...grouped].map(([step, entries]) => [
+        step,
+        defined(entries[0], "the first reason for the step")[1],
+      ]),
+    );
     for (const step of fullOnly) expected.delete(step);
     expect(select(named, fullOnly)).toEqual({ steps: expected });
   },

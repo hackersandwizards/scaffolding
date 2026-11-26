@@ -2,7 +2,7 @@ import type { ChildProcess } from "node:child_process";
 import { EventEmitter } from "node:events";
 import { PassThrough } from "node:stream";
 import { expect, test, vi } from "vitest";
-import { ServingProcess } from "../lib/serving-process.ts";
+import { spawnServingCommand, ServingProcess } from "../lib/serving-process.ts";
 
 test.each([[Buffer.from("x".repeat(2001) + "end"), "x".repeat(1997) + "end"]])(
   "retains the tail of stderr as an exit diagnostic",
@@ -42,5 +42,12 @@ test.each([[43210, -43210]])(
     } finally {
       kill.mockRestore();
     }
+  },
+);
+
+test.each([[[], "serve: command must not be empty"]])(
+  "rejects an empty command before spawning a server",
+  (command, expected) => {
+    expect(() => spawnServingCommand(command, 8000, {})).toThrow(expected);
   },
 );

@@ -1,5 +1,20 @@
 import { spawn, type ChildProcess } from "node:child_process";
 
+export function spawnServingCommand(
+  command: string[],
+  port: number,
+  env: Record<string, string>,
+): ChildProcess {
+  const [executable, ...args] = command;
+  if (!executable) throw new Error("serve: command must not be empty");
+  // In a group of its own, so stop() reaches a server a wrapper such as `bun run` starts too.
+  return spawn(executable, args, {
+    env: { ...process.env, ...env, HOST: "127.0.0.1", PORT: String(port) },
+    stdio: ["ignore", "ignore", "pipe"],
+    detached: true,
+  });
+}
+
 export class ServingProcess {
   said = "";
   exited = "";
