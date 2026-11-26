@@ -1,10 +1,9 @@
 ---
 name: polish
 description: >-
-  Full-repo quality pass (comment sweep, quality, performance and security review, /simplify, a second
-  review, commit and push), when the user asks to polish, clean up or quality-pass the repo, and
-  at the end of a session that changed several repositories, once in each with
-  `since <the session's first commit there>`.
+  Full-repo quality pass (comment sweep, quality, performance and security review, /simplify, a
+  second review, commit and push): on request, and at the end of a session that changed several
+  repositories, once in each with `since <the session's first commit there>`.
 ---
 
 # Polish

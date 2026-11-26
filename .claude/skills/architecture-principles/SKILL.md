@@ -1,9 +1,8 @@
 ---
 name: architecture-principles
 description: >-
-  The standard for client systems, to review architecture or code ("red flags"), choose a
-  design ("microservices or monolith", "build or buy"), argue a technical position in a proposal
-  or training, or diagnose "why is this team slow", never for routine work in an existing codebase.
+  The standard for client systems: review an architecture or code, choose a design, argue a
+  technical position, diagnose a slow team. Never for routine work in an existing codebase.
 ---
 
 # Architecture Principles for Client Systems

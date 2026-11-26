@@ -106,14 +106,13 @@ function notesLookAlike(a: Note, b: Note): boolean {
   return shared / (a.set.size + b.set.size - shared) >= JACCARD;
 }
 
-export function classifyMemoryPair(a: Note, b: Note): PairClass {
-  if (!a.words.length || !b.words.length) return "different";
-  if (sameSeq(a.words, b.words)) return "duplicate";
-  const differing =
-    a.rest.length >= MIN_REST_WORDS && sameSeq(a.rest, b.rest) ? noteDifferingAnchors(a, b) : null;
-  if (differing?.length === 0) return "duplicate";
+/** Compare value positions between notes with the same sequence of plain words. */
+export function compareMemoryValueAlignment(a: Note, b: Note) {
+  if (!(a.rest.length >= MIN_REST_WORDS && sameSeq(a.rest, b.rest))) return "inconclusive";
+  const differing = noteDifferingAnchors(a, b);
+  if (differing.length === 0) return "duplicate";
+  if (differing.length !== 1) return "inconclusive";
   if (
-    differing?.length === 1 &&
     differing[0] <= NAME_ANCHOR_MAX &&
     [a, b].every((n) =>
       n.groups.every(
@@ -122,11 +121,19 @@ export function classifyMemoryPair(a: Note, b: Note): PairClass {
     )
   )
     return "different";
+  return "single-change";
+}
+
+export function classifyMemoryPair(a: Note, b: Note): PairClass {
+  if (!a.words.length || !b.words.length) return "different";
+  if (sameSeq(a.words, b.words)) return "duplicate";
+  const alignment = compareMemoryValueAlignment(a, b);
+  if (alignment === "duplicate" || alignment === "different") return alignment;
   if (notesLookAlike(a, b)) {
     // In order, not sorted: two values swapping places are a conflict.
     return sameSeq(a.values.map(comparable), b.values.map(comparable)) ? "duplicate" : "conflict";
   }
-  return differing?.length === 1 ? "conflict" : "different";
+  return alignment === "single-change" ? "conflict" : "different";
 }
 
 interface Unit {

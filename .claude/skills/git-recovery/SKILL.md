@@ -4,7 +4,8 @@ description: >-
   Rare git cases in a checkout other sessions share: committing a path holding `[` or `*`, a file
   `git rm --cached` untracked, a case-only rename, a wrong `--amend` fold, a commit from a private
   index, reverting a Git LFS file, a killed merge, an edit another session swept into its commit,
-  and who authored a commit. Load before any of these.
+  who authored a commit, a push after a directory rename, and a tag after a piped push. Load before
+  any of these.
 ---
 
 # Git recovery
@@ -33,3 +34,7 @@ description: >-
 - The commit author is the machine's git identity for every session. An agent commit is marked only
   by its `Co-Authored-By` line, so git history never says who decided a change: that evidence is a
   message, a record body or a run transcript, and is often unrecorded.
+- A push after a directory rename can pack every renamed blob again (git's sparse walk compares only changed paths): 491 objects and 39 MB for 66 new ones, which GitLab let hang. Push it with `git -c pack.useSparse=false push`.
+- A pipeline exits with its last command's status: `git push ... | tail -2 && git tag vX` tags after
+  a rejected push. Chain on the push itself and tag only once `git rev-parse HEAD` equals
+  `origin/main`. A tag that landed off main stays put: merge `origin/main` into the tagged commit.

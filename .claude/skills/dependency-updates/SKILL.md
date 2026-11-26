@@ -1,11 +1,9 @@
 ---
 name: dependency-updates
 description: >-
-  Update a repository's dependencies: raise every external dependency of every kind to its newest
-  release, majors included, with the repository's own tooling, clear advisories, fix what breaks, one
-  commit per repository; with `pins`, raise only our own package pins. Use for "dependency
-  updates", "update dependencies", "fix advisories", "Abhängigkeiten aktualisieren", "raise the
-  pins", "raise the consumers".
+  Update a repository's dependencies: raise every external dependency to its newest release, majors
+  included, clear advisories, fix what breaks, one commit per repository; with `pins`, raise only
+  our own package pins ("raise the consumers").
 ---
 
 # Dependency updates

@@ -4,7 +4,7 @@
 // whose working tree differs from the index is checked from the index on stdin, so those unstaged
 // lines neither pass nor block this commit. A repository defining a `check:skills` script also
 // runs it whenever the index touches `.claude/`; that validator reads the working tree.
-import { spawn, spawnSync } from "node:child_process";
+import { spawn, spawnSync, type ChildProcessWithoutNullStreams } from "node:child_process";
 import { existsSync, readFileSync } from "node:fs";
 import { availableParallelism } from "node:os";
 
@@ -123,15 +123,13 @@ const waiting: (() => void)[] = [];
 type ToolRun = { out: string; code: number; stdout: Buffer };
 
 async function runStagedTool(
-  bin: string,
-  args: string[],
+  start: () => ChildProcessWithoutNullStreams,
   stdin?: Buffer,
-  env = process.env,
 ): Promise<ToolRun> {
   if (free === 0) await new Promise<void>((go) => waiting.push(go));
   else free--;
   const result = await new Promise<ToolRun>((done) => {
-    const child = spawn(bin, args, { stdio: "pipe", env });
+    const child = start();
     // A child that exits before reading stdin raises EPIPE: caught so it cannot crash the check, and
     // counted as a failure so an unread file never passes.
     let unread = false;
@@ -146,7 +144,11 @@ async function runStagedTool(
     );
     child.on("close", (code) => {
       const output = Buffer.concat(stdout);
-      done({ out: `${output}${out}`, code: unread ? code || 1 : (code ?? 1), stdout: output });
+      done({
+        out: `${output}${out}`,
+        code: unread ? code || 1 : (code ?? 1),
+        stdout: output,
+      });
     });
   });
   const next = waiting.shift();
@@ -165,12 +167,12 @@ function stagedContent(path: string): Buffer {
 // Output equal to the input is formatted, a blank file included. Otherwise prettier prints nothing
 // for a file it has no parser for, which passes, and also formats a whitespace-only file it can
 // parse to nothing, which fails, so a whitespace-only one asks which it is.
-async function prettierPasses(bin: string, path: string, input: Buffer, r: ToolRun) {
+async function prettierPasses(input: Buffer, r: ToolRun, fileInfo: () => Promise<ToolRun>) {
   if (r.code) return false;
   if (r.stdout.equals(input)) return true;
   if (r.stdout.length) return false;
   if (/\S/.test(`${input}`)) return true;
-  const info = await runStagedTool(bin, ["--file-info", path]);
+  const info = await fileInfo();
   return !info.code && jsonMember(JSON.parse(`${info.stdout}`), "inferredParser") === null;
 }
 
@@ -200,11 +202,25 @@ const runs = active.flatMap(([tool, flags]) => {
     ...chunks
       .map((paths) => mine(tool, paths))
       .filter((paths) => paths.length)
-      .map((paths) => runStagedTool(bin, [...flags, ...paths])),
+      .map((paths) => {
+        const args = [...flags, ...paths];
+        const env = process.env;
+        return runStagedTool(() => spawn(bin, args, { env }));
+      }),
     ...mine(tool, partial).map(async (path) => {
       const input = stagedContent(path);
-      const r = await runStagedTool(bin, stdinFlags[tool](path), input);
-      if (tool === "prettier" ? await prettierPasses(bin, path, input, r) : !r.code)
+      const args = stdinFlags[tool](path);
+      const env = process.env;
+      const r = await runStagedTool(() => spawn(bin, args, { env }), input);
+      if (
+        tool === "prettier"
+          ? await prettierPasses(input, r, () => {
+              const infoArgs = ["--file-info", path];
+              const infoEnv = process.env;
+              return runStagedTool(() => spawn(bin, infoArgs, { env: infoEnv }));
+            })
+          : !r.code
+      )
         return { out: "", code: 0 };
       const why = tool === "prettier" && !r.code ? "not formatted\n" : r.out;
       return {
@@ -220,12 +236,12 @@ if (checkSkills) {
     encoding: "utf8",
   });
   if (all.status !== 0) refuseCommit("git diff --cached failed");
-  runs.push(
-    runStagedTool(process.execPath, ["run", "check:skills"], undefined, {
-      ...process.env,
-      VALIDATE_SKILLS_PATHS: all.stdout.split("\0").filter(Boolean).join("\n"),
-    }),
-  );
+  const bun = process.execPath;
+  const env = {
+    ...process.env,
+    VALIDATE_SKILLS_PATHS: all.stdout.split("\0").filter(Boolean).join("\n"),
+  };
+  runs.push(runStagedTool(() => spawn(bun, ["run", "check:skills"], { env })));
 }
 
 // Concurrent for speed, reported in a fixed order so the output reads the same on every run.

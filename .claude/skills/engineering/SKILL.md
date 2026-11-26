@@ -1,9 +1,9 @@
 ---
 name: engineering
 description: >-
-  How to build and change software here (docs over code, when to ask, what never to simplify, comments,
-  silent-failure gates), before implementing a feature, refactoring, fixing a bug, reviewing a change or
-  planning non-trivial repository work, never for content edits, prose or business records.
+  How to build and change software here, before implementing a feature, refactoring, fixing a bug,
+  reviewing a change or planning non-trivial repository work. Never for content edits, prose or
+  business records.
 ---
 
 # Engineering

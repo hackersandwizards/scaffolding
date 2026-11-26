@@ -1,6 +1,9 @@
 ---
 name: schedules
-description: Create, change, rename or review a scheduled run (its file under ~/.claude/schedules/ and the Claude Desktop or T3 task that triggers it), deciding first whether it should be a schedule at all. Use for "schedule this", "create a scheduled task", "run this daily/weekly", "change the schedule", "rename the task", "standing approval".
+description: >-
+  Create, change, rename or review a scheduled run (its file under ~/.claude/schedules/ and the
+  Claude Desktop or T3 task that triggers it) or its standing approval, deciding first whether it
+  should be a schedule at all.
 ---
 
 # Schedules
