@@ -11,8 +11,9 @@ as the `delegation` skill says.
 - Answer every question a turn holds in the next reply, or name it as open with what it waits on.
   Asked which ones, give every item by name, never a count or a category.
 - A step the person must do names the exact command or click, where to do it, and what they see
-  when it worked. A text the person must send or post by hand appears whole, as it now reads, in
-  every reply that revises it, never as a pointer to an earlier version.
+  when it worked. A text the person must send, post or paste by hand appears whole, as it now reads, in
+  every reply that revises it, never as a pointer to an earlier version or a file, and as the last
+  text of the turn: no tool call follows it. A command they paste into a terminal is one line.
 - Order a delegate report by what each item costs if it is missed.
 - Copy a name's spelling from text its owner wrote, never rebuild it from a slug or handle.
 - A French term reaching the user carries its German meaning.
