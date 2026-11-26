@@ -36,7 +36,8 @@ rules, skills and research that needs our channels or records.
 - The session waits for the implementer in one blocking call and reads the commits and the gate's
   exit status without rerunning the gate. The reviewer reads the row's diff and its check's result.
   A blocking finding (a defect, a failed check, a broken rule) goes back to the same implementer
-  thread, at most three times; other findings go into the report. A row with no blocking finding
+  thread, at most three times; other findings go into the report. A small finding, a few lines that
+  need no design choice, the session or its subagent fixes itself. A row with no blocking finding
   left is `pass`. A row still failing after the third return goes to the planner once for its root
   cause and the fix; still failing, its commits are reverted with `git revert` and it is `fail`,
   as is every row that depends on it.
