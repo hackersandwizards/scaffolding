@@ -225,10 +225,11 @@ export default { ...base, incremental: false, mutate: ["sample.ts"]`;
 
   test("the default run reports the module-level mutant as surviving its one covering test", () => {
     assert(staticSurvivor, "the default run should report the initial mutant");
+    assert(staticSurvivor.coveredBy, "the initial mutant's covering tests");
     expect({
       static: staticSurvivor.static,
       status: staticSurvivor.status,
-      coveredBy: staticSurvivor.coveredBy?.length,
+      coveredBy: staticSurvivor.coveredBy.length,
     }).toEqual({
       static: true,
       status: "Survived",
@@ -250,12 +251,15 @@ export default { ...base, incremental: false, mutate: ["sample.ts"]`;
   test("testing static mutants against the full suite kills the same mutant outside its covering test", () => {
     assert(staticSurvivor, "the default run should report the initial mutant");
     assert(staticKill, "the full run should report the initial mutant");
+    const { coveredBy, killedBy } = staticKill;
+    assert(coveredBy, "the mutant's covering tests");
+    assert(killedBy, "the mutant's killing tests");
     expect({
       static: staticKill.static,
       status: staticKill.status,
       location: staticKill.location,
-      coveredBy: staticKill.coveredBy?.length,
-      killedBy: staticKill.killedBy?.length,
+      coveredBy: coveredBy.length,
+      killedBy: killedBy.length,
     }).toEqual({
       static: true,
       status: "Killed",
@@ -263,7 +267,7 @@ export default { ...base, incremental: false, mutate: ["sample.ts"]`;
       coveredBy: 1,
       killedBy: 1,
     });
-    expect(staticKill.coveredBy).not.toContain(staticKill.killedBy?.[0]);
+    expect(coveredBy).not.toContain(killedBy[0]);
     expect(full.stdout).not.toContain(heading);
   });
 

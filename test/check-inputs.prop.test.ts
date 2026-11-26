@@ -1,5 +1,5 @@
 import { fc, test, unicodeString } from "@hackersandwizards/scaffolding/property";
-import { describe, expect } from "vitest";
+import { assert, describe, expect } from "vitest";
 import { lostSpaceTag, spaceTemplateLines } from "../lib/astro-spaces.ts";
 import {
   addedLines,
@@ -293,11 +293,15 @@ test.prop(
   const chunks = pathChunks(files);
   expect(chunks.flat()).toEqual(files);
   expect(chunks.filter((chunk) => chunk.length === 0)).toEqual(files.length === 0 ? [[]] : []);
-  const sizes = chunks.map((chunk) => {
-    const bytes = chunk.reduce((total, file) => total + Buffer.byteLength(file) + 1, 0);
-    expect(bytes).toBeLessThanOrEqual(100_000);
-    return bytes;
+  const sizes = chunks.map((chunk) =>
+    chunk.reduce((total, file) => total + Buffer.byteLength(file) + 1, 0),
+  );
+  expect(Math.max(...sizes)).toBeLessThanOrEqual(100_000);
+  const extendedSizes = chunks.slice(1).map(([first], index) => {
+    const size = sizes[index];
+    assert(first, "the first path of a nonempty chunk");
+    assert(size !== undefined, "the size of the previous chunk");
+    return size + Buffer.byteLength(first) + 1;
   });
-  for (const [index, [first]] of chunks.slice(1).entries())
-    expect(sizes[index]! + Buffer.byteLength(first!) + 1).toBeGreaterThan(100_000);
+  expect(Math.min(...extendedSizes)).toBeGreaterThan(100_000);
 });

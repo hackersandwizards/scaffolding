@@ -12,7 +12,11 @@ test.prop([fc.dictionary(name, fc.tuple(severity, fc.boolean())), name])(
     const rules = Object.fromEntries(
       Object.entries(settings).map(([rule, [level]]) => [rule, [level, {}]]),
     );
-    const native = new Set(Object.keys(settings).filter((rule) => settings[rule]?.[1]));
+    const native = new Set(
+      Object.entries(settings)
+        .filter(([, [, enabled]]) => enabled)
+        .map(([rule]) => rule),
+    );
     const shared = Object.entries(settings)
       .filter(([, [level, enabled]]) => enabled && level !== 0 && level !== "off")
       .map(([rule]) => ({

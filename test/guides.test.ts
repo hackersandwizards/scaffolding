@@ -58,10 +58,8 @@ test("each guide is reachable from an enforced rule, own check or upcoming rule"
   ).toEqual([]);
 });
 
-test("each guide starts with a heading and a blank line", () => {
-  for (const file of guideFiles) {
-    expect(readFileSync(new URL(file, guidesDirectory), "utf8"), file).toMatch(/^# [^\n]+\n\n/);
-  }
+test.each(guideFiles)("%s starts with a heading and a blank line", (file) => {
+  expect(readFileSync(new URL(file, guidesDirectory), "utf8"), file).toMatch(/^# [^\n]+\n\n/);
 });
 
 test("guide ids drop plugin names in ESLint, Oxlint and scaffolding rule names", () => {

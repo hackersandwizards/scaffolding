@@ -1,5 +1,5 @@
 import { fc, unicodeString } from "@hackersandwizards/scaffolding/property";
-import { expect, test, vi } from "vitest";
+import { assert, expect, test, vi } from "vitest";
 import { lostSpaceTag, spaceTemplateLines } from "../lib/astro-spaces.ts";
 import { licenceAllowed } from "../lib/licence-expression.ts";
 import { lintRuleOverlaps } from "../lib/lint-rule-overlaps.ts";
@@ -135,7 +135,8 @@ test.each([
     ...config,
     rules: { [rule]: "error" },
   });
-  expect(finding?.message).toContain(`ESLint rule ${rule} overlaps Oxlint rule ${native}.`);
+  assert(finding, "the ESLint and Oxlint overlap");
+  expect(finding.message).toContain(`ESLint rule ${rule} overlaps Oxlint rule ${native}.`);
   expect(
     lintRuleOverlaps("src/file.ts", new Set(["rule"]), { ...config, rules: { [rule]: "error" } }),
   ).toEqual([]);
