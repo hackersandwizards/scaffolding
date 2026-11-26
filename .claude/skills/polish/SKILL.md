@@ -48,7 +48,7 @@ Tell each batch that zero changes is an acceptable result. Before deleting a com
 
 ## 3. Quality, performance, security review
 
-Run `/code-review high` and `/security-review` over the scope yourself, as the reviewer, first; their findings join this phase's fix list. `/security-review` reads the pending changes of the session's own repository, whatever its
+Run `/code-review high` and `/security-review` over the scope yourself, as the reviewer, first; their findings join this phase's fix list. A review skill's report ends its own step, never the run: go on with the phase. `/security-review` reads the pending changes of the session's own repository, whatever its
 arguments name: where those are not the scope, review the scope's diff for security by hand and
 say so. In a repository with a UI, measure performance on a server the run starts itself on a
 free port (Lighthouse per public page type, response and render time per app route) and report
