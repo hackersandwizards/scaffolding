@@ -1,4 +1,5 @@
-import { basename, join } from "node:path";
+import { existsSync } from "node:fs";
+import { basename, dirname, join } from "node:path";
 import { buildSharedStepMap, resolveBrandStepCommand } from "./gate-plan.ts";
 import { brandSteps, pinsPackage } from "./gate-config.ts";
 import { ownEntry } from "./own-entry.ts";
@@ -25,9 +26,15 @@ function gateToolCommands(root: string, pkg: ReturnType<typeof readPackage>) {
   return commands;
 }
 
-function declaredBinaries(root: string, name: string) {
-  const { bin, name: packageName } = readPackage(join(root, "node_modules", name));
-  if (typeof bin === "string" && packageName) return [packageName.split("/").at(-1)];
+export function declaredBinaries(root: string, name: string, workspace = root) {
+  let directory = workspace;
+  let installed = join(directory, "node_modules", name);
+  while (directory.startsWith(root + "/") && !existsSync(join(installed, "package.json"))) {
+    directory = dirname(directory);
+    installed = join(directory, "node_modules", name);
+  }
+  const { bin, name: packageName } = readPackage(installed);
+  if (typeof bin === "string" && packageName) return [basename(packageName)];
   return isObject(bin) ? Object.keys(bin) : [];
 }
 
@@ -54,8 +61,7 @@ export function gateToolDependencies(root: string) {
     used.add("@astrojs/check");
   const binaries = new Set(invocations.map(({ binary }) => binary));
   for (const dependency of Object.keys({ ...pkg.dependencies, ...pkg.devDependencies })) {
-    if (declaredBinaries(root, dependency).some((bin) => bin !== undefined && binaries.has(bin)))
-      used.add(dependency);
+    if (declaredBinaries(root, dependency).some((bin) => binaries.has(bin))) used.add(dependency);
   }
   return used;
 }

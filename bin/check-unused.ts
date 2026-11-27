@@ -4,11 +4,11 @@ import type { Issues, Issue, Results } from "knip/session";
 import { dirname, relative } from "node:path";
 import { eslintIgnorePatterns, eslintToolIgnorePatterns } from "../config/eslint-ignores.js";
 import { renderGuides } from "../lib/guides.ts";
-import { nodeModulesDependencyPaths, runKnipAudit } from "../lib/knip-audit.ts";
+import { runKnipAudit, unusedTextDependencyPaths } from "../lib/knip-audit.ts";
 import { javaScriptOrTypeScript } from "../lib/production-code.ts";
 import { listFiles, repoRoot, withoutEnvFile } from "../lib/repo.ts";
 import { regularInput, trackedInputs } from "../lib/tracked-inputs.ts";
-import { gateToolDependencies } from "../lib/unused-gate-dependencies.ts";
+import { declaredBinaries, gateToolDependencies } from "../lib/unused-gate-dependencies.ts";
 import { nonProductionEntry, unusedBuildEntries } from "../lib/unused-entry-files.ts";
 import { unusedStyleDependencies } from "../lib/unused-style-dependencies.ts";
 
@@ -52,11 +52,11 @@ function removeUnusedIssues(
 
 function workspaceUsesDependency(
   issue: Issue,
-  uses: Map<string, Set<string>>,
+  uses: Set<string> | undefined,
   workspaces: string[],
 ) {
   const workspace = dirname(issue.filePath);
-  return [...(uses.get(issue.symbol) ?? [])].some(
+  return [...(uses ?? [])].some(
     (file) =>
       file.startsWith(workspace + "/") &&
       !workspaces.some(
@@ -97,18 +97,27 @@ async function removeUsedDependencyFindings(
     production,
     development,
     ignored,
+    tracked,
   }: {
     production: Results;
     development: Awaited<ReturnType<typeof runKnipAudit>>;
     ignored: (issue: Issue) => boolean;
+    tracked: string[];
   },
 ) {
   const styles = await unusedStyleDependencies(root, files);
-  const packagePaths = nodeModulesDependencyPaths(root, files);
+  const { packages, binaries } = unusedTextDependencyPaths(root, files, tracked);
+  const pathWorkspaces = development.pathWorkspaceDirs;
+  const usedByPath = (issue: Issue) =>
+    workspaceUsesDependency(issue, packages.get(issue.symbol), pathWorkspaces) ||
+    (binaries.size > 0 &&
+      declaredBinaries(root, issue.symbol, dirname(issue.filePath)).some((binary) =>
+        workspaceUsesDependency(issue, binaries.get(binary), pathWorkspaces),
+      ));
   const imported = (issue: Issue) =>
     [styles, development.entryDependencies].some((uses) =>
-      workspaceUsesDependency(issue, uses, production.includedWorkspaceDirs),
-    ) || workspaceUsesDependency(issue, packagePaths, development.pathWorkspaceDirs);
+      workspaceUsesDependency(issue, uses.get(issue.symbol), production.includedWorkspaceDirs),
+    ) || usedByPath(issue);
   const used = gateToolDependencies(root);
   const gateTool = (issue: Issue) => issue.workspace === "." && used.has(issue.symbol);
   removeUnusedIssues(
@@ -155,6 +164,7 @@ async function checkUnusedCode() {
     production,
     development,
     ignored,
+    tracked,
   });
   return reportUnusedAudit(root, production, development.results);
 }

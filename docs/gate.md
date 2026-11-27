@@ -105,6 +105,12 @@ files. A production file reached only by a test can still fail the check. The ca
 conventional stories, pages, Head and Home count as application entries in catalog repositories.
 Tracked CSS and Astro style imports count as used, as do exact `node_modules/<name>` paths in
 tracked text outside JavaScript, TypeScript, Markdown (`.md`), lockfiles and shared ESLint ignores.
+Tracked files under `.claude/skills/` also count exact package subpaths that resolve through
+exports or exist in the installed package. A placeholder like `<folder>` requires an existing
+directory before it.
+Tracked `node_modules/.bin/<bin>` paths and literal `bun run <bin>` commands, including argument
+arrays, count for dependencies that declare the binary. This includes JavaScript and TypeScript
+and excludes lockfiles and Markdown outside skills.
 Astro and Vite build configs, hub scripts under `.claude/`, and hooks under `.githooks/` count as
 dependency entry points, including their local imports.
 The audit omits findings located in the hub and hook paths. A second run also includes test and

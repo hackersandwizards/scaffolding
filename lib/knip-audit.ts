@@ -6,11 +6,16 @@ import {
   type Results,
 } from "knip/session";
 import { spawnSync } from "node:child_process";
-import { readFileSync } from "node:fs";
-import { join, resolve } from "node:path";
+import { readFileSync, realpathSync, statSync } from "node:fs";
+import { isAbsolute, join, resolve } from "node:path";
 import { pinsPackage } from "./gate-config.ts";
 import { javaScriptOrTypeScript } from "./production-code.ts";
-import { pathChunks, readPackage, throwGitCommandFailure } from "./repo.ts";
+import {
+  pathChunks,
+  readPackage,
+  resolveModuleIfAvailable,
+  throwGitCommandFailure,
+} from "./repo.ts";
 
 type KnipGraph = Map<
   string,
@@ -175,14 +180,50 @@ export function knipStylesheetCompiler() {
 const lockfilePath =
   /(?:\.lock(?:b|\.(?:hcl|json))?|(?:^|\/)(?:(?:npm-shrinkwrap|package-lock)\.json|pnpm-lock\.ya?ml))$/;
 const nodeModulesPackagePath = /(?<![\w.~-])node_modules\/(@[\w.~-]+\/[\w.~-]+|[\w.~-]+)/g;
+const skillPackagePath =
+  /(?<![\w.@~%/\\-])(?:node_modules\/)?((?:@[\w.~-]+\/)?[\w.~-]+)\/([^\s"'`<>()[\]{},;:!?*#|\\]+(?:<[^<>/\s]+>)?)/g;
+const binaryPath = /(?<![\w.~-])node_modules\/\.bin\/([\w.@+-]+)(?=$|[\s"'`);,&|\]>])/g;
+const bunBinaryCommand = /(?:^|["'`;&|])[ \t]*bun[ \t]+run[ \t]+([\w.@+-]+)(?=$|[\s"'`;&|)])/gm;
+const bunBinaryArguments =
+  /(?<![\w.])(?:process\.execPath|["'`]bun["'`])\s*,\s*\[\s*["'`]run["'`]\s*,\s*(?:["'`]--cwd["'`]\s*,\s*(?:[$\w.]+|["'`][^"'`\r\n]*["'`])\s*,\s*)?["'`]([\w.@+-]+)["'`]\s*(?=[,\]])/g;
 
-export function nodeModulesDependencyPaths(root: string, files: string[]) {
-  const candidates = files.filter(
-    (file) =>
-      !javaScriptOrTypeScript.test(file) && !/\.md$/i.test(file) && !lockfilePath.test(file),
+function statSkillPackageTarget(path: string) {
+  try {
+    return statSync(path, { throwIfNoEntry: false });
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code !== "ENOTDIR") throw error;
+    return undefined;
+  }
+}
+
+function installedSkillPackageExport(root: string, packageRoot: string, specifier: string) {
+  if (readPackage(packageRoot).exports == null) return false;
+  const exported = resolveModuleIfAvailable(specifier, root);
+  return (
+    exported !== undefined &&
+    isAbsolute(exported) &&
+    realpathSync(exported).startsWith(`${realpathSync(packageRoot)}/`)
   );
-  const used = new Map<string, Set<string>>();
-  for (const chunk of pathChunks(candidates)) {
+}
+
+function skillPackageSubpathExists(root: string, name: string, reference: string) {
+  const literal = reference.replace(/(?<=\/)<[^<>/\s]+>$/, "");
+  const directory = literal.endsWith("/");
+  const subpath = directory ? literal.slice(0, -1) : literal.replace(/\.$/, "");
+  const specifier = `${name}/${subpath}`;
+  if (/[<>]/.test(subpath) || /(?:^|\/)\.{0,2}(?:\/|$)/.test(specifier)) return false;
+  const packageRoot = join(root, "node_modules", name);
+  const target = statSkillPackageTarget(join(packageRoot, subpath));
+  if (directory) return target?.isDirectory() === true;
+  return (
+    target?.isFile() ||
+    target?.isDirectory() ||
+    installedSkillPackageExport(root, packageRoot, specifier)
+  );
+}
+
+function* trackedPackagePathFiles(root: string, files: string[], needles: readonly string[]) {
+  for (const chunk of pathChunks(files)) {
     if (!chunk.length) continue;
     const result = spawnSync(
       "git",
@@ -192,8 +233,7 @@ export function nodeModulesDependencyPaths(root: string, files: string[]) {
         "--no-recurse-submodules",
         "--color=never",
         "-IlzF",
-        "-e",
-        "node_modules/",
+        ...needles.flatMap((needle) => ["-e", needle]),
         "--",
         ...chunk,
       ],
@@ -202,16 +242,44 @@ export function nodeModulesDependencyPaths(root: string, files: string[]) {
     if (result.status === 1) continue;
     if (result.status !== 0)
       throwGitCommandFailure(result, "git grep could not find package paths");
-    for (const file of result.stdout.split("\0").filter(Boolean)) {
+    yield* result.stdout.split("\0").filter(Boolean);
+  }
+}
+
+export function unusedTextDependencyPaths(root: string, files: string[], tracked: string[]) {
+  const candidates = files.filter(
+    (file) =>
+      !javaScriptOrTypeScript.test(file) && !/\.md$/i.test(file) && !lockfilePath.test(file),
+  );
+  const skillFiles = tracked.filter((file) => file.startsWith(".claude/skills/"));
+  const binaryFiles = tracked.filter(
+    (file) =>
+      !lockfilePath.test(file) && (!/\.md$/i.test(file) || file.startsWith(".claude/skills/")),
+  );
+  const packages = new Map<string, Set<string>>();
+  const binaries = new Map<string, Set<string>>();
+  for (const [paths, needles, matchers, used] of [
+    [candidates, ["node_modules/"], [nodeModulesPackagePath], packages],
+    [skillFiles, ["/"], [skillPackagePath], packages],
+    [
+      binaryFiles,
+      ["node_modules/.bin/", "bun", "process.execPath"],
+      [binaryPath, bunBinaryCommand, bunBinaryArguments],
+      binaries,
+    ],
+  ] as const) {
+    for (const file of trackedPackagePathFiles(root, paths, needles)) {
       const path = join(root, file);
       const source = readFileSync(path);
       if (source.includes(0)) continue;
-      for (const [, name] of source.toString("utf8").matchAll(nodeModulesPackagePath)) {
-        const paths = used.get(name) ?? new Set<string>();
-        paths.add(path);
-        used.set(name, paths);
+      const text = source.toString("utf8");
+      for (const [, name, subpath] of matchers.flatMap((matcher) => [...text.matchAll(matcher)])) {
+        if (subpath !== undefined && !skillPackageSubpathExists(root, name, subpath)) continue;
+        const references = used.get(name) ?? new Set<string>();
+        references.add(path);
+        used.set(name, references);
       }
     }
   }
-  return used;
+  return { packages, binaries };
 }

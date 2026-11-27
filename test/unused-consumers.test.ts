@@ -4,6 +4,7 @@ import { testDirectory } from "./test-directory.ts";
 
 const manifest = (fields = {}) => JSON.stringify({ name: "consumer", main: "index.ts", ...fields });
 const entry = "export {};";
+const skillExportReference = "Read **skill-assets/schema** or run `scripts/render.sh`.";
 
 test.each(["vitest.config.ts", "vite.config.ts"])(
   "unused follows %s and tests when scaffolding supplies Vitest",
@@ -213,6 +214,169 @@ test("unused keeps package path references in their own workspace", () => {
       "[unused] package.json:1: unused dependency workspace-templates",
     ]);
   }
+});
+
+test.each([
+  {
+    scenario: "skill export",
+    file: ".claude/skills/example/SKILL.md",
+    reference: skillExportReference,
+    name: "skill-assets",
+    status: 0,
+    findings: null,
+  },
+  {
+    scenario: "skill file path with a placeholder",
+    file: ".claude/skills/example/paths.txt",
+    reference: "Read `@example/skill-assets/profiles/<folder>/bio.md`.",
+    name: "@example/skill-assets",
+    status: 0,
+    findings: null,
+  },
+  {
+    scenario: "docs mention",
+    file: "docs/reference.md",
+    reference: skillExportReference,
+    name: "skill-assets",
+    status: 1,
+    findings: ["unused dependency skill-assets"],
+  },
+  {
+    scenario: "package name prefix",
+    file: ".claude/skills/example/SKILL.md",
+    reference: "Read `skill-assets-extra/profiles` and `xskill-assets/profiles`.",
+    name: "skill-assets",
+    status: 1,
+    findings: ["unused dependency skill-assets"],
+  },
+  {
+    scenario: "missing package subpath",
+    file: ".claude/skills/example/SKILL.md",
+    reference: [
+      "`skill-assets/profiles/missing.md`",
+      "`skill-assets/profiles/sample/bio.md/missing`",
+      "`skill-assets/missing/<folder>/bio.md`",
+      "`skill-assets/profiles/sample/bio.md/<folder>`",
+    ].join("\n"),
+    name: "skill-assets",
+    status: 1,
+    findings: ["unused dependency skill-assets"],
+  },
+])("unused checks a $scenario", ({ file, reference, name, status, findings }) => {
+  using directory = testDirectory();
+  const root = directory.folder;
+  auditFixture(root, {
+    "package.json": manifest({ dependencies: { [name]: "1.0.0" } }),
+    "index.ts": entry,
+    [file]: reference,
+  });
+  writeAuditFiles(root, {
+    [`node_modules/${name}/package.json`]: JSON.stringify({
+      name,
+      exports: { "./schema": "./dist/schema.js" },
+    }),
+    [`node_modules/${name}/dist/schema.js`]: entry,
+    [`node_modules/${name}/profiles/sample/bio.md`]: "# Profile",
+    "node_modules/skill-assets-extra/profiles/sample/bio.md": "# Profile",
+    "node_modules/xskill-assets/profiles/sample/bio.md": "# Profile",
+  });
+  const result = runCodeAudit(root, "unused");
+  expect(result.status).toBe(status);
+  expect(result.output.match(/unused dependency \S+/g)).toEqual(findings);
+});
+
+test.each([
+  {
+    scenario: "CLI path and Bun spawn together",
+    source: [
+      'export const LOCAL_SERVER = join(ROOT, "node_modules/.bin/mcp-fixture-server");',
+      'runCommand(process.execPath, ["run", "--cwd", ROOT, "mcp-fixture-server"]);',
+    ].join("\n"),
+    bin: { "mcp-fixture-server": "cli.js" },
+    status: 0,
+    findings: null,
+  },
+  {
+    scenario: "CLI path alone",
+    source: 'export const LOCAL_SERVER = "node_modules/.bin/mcp-fixture-server";',
+    bin: "cli.js",
+    status: 0,
+    findings: null,
+  },
+  {
+    scenario: "Bun spawn alone",
+    source: 'runCommand(process.execPath, ["run", "--cwd", ROOT, "mcp-fixture-server"]);',
+    bin: { "mcp-fixture-server": "cli.js" },
+    status: 0,
+    findings: null,
+  },
+  {
+    scenario: "Bun command string",
+    source: 'exec("bun run mcp-fixture-server");',
+    bin: { "mcp-fixture-server": "cli.js" },
+    status: 0,
+    findings: null,
+  },
+  {
+    scenario: "unknown binary",
+    source: 'runCommand("bun", ["run", "mcp-fixture-server-extra"]);',
+    bin: { "mcp-fixture-server": "cli.js" },
+    status: 1,
+    findings: ["unused dependency @example/mcp-fixture-server"],
+  },
+  {
+    scenario: "binary of an undeclared package",
+    source: 'export const LOCAL_SERVER = "node_modules/.bin/mcp-fixture-server";',
+    bin: { "other-command": "cli.js" },
+    unlistedBin: { "mcp-fixture-server": "cli.js" },
+    status: 1,
+    findings: ["unused dependency @example/mcp-fixture-server"],
+  },
+])("unused checks a $scenario", ({ source, bin, unlistedBin, status, findings }) => {
+  using directory = testDirectory();
+  const root = directory.folder;
+  const name = "@example/mcp-fixture-server";
+  auditFixture(root, {
+    "package.json": manifest({
+      main: "scripts/mcp/gated.ts",
+      dependencies: { [name]: "1.0.0" },
+    }),
+    "scripts/mcp/gated.ts": source,
+  });
+  writeAuditFiles(root, {
+    [`node_modules/${name}/package.json`]: JSON.stringify({ name, bin }),
+    [`node_modules/${name}/cli.js`]: entry,
+    "node_modules/@example/unlisted/package.json": JSON.stringify({
+      name: "@example/unlisted",
+      bin: unlistedBin,
+    }),
+    "node_modules/@example/unlisted/cli.js": entry,
+  });
+  const result = runCodeAudit(root, "unused");
+  expect(result.status).toBe(status);
+  expect(result.output.match(/unused dependency \S+/g)).toEqual(findings);
+});
+
+test("unused credits a hoisted binary only in the referencing workspace", () => {
+  using directory = testDirectory();
+  const root = directory.folder;
+  const name = "@example/fixture-tool";
+  const dependencies = { [name]: "1.0.0" };
+  auditFixture(root, {
+    "package.json": manifest({ workspaces: ["packages/*"], dependencies }),
+    "index.ts": entry,
+    "packages/child/package.json": manifest({ name: "child", devDependencies: dependencies }),
+    "packages/child/index.ts": 'runCommand("bun", ["run", "fixture-tool"]);',
+  });
+  writeAuditFiles(root, {
+    [`node_modules/${name}/package.json`]: JSON.stringify({ name, bin: "cli.js" }),
+    [`node_modules/${name}/cli.js`]: entry,
+  });
+  const result = runCodeAudit(root, "unused");
+  expect(result.status).toBe(1);
+  expect(result.output.match(/^\[unused\].*$/gm)).toEqual([
+    "[unused] package.json:1: unused dependency @example/fixture-tool",
+  ]);
 });
 
 test("unused counts imports used only by hub skills and hooks in both modes", () => {
