@@ -22,7 +22,7 @@ out.`, so no skill a schedule runs depends on which scheduler started it.
    starting with a verb, without the cadence (`Backoffice | h&w | Sweep the mailbox`), set in place
    through `schedule_task` with its id. A rename of the name is a delete plus a create in every
    scheduler, and the new task inherits
-   neither its last-run time nor its tool grants. List the tasks after the delete: an old task fires
+   neither its last-run time nor its tool grants. List the tasks of every project after the delete, since a listing shows one project: an old task fires
    until deleted. Check: the name ends in the cadence, and no file, task or task directory of the
    old name remains.
 3. Put the procedure in a skill the task loads, counts included, so every run of a task is
