@@ -69,9 +69,8 @@ Prefer `fd` (`bfs` for `find` syntax), `rg` (`ugrep` inside archives, compressed
 
 **Media:**
 
-- `transcribe [-l lang] [-o outdir] file...` for speech-to-text, never `whisper-cli` directly, which
-  at its defaults invents repeated sentences. Install or propose no other model. Names come from
-  records, never from the transcript.
+- `transcribe [-o outdir] file...` for speech-to-text. Install or propose no other model. Names
+  come from records, never from the transcript.
 
 The Bash tool runs zsh. A bare word starting with `=` (`echo =====`) is a failed command lookup that
 drops the rest of the command line, and `:r` right after a variable is a modifier (`$sha:refs/...`

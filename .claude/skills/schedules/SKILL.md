@@ -71,8 +71,13 @@ out.`, so no skill a schedule runs depends on which scheduler started it.
      and effort (`t3 thread start . - --provider <harness> --model <model> --option effort=<level>`,
      for Codex `reasoningEffort=<level>`): the task takes both from that thread. The form in
      Settings > Scheduled tasks has no effort field, and a model changed there loses its effort.
-     In the form set "Use the project checkout", which keeps model and effort, and the destination
-     "One thread, fresh session each run". Triggers: "At a time"
+     `schedule_task` creates every task on a new worktree. In the form set "Use the project
+     checkout", which keeps model and effort, and the destination "One thread, fresh session each
+     run". The agent reaches the form in T3's server browser: pair it with `t3 auth pairing create
+     --scope orchestration:read --scope orchestration:operate --scope settings:write --ttl 5m
+     --base-url <server origin> --json`, open its `pairUrl`, then `/settings/scheduled-tasks`, and
+     revoke the session with `t3 auth session revoke <id>` afterwards. Deleting a task's thread
+     deletes the task. Triggers: "At a time"
      (HH:MM and weekdays) for a daily or weekly cron; "Every interval" in minutes, counted from the
      end of the last dispatch with no fixed minute, for an hourly window; "At a time" every day for
      a day of the month; "Once"; "On webhook". A fixed-time run more than 10 minutes late is
