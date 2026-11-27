@@ -16,6 +16,7 @@ type Meta = {
   devDependencies?: Deps;
   peerDependencies?: Deps;
   optionalPeers?: string[];
+  bundled?: unknown;
 };
 
 function licenseLockText(file: string): string | undefined {
@@ -54,9 +55,8 @@ function parseLicenseLock(text: string | undefined) {
 }
 
 /** The bun.lock entries missing from node_modules that the root or an installed package needs, by
- * Node's lookup (its own node_modules first, then each parent's). bun also skips an entry only a
- * left-out platform package needs, such as Tailwind's oxide-wasm32-wasi, which uses its bundled
- * copies. Optional dependencies may be absent. Undefined when bun.lock does not read. */
+ * Node's lookup (its own node_modules first, then each parent's). Bundled entries carry their own
+ * dependencies. Optional dependencies may be absent. Undefined when bun.lock does not read. */
 function neededMissing(root: string): string[] | undefined {
   const lock = parseLicenseLock(licenseLockText(join(root, "bun.lock")));
   if (!lock) return undefined;
@@ -83,8 +83,8 @@ function neededMissing(root: string): string[] | undefined {
     const meta: unknown = entry.find((v) => v && typeof v === "object");
     if (meta !== undefined && !licenseLockMeta(meta)) return undefined;
     const dependencies = needs(meta);
-    for (const name of dependencies) needed.add(resolve(key, name));
     read += dependencies.length;
+    if (meta?.bundled !== true) dependencies.forEach((name) => needed.add(resolve(key, name)));
   }
   // No dependency read off any installed entry means the lock did not read as expected.
   if (!read) return undefined;
