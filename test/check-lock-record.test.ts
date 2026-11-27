@@ -17,7 +17,11 @@ import { testDirectory } from "./test-directory.ts";
 
 vi.mock("node:fs", async (importOriginal) => {
   const original = await importOriginal<typeof import("node:fs")>();
-  return { ...original, readFileSync: vi.fn(original.readFileSync) };
+  return {
+    ...original,
+    readFileSync: vi.fn(original.readFileSync),
+    statSync: vi.fn(original.statSync),
+  };
 });
 
 test.each([{ command: ["echo", "two words"], expected: ["pid", "startedAt", "command"] }])(
@@ -54,6 +58,10 @@ test.each([{ folderName: "check.lock", expected: false }])(
     const snapshot = inspectCheckLock(lock);
     expect(snapshot.id).toBe(`inode ${statSync(lock).ino}`);
     expect(snapshot.stale).toBe(expected);
+    using read = vi.mocked(readFileSync).mockImplementation(fs.readFileSync);
+    dropIfStale(lock);
+    expect(read).not.toHaveBeenCalledWith(lock, "utf8");
+    expect(statSync(lock).isDirectory()).toBe(true);
   },
 );
 
@@ -65,25 +73,60 @@ test.each([{ waited: 5999, expected: false }])(
   },
 );
 
-function failCheckLockRead(lock: string) {
+function failCheckLockRead(lock: string, failure: NodeJS.ErrnoException) {
   return vi.mocked(readFileSync).mockImplementation((path, options) => {
-    if (path === lock) throw Object.assign(new Error("lock read failed"), { code: "EIO" });
+    if (path === lock) throw failure;
     return fs.readFileSync(path, options);
   });
 }
 
-test("keeps a lock busy and unreclaimable after an EIO read error", () => {
+test.each([
+  ["inspection", inspectCheckLock],
+  ["reclamation", dropIfStale],
+] as const)("propagates an EIO read error during %s", (_operation, run) => {
   using fixture = testDirectory();
   const lock = join(fixture.folder, "check.lock");
   writeFileSync(lock, "an invalid lock");
-  using _read = failCheckLockRead(lock);
+  const failure = Object.assign(new Error("lock read failed"), { code: "EIO" });
+  using _read = failCheckLockRead(lock, failure);
+  expect(() => run(lock)).toThrow(failure);
+  expect(fs.readFileSync(lock, "utf8")).toBe("an invalid lock");
+});
+
+test.each([
+  ["ENOENT", () => undefined],
+  ["EACCES", (lock: string) => `inode ${fs.statSync(lock).ino}`],
+] as const)("handles %s while reading a lock file", (code, expectedId) => {
+  using fixture = testDirectory();
+  const lock = join(fixture.folder, "check.lock");
+  writeFileSync(lock, "an invalid lock");
+  const failure = Object.assign(new Error("lock read failed"), { code });
+  using read = failCheckLockRead(lock, failure);
+  using stat = vi.mocked(statSync).mockImplementation(fs.statSync);
+
   expect(inspectCheckLock(lock)).toEqual({
-    id: `inode ${statSync(lock).ino}`,
+    id: expectedId(lock),
     read: undefined,
     stale: false,
   });
+
+  stat.mockClear();
+  read.mockClear();
   expect(() => dropIfStale(lock)).not.toThrow();
   expect(fs.readFileSync(lock, "utf8")).toBe("an invalid lock");
+  expect(stat).toHaveBeenCalledBefore(read);
+});
+
+test.each([
+  ["ENOENT", "missing"],
+  ["ENOTDIR", "file"],
+])("skips reclamation reads when stat reports %s", (_code, parentName) => {
+  using fixture = testDirectory();
+  writeFileSync(join(fixture.folder, "file"), "a file");
+  const lock = join(fixture.folder, parentName, "check.lock");
+  using read = vi.mocked(readFileSync).mockImplementation(fs.readFileSync).mockClear();
+  expect(() => dropIfStale(lock)).not.toThrow();
+  expect(read).not.toHaveBeenCalledWith(lock, "utf8");
 });
 
 test.each([{ raw: '{"pid":10,"startedAt":2,"group":1}', expected: { pid: 10, startedAt: 2 } }])(

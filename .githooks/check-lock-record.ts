@@ -17,12 +17,24 @@ export interface Holder {
   signalled?: true;
 }
 
+function statCheckLock(lockFile: string) {
+  try {
+    return statSync(lockFile, { throwIfNoEntry: false });
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === "ENOTDIR") return undefined;
+    throw error;
+  }
+}
+
 function readLock(lockFile: string, forReclaim = false): string | undefined {
+  // A directory holds no record; a FIFO is read, since a test stands one in for a slow read.
+  const stat = forReclaim ? statCheckLock(lockFile) : undefined;
+  if (forReclaim && (!stat || stat.isDirectory())) return undefined;
   try {
     return readFileSync(lockFile, "utf8");
   } catch (error) {
-    // A directory or an unreadable holder must still go through the wait deadline.
-    if (forReclaim || (error as NodeJS.ErrnoException).code === "ENOENT") return undefined;
+    const { code } = error as NodeJS.ErrnoException;
+    if (code === "ENOENT" || (forReclaim && code === "EACCES")) return undefined;
     throw error;
   }
 }
@@ -140,21 +152,18 @@ export function dropIfStale(lockFile: string): void {
 // holder of this command release in between and read as another command.
 export function inspectCheckLock(lockFile: string) {
   const free = { id: undefined, read: undefined, stale: false };
-  let stat;
-  try {
-    stat = statSync(lockFile);
-  } catch (error) {
-    const { code } = error as NodeJS.ErrnoException;
-    if (code === "ENOENT" || code === "ENOTDIR") return free;
-    throw error;
-  }
+  const stat = statCheckLock(lockFile);
+  if (!stat) return free;
   let raw: string | undefined;
-  try {
-    if (stat.isFile()) raw = readFileSync(lockFile, "utf8");
-  } catch (error) {
-    // Released between the two reads: free, not a path no waiter can reclaim.
-    const { code } = error as NodeJS.ErrnoException;
-    if (code === "ENOENT") return free;
+  if (stat.isFile()) {
+    try {
+      raw = readFileSync(lockFile, "utf8");
+    } catch (error) {
+      // The holder can release the lock between stat and read.
+      const { code } = error as NodeJS.ErrnoException;
+      if (code === "ENOENT") return free;
+      if (code !== "EACCES") throw error;
+    }
   }
   const read = parseHolder(raw);
   return {
