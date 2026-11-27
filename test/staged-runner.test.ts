@@ -50,7 +50,7 @@ test.each([
     metadata: Buffer.from('{"rules":[123]}'),
     run: { out: "warn\n", code: 0, stdout: Buffer.alloc(0) },
     expected: {
-      out: "warn\n[check:staged] eslint: could not read formatter rule IDs: invalid rule IDs\n",
+      out: "warn\n[check:staged] eslint: could not read formatter rule IDs (invalid rule IDs), so the hook cannot show the rule guides. Run bun install and retry the commit, then report persistent failures with this diagnostic.\n",
       code: 1,
       stdout: Buffer.alloc(0),
     },
@@ -79,6 +79,14 @@ test("spawnStagedProcess passes stdin and captures stdout", async () => {
   );
   expect(run.code).toBe(0);
   expect(run.stdout.toString()).toBe("HELLO");
+});
+
+test("spawnStagedProcess explains how to fix an executable that cannot start", async () => {
+  const run = await spawnStagedProcess("/nonexistent-staged-check-executable", []);
+  expect(run.code).toBe(1);
+  expect(run.out).toMatch(
+    /^\[check:staged\] Could not start \/nonexistent-staged-check-executable \(.*\)\. Check the executable path and permissions, then retry the commit\.\n$/,
+  );
 });
 
 test("spawnStagedWithEnv forwards extra environment variables", async () => {
@@ -203,7 +211,7 @@ test.each<{
     label: "reports not formatted and exit 1 when code is 0",
     run: { out: "diff\n", code: 0, stdout: Buffer.from("diff\n") },
     expected: {
-      out: "[check:staged] prettier: a.ts as staged\nnot formatted\n",
+      out: "[check:staged] prettier: a.ts as staged\nThe staged file differs from Prettier's output. Format the file with Prettier, stage the formatted edits, and retry the commit.\n",
       code: 1,
       stdout: Buffer.from("diff\n"),
     },

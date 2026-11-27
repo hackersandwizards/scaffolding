@@ -44,11 +44,14 @@ export function runStagedOxlint(root: string, oxlintPaths: readonly string[]): n
         stdio: ["pipe", "inherit", "inherit"],
       },
     );
-    if (checkout.status !== 0) throw new Error("could not check out the staged oxlint inputs");
+    if (checkout.status !== 0)
+      throw new Error(
+        "Could not copy the staged Oxlint inputs, so Oxlint could not lint the index. Read the git checkout-index error, resolve any conflicts and stage the missing inputs, then retry the commit.",
+      );
     const configPath = join(snapshot, oxlintConfig);
     if (!lstatSync(configPath).isFile())
       throw new Error(
-        `${oxlintConfig} must be a regular file: replace the symlink or directory at ${oxlintConfig} with the repository's regular file (run \`check-structure --fix\` to restore the template) and stage it`,
+        `${oxlintConfig} must be a regular file so Oxlint can read the staged configuration. Replace the symlink or directory at ${oxlintConfig} with a regular file based on scaffolding's template/${oxlintConfig} and stage it.`,
       );
     writeFileSync(configPath, prepareStagedOxlintConfig(readFileSync(configPath, "utf8")));
     symlinkSync(join(root, "node_modules"), join(snapshot, "node_modules"), "dir");

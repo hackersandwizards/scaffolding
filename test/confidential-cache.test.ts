@@ -32,7 +32,7 @@ test("ConfidentialListCache.loadPublicRequired reads explicit valid and missing 
 
     const missing = cache.loadPublicRequired(join(dir, "missing.json"));
     expect(missing).toEqual({
-      problem: `no valid list at ${join(dir, "missing.json")}`,
+      problem: `The scan needs a valid term list at ${join(dir, "missing.json")}. Supply a current list through --list or SCAFFOLDING_CONFIDENTIAL_TERMS, or run \`check-confidential fetch\` to refresh the cache.`,
       absent: true,
     });
   } finally {
@@ -98,7 +98,10 @@ test("ConfidentialListCache.loadNeverOptional warns without fetching when no cac
 
     withIsolatedPath(dir, () => {
       const loaded = cache.loadNeverOptional(undefined);
-      expect(loaded).toEqual({ problem: `no valid list at ${cacheFile}`, absent: true });
+      expect(loaded).toEqual({
+        problem: `The scan needs a valid term list at ${cacheFile}. To refresh the list, run \`gh auth login\` with an account in the hackersandwizards trainers team, then run \`check-confidential fetch\`.`,
+        absent: true,
+      });
     });
     expect(warnings).toEqual([
       "no copy; next fetch within the hour, or now by `check-confidential fetch`",
@@ -135,25 +138,59 @@ test("ConfidentialListCache.fetchList returns a gh error when gh is unavailable 
     process.env.PATH = dir;
     const cache = new ConfidentialListCache(dir, () => undefined);
     const problem = cache.fetchList();
-    expect(problem).toContain("gh:");
+    expect(problem).toMatch(
+      /^gh: .+\. The term list fetch could not start or finish, so check that gh is on PATH and the connection works before rerunning `check-confidential fetch`\.$/,
+    );
   } finally {
     process.env.PATH = originalPath;
     rmSync(dir, { recursive: true, force: true });
   }
 });
 
-test("publicListProblemFindings and neverListProblemFindings build refusal findings", () => {
+test.each([
+  ["loadPublicRequired", publicListProblemFindings],
+  ["loadNeverRequired", neverListProblemFindings],
+] as const)("%s reports how to regain access to the term list", (load, findings) => {
+  const dir = mkdtempSync(join(tmpdir(), "conf-fetch-denied-"));
+  try {
+    writeFileSync(join(dir, "gh"), "#!/bin/sh\nprintf 'gh: HTTP 404: Not Found\\n' >&2\nexit 1\n", {
+      mode: 0o755,
+    });
+    const cache = new ConfidentialListCache(dir, () => undefined);
+    withIsolatedPath(dir, () => {
+      const loaded = cache[load](undefined);
+      expect(findings(loaded)[0].message).toBe(
+        "gh: HTTP 404: Not Found. No valid term list was fetched, so run `gh auth login` with an account in the hackersandwizards trainers team, then run `check-confidential fetch`.",
+      );
+    });
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test("neverListProblemFindings requires a never section while the public scan does not", () => {
   expect(publicListProblemFindings({ list: { salt: "s", maxTokens: 1, hashes: [] } })).toEqual([]);
-  expect(publicListProblemFindings({ problem: "no list" })[0].message).toContain(
-    "then commit again",
-  );
-  expect(neverListProblemFindings({ problem: "no list" })[0].message).toContain(
-    "then run it again",
-  );
   expect(
     neverListProblemFindings({ list: { salt: "s", maxTokens: 1, hashes: [] } })[0].message,
-  ).toContain("the list has no never section");
+  ).toBe(
+    "The list has no never section, so the scan has no names to check. Run `check-confidential fetch` to refresh the cache, or point --list or SCAFFOLDING_CONFIDENTIAL_TERMS at a current list with a non-empty never section.",
+  );
   expect(
     neverListProblemFindings({ list: { salt: "s", maxTokens: 1, hashes: [], never: ["h"] } }),
   ).toEqual([]);
+});
+
+test("ConfidentialListCache.fetchList rejects an invalid response from gh", () => {
+  const dir = mkdtempSync(join(tmpdir(), "conf-fetch-invalid-"));
+  try {
+    writeFileSync(join(dir, "gh"), "#!/bin/sh\nprintf 'unexpected response'\n", { mode: 0o755 });
+    const cache = new ConfidentialListCache(dir, () => undefined);
+    withIsolatedPath(dir, () => {
+      expect(cache.fetchList()).toBe(
+        "gh: unexpected response. The downloaded term list is invalid, so ask the list maintainer to publish a valid confidential-terms.json before rerunning `check-confidential fetch`.",
+      );
+    });
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
 });

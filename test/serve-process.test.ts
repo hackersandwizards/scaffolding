@@ -45,9 +45,11 @@ test.each([[43210, -43210]])(
   },
 );
 
-test.each([[[], "serve: command must not be empty"]])(
-  "rejects an empty command before spawning a server",
-  (command, expected) => {
-    expect(() => spawnServingCommand(command, 8000, {})).toThrow(expected);
-  },
-);
+test.each([
+  [
+    [],
+    "serve: An empty command cannot start the server. Pass the server executable as the first command element.",
+  ],
+])("rejects an empty command before spawning a server", (command, expected) => {
+  expect(() => spawnServingCommand(command, 8000, {})).toThrow(expected);
+});

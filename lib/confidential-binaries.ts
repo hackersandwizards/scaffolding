@@ -96,7 +96,7 @@ class FileContentReader {
       file: this.scanner.saveScratchFile(data, name),
       where: this.where,
       entry,
-      why: "image not read: not a decodable image, or no OCR here (macOS only)",
+      why: "Image text could not be scanned because the file could not be decoded or OCR was unavailable. Replace the image with a readable export and rerun the scan on macOS.",
     });
   }
 
@@ -169,7 +169,7 @@ class FileContentReader {
       file: `${out}.png`,
       where: this.where,
       entry,
-      why: `PDF page ${pageNumber} holds a scan or an image and was not read: no OCR here (macOS only)`,
+      why: `PDF page ${pageNumber} holds a scan or an image whose text OCR could not read. Rerun the scan on macOS and re-export the PDF if that page still cannot be read.`,
     });
   }
 }

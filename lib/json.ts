@@ -3,7 +3,10 @@ export const isObject = (v: unknown): v is Record<string, unknown> =>
 
 export function jsonObject(text: string | Buffer): Record<string, unknown> {
   const parsed: unknown = JSON.parse(`${text}`);
-  if (!isObject(parsed)) throw new Error("the JSON holds no object");
+  if (!isObject(parsed))
+    throw new Error(
+      "The JSON has no top-level object, so its fields cannot be read. Supply JSON with an object at the top level.",
+    );
   return parsed;
 }
 

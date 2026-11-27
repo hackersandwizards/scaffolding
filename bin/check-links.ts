@@ -25,16 +25,25 @@ const { values, positionals } = (() => {
 const [base] = positionals;
 const site = base && URL.parse(base);
 if (positionals.length !== 1 || !site || !["http:", "https:"].includes(site.protocol)) {
-  linksUsageError("expected an HTTP or HTTPS base URL");
+  linksUsageError(
+    "The crawler needs one web origin to fetch. Pass a single HTTP or HTTPS base URL.",
+  );
 }
-if (site.pathname !== "/") linksUsageError("the base URL must point to /");
+if (site.pathname !== "/")
+  linksUsageError(
+    "The crawl starts at the site root, so the base URL must point to /. Pass the base URL without the subpath.",
+  );
 const skips = values.skip ?? [];
 if (skips.some((prefix) => !prefix.startsWith("/"))) {
-  linksUsageError("--skip requires a path prefix starting with /");
+  linksUsageError(
+    "--skip matches the start of a URL path, including its leading slash. Start each --skip value with /.",
+  );
 }
 const concurrency = Number(values.concurrency ?? 8);
 if (!Number.isSafeInteger(concurrency) || concurrency < 1) {
-  linksUsageError("--concurrency must be a positive integer");
+  linksUsageError(
+    "The crawl needs a positive number of simultaneous requests. Set --concurrency to a positive integer or omit it for the default.",
+  );
 }
 
 async function crawlSite(site: URL): Promise<number> {

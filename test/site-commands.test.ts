@@ -92,7 +92,9 @@ test("with-server fails when the server never answers within the readiness timeo
     'console.log("check ran")',
   ]);
   expect(status).toBe(1);
-  expect(stderr).toContain("no answer");
+  expect(stderr).toMatch(
+    /: no answer on http:\/\/127\.0\.0\.1:\d+(?:, it exited with SIGTERM)?, so the check could not start\. Make the server command serve HTTP on HOST and PORT, or increase the startup timeout with --timeout or serve's timeoutMs option if startup is slow\./,
+  );
   expect(stdout).toBe("");
 });
 
@@ -184,16 +186,31 @@ test.each<{ limit: string; expected: number; output: string; error: unknown }>([
 );
 
 test.each([
-  ["with-server", ["echo server", "echo check"], "usage: with-server"],
-  ["with-server", ["--timeout", "0", "echo server", "--", "echo"], "usage: with-server"],
+  [
+    "with-server",
+    ["echo server", "echo check"],
+    "The check command is missing or has no separator. Put -- after the quoted server command and follow it with the check executable and its arguments.",
+  ],
+  [
+    "with-server",
+    ["--timeout", "0", "echo server", "--", "echo"],
+    "--timeout cannot be used as a time limit. Set --timeout to a number greater than 0 and at most 2147483.647 seconds.",
+  ],
   [
     "with-server",
     ["--limit", "0", "echo server", "--", "echo"],
-    "--limit must be a positive number",
+    "--limit cannot be used as a time limit. Set --limit to a number greater than 0 and at most 2147483.647 seconds.",
   ],
-  ["check-links", ["file:///index.html"], "usage: check-links"],
-  ["check-links", ["http://127.0.0.1:0/sub/"], "usage: check-links"],
-  ["check-links", ["http://127.0.0.1", "--concurrency", "0"], "usage: check-links"],
+  [
+    "with-server",
+    ["echo", "server", "--", "echo"],
+    "The server command must be one argument to pass to the shell. Quote the complete server command before --.",
+  ],
+  [
+    "with-server",
+    ["--bogus", "echo server", "--", "echo"],
+    "The server options could not be read. Use --timeout or --limit with a value in seconds, or --stderr without a value.",
+  ],
 ] as const)("%s rejects invalid usage with status 2", async (name, args, diagnostic) => {
   const [status, , stderr] = await runSiteCommand([
     join(import.meta.dirname, `../bin/${name}.ts`),
@@ -202,6 +219,34 @@ test.each([
   expect(status).toBe(2);
   expect(stderr).toContain(`usage: ${name}`);
   expect(stderr).toContain(diagnostic);
+});
+
+test.each([
+  [
+    ["file:///index.html"],
+    "The crawler needs one web origin to fetch. Pass a single HTTP or HTTPS base URL.",
+  ],
+  [
+    ["http://127.0.0.1:0/sub/"],
+    "The crawl starts at the site root, so the base URL must point to /. Pass the base URL without the subpath.",
+  ],
+  [
+    ["http://127.0.0.1", "--skip", "draft"],
+    "--skip matches the start of a URL path, including its leading slash. Start each --skip value with /.",
+  ],
+  [
+    ["http://127.0.0.1", "--concurrency", "0"],
+    "The crawl needs a positive number of simultaneous requests. Set --concurrency to a positive integer or omit it for the default.",
+  ],
+])("check-links explains invalid arguments %j", async (args, expected) => {
+  const [status, , stderr] = await runSiteCommand([
+    join(import.meta.dirname, "../bin/check-links.ts"),
+    ...args,
+  ]);
+  expect(status).toBe(2);
+  expect(stderr).toBe(
+    `[check-links] ${expected}\nusage: check-links <base url> [--skip <path prefix>]... [--concurrency <n>]\n`,
+  );
 });
 
 function html(body: string) {

@@ -157,7 +157,11 @@ export function gitShellShebangs(root: string, candidates: string[], ref?: strin
       { cwd: root, encoding: "utf8", maxBuffer: Infinity },
     );
     if (r.status === 1) continue;
-    if (r.status !== 0) throwGitCommandFailure(r, "git grep could not read shell shebangs");
+    if (r.status !== 0)
+      throwGitCommandFailure(
+        r,
+        "git grep could not read shell shebangs, so shell script discovery is incomplete. Use `git status` to check the index and `git rev-parse` to verify any revision supplied to the check.",
+      );
     scripts.push(...matchGitShellShebangs(r.stdout, wanted, ref));
   }
   return scripts;

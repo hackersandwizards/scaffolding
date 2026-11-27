@@ -77,7 +77,27 @@ test("runStagedOxlint returns 1 when .oxlintrc.json is a symlink", () => {
     });
     const code = runStagedOxlint(dir, ["a.ts"]);
     expect(code).toBe(1);
-    expect(stderr).toHaveBeenCalledWith(expect.stringContaining("must be a regular file"));
+    expect(stderr).toHaveBeenCalledWith(
+      "[check:staged] oxlint: .oxlintrc.json must be a regular file so Oxlint can read the staged configuration. Replace the symlink or directory at .oxlintrc.json with a regular file based on scaffolding's template/.oxlintrc.json and stage it.",
+    );
+  } finally {
+    stderr.mockRestore();
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test("runStagedOxlint explains how to recover when Git cannot copy an input", () => {
+  const dir = mkdtempSync(join(tmpdir(), "staged-oxlint-test-"));
+  const stderr = vi.spyOn(console, "error").mockImplementation(() => undefined);
+  try {
+    spawnSync("git", ["init", "-q"], { cwd: dir });
+    writeFileSync(join(dir, ".oxlintrc.json"), '{"options":{"typeAware":true}}');
+    spawnSync("git", ["add", ".oxlintrc.json"], { cwd: dir });
+    const code = runStagedOxlint(dir, ["missing.ts"]);
+    expect(code).toBe(1);
+    expect(stderr).toHaveBeenCalledWith(
+      "[check:staged] oxlint: Could not copy the staged Oxlint inputs, so Oxlint could not lint the index. Read the git checkout-index error, resolve any conflicts and stage the missing inputs, then retry the commit.",
+    );
   } finally {
     stderr.mockRestore();
     rmSync(dir, { recursive: true, force: true });

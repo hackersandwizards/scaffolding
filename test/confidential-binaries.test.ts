@@ -201,7 +201,7 @@ test("BinaryContentScanner marks an image unread without caching when OCR is una
     });
     expect(refused).toEqual([]);
     expect(missing).toEqual([
-      "shot.png||image not read: not a decodable image, or no OCR here (macOS only)",
+      "shot.png||Image text could not be scanned because the file could not be decoded or OCR was unavailable. Replace the image with a readable export and rerun the scan on macOS.",
     ]);
     expect(existsSync(cachePath)).toBe(false);
   } finally {
@@ -295,39 +295,58 @@ test("BinaryContentScanner skips read cache when a PDF has page 1 text but fails
   }
 });
 
-test("BinaryContentScanner renders a PDF image page through OCR and caches the result", () => {
-  const dir = mkdtempSync(join(tmpdir(), "bin-pdf-ocr-"));
-  try {
-    const src = join(dir, "reader.ts");
-    const ocr = join(dir, "ocr.swift");
-    writeFileSync(src, "v1");
-    writeFileSync(ocr, "// ocr");
-    setupOcrStub(dir, ocr, "Scanned chart text");
-    writeExecutableStub(join(dir, "pdftotext"), "#!/bin/sh\nprintf 'Page one text\\f'\n");
-    writeExecutableStub(
-      join(dir, "pdfimages"),
-      "#!/bin/sh\nprintf 'page num type\\n---- --- ----\\n   1   0 image\\n'\n",
-    );
-    writeExecutableStub(
-      join(dir, "pdftoppm"),
-      '#!/bin/sh\nfor last; do :; done\n: > "$last.png"\n',
-    );
-    const file = { where: "chart.pdf", data: Buffer.from("%PDF-1.4\n") };
-    const [cachePath] = computeReaderCachePaths([file], dir, [src]);
-    const missing: string[] = [];
-    const scanner = new BinaryContentScanner(
-      dir,
-      (where, entry, message) => missing.push(`${where}|${entry}|${message}`),
-      (where, entry, message) => missing.push(`${where}|${entry}|${message}`),
-    );
-    withIsolatedPath(dir, () => {
-      const texts = scanner.scanAll([file], [src], ocr);
-      expect(texts.get("chart.pdf")).toContain("Page one text");
-      expect(texts.get("chart.pdf")).toContain("Scanned chart text");
-    });
-    expect(missing).toEqual([]);
-    expect(existsSync(cachePath)).toBe(true);
-  } finally {
-    rmSync(dir, { recursive: true, force: true });
-  }
-});
+test.each([
+  {
+    scenario: "OCR succeeded",
+    prepareOcr: (dir: string, source: string) => setupOcrStub(dir, source, "Scanned chart text"),
+    text: "Page one text\nScanned chart text",
+    cached: true,
+    findings: [],
+  },
+  {
+    scenario: "OCR unavailable",
+    prepareOcr: () => undefined,
+    text: "Page one text",
+    cached: false,
+    findings: [
+      "chart.pdf||PDF page 1 holds a scan or an image whose text OCR could not read. Rerun the scan on macOS and re-export the PDF if that page still cannot be read.",
+    ],
+  },
+])(
+  "BinaryContentScanner scans a PDF image page with $scenario",
+  ({ prepareOcr, text, cached, findings }) => {
+    const dir = mkdtempSync(join(tmpdir(), "bin-pdf-ocr-"));
+    try {
+      const src = join(dir, "reader.ts");
+      const ocr = join(dir, "ocr.swift");
+      writeFileSync(src, "v1");
+      writeFileSync(ocr, "// ocr");
+      prepareOcr(dir, ocr);
+      writeExecutableStub(join(dir, "pdftotext"), "#!/bin/sh\nprintf 'Page one text\\f'\n");
+      writeExecutableStub(
+        join(dir, "pdfimages"),
+        "#!/bin/sh\nprintf 'page num type\\n---- --- ----\\n   1   0 image\\n'\n",
+      );
+      writeExecutableStub(
+        join(dir, "pdftoppm"),
+        '#!/bin/sh\nfor last; do :; done\n: > "$last.png"\n',
+      );
+      const file = { where: "chart.pdf", data: Buffer.from("%PDF-1.4\n") };
+      const [cachePath] = computeReaderCachePaths([file], dir, [src]);
+      const missing: string[] = [];
+      const scanner = new BinaryContentScanner(
+        dir,
+        (where, entry, message) => missing.push(`${where}|${entry}|${message}`),
+        (where, entry, message) => missing.push(`${where}|${entry}|${message}`),
+      );
+      withIsolatedPath(dir, () => {
+        const texts = scanner.scanAll([file], [src], ocr);
+        expect(texts.get("chart.pdf")?.trim()).toBe(text);
+      });
+      expect(missing).toEqual(findings);
+      expect(existsSync(cachePath)).toBe(cached);
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  },
+);

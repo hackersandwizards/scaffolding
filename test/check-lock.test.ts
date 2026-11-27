@@ -617,11 +617,29 @@ describe("check-lock serialises the checks", () => {
       heldBy(lock, process.pid);
       const result = run(lock, [SCRIPT, "echo", "ran"], { CHECK_LOCK_WAIT_MS: "15min" });
       expect(result.status).toBe(1);
-      expect(result.stderr).toContain("CHECK_LOCK_WAIT_MS");
+      expect(result.stderr).toContain(
+        "error: CHECK_LOCK_WAIT_MS is invalid, so check-lock cannot bound the wait for a lock. Set it to a finite number of milliseconds or unset it for the default.",
+      );
       expect(result.stdout).not.toContain("ran");
     },
     limit(30_000),
   );
+
+  it("refuses an invalid overall run limit", () => {
+    const result = run(lockPath(), [SCRIPT, "true"], { CHECK_LOCK_RUN_S: "forever" });
+    expect(result.status).toBe(1);
+    expect(result.stderr).toContain(
+      "error: CHECK_LOCK_RUN_S is invalid, so check-lock cannot set the limit for the wait and command. Set it to a finite number of seconds or unset it to run without a limit.",
+    );
+  });
+
+  it("shows how to supply the missing command", () => {
+    const result = run(lockPath(), [SCRIPT]);
+    expect(result.status).toBe(2);
+    expect(result.stderr).toBe(
+      "[check-lock] No command was supplied to run under the lock. Pass an executable and its arguments, or run check-lock --help for usage.\nusage: check-lock <command> [args...]\n",
+    );
+  });
 
   // A hung or slow holder past any age bound is still running: reclaiming it on age alone let two
   // checks overlap whenever a run outlasted ten minutes under load.
@@ -887,7 +905,9 @@ describe("check-lock wraps a consumer's build", () => {
         timeout: 40_000,
       });
       expect(result.status).toBe(124);
-      expect(result.stderr).toContain("not done after 1 s (CHECK_LOCK_RUN_S): stopping it");
+      expect(result.stderr).toContain(
+        "[check-lock] \"sh -c trap '' TERM; sleep 60\" did not finish within 1 s (CHECK_LOCK_RUN_S), so check-lock stopped the run. Increase CHECK_LOCK_RUN_S or unset it if the wait and command need more time.",
+      );
       expect(Date.now() - started).toBeLessThan(30_000);
       expect(existsSync(lock)).toBe(false);
     },
@@ -908,7 +928,9 @@ describe("check-lock wraps a consumer's build", () => {
         timeout: 20_000,
       });
       expect(result.status).toBe(124);
-      expect(result.stderr).toContain("not done after 1 s (CHECK_LOCK_RUN_S): stopping it");
+      expect(result.stderr).toContain(
+        '[check-lock] "true" did not finish within 1 s (CHECK_LOCK_RUN_S), so check-lock stopped the run. Increase CHECK_LOCK_RUN_S or unset it if the wait and command need more time.',
+      );
       expect(Date.now() - started).toBeLessThan(15_000);
       expect(readFileSync(lock, "utf8")).toBe(holder);
     },
@@ -926,7 +948,9 @@ describe("check-lock wraps a consumer's build", () => {
   it("names a command that cannot start", () => {
     const result = run(lockPath(), [SCRIPT, "no-such-command-here"]);
     expect(result.status).toBe(1);
-    expect(result.stdout).toContain("not found");
+    expect(result.stdout).toMatch(
+      /^\[check-lock\] no-such-command-here did not start \(.*not found.*\)\. Correct the executable path or its permissions and rerun check-lock\.\n$/,
+    );
     expect(result.stdout).not.toContain("output above");
   });
 

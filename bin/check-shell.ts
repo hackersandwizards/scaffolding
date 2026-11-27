@@ -27,7 +27,9 @@ function lintShell(binary: string, root: string, files: string[]) {
     );
     if (run.error) throw run.error;
     if (run.status === null)
-      throw new Error(`ShellCheck terminated${run.signal ? ` by ${run.signal}` : ""}`);
+      throw new Error(
+        `ShellCheck terminated${run.signal ? ` by ${run.signal}` : ""} before it finished checking the scripts. Check what stopped the process, then rerun \`bun run scaffolding shell\`.`,
+      );
     findings ||= run.status === 1;
     status ||= run.status;
   }

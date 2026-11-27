@@ -49,7 +49,9 @@ test.prop([
 test.prop([
   fc.oneof(fc.array(fc.jsonValue()), fc.string(), fc.integer(), fc.boolean(), fc.constant(null)),
 ])("non-object JSON cannot pass as an object", (value) => {
-  expect(() => jsonObject(JSON.stringify(value))).toThrow("the JSON holds no object");
+  expect(() => jsonObject(JSON.stringify(value))).toThrow(
+    "The JSON has no top-level object, so its fields cannot be read. Supply JSON with an object at the top level.",
+  );
 });
 
 test.prop([fc.array(unicodeString), fc.integer()])(

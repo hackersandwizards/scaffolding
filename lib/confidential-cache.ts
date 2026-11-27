@@ -7,6 +7,7 @@ import {
   HOUR,
   isCachedListStale,
   isNeverCacheStale,
+  termListRefresh,
   TERMS_REPO,
   validateTermListBuildTime,
 } from "./confidential-terms.ts";
@@ -21,7 +22,7 @@ export function publicListProblemFindings(loaded: LoadedTermList): Finding[] {
       check: "confidential",
       path: "confidential terms",
       text: "",
-      message: `${loaded.problem}. Refused: run \`gh auth login\` with an account in the ${TERMS_REPO.split("/")[0]} trainers team, then commit again`,
+      message: loaded.problem,
     },
   ];
 }
@@ -33,7 +34,7 @@ export function neverListProblemFindings(loaded: LoadedTermList): Finding[] {
         check: "never-shown",
         path: "confidential terms",
         text: "",
-        message: `${loaded.problem}. Refused: run \`gh auth login\` with an account in the ${TERMS_REPO.split("/")[0]} trainers team, then run it again`,
+        message: loaded.problem,
       },
     ];
   }
@@ -45,7 +46,7 @@ export function neverListProblemFindings(loaded: LoadedTermList): Finding[] {
         path: "confidential terms",
         text: "",
         message:
-          "the list has no never section: Company OS has not built one, or `check-confidential fetch` fetches it now",
+          "The list has no never section, so the scan has no names to check. Run `check-confidential fetch` to refresh the cache, or point --list or SCAFFOLDING_CONFIDENTIAL_TERMS at a current list with a non-empty never section.",
       },
     ];
   }
@@ -83,10 +84,14 @@ export class ConfidentialListCache {
       ],
       { encoding: "utf8", timeout: 20_000 },
     );
-    if (result.error) return `gh: ${result.error.message}`;
+    if (result.error)
+      return `gh: ${result.error.message}. The term list fetch could not start or finish, so check that gh is on PATH and the connection works before rerunning \`check-confidential fetch\`.`;
     if (result.status !== 0 || !parseTermList(result.stdout)) {
       const detail = (result.stderr || result.stdout).trim().replace(/^gh: /, "").split("\n")[0];
-      return `gh: ${detail || `exit ${result.status}`}`;
+      const prefix = `gh: ${detail || `exit ${result.status}`}`;
+      if (result.status === 0)
+        return `${prefix}. The downloaded term list is invalid, so ask the list maintainer to publish a valid confidential-terms.json before rerunning \`check-confidential fetch\`.`;
+      return `${prefix}. No valid term list was fetched, so ${termListRefresh}.`;
     }
     writeFileSync(`${this.cacheFile}.tmp`, result.stdout);
     renameSync(`${this.cacheFile}.tmp`, this.cacheFile);
@@ -118,7 +123,7 @@ export class ConfidentialListCache {
   private fetchOrWarnFallback(): string | undefined {
     const problem = this.fetchList();
     if (problem && existsSync(this.cacheFile))
-      this.onWarn(`${problem}; using the copy fetched before`);
+      this.onWarn(`${problem} Using the copy fetched before.`);
     return problem;
   }
 
@@ -159,8 +164,16 @@ export class ConfidentialListCache {
 
   private readValidatedList(source: string, fetchProblem: string | undefined): LoadedTermList {
     const list = existsSync(source) ? parseTermList(readFileSync(source, "utf8")) : undefined;
-    if (!list)
-      return { problem: fetchProblem ?? `no valid list at ${source}`, absent: !existsSync(source) };
+    if (!list) {
+      const recovery =
+        source === this.cacheFile
+          ? `To refresh the list, ${termListRefresh}.`
+          : "Supply a current list through --list or SCAFFOLDING_CONFIDENTIAL_TERMS, or run `check-confidential fetch` to refresh the cache.";
+      return {
+        problem: fetchProblem ?? `The scan needs a valid term list at ${source}. ${recovery}`,
+        absent: !existsSync(source),
+      };
+    }
     const checked = validateTermListBuildTime(list, source, Date.now());
     if (checked.problem) return { problem: checked.problem };
     if (checked.warning) this.onWarn(checked.warning);

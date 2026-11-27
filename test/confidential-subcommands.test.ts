@@ -61,7 +61,9 @@ test("parsePurgedHashEntry handles empty, valid, and malformed lists", () => {
   expect(valid.finding).toBeUndefined();
 
   const bad = parsePurgedHashEntry("{bad", "checkout");
-  expect(bad.finding?.message).toBe("checkout does not parse: repair it, then push");
+  expect(bad.finding?.message).toBe(
+    "checkout is malformed, so the push cannot be checked for purged commits. Restore .confidential-purged.json there with its original salt string and hashes array, then retry the push.",
+  );
 });
 
 test("buildTermListJson builds hashed terms and never hashes", () => {
@@ -255,7 +257,9 @@ test("check-confidential never --staged --list-optional warns without fetching a
     const run = runCheckConfidential(dir, ["never", "--staged", "--list-optional"], fakeBin);
     expect(run.status).toBe(0);
     expect(run.stderr).toContain("no copy; next fetch within the hour");
-    expect(run.stderr).toContain("--list-optional: terms not scanned");
+    expect(run.stderr).toContain(
+      "`check-confidential fetch`. No terms were scanned because --list-optional is set.\n",
+    );
     expect(run.stderr).not.toContain("FAKE_GH_CALLED");
   } finally {
     rmSync(dir, { recursive: true, force: true });

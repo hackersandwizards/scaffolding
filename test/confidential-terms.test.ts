@@ -166,12 +166,18 @@ test.each<{
   {
     label: "missing",
     built: undefined,
-    expected: { problem: "/cache/list.json has no valid build time" },
+    expected: {
+      problem:
+        "/cache/list.json has an invalid built timestamp, so the scan cannot tell whether the list is current. To refresh the list, run `gh auth login` with an account in the hackersandwizards trainers team, then run `check-confidential fetch`.",
+    },
   },
   {
     label: "future",
     built: new Date(10 * DAY + HOUR + 1000).toISOString(),
-    expected: { problem: "/cache/list.json has no valid build time" },
+    expected: {
+      problem:
+        "/cache/list.json has an invalid built timestamp, so the scan cannot tell whether the list is current. To refresh the list, run `gh auth login` with an account in the hackersandwizards trainers team, then run `check-confidential fetch`.",
+    },
   },
   {
     label: "warn 4d",
@@ -181,7 +187,10 @@ test.each<{
   {
     label: "expired 8d",
     built: new Date(2 * DAY - 1000).toISOString(),
-    expected: { problem: "list built 8 days ago, more than 7" },
+    expected: {
+      problem:
+        "The list at /cache/list.json was built 8 days ago and is too old to scan with. To refresh the list, run `gh auth login` with an account in the hackersandwizards trainers team, then run `check-confidential fetch`.",
+    },
   },
 ])("validateTermListBuildTime: $label", ({ built, expected }) => {
   const list = { built, salt: "s", maxTokens: 1, hashes: [] };

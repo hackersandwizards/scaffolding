@@ -6,7 +6,10 @@ export function spawnServingCommand(
   env: Record<string, string>,
 ): ChildProcess {
   const [executable, ...args] = command;
-  if (!executable) throw new Error("serve: command must not be empty");
+  if (!executable)
+    throw new Error(
+      "serve: An empty command cannot start the server. Pass the server executable as the first command element.",
+    );
   // In a group of its own, so stop() reaches a server a wrapper such as `bun run` starts too.
   return spawn(executable, args, {
     env: { ...process.env, ...env, HOST: "127.0.0.1", PORT: String(port) },

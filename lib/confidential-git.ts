@@ -29,7 +29,10 @@ export function parseCatFileBatch(batch: Buffer, paths: readonly string[]): Buff
   return paths.map((path) => {
     const header = batch.indexOf(10, at);
     const [, type, length] = batch.subarray(at, header).toString().split(" ");
-    if (type !== "blob") throw new Error(`git cat-file: ${path} not readable (${type})`);
+    if (type !== "blob")
+      throw new Error(
+        `git cat-file: ${path} not readable (${type}), so the scan cannot inspect its contents. Run \`git fsck\` and repair the reported Git objects before rescanning.`,
+      );
     const data = batch.subarray(header + 1, header + 1 + Number(length));
     at = header + 2 + Number(length);
     return data;

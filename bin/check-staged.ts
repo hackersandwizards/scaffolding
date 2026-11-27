@@ -52,7 +52,10 @@ const scan = spawnSync(
   ["git", "--pre-commit", "--staged", "--redact", "--no-banner", "--log-level", "warn"],
   { stdio: "inherit" },
 );
-if (scan.error) refuseCommit("gitleaks not found: brew install gitleaks");
+if (scan.error)
+  refuseCommit(
+    "gitleaks could not run, so the staged files were not scanned for secrets. Install gitleaks on PATH (brew install gitleaks on macOS) and retry the commit.",
+  );
 if (scan.status !== 0) process.exit(1);
 
 const root = repoRoot();
@@ -95,7 +98,9 @@ const items =
     .status !== 0;
 // Fail closed: an item file that does not parse would reach the commit unread.
 if (items && !existsSync("node_modules/.bin/admin-check"))
-  refuseCommit("admin-check not installed: bun install");
+  refuseCommit(
+    "admin-check is not installed, so the staged work items cannot be validated. Run bun install and retry the commit.",
+  );
 
 // spawnSync's default maxBuffer refused a commit past about 1 MB of path names.
 const names = (args: string[]) => {
@@ -189,7 +194,7 @@ for (const [tool] of active)
   // does not pin the tool, would pass every file.
   if (!existsSync(`node_modules/.bin/${tool}`))
     refuseCommit(
-      `${tool} not installed: pin it and bun install, or skip.${gateStep[tool]} with a reason`,
+      `${tool} is not installed, so the hook cannot run ${gateStep[tool]} on the staged files. Pin ${tool} in package.json and run bun install, or set scaffolding.skip.${gateStep[tool]} to a non-blank reason in package.json.`,
     );
 if (oxlintPaths.length && !isReason(skip.lint) && runStagedOxlint(root, oxlintPaths))
   refuseCommit(
@@ -262,7 +267,11 @@ async function checkStagedItems(): Promise<ToolRun> {
       input: tracked.stdout,
     });
     if (tracked.status || copied.status)
-      return { out: "[check:staged] could not copy the index\n", code: 1, stdout: Buffer.alloc(0) };
+      return {
+        out: "[check:staged] Could not copy the staged work items, so admin-check did not run. Use git status to check for index conflicts, resolve and stage any affected files, then retry the commit.\n",
+        code: 1,
+        stdout: Buffer.alloc(0),
+      };
     return await pool.run(() =>
       spawnStagedProcess(`${process.cwd()}/node_modules/.bin/admin-check`, [dir]),
     );

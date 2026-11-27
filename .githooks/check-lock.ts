@@ -48,10 +48,16 @@ const FULL_WAIT_MS = 15 * 60 * 1000;
 // Empty is unset: Number("") is 0, which gives up at once.
 const WAIT_MS = Number(process.env.CHECK_LOCK_WAIT_MS || FULL_WAIT_MS);
 // NaN would never compare greater, and the wait would never end.
-if (!Number.isFinite(WAIT_MS)) throw new Error("CHECK_LOCK_WAIT_MS must be a number of ms");
+if (!Number.isFinite(WAIT_MS))
+  throw new Error(
+    "CHECK_LOCK_WAIT_MS is invalid, so check-lock cannot bound the wait for a lock. Set it to a finite number of milliseconds or unset it for the default.",
+  );
 // The whole run, the wait for the lock included, in seconds; unset or 0 is unbounded.
 const RUN_S = Number(process.env.CHECK_LOCK_RUN_S || 0);
-if (!Number.isFinite(RUN_S)) throw new Error("CHECK_LOCK_RUN_S must be a number of seconds");
+if (!Number.isFinite(RUN_S))
+  throw new Error(
+    "CHECK_LOCK_RUN_S is invalid, so check-lock cannot set the limit for the wait and command. Set it to a finite number of seconds or unset it to run without a limit.",
+  );
 // From a signal the command took alone, or the end of RUN_S, to the SIGKILL of its group.
 const KILL_MS = 10_000;
 const SPEAK_MS = 30_000;
@@ -194,6 +200,9 @@ if (command[0] === "--help") {
   process.exit(0);
 }
 if (command.length === 0) {
+  console.error(
+    "[check-lock] No command was supplied to run under the lock. Pass an executable and its arguments, or run check-lock --help for usage.",
+  );
   console.error(USAGE);
   process.exit(2);
 }
@@ -232,7 +241,7 @@ let timedOut = false;
 function stop(): void {
   if (received) return;
   console.error(
-    `[check-lock] "${command.join(" ")}" not done after ${RUN_S} s (CHECK_LOCK_RUN_S): stopping it`,
+    `[check-lock] "${command.join(" ")}" did not finish within ${RUN_S} s (CHECK_LOCK_RUN_S), so check-lock stopped the run. Increase CHECK_LOCK_RUN_S or unset it if the wait and command need more time.`,
   );
   if (!child) {
     leave();
@@ -319,7 +328,9 @@ while (child.pid && (received || result.signal) && running(-child.pid)) {
 }
 release();
 if (result.error)
-  console.log(`[check-lock] ${command.join(" ")} did not start: ${result.error.message}`);
+  console.log(
+    `[check-lock] ${command.join(" ")} did not start (${result.error.message}). Correct the executable path or its permissions and rerun check-lock.`,
+  );
 else if (result.status !== 0) {
   const cause = result.signal ? `killed by ${result.signal}` : `exit ${result.status}`;
   console.log(

@@ -16,11 +16,13 @@ const contentConfig = {
 function contentFolders(root: string, markdown: unknown): string[] {
   if (markdown === undefined) return [];
   if (!isObject(markdown) || Object.keys(markdown).some((key) => key !== "content"))
-    throw new Error("scaffolding.markdown must be an object with only the optional content key");
+    throw new Error(
+      "scaffolding.markdown selects which folders use the Markdown content rules. In package.json, set it to an object with only the optional content key.",
+    );
   if (markdown.content === undefined) return [];
   if (!Array.isArray(markdown.content))
     throw new Error(
-      "scaffolding.markdown.content must be an array of repository-relative folder paths",
+      "scaffolding.markdown.content selects folders that use the Markdown content rules. In package.json, set it to an array of repository-relative folder paths.",
     );
 
   const realRoot = realpathSync(root);
@@ -28,21 +30,33 @@ function contentFolders(root: string, markdown: unknown): string[] {
   return entries.map((folder, index) => {
     const key = `scaffolding.markdown.content[${index}]`;
     if (typeof folder !== "string" || !folder.trim() || folder.includes("\0"))
-      throw new Error(`${key} must be a folder path string`);
+      throw new Error(
+        `${key} cannot select a folder without a valid path string. In package.json, set this entry to a non-empty repository-relative folder path.`,
+      );
     const label = `${key} (${JSON.stringify(folder)})`;
-    if (win32.isAbsolute(folder)) throw new Error(`${label} must be repository-relative`);
+    if (win32.isAbsolute(folder))
+      throw new Error(
+        `${label} is absolute, so it cannot select a repository-relative content folder. Replace this entry in package.json with a relative folder path.`,
+      );
 
     const fromRoot = (path: string) => {
       const local = relative(realRoot, path);
-      if (!local) throw new Error(`${label} must name a folder below the repository root`);
+      if (!local)
+        throw new Error(
+          `${label} selects the repository root. In package.json, set this entry to a folder below the root.`,
+        );
       if (isAbsolute(local) || local.split(sep)[0] === "..")
-        throw new Error(`${label} leaves the repository`);
+        throw new Error(
+          `${label} leaves the repository and cannot select Markdown content here. Replace this entry in package.json with a path to a folder inside the repository.`,
+        );
       return local.split(sep).join("/");
     };
     const directory = resolve(realRoot, folder);
     const local = fromRoot(directory);
     if (!statSync(directory, { throwIfNoEntry: false })?.isDirectory())
-      throw new Error(`${label} must name an existing folder`);
+      throw new Error(
+        `${label} does not resolve to an existing directory, so it cannot select Markdown content. In package.json, set this entry to an existing folder or remove it.`,
+      );
     fromRoot(realpathSync(directory));
     return local;
   });

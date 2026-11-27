@@ -2427,8 +2427,16 @@ describe("scaffold and check-structure", () => {
     process.env.SCAFFOLDING_GIT_BASE = `${base}/`;
     try {
       expect(tagCommit("9.9.9", full.slice(0, 7))).toBe(full);
-      expect(() => tagCommit("9.9.9", "0000000")).toThrow("the tag moved");
-      expect(() => tagCommit("9.9.8", full.slice(0, 7))).toThrow("v9.9.8 not read from");
+      expect
+        .soft(() => tagCommit("9.9.9", "0000000"))
+        .toThrow(
+          `v9.9.9 points at ${full}, installed is 0000000, so the installed commit cannot pin the Pages workflow to that tag. Reinstall the package from the Git tag you intend to use.`,
+        );
+      expect
+        .soft(() => tagCommit("9.9.8", full.slice(0, 7)))
+        .toThrow(
+          `v9.9.8 could not be read from ${remote}, so the Pages workflow cannot be pinned (tag not found). Restore access to the remote or install the package from a published Git tag.`,
+        );
     } finally {
       process.env.SCAFFOLDING_GIT_BASE = before;
     }
@@ -3096,7 +3104,9 @@ describe("check-confidential", () => {
     const sha = sh(dir, ["rev-parse", "HEAD:a.md"]).stdout.toString().trim();
     rmSync(join(dir, ".git/objects", sha.slice(0, 2), sha.slice(2)));
     const broken = run(dir, [bin("check-confidential"), "--tree", "HEAD"], env);
-    expect(broken.out).toContain("a.md not readable");
+    expect(broken.out).toContain(
+      "git cat-file: a.md not readable (missing), so the scan cannot inspect its contents. Run `git fsck` and repair the reported Git objects before rescanning.",
+    );
     expect(broken.code).not.toBe(0);
   });
 
@@ -3158,7 +3168,9 @@ describe("check-confidential", () => {
     write(dir, { "docs/agent-work/review/broken.png": "not really a png" });
     sh(dir, ["add", "docs/agent-work/review/broken.png"]);
     const r = run(dir, [bin("check-confidential"), "--staged"], { ...env, CI: "" });
-    expect(r.out).toContain("docs/agent-work/review/broken.png: image not read");
+    expect(r.out).toContain(
+      "docs/agent-work/review/broken.png: Image text could not be scanned because the file could not be decoded or OCR was unavailable. Replace the image with a readable export and rerun the scan on macOS.",
+    );
     expect(r.code).toBe(1);
   });
 
@@ -3561,7 +3573,9 @@ describe("check-confidential", () => {
       SCAFFOLDING_CONFIDENTIAL_TERMS: "/nonexistent",
       CI: "",
     });
-    expect(r.out).toContain("Refused");
+    expect(r.out).toContain(
+      "The scan needs a valid term list at /nonexistent. Supply a current list through --list or SCAFFOLDING_CONFIDENTIAL_TERMS, or run `check-confidential fetch` to refresh the cache.",
+    );
     expect(r.code).toBe(1);
   });
 
@@ -3804,7 +3818,9 @@ describe("check-confidential", () => {
     write(dir, { "bad.png": "not an image at all" });
     sh(dir, ["add", "bad.png"]);
     const r = run(dir, [bin("check-confidential"), "--staged"], env);
-    expect(r.out).toContain("bad.png: image not read");
+    expect(r.out).toContain(
+      "bad.png: Image text could not be scanned because the file could not be decoded or OCR was unavailable. Replace the image with a readable export and rerun the scan on macOS.",
+    );
     expect(r.code).toBe(1);
   });
 
@@ -3870,7 +3886,11 @@ describe("check-confidential", () => {
       ["clean tip", 0, /^$/],
       ["purged tip in stale remote refs", 1, purged],
       ["purged tip on the backup remote", 1, purged],
-      ["malformed list with clean tip", 1, /the list in this checkout does not parse/],
+      [
+        "malformed list with clean tip",
+        1,
+        /the list in this checkout is malformed, so the push cannot be checked for purged commits\. Restore \.confidential-purged\.json there with its original salt string and hashes array, then retry the push\./,
+      ],
       ["empty list with clean tip", 0, /^$/],
     ] as const)("checks %s", (scenario, status, stderr) => {
       const result = results.get(scenario);
@@ -3927,7 +3947,9 @@ describe("check-confidential", () => {
         encoding: "utf8",
       },
     );
-    expect(broken.stderr).toContain("the list on the remote's default branch does not parse");
+    expect(broken.stderr).toContain(
+      "the list on the remote's default branch is malformed, so the push cannot be checked for purged commits. Restore .confidential-purged.json there with its original salt string and hashes array, then retry the push.",
+    );
     expect(broken.status).toBe(1);
   });
 
@@ -3983,7 +4005,9 @@ describe("check-confidential", () => {
     const malformed = run(dir, [bin("check-confidential"), "purged", "b".repeat(40)]);
     expect(malformed).toEqual({
       code: 1,
-      out: containingText(".confidential-purged.json does not parse"),
+      out: containingText(
+        "[check-confidential] .confidential-purged.json is malformed, so the purged list cannot be extended safely. Restore the file with its original salt string and hashes array, then rerun the purged command.",
+      ),
     });
   });
 
@@ -4439,7 +4463,9 @@ describe("check-confidential never", () => {
       SCAFFOLDING_CONFIDENTIAL_TERMS: listWith(section),
     });
     expect(r.code).toBe(1);
-    expect(r.out).toContain("the list has no never section");
+    expect(r.out).toContain(
+      "The list has no never section, so the scan has no names to check. Run `check-confidential fetch` to refresh the cache, or point --list or SCAFFOLDING_CONFIDENTIAL_TERMS at a current list with a non-empty never section.",
+    );
   });
 
   test("CI skips with a warning", () => {
@@ -4592,7 +4618,9 @@ describe("check-confidential list source", () => {
       );
       expect(result).toEqual({
         code: 1,
-        out: matchingText(/list built 10 days ago, more than 7[\s\S]*then run it again/),
+        out: matchingText(
+          /The list at .* was built 10 days ago and is too old to scan with\. To refresh the list, run `gh auth login` with an account in the hackersandwizards trainers team, then run `check-confidential fetch`\./,
+        ),
       });
     });
 
@@ -4604,7 +4632,9 @@ describe("check-confidential list source", () => {
 
     test("retries a missing never section at most hourly", () => {
       const denied = machine({ gh: "deny", cache: fresh, cacheDays: 0.5 });
-      expect(denied.check({}, ["never"], deck).out).toContain("the list has no never section");
+      expect(denied.check({}, ["never"], deck).out).toContain(
+        "The list has no never section, so the scan has no names to check. Run `check-confidential fetch` to refresh the cache, or point --list or SCAFFOLDING_CONFIDENTIAL_TERMS at a current list with a non-empty never section.",
+      );
       expect(denied.check({}, ["never"], deck).out).toContain("copy without a never section");
       expect(denied.calls()).toBe(1);
     });
@@ -4628,9 +4658,11 @@ describe("check-confidential list source", () => {
     });
 
     test("warns and reports the term after a failed fetch", () => {
-      expect(first.out).toContain("using the copy fetched before");
+      expect(first.out).toContain(
+        "gh: HTTP 404: Not Found. No valid term list was fetched, so run `gh auth login` with an account in the hackersandwizards trainers team, then run `check-confidential fetch`. Using the copy fetched before.",
+      );
       expect(first.out).toContain("(Acme Widgets)");
-      expect(first.out).not.toContain("Refused");
+      expect(first.out).not.toContain("[check-confidential] confidential terms:");
       expect(firstFetches).toBe(1);
     });
 
@@ -4651,8 +4683,9 @@ describe("check-confidential list source", () => {
     const m = machine({ gh: "ok", remote: builtDaysAgo(10) });
     const r = m.check();
     expect(r.code).toBe(1);
-    expect(r.out).toContain("list built 10 days ago, more than 7");
-    expect(r.out).toContain("gh auth login");
+    expect(r.out).toContain(
+      `The list at ${realpathSync(m.cache)} was built 10 days ago and is too old to scan with. To refresh the list, run \`gh auth login\` with an account in the hackersandwizards trainers team, then run \`check-confidential fetch\`.`,
+    );
   });
 
   test("no access and no copy refuses the commit, even for text without a term", () => {
@@ -4661,8 +4694,9 @@ describe("check-confidential list source", () => {
     sh(m.dir, ["add", "a.md"]);
     const r = m.check();
     expect(r.code).toBe(1);
-    expect(r.out).toContain("HTTP 404");
-    expect(r.out).toContain("Refused");
+    expect(r.out).toContain(
+      "[check-confidential] confidential terms: gh: HTTP 404: Not Found. No valid term list was fetched, so run `gh auth login` with an account in the hackersandwizards trainers team, then run `check-confidential fetch`.",
+    );
   });
 
   test.each([
@@ -4671,21 +4705,24 @@ describe("check-confidential list source", () => {
       settings: { gh: "deny" },
       flags: ["--staged", "--list-optional"],
       code: 0,
-      finding: /--list-optional: terms not scanned/,
+      finding:
+        /gh: HTTP 404: Not Found\. No valid term list was fetched, so run `gh auth login` with an account in the hackersandwizards trainers team, then run `check-confidential fetch`\. No terms were scanned because --list-optional is set\./,
     },
     {
       scenario: "the staged scan requires a list",
       settings: { gh: "deny" },
       flags: ["--staged"],
       code: 1,
-      finding: /Refused/,
+      finding:
+        /gh: HTTP 404: Not Found\. No valid term list was fetched, so run `gh auth login` with an account in the hackersandwizards trainers team, then run `check-confidential fetch`\./,
     },
     {
       scenario: "the local list is stale",
       settings: { gh: "deny", cache: builtDaysAgo(10), cacheDays: 2 },
       flags: ["--staged", "--list-optional"],
       code: 1,
-      finding: /Refused/,
+      finding:
+        /The list at .* was built 10 days ago and is too old to scan with\. To refresh the list, run `gh auth login` with an account in the hackersandwizards trainers team, then run `check-confidential fetch`\./,
     },
     {
       scenario: "the available list matches a term",
@@ -4699,7 +4736,8 @@ describe("check-confidential list source", () => {
       settings: { gh: "deny" },
       flags: ["--index", "--list-optional"],
       code: 1,
-      finding: /Refused/,
+      finding:
+        /gh: HTTP 404: Not Found\. No valid term list was fetched, so run `gh auth login` with an account in the hackersandwizards trainers team, then run `check-confidential fetch`\./,
     },
   ] as const)("checks an optional list when $scenario", ({ settings, flags, code, finding }) => {
     expect(machine(settings).check({}, [...flags])).toEqual({
@@ -4732,14 +4770,18 @@ describe("check-confidential list source", () => {
 
     test("passes the unread file without a list and reports both files", () => {
       expect(withoutList.code, withoutList.out).toBe(0);
-      expect(withoutList.out).toContain("shot.png: image not read");
+      expect(withoutList.out).toContain(
+        "shot.png: Image text could not be scanned because the file could not be decoded or OCR was unavailable. Replace the image with a readable export and rerun the scan on macOS.",
+      );
       expect(withoutList.out).toContain("talk.pdf: PDF not read");
       expect(withoutList.out).toContain("--list-optional: passed unread");
     });
 
     test("refuses an unread file after the list becomes available", () => {
       expect(withList.code, withList.out).toBe(1);
-      expect(withList.out).toContain("shot.png: image not read");
+      expect(withList.out).toContain(
+        "shot.png: Image text could not be scanned because the file could not be decoded or OCR was unavailable. Replace the image with a readable export and rerun the scan on macOS.",
+      );
     });
 
     test("does not pass an unread file with a stale list", () => {
@@ -5200,7 +5242,7 @@ describe("scaffolding check", () => {
     });
     expect(run(dir, [bin("scaffolding"), "layers"])).toEqual({
       code: 1,
-      out: "[layers] .oxlintrc.json: layer excludeFiles must list non-empty globs\n",
+      out: "[layers] .oxlintrc.json: the layer map cannot apply invalid excludeFiles globs. Set excludeFiles on the layer override to an array of non-empty globs, or omit it.\n",
     });
   });
 
@@ -8322,7 +8364,9 @@ describe("shared eslint config", () => {
     const outside = check();
     expect({ status: outside.status, stderr: outside.stderr }).toEqual({
       status: 1,
-      stderr: containingText("outside.ts: is outside tsconfig.json"),
+      stderr: containingText(
+        "outside.ts: Oxlint cannot run typed rules for this file because it is outside tsconfig.json. Include it in that tsconfig.json or import it from a file in the project.",
+      ),
     });
   });
 
@@ -11283,6 +11327,15 @@ describe("check-staged", () => {
     scaffolding: { private: true, skip: { format: "fixture", lint: "fixture" } },
   });
 
+  test("check-staged explains why the secret scanner is required", () => {
+    const dir = repo({ "package.json": lintPkg });
+    const result = run(dir, [bin("check-staged")], { PATH: dir });
+    expect(result.code).toBe(1);
+    expect(result.out).toBe(
+      "[check:staged] gitleaks could not run, so the staged files were not scanned for secrets. Install gitleaks on PATH (brew install gitleaks on macOS) and retry the commit.\n",
+    );
+  });
+
   describe("Markdown stages one blob", () => {
     let dir: string;
     beforeAll(() => {
@@ -11758,7 +11811,9 @@ describe("check-staged", () => {
     sh(dir, ["add", "docs/agent-work/items/a.md"]);
     const r = run(dir, [bin("check-staged")]);
     expect(r.code).toBe(1);
-    expect(r.out).toContain("admin-check not installed");
+    expect(r.out).toContain(
+      "[check:staged] admin-check is not installed, so the staged work items cannot be validated. Run bun install and retry the commit.",
+    );
   });
 
   test("a tool that exits before reading a partly staged file fails the check, never crashes it", () => {
@@ -11786,32 +11841,43 @@ describe("check-staged", () => {
       tools: "both are declared",
       manifest: { devDependencies: { prettier: "3", eslint: "10" } },
       code: 1,
-      report: "prettier not installed",
+      report:
+        "prettier is not installed, so the hook cannot run format on the staged files. Pin prettier in package.json and run bun install, or set scaffolding.skip.format to a non-blank reason in package.json.",
     },
-    { tools: "neither is declared", manifest: {}, code: 1, report: "prettier not installed" },
+    {
+      tools: "neither is declared",
+      manifest: {},
+      code: 1,
+      report:
+        "prettier is not installed, so the hook cannot run format on the staged files. Pin prettier in package.json and run bun install, or set scaffolding.skip.format to a non-blank reason in package.json.",
+    },
     {
       tools: "format is skipped",
       manifest: { scaffolding: { skip: { format: "none" } } },
       code: 1,
-      report: "eslint not installed",
+      report:
+        "eslint is not installed, so the hook cannot run lint on the staged files. Pin eslint in package.json and run bun install, or set scaffolding.skip.lint to a non-blank reason in package.json.",
     },
     {
       tools: "format has an empty reason",
       manifest: { scaffolding: { skip: { format: "", lint: "none" } } },
       code: 1,
-      report: "prettier not installed",
+      report:
+        "prettier is not installed, so the hook cannot run format on the staged files. Pin prettier in package.json and run bun install, or set scaffolding.skip.format to a non-blank reason in package.json.",
     },
     {
       tools: "format has a false reason",
       manifest: { scaffolding: { skip: { format: false, lint: "none" } } },
       code: 1,
-      report: "prettier not installed",
+      report:
+        "prettier is not installed, so the hook cannot run format on the staged files. Pin prettier in package.json and run bun install, or set scaffolding.skip.format to a non-blank reason in package.json.",
     },
     {
       tools: "format has an object reason",
       manifest: { scaffolding: { skip: { format: {}, lint: "none" } } },
       code: 1,
-      report: "prettier not installed",
+      report:
+        "prettier is not installed, so the hook cannot run format on the staged files. Pin prettier in package.json and run bun install, or set scaffolding.skip.format to a non-blank reason in package.json.",
     },
     {
       tools: "both have reasons",
@@ -11935,14 +12001,15 @@ describe("check-staged", () => {
       files: Record<string, string>;
       reason: string | undefined;
       code: number;
-      report: RegExp;
+      report: string | RegExp;
     }>([
       {
         scenario: "a CSS file is staged",
         files: { "a.css": bad },
         reason: undefined,
         code: 1,
-        report: /stylelint not installed/,
+        report:
+          "stylelint is not installed, so the hook cannot run styles on the staged files. Pin stylelint in package.json and run bun install, or set scaffolding.skip.styles to a non-blank reason in package.json.",
       },
       {
         scenario: "only hidden CSS and a TypeScript file are staged",
@@ -11963,7 +12030,8 @@ describe("check-staged", () => {
         files: { "a.css": bad },
         reason: " ",
         code: 1,
-        report: /stylelint not installed/,
+        report:
+          "stylelint is not installed, so the hook cannot run styles on the staged files. Pin stylelint in package.json and run bun install, or set scaffolding.skip.styles to a non-blank reason in package.json.",
       },
     ])(
       "resolves the required binary when $scenario",
@@ -12074,7 +12142,31 @@ describe("check-staged", () => {
     const dir = repo({ "package.json": pkg });
     write(dir, { "docs/tracking/items/a.md": "fine\n" });
     sh(dir, ["add", "docs/tracking/items/a.md"]);
-    expect(run(dir, [bin("check-staged")]).out).toContain("admin-check not installed");
+    expect(run(dir, [bin("check-staged")]).out).toContain(
+      "[check:staged] admin-check is not installed, so the staged work items cannot be validated. Run bun install and retry the commit.",
+    );
+  });
+
+  test("check-staged explains how to recover when Git cannot copy the staged work items", () => {
+    const gitShim = "node_modules/.bin/git";
+    const dir = repo({
+      "package.json": pkg,
+      "node_modules/.bin/admin-check": adminCheck,
+      [gitShim]:
+        '#!/bin/sh\nif [ "$1" = checkout-index ]; then exit 1; fi\nexec /usr/bin/env PATH="$STAGED_TEST_GIT_PATH" git "$@"\n',
+    });
+    chmodSync(join(dir, gitShim), 0o755);
+    write(dir, { "docs/agent-work/items/a.md": "# A\n" });
+    prepareGit(dir, ["add", "docs/agent-work/items/a.md"]);
+    const originalPath = defined(process.env.PATH, "PATH");
+    const result = run(dir, [bin("check-staged")], {
+      STAGED_TEST_GIT_PATH: originalPath,
+      PATH: `${join(dir, "node_modules/.bin")}:${originalPath}`,
+    });
+    expect(result).toEqual({
+      code: 1,
+      out: "[check:staged] Could not copy the staged work items, so admin-check did not run. Use git status to check for index conflicts, resolve and stage any affected files, then retry the commit.\n",
+    });
   });
 });
 
@@ -13907,9 +13999,9 @@ await serve([process.execPath, "-e", "console.error('boot failed: stack'); proce
       const { serve } = await import("../lib/serve.ts");
       const silent = `require("node:net").createServer(() => {}).listen(Number(process.env.PORT), process.env.HOST)`;
       const started = Date.now();
-      expect(
-        await rejection(serve([process.execPath, "-e", silent], { timeoutMs: 500 })),
-      ).toContain("no answer");
+      expect(await rejection(serve([process.execPath, "-e", silent], { timeoutMs: 500 }))).toMatch(
+        /: no answer on http:\/\/127\.0\.0\.1:\d+(?:, it exited with SIGTERM)?, so the check could not start\. Make the server command serve HTTP on HOST and PORT, or increase the startup timeout with --timeout or serve's timeoutMs option if startup is slow\./,
+      );
       expect(Date.now() - started).toBeLessThan(5_000);
     },
     limit(10_000),
@@ -14105,8 +14197,14 @@ describe("scaffolding shell", () => {
   });
 
   test.each([
-    ["unavailable", "HTTP 503"],
-    ["corrupt", "archive checksum mismatch"],
+    [
+      "unavailable",
+      "HTTP 503 blocked the release download. Check access to the release URL and rerun the check.",
+    ],
+    [
+      "corrupt",
+      "The archive checksum does not match the pin, so the check rejected the download. Rerun the check on a trusted connection and report a persistent mismatch to the scaffolding maintainer.",
+    ],
   ])("reports a %s download in one line and exits red", (response, reason) => {
     const dir = repo({ "script.sh": shellScript });
     const cache = join(dir, "node_modules/.cache/scaffolding/shellcheck/v0.11.0");
@@ -14121,7 +14219,9 @@ describe("scaffolding shell", () => {
     expect(r.code).toBe(1);
     expect(r.out.trim().split("\n")).toEqual([
       matchingText(
-        new RegExp(`^\\[shell\\] could not download ShellCheck v0\\.11\\.0 for .*: ${reason}$`),
+        new RegExp(
+          `^\\[shell\\] could not download ShellCheck v0\\.11\\.0 for [^:]+: ${RegExp.escape(reason)}$`,
+        ),
       ),
     ]);
     expect(readdirSync(cache)).toEqual([relative(cache, live)]);
@@ -14131,7 +14231,7 @@ describe("scaffolding shell", () => {
     const dir = repo({ "script.sh": shellScript });
     expect(checkedShell(dir, shellcheckFixture(dir, '#!/bin/sh\nkill -TERM "$$"\n'))).toEqual({
       code: 1,
-      out: "[shell] ShellCheck terminated by SIGTERM\n",
+      out: "[shell] ShellCheck terminated by SIGTERM before it finished checking the scripts. Check what stopped the process, then rerun `bun run scaffolding shell`.\n",
     });
   });
 });
@@ -14243,25 +14343,60 @@ describe("scaffolding markdown", () => {
   });
 
   test.each([
-    ["a non-array", "articles", "must be an array"],
-    ["null", null, "must be an array"],
-    ["a non-string entry", [42], "must be a folder path string"],
-    ["an absolute path", ["/articles"], "must be repository-relative"],
-    ["a Windows absolute path", ["C:\\articles"], "must be repository-relative"],
-    ["a path outside the repository", ["../articles"], "leaves the repository"],
-    ["the repository root", ["."], "must name a folder below the repository root"],
+    [
+      "a non-array",
+      "articles",
+      " selects folders that use the Markdown content rules. In package.json, set it to an array of repository-relative folder paths.",
+    ],
+    [
+      "null",
+      null,
+      " selects folders that use the Markdown content rules. In package.json, set it to an array of repository-relative folder paths.",
+    ],
+    [
+      "a non-string entry",
+      [42],
+      "[0] cannot select a folder without a valid path string. In package.json, set this entry to a non-empty repository-relative folder path.",
+    ],
+    [
+      "an absolute path",
+      ["/articles"],
+      '[0] ("/articles") is absolute, so it cannot select a repository-relative content folder. Replace this entry in package.json with a relative folder path.',
+    ],
+    [
+      "a Windows absolute path",
+      ["C:\\articles"],
+      '[0] ("C:\\\\articles") is absolute, so it cannot select a repository-relative content folder. Replace this entry in package.json with a relative folder path.',
+    ],
+    [
+      "a path outside the repository",
+      ["../articles"],
+      '[0] ("../articles") leaves the repository and cannot select Markdown content here. Replace this entry in package.json with a path to a folder inside the repository.',
+    ],
+    [
+      "the repository root",
+      ["."],
+      '[0] (".") selects the repository root. In package.json, set this entry to a folder below the root.',
+    ],
     [
       "the repository root with a trailing slash",
       ["./"],
-      "must name a folder below the repository root",
+      '[0] ("./") selects the repository root. In package.json, set this entry to a folder below the root.',
     ],
-    ["a missing folder", ["missing"], "must name an existing folder"],
-    ["a regular file", ["package.json"], "must name an existing folder"],
+    [
+      "a missing folder",
+      ["missing"],
+      '[0] ("missing") does not resolve to an existing directory, so it cannot select Markdown content. In package.json, set this entry to an existing folder or remove it.',
+    ],
+    [
+      "a regular file",
+      ["package.json"],
+      '[0] ("package.json") does not resolve to an existing directory, so it cannot select Markdown content. In package.json, set this entry to an existing folder or remove it.',
+    ],
   ])("rejects %s in the content configuration even with no Markdown files", (_, folders, error) => {
     const result = check(repo({ "package.json": manifest(folders) }));
     expect(result.code).toBe(1);
-    expect(result.out).toMatch(/^\[markdown\] scaffolding\.markdown\.content/);
-    expect(result.out).toContain(error);
+    expect(result.out).toBe(`[markdown] scaffolding.markdown.content${error}\n`);
   });
 
   test("rejects a content folder symlink that points outside the repository", () => {
@@ -14269,8 +14404,8 @@ describe("scaffolding markdown", () => {
     symlinkSync(temp(), join(dir, "articles"));
     const result = check(dir);
     expect(result.code).toBe(1);
-    expect(result.out).toContain(
-      'scaffolding.markdown.content[0] ("articles") leaves the repository',
+    expect(result.out).toBe(
+      '[markdown] scaffolding.markdown.content[0] ("articles") leaves the repository and cannot select Markdown content here. Replace this entry in package.json with a path to a folder inside the repository.\n',
     );
   });
 

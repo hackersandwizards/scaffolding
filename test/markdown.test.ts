@@ -38,7 +38,10 @@ test.each([["draft.md", "# Draft\n"]])(
 );
 
 test.each([
-  [{ extra: [] }, "scaffolding.markdown must be an object with only the optional content key"],
+  [
+    { extra: [] },
+    "scaffolding.markdown selects which folders use the Markdown content rules. In package.json, set it to an object with only the optional content key.",
+  ],
 ])(
   "validates the index manifest before accepting an empty staged input",
   async (markdown, expected) => {

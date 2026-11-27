@@ -40,7 +40,7 @@ test("parseCatFileBatch reads blobs sequentially and throws on non-blob entries"
     Buffer.from("bye"),
   ]);
   expect(() => parseCatFileBatch(Buffer.from("ccc missing\n"), ["c.txt"])).toThrow(
-    "git cat-file: c.txt not readable (missing)",
+    "git cat-file: c.txt not readable (missing), so the scan cannot inspect its contents. Run `git fsck` and repair the reported Git objects before rescanning.",
   );
 });
 

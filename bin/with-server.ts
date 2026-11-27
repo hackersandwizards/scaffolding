@@ -19,7 +19,9 @@ function serverUsageError(message: string): never {
 function readTimerMs(flag: string, seconds: string): number {
   const ms = Math.ceil(Number(seconds) * 1000);
   if (!(ms > 0 && ms <= MAX_TIMER_MS)) {
-    serverUsageError(`${flag} must be a positive number of seconds within the timer range`);
+    serverUsageError(
+      `${flag} cannot be used as a time limit. Set ${flag} to a number greater than 0 and at most ${MAX_TIMER_MS / 1000} seconds.`,
+    );
   }
   return ms;
 }
@@ -27,7 +29,10 @@ function readTimerMs(flag: string, seconds: string): number {
 const args = process.argv.slice(2);
 const separator = args.indexOf("--");
 const check = args[separator + 1];
-if (separator < 0 || !check) serverUsageError("expected -- followed by a check command");
+if (separator < 0 || !check)
+  serverUsageError(
+    "The check command is missing or has no separator. Put -- after the quoted server command and follow it with the check executable and its arguments.",
+  );
 
 const { values, positionals } = (() => {
   try {
@@ -41,12 +46,16 @@ const { values, positionals } = (() => {
       },
     });
   } catch (error) {
-    return serverUsageError(String(error));
+    return serverUsageError(
+      `The server options could not be read. Use --timeout or --limit with a value in seconds, or --stderr without a value.\n${String(error)}`,
+    );
   }
 })();
 const [serverCommand] = positionals;
 if (positionals.length !== 1 || !serverCommand?.trim()) {
-  serverUsageError("expected one quoted server command");
+  serverUsageError(
+    "The server command must be one argument to pass to the shell. Quote the complete server command before --.",
+  );
 }
 
 const timeoutMs =

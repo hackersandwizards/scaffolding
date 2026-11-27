@@ -55,6 +55,6 @@ export async function serve(
   // The stream can trail the exit event by a tick; its last lines say why.
   await new Promise((r) => setTimeout(r, 50));
   throw new Error(
-    `${command.join(" ")}: no answer on ${url}${running.exited}${running.said && `\n${running.said.trimEnd()}`}`,
+    `${command.join(" ")}: no answer on ${url}${running.exited}, so the check could not start. Make the server command serve HTTP on HOST and PORT, or increase the startup timeout with --timeout or serve's timeoutMs option if startup is slow.${running.said && `\n${running.said.trimEnd()}`}`,
   );
 }

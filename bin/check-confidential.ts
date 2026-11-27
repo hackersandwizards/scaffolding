@@ -171,7 +171,7 @@ else {
       : listCache.loadPublicRequired(explicitList);
   list = loaded.list;
   unscanned = Boolean(loaded.absent && optional);
-  if (unscanned) warn(`${loaded.problem}; --list-optional: terms not scanned`);
+  if (unscanned) warn(`${loaded.problem} No terms were scanned because --list-optional is set.`);
   else if (neverMode) listProblem.push(...neverListProblemFindings(loaded));
   else listProblem.push(...publicListProblemFindings(loaded));
 }
@@ -350,7 +350,12 @@ if (message) scanText("commit message", readFileSync(message, "utf8").split(/^# 
 else if (argv.includes("--staged") || commit) scanDiffMode();
 else if (neverMode) scanNeverMode();
 else if (tree || index) scanSnapshotMode();
-else exitWithResult({ stderr: USAGE, exitCode: 2 });
+else {
+  warn(
+    "No scan mode or subcommand matched, so nothing was checked. Choose a mode from the usage below or run `check-confidential --help`.",
+  );
+  exitWithResult({ stderr: USAGE, exitCode: 2 });
+}
 scanBinaries(binaries);
 
 // A full scan (the index, the gate's step, a tree, or the never scan, handed every string the caller

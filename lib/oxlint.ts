@@ -34,25 +34,38 @@ export function oxlintExtends(root: string) {
 
 export function validateOxlintRuntimeOptions(config: Record<string, unknown>) {
   if (!isObject(config.options) || config.options.typeAware !== true)
-    throw new Error("options.typeAware must be true");
+    throw new Error(
+      "options.typeAware must be true for Oxlint to run the typed rules. Set it to true in .oxlintrc.json.",
+    );
   const ignores = config.ignorePatterns;
   if (!isStrings(ignores) || template.ignorePatterns.some((pattern) => !ignores.includes(pattern)))
-    throw new Error("ignorePatterns must include the shared patterns");
+    throw new Error(
+      "ignorePatterns must include the shared exclusions so Oxlint scans the intended files. Set it in .oxlintrc.json to an array of strings that includes the skeleton's ignorePatterns entries.",
+    );
   if (!isStrings(config.plugins) || !config.plugins.includes("typescript"))
-    throw new Error('plugins must include "typescript"');
+    throw new Error(
+      'plugins must include "typescript" for Oxlint to run the shared typed rules. Set plugins in .oxlintrc.json to an array that includes "typescript".',
+    );
 }
 
 export function oxlintConfiguration(root: string) {
   const file = join(root, oxlintConfig);
-  if (!lstatSync(file).isFile()) throw new Error("must be a regular file");
+  if (!lstatSync(file).isFile())
+    throw new Error(
+      ".oxlintrc.json must be a regular file for Oxlint to read its settings. Restore the regular file from the scaffolding skeleton.",
+    );
   const config = parseOxlintConfig(readFileSync(file, "utf8"));
   validateOxlintRuntimeOptions(config);
   const env = config.env;
   if (!isObject(env) || Object.keys(template.env).some((name) => env[name] !== true))
-    throw new Error("env must include the shared browser, Node and Bun globals");
+    throw new Error(
+      "env must enable the shared runtime globals so Oxlint can check references. Set env.browser, env.node and env.bun to true in .oxlintrc.json.",
+    );
   const expected = oxlintExtends(root);
   if (!isStrings(config.extends) || config.extends.length !== 1 || config.extends[0] !== expected)
-    throw new Error(`extends must list "${expected}"`);
+    throw new Error(
+      `extends must load the shared Oxlint rules. Set extends in .oxlintrc.json to ["${expected}"].`,
+    );
   return config;
 }
 
@@ -165,7 +178,10 @@ export function runOxlintWithGuides(root: string, args: string[]) {
     );
     if (result.stdout) {
       const diagnostics = jsonObject(result.stdout).diagnostics;
-      if (!Array.isArray(diagnostics)) throw new Error("could not read Oxlint's JSON diagnostics");
+      if (!Array.isArray(diagnostics))
+        throw new Error(
+          "Oxlint's JSON diagnostics have no diagnostics array, so the check cannot print rule guides. Run bun install to restore the pinned Oxlint version and rerun the check.",
+        );
       const entries: unknown[] = diagnostics;
       const rules = entries.flatMap((entry) =>
         isObject(entry) && typeof entry.code === "string" ? [entry.code] : [],
@@ -191,8 +207,13 @@ export function oxlintFiles(root: string, args = oxlintTargets(root)) {
   const files = oxlintOutput(root, ["--debug=files", ...args])
     .split("\n")
     .filter(Boolean);
-  if (files.some((file) => !existsSync(join(root, file)) || !statSync(join(root, file)).isFile()))
-    throw new Error("could not read the files selected by oxlint");
+  const invalid = files.find(
+    (file) => !existsSync(join(root, file)) || !statSync(join(root, file)).isFile(),
+  );
+  if (invalid !== undefined)
+    throw new Error(
+      `${invalid}: Oxlint selected a path that is missing or is not a regular file. Fix the affected paths or adjust ignorePatterns in .oxlintrc.json, then rerun the check.`,
+    );
   return files;
 }
 
@@ -216,7 +237,9 @@ async function requireTypeScriptProjects(root: string, files: string[]) {
     const absolute = resolve(root, file);
     const config = ts.findConfigFile(dirname(absolute), ts.sys.fileExists);
     if (!config || !resolve(config).startsWith(root + "/")) {
-      failures.push(`${file}: no tsconfig.json in the repository`);
+      failures.push(
+        `${file}: Oxlint cannot run typed rules without a TypeScript project in this repository. Add a tsconfig.json in this directory or an ancestor inside the repository and include this file.`,
+      );
       continue;
     }
     let project = projects.get(config);
@@ -229,7 +252,9 @@ async function requireTypeScriptProjects(root: string, files: string[]) {
       const { fileNames: rootNames, options, projectReferences } = project.parsed;
       project.program ??= ts.createProgram({ rootNames, options, projectReferences });
       if (!project.program.getSourceFile(absolute))
-        failures.push(`${file}: is outside ${config.slice(root.length + 1)}`);
+        failures.push(
+          `${file}: Oxlint cannot run typed rules for this file because it is outside ${config.slice(root.length + 1)}. Include it in that tsconfig.json or import it from a file in the project.`,
+        );
     }
   }
   if (failures.length) throw new Error(failures.join("\n"));

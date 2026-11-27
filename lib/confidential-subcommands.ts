@@ -85,7 +85,7 @@ export function parsePurgedHashEntry(
         check: "confidential",
         path: "push",
         text: ".confidential-purged.json",
-        message: `${where} does not parse: repair it, then push`,
+        message: `${where} is malformed, so the push cannot be checked for purged commits. Restore .confidential-purged.json there with its original salt string and hashes array, then retry the push.`,
       },
     };
   }
@@ -206,7 +206,8 @@ export function buildPurgedListJson(root: string, shas: readonly string[]): Comm
   const { list: old, malformed } = readExistingPurgedList(root);
   if (!old && malformed) {
     return {
-      stderr: "[check-confidential] .confidential-purged.json does not parse: repair it first",
+      stderr:
+        "[check-confidential] .confidential-purged.json is malformed, so the purged list cannot be extended safely. Restore the file with its original salt string and hashes array, then rerun the purged command.",
       exitCode: 1,
     };
   }

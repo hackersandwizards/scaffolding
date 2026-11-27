@@ -26,7 +26,9 @@ export async function newestTag(remote: string): Promise<string | undefined> {
   git.on("error", () => result.resolve(null));
   git.on("close", result.resolve);
   const timer = setTimeout(() => {
-    console.error(`git ls-remote ${remote}: no answer within ${wait} s`);
+    console.error(
+      `git ls-remote ${remote}: no answer within ${wait} s, so the latest release tag is unknown. Check access to the remote, or increase SCAFFOLDING_FETCH_WAIT_S if the connection is slow.`,
+    );
     if (git.pid === undefined) return;
     try {
       process.kill(-git.pid, "SIGTERM");
@@ -113,9 +115,13 @@ export function tagCommit(version: string, installed: string | undefined): strin
   );
   const sha = refs.get(`${tag}^{}`) ?? refs.get(tag);
   if (r.status !== 0 || !sha)
-    throw new Error(`v${version} not read from ${remote}: ${r.stderr ?? ""}`.trim());
+    throw new Error(
+      `v${version} could not be read from ${remote}, so the Pages workflow cannot be pinned (${(r.stderr ?? "").trim() || "tag not found"}). Restore access to the remote or install the package from a published Git tag.`,
+    );
   if (!sha.startsWith(installed))
-    throw new Error(`v${version} points at ${sha}, installed is ${installed}: the tag moved`);
+    throw new Error(
+      `v${version} points at ${sha}, installed is ${installed}, so the installed commit cannot pin the Pages workflow to that tag. Reinstall the package from the Git tag you intend to use.`,
+    );
   return sha;
 }
 
@@ -302,7 +308,9 @@ export function shippedFiles(root: string, pkg: Package, check: string): string[
     .flatMap((l) => l.match(/^packed \S+ (.+)$/)?.[1] ?? []);
   // package.json always ships, so an empty list means pack failed or changed its output.
   if (pack.status !== 0 || !shipped.length) {
-    console.error(`[${check}] bun pm pack listed no files: ${pack.stderr ?? pack.error}`);
+    console.error(
+      `[${check}] bun pm pack listed no files, so the check cannot tell what ships (${pack.stderr ?? pack.error}). Fix the package.json or packaging error shown and verify with bun pm pack --dry-run --ignore-scripts.`,
+    );
     process.exit(1);
   }
   return shipped;

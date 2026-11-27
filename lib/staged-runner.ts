@@ -34,7 +34,7 @@ export function parseEslintRuleMetadata(metadata: Buffer, run: ToolRun): ToolRun
   } catch (error) {
     return {
       ...run,
-      out: `${run.out}[check:staged] eslint: could not read formatter rule IDs: ${(error as Error).message}\n`,
+      out: `${run.out}[check:staged] eslint: could not read formatter rule IDs (${(error as Error).message}), so the hook cannot show the rule guides. Run bun install and retry the commit, then report persistent failures with this diagnostic.\n`,
       code: 1,
     };
   }
@@ -55,7 +55,11 @@ export function collectChildOutput(
     child.stdout.on("data", (data: Buffer) => stdout.push(data));
     child.stderr.on("data", (data) => (out += data));
     child.on("error", (error) =>
-      done({ out: `${String(error)}\n`, code: 1, stdout: Buffer.alloc(0) }),
+      done({
+        out: `[check:staged] Could not start ${child.spawnfile} (${String(error)}). Check the executable path and permissions, then retry the commit.\n`,
+        code: 1,
+        stdout: Buffer.alloc(0),
+      }),
     );
     child.on("close", (code) => {
       const output = Buffer.concat(stdout);
@@ -132,7 +136,9 @@ export function passPartialPrettierResult(run: ToolRun): ToolRun {
 }
 
 export function failPartialPrettierResult(path: string, run: ToolRun): ToolRun {
-  const why = !run.code ? "not formatted\n" : run.out;
+  const why = !run.code
+    ? "The staged file differs from Prettier's output. Format the file with Prettier, stage the formatted edits, and retry the commit.\n"
+    : run.out;
   return {
     ...run,
     out: `[check:staged] prettier: ${path} as staged\n${why}`,

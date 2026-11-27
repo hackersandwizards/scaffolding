@@ -5,6 +5,7 @@ import type { Finding, readPackage } from "./repo.ts";
 export type RepoPackage = ReturnType<typeof readPackage>;
 
 export const TERMS_REPO = "hackersandwizards/confidential-terms";
+export const termListRefresh = `run \`gh auth login\` with an account in the ${TERMS_REPO.split("/")[0]} trainers team, then run \`check-confidential fetch\``;
 export const HOUR = 3_600_000;
 export const DAY = 24 * HOUR;
 
@@ -184,9 +185,14 @@ export function validateTermListBuildTime(
 ): { problem?: string; warning?: string } {
   const built = Date.parse(list.built ?? "");
   if (Number.isNaN(built) || built > now + HOUR)
-    return { problem: `${source} has no valid build time` };
+    return {
+      problem: `${source} has an invalid built timestamp, so the scan cannot tell whether the list is current. To refresh the list, ${termListRefresh}.`,
+    };
   const days = (now - built) / DAY;
-  if (days > 7) return { problem: `list built ${Math.floor(days)} days ago, more than 7` };
+  if (days > 7)
+    return {
+      problem: `The list at ${source} was built ${Math.floor(days)} days ago and is too old to scan with. To refresh the list, ${termListRefresh}.`,
+    };
   if (days > 3)
     return { warning: `list built ${Math.floor(days)} days ago; Company OS has not rebuilt it` };
   return {};

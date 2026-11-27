@@ -78,3 +78,15 @@ Buffer.prototype.readUInt32LE = function (at) {
   );
   expect(run().stderr).toMatch(/^error: ZIP parsing failed$/m);
 });
+
+test("the confidential check explains how to select a scan mode", () => {
+  using fixture = testDirectory();
+  inputTestRepo(fixture.folder);
+  writeInputTestTerms(fixture.folder);
+  const run = runInputCheck(fixture.folder, ["check-confidential", "--list", "terms.json"], "");
+  const result = run();
+  expect(result.status).toBe(2);
+  expect(result.stderr).toContain(
+    "[check-confidential] No scan mode or subcommand matched, so nothing was checked. Choose a mode from the usage below or run `check-confidential --help`.\nusage: check-confidential",
+  );
+});

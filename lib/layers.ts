@@ -28,7 +28,10 @@ function declaredLayers(root: string): DeclaredLayer[] {
   const path = join(root, oxlintConfig);
   const stat = lstatSync(path, { throwIfNoEntry: false });
   if (!stat) return [];
-  if (!stat.isFile()) throw new Error(`${oxlintConfig} must be a regular file`);
+  if (!stat.isFile())
+    throw new Error(
+      `The layer map reads its rules from ${oxlintConfig}. Replace that path with a regular Oxlint config file.`,
+    );
   const config = readFileSync(path, "utf8");
   let overrides: unknown;
   try {
@@ -40,7 +43,10 @@ function declaredLayers(root: string): DeclaredLayer[] {
     );
   }
   if (overrides === undefined) return [];
-  if (!Array.isArray(overrides)) throw new Error(`${oxlintConfig}: overrides must be an array`);
+  if (!Array.isArray(overrides))
+    throw new Error(
+      `${oxlintConfig}: the layer map reads layer declarations from the overrides array. Set overrides to an array of Oxlint override objects or omit it if there are no overrides.`,
+    );
 
   return mergeLayerDeclarations(overrides);
 }
@@ -67,10 +73,14 @@ export function parseLayerOverride(override: unknown): DeclaredLayer | undefined
   );
   if (!rules.length) return;
   if (!isStrings(override.files) || !override.files.length || override.files.includes(""))
-    throw new Error(`${oxlintConfig}: each layer must declare files globs`);
+    throw new Error(
+      `${oxlintConfig}: the layer map needs to know which files the override covers. Set files on the layer override to a non-empty array of non-empty globs.`,
+    );
   const exclude = override.excludeFiles ?? [];
   if (!isStrings(exclude) || exclude.includes(""))
-    throw new Error(`${oxlintConfig}: layer excludeFiles must list non-empty globs`);
+    throw new Error(
+      `${oxlintConfig}: the layer map cannot apply invalid excludeFiles globs. Set excludeFiles on the layer override to an array of non-empty globs, or omit it.`,
+    );
   const globs = override.files.map(normalizeLayerGlob);
   const name = [...new Set(globs.map(({ display }) => display.replace(/\/\*\*$/, "")))]
     .sort(compareLayers)
