@@ -17,8 +17,11 @@ out.`, so no skill a schedule runs depends on which scheduler started it.
    a person triggers at your request is your run, so say what it will do in the world when you ask
    for the trigger. Check: you can name the absence the schedule notices.
 2. Name a skill for its function and the scheduled task for its job, with the cadence as the last
-   segment (`mail-sweep-hourly`). The file, the Desktop task's id and the T3 task's title carry
-   that name. A rename is a delete plus a create in every scheduler, and the new task inherits
+   segment (`mail-sweep-hourly`). The file and the Desktop task's id carry that name. The T3 task's
+   title is `Area | h&w | Topic`, the area of the colleague who runs it and the topic an action
+   starting with a verb, without the cadence (`Backoffice | h&w | Sweep the mailbox`), set in place
+   through `schedule_task` with its id. A rename of the name is a delete plus a create in every
+   scheduler, and the new task inherits
    neither its last-run time nor its tool grants. List the tasks after the delete: an old task fires
    until deleted. Check: the name ends in the cadence, and no file, task or task directory of the
    old name remains.
