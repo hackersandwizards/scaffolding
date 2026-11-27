@@ -45,6 +45,24 @@ test.each(cases)(
   },
 );
 
+test("explains how to fix an executable that could not start", async () => {
+  const error = vi.spyOn(console, "error").mockImplementation(() => undefined);
+  try {
+    const status = await runTimed(["/nonexistent-scaffolding-test-command"], {
+      name: "fixture-timed",
+      limitMs: 1000,
+      timeoutMessage: "fixture timed out",
+    });
+    expect(status).toBe(1);
+    expect(error).toHaveBeenCalledWith(
+      "[fixture-timed] Could not start /nonexistent-scaffolding-test-command. Use the error below to correct the executable path or its permissions.",
+      expect.any(Error),
+    );
+  } finally {
+    error.mockRestore();
+  }
+});
+
 test.each([[98765, "SIGINT", -98765] as const])(
   "ignores a vanished subprocess group",
   (pid, signal, target) => {

@@ -55,11 +55,13 @@ test.each<{ config: ScaffoldingConfig; expected: string | undefined }>([
   },
   {
     config: { bogus: true } as unknown as ScaffoldingConfig,
-    expected: "unknown key scaffolding.bogus",
+    expected:
+      "Unknown package.json key scaffolding.bogus. Remove it or use a documented scaffolding key from scaffolding's docs/gate.md.",
   },
   {
     config: { allow: [{ check: "unknown", path: "a", reason: "r" }] },
-    expected: "scaffolding.allow names no check that reads it: unknown",
+    expected:
+      "scaffolding.allow has no effect for unknown. Remove the entry from package.json or use a check listed under Exceptions in scaffolding's docs/gate.md.",
   },
 ])("validateConfigKeys checks %j", ({ config, expected }) => {
   expect(validateConfigKeys(config)).toBe(expected);
@@ -132,7 +134,10 @@ test.each<{
     step: "links",
     local: ["check:links"],
     scripts: {},
-    expected: { problem: "scaffolding.check requires a script named check:links" },
+    expected: {
+      problem:
+        'scaffolding.check lists check:links as the replacement for links, but its script is missing or blank. Define scripts["check:links"] in package.json or remove the replacement from scaffolding.check.',
+    },
   },
 ])("resolveLocalReplacement resolves $step", ({ step, local, scripts, expected }) => {
   expect(resolveLocalReplacement(step, local, scripts)).toEqual(expected);
@@ -154,7 +159,10 @@ test.each<{
     label: "requires server when elements is server",
     config: { brand: { elements: "server" } },
     directory: "",
-    expected: { problem: "scaffolding.server is required for a server-backed check" },
+    expected: {
+      problem:
+        "scaffolding.brand.elements is set to server, so the elements step needs a server to inspect. Set scaffolding.server.command in package.json to the server startup command or omit scaffolding.brand.elements.",
+    },
   },
   {
     label: "wraps brand-elements with server and directory",
@@ -260,14 +268,16 @@ test.each([
     entries: ["links", "links"],
     replacements: new Map<string, string>(),
     named: new Set(["links"]),
-    expected: "scaffolding.check lists links more than once",
+    expected:
+      "scaffolding.check lists links more than once. Keep a single occurrence in package.json at the point where the step should run.",
   },
   {
     label: "flags disabled placed step",
     entries: ["links"],
     replacements: new Map<string, string>(),
     named: new Set<string>(),
-    expected: "scaffolding.check names no enabled shared step: links",
+    expected:
+      "scaffolding.check lists links, but no shared step with that name is configured. Remove the entry from package.json or configure the step as described in scaffolding's docs/gate.md.",
   },
   {
     label: "accepts enabled placed step once",
@@ -290,19 +300,22 @@ test.each<{
     label: "rejects non-object fullOnly",
     config: { fullOnly: "bad" } as unknown as ScaffoldingConfig,
     local: [],
-    expectedProblem: "scaffolding.fullOnly must be a map of steps to reasons",
+    expectedProblem:
+      "scaffolding.fullOnly must be a JSON object mapping step names to non-blank reasons for running them only in the full check. Fix the object in package.json.",
   },
   {
     label: "rejects ineligible step",
     config: { fullOnly: { lint: "slow" } },
     local: [],
-    expectedProblem: "scaffolding.fullOnly names no eligible step: lint",
+    expectedProblem:
+      "scaffolding.fullOnly cannot defer lint. In package.json, use test or a check:<name> step already listed in scaffolding.check, or remove the entry.",
   },
   {
     label: "rejects missing reason",
     config: { fullOnly: { test: "   " } },
     local: [],
-    expectedProblem: "scaffolding.fullOnly.test has no reason",
+    expectedProblem:
+      "scaffolding.fullOnly.test has no valid reason for deferring the step. Set it to a non-blank string in package.json.",
   },
 ])("buildFullOnlyMap rejects: $label", ({ config, local, expectedProblem }) => {
   expect(buildFullOnlyMap(config, local).problem).toBe(expectedProblem);
@@ -324,25 +337,29 @@ test.each<{
     label: "rejects non-object changed",
     config: { changed: [] } as unknown as ScaffoldingConfig,
     named: new Set(["test"]),
-    expectedProblem: "scaffolding.changed must be a map of paths to steps",
+    expectedProblem:
+      "scaffolding.changed must be a JSON object mapping repository-relative globs to lists of gate steps. Fix the object in package.json.",
   },
   {
     label: "rejects invalid glob",
     config: { changed: { "../outside": ["test"] } },
     named: new Set(["test"]),
-    expectedProblem: 'scaffolding.changed["../outside"] is no repository-relative glob',
+    expectedProblem:
+      'scaffolding.changed["../outside"] cannot match changed paths because its glob is invalid. Replace the key in package.json with a valid repository-relative glob such as src/**.',
   },
   {
     label: "rejects empty step list",
     config: { changed: { "src/**": [] } },
     named: new Set(["test"]),
-    expectedProblem: 'scaffolding.changed["src/**"] is an empty list of steps',
+    expectedProblem:
+      'scaffolding.changed["src/**"] is an empty list and selects no steps. Add a registered gate step to the list in package.json or remove the mapping.',
   },
   {
     label: "rejects unknown step name",
     config: { changed: { "src/**": ["missing"] } },
     named: new Set(["test"]),
-    expectedProblem: 'scaffolding.changed["src/**"] names no step: missing',
+    expectedProblem:
+      'scaffolding.changed["src/**"] refers to missing, which is not registered for this gate. Replace it with a registered step name in package.json or remove the mapping.',
   },
 ])("buildChangedMappings rejects: $label", ({ config, named, expectedProblem }) => {
   expect(buildChangedMappings(config, named).problem).toBe(expectedProblem);

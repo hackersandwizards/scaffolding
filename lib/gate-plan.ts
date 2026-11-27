@@ -58,10 +58,11 @@ export function packageScriptCommand(
 
 export function validateConfigKeys(config: ScaffoldingConfig): string | undefined {
   for (const key of Object.keys(config))
-    if (!KEYS.has(key)) return `unknown key scaffolding.${key}`;
+    if (!KEYS.has(key))
+      return `Unknown package.json key scaffolding.${key}. Remove it or use a documented scaffolding key from scaffolding's docs/gate.md.`;
   for (const entry of config.allow ?? [])
     if (!ALLOWS.has(entry.check ?? ""))
-      return `scaffolding.allow names no check that reads it: ${entry.check}`;
+      return `scaffolding.allow has no effect for ${entry.check}. Remove the entry from package.json or use a check listed under Exceptions in scaffolding's docs/gate.md.`;
   return undefined;
 }
 
@@ -152,7 +153,9 @@ export function resolveLocalReplacement(
   const replacement = `check:${step}`;
   if (!local.includes(replacement)) return {};
   if (!isReason(ownEntry(scripts, replacement)))
-    return { problem: `scaffolding.check requires a script named ${replacement}` };
+    return {
+      problem: `scaffolding.check lists ${replacement} as the replacement for ${step}, but its script is missing or blank. Define scripts["${replacement}"] in package.json or remove the replacement from scaffolding.check.`,
+    };
   return { replacement };
 }
 
@@ -164,7 +167,10 @@ export function brandElementsCommand(
   if (config.brand?.elements !== "server" || isReason(config.skip?.elements))
     return { kind: "full", command: `${directory}brand-elements` };
   if (!config.server)
-    return { problem: "scaffolding.server is required for a server-backed check" };
+    return {
+      problem:
+        "scaffolding.brand.elements is set to server, so the elements step needs a server to inspect. Set scaffolding.server.command in package.json to the server startup command or omit scaffolding.brand.elements.",
+    };
   const cmd = directory
     ? `sh -c ${shellQuote(`${directory}exec brand-elements --base "$1"`)} sh {url}`
     : "brand-elements --base {url}";
@@ -245,9 +251,9 @@ export function validatePlacedStepEntries(
   for (const step of new Set(entries)) {
     if (!placedSteps.has(step) && !replacedNames.has(step)) continue;
     if (entries.filter((entry) => entry === step).length > 1)
-      return `scaffolding.check lists ${step} more than once`;
+      return `scaffolding.check lists ${step} more than once. Keep a single occurrence in package.json at the point where the step should run.`;
     if (placedSteps.has(step) && !named.has(step))
-      return `scaffolding.check names no enabled shared step: ${step}`;
+      return `scaffolding.check lists ${step}, but no shared step with that name is configured. Remove the entry from package.json or configure the step as described in scaffolding's docs/gate.md.`;
   }
   return undefined;
 }
@@ -260,11 +266,19 @@ export function buildFullOnlyMap(
   | { fullOnly?: undefined; problem: string } {
   const fullOnly = new Map([["catalog", "builds the catalog"], ...fullOnlySteps]);
   if (config.fullOnly !== undefined && !isObject(config.fullOnly))
-    return { problem: "scaffolding.fullOnly must be a map of steps to reasons" };
+    return {
+      problem:
+        "scaffolding.fullOnly must be a JSON object mapping step names to non-blank reasons for running them only in the full check. Fix the object in package.json.",
+    };
   for (const [step, reason] of Object.entries(config.fullOnly ?? {})) {
     if (step !== "test" && !(step.startsWith("check:") && local.includes(step)))
-      return { problem: `scaffolding.fullOnly names no eligible step: ${step}` };
-    if (!isReason(reason)) return { problem: `scaffolding.fullOnly.${step} has no reason` };
+      return {
+        problem: `scaffolding.fullOnly cannot defer ${step}. In package.json, use test or a check:<name> step already listed in scaffolding.check, or remove the entry.`,
+      };
+    if (!isReason(reason))
+      return {
+        problem: `scaffolding.fullOnly.${step} has no valid reason for deferring the step. Set it to a non-blank string in package.json.`,
+      };
     fullOnly.set(step, reason);
   }
   return { fullOnly };
@@ -277,18 +291,29 @@ export function buildChangedMappings(
   | { mappings: { glob: Bun.Glob; steps: string[] }[]; problem?: undefined }
   | { mappings?: undefined; problem: string } {
   if (config.changed !== undefined && !isObject(config.changed))
-    return { problem: "scaffolding.changed must be a map of paths to steps" };
+    return {
+      problem:
+        "scaffolding.changed must be a JSON object mapping repository-relative globs to lists of gate steps. Fix the object in package.json.",
+    };
   const mappings: { glob: Bun.Glob; steps: string[] }[] = [];
   for (const [glob, steps] of Object.entries(config.changed ?? {})) {
     if (!validGlob(glob))
-      return { problem: `scaffolding.changed["${glob}"] is no repository-relative glob` };
+      return {
+        problem: `scaffolding.changed["${glob}"] cannot match changed paths because its glob is invalid. Replace the key in package.json with a valid repository-relative glob such as src/**.`,
+      };
     if (!Array.isArray(steps))
-      return { problem: `scaffolding.changed["${glob}"] is no list of steps` };
+      return {
+        problem: `scaffolding.changed["${glob}"] must be an array of step names to select on a match. Set it to a non-empty array of registered gate steps in package.json.`,
+      };
     if (!steps.length)
-      return { problem: `scaffolding.changed["${glob}"] is an empty list of steps` };
+      return {
+        problem: `scaffolding.changed["${glob}"] is an empty list and selects no steps. Add a registered gate step to the list in package.json or remove the mapping.`,
+      };
     for (const step of steps)
       if (!named.has(step))
-        return { problem: `scaffolding.changed["${glob}"] names no step: ${step}` };
+        return {
+          problem: `scaffolding.changed["${glob}"] refers to ${step}, which is not registered for this gate. Replace it with a registered step name in package.json or remove the mapping.`,
+        };
     mappings.push({ glob: new Bun.Glob(glob), steps });
   }
   return { mappings };

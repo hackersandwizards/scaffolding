@@ -5,7 +5,11 @@ export type StepResult = { name: string; code: number; ms: number };
 export type GateStep = [string, string];
 
 export function formatStepLine(result: StepResult): string {
-  return `[scaffolding] ${result.code ? "FAIL" : "ok  "} ${result.name} ${(result.ms / 1000).toFixed(1)} s`;
+  const duration = `${(result.ms / 1000).toFixed(1)} s`;
+  const step = `${result.name} ${duration}`;
+  return result.code
+    ? `[scaffolding] FAIL ${step}. Review the output above or look up the step in package.json and scaffolding's docs/gate.md, then fix the failure and rerun the same scaffolding check.`
+    : `[scaffolding] ok   ${step}`;
 }
 
 export function stepConcurrencyLimit(load: number, cores: number): number {
@@ -18,7 +22,9 @@ export function stepConcurrencyLimit(load: number, cores: number): number {
 
 export function reportStoppedStep(name: string, out: string, signal: NodeJS.Signals): void {
   process.stderr.write(out);
-  console.error(`[scaffolding] stopped ${name} by ${signal}`);
+  console.error(
+    `[scaffolding] stopped ${name} by ${signal} because the gate was interrupted. Check any step output above, then rerun the same scaffolding check once the interruption is resolved.`,
+  );
 }
 
 export class GateStepRunner {

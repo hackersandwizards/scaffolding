@@ -1028,6 +1028,33 @@ describe("command help", () => {
     assert(text, "a help footer must be defined for this command");
     expect(result.stdout).toContain(text);
   });
+  test("explains a rejected check invocation", () => {
+    const result = help(ownPackage.bin.scaffolding, ["check", "--changed", "HEAD"]);
+    expect(result.status).toBe(2);
+    expect(result.stderr).toContain(
+      "[scaffolding] Invalid scaffolding invocation. Use the command and argument forms below, or run scaffolding --help for details.",
+    );
+    expect(result.stderr).toContain("usage: scaffolding check [--changed [<from>..<to>...]]");
+  });
+
+  test("explains why scaffolding help is unavailable when its row is missing", () => {
+    using fixture = testDirectory();
+    write(fixture.folder, {
+      "lib/help.ts": readFileSync(join(import.meta.dirname, "../lib/help.ts"), "utf8"),
+      "docs/commands.md": "| `other` | on demand | Runs another command. |\n",
+      "bin/scaffolding.ts": 'import { help } from "../lib/help.ts";\nhelp("scaffolding");\n',
+    });
+    const result = spawnSync(
+      process.execPath,
+      ["--no-env-file", join(fixture.folder, "bin/scaffolding.ts"), "--help"],
+      { cwd: fixture.folder, encoding: "utf8" },
+    );
+    expect(result.status).toBe(1);
+    expect(result.stderr).toContain(
+      "Help for scaffolding is unavailable because its row is missing from scaffolding's docs/commands.md. Report the missing row to the package maintainer or restore it in the scaffolding source checkout.",
+    );
+  });
+
   test("check-lock passes a later --help to its command", () => {
     expect(help(ownPackage.bin["check-lock"], ["echo", "--help"]).stdout).toBe("--help\n");
   });
@@ -4819,16 +4846,27 @@ describe("scaffolding check", () => {
     admin: "t",
   };
 
+  test("explains why the test subcommand needs a browser test folder", () => {
+    const dir = gate({ skip });
+    const result = run(dir, [bin("scaffolding"), "test"]);
+    expect(result.code).toBe(1);
+    expect(result.out).toContain(
+      "scaffolding test needs a folder to exclude from Vitest. Set scaffolding.browserTest in package.json to the repository-relative browser test folder.",
+    );
+  });
+
   test("an allow entry naming a check that reads no allow list fails", () => {
     const entry = (check: string) => ({ allow: [{ check, path: "a.ts", reason: "r" }] });
     const lock = { CHECK_LOCK: join(temp(), "lock") };
     const left = run(gate({ skip, ...entry("unique-names") }), [bin("scaffolding"), "check"], lock);
-    expect(left.out).toContain("scaffolding.allow names no check that reads it: unique-names");
+    expect(left.out).toContain(
+      "scaffolding.allow has no effect for unique-names. Remove the entry from package.json or use a check listed under Exceptions in scaffolding's docs/gate.md.",
+    );
     expect(left.code).toBe(1);
     // Control: a check that reads it.
     expect(
       run(gate({ skip, ...entry("spaces") }), [bin("scaffolding"), "check"], lock).out,
-    ).not.toContain("names no check");
+    ).not.toContain("scaffolding.allow has no effect for");
   });
 
   test("a runtime import cycle fails the gate under the step's name", () => {
@@ -5630,12 +5668,30 @@ describe("scaffolding check", () => {
     ["changed", ["check", "--changed"]],
   ])("%s gate configuration validation", (_, args) => {
     test.each([
-      [{ changed: { "docs/**": "check:docs" } }, "is no list of steps"],
-      [{ changed: { "docs/**": [] } }, "is an empty list of steps"],
-      [{ changed: { "docs/**": ["check:dosc"] } }, "names no step: check:dosc"],
-      [{ changed: { "docs/{md": ["check:docs"] } }, "is no repository-relative glob"],
-      [{ fullOnly: { "check:typo": "builds output" } }, "names no eligible step: check:typo"],
-      [{ fullOnly: { "check:docs": " " } }, "scaffolding.fullOnly.check:docs has no reason"],
+      [
+        { changed: { "docs/**": "check:docs" } },
+        'scaffolding.changed["docs/**"] must be an array of step names to select on a match. Set it to a non-empty array of registered gate steps in package.json.',
+      ],
+      [
+        { changed: { "docs/**": [] } },
+        'scaffolding.changed["docs/**"] is an empty list and selects no steps. Add a registered gate step to the list in package.json or remove the mapping.',
+      ],
+      [
+        { changed: { "docs/**": ["check:dosc"] } },
+        'scaffolding.changed["docs/**"] refers to check:dosc, which is not registered for this gate. Replace it with a registered step name in package.json or remove the mapping.',
+      ],
+      [
+        { changed: { "docs/{md": ["check:docs"] } },
+        'scaffolding.changed["docs/{md"] cannot match changed paths because its glob is invalid. Replace the key in package.json with a valid repository-relative glob such as src/**.',
+      ],
+      [
+        { fullOnly: { "check:typo": "builds output" } },
+        "scaffolding.fullOnly cannot defer check:typo. In package.json, use test or a check:<name> step already listed in scaffolding.check, or remove the entry.",
+      ],
+      [
+        { fullOnly: { "check:docs": " " } },
+        "scaffolding.fullOnly.check:docs has no valid reason for deferring the step. Set it to a non-blank string in package.json.",
+      ],
     ])("validates path mappings and full-only declarations (%j)", (config, message) => {
       const dir = gate({ skip, check: ["check:docs"], ...config });
       const lock = { CHECK_LOCK: join(temp(), "lock") };
@@ -6099,7 +6155,9 @@ describe("scaffolding check", () => {
       await Bun.sleep(1_000);
       process.kill(-defined(gateRun.pid, "the gate process pid"), "SIGINT");
       await new Promise((done) => gateRun.on("close", done));
-      expect(out).toContain("stopped check:slow by SIGINT");
+      expect(out).toContain(
+        "stopped check:slow by SIGINT because the gate was interrupted. Check any step output above, then rerun the same scaffolding check once the interruption is resolved.",
+      );
       expect(existsSync(lock)).toBe(false);
     },
     limit(40_000),
@@ -6111,7 +6169,9 @@ describe("scaffolding check", () => {
     const result = run(dir, [bin("scaffolding"), "check"], { CHECK_LOCK: join(dir, ".lock") });
     expect(result.code).toBe(1);
     expect(result.out).toMatch(/^step-output$/m);
-    expect(result.out).toMatch(/^\[scaffolding\] FAIL echo step-output; kill -s .+ \d+\.\d s$/m);
+    expect(result.out).toMatch(
+      /^\[scaffolding\] FAIL echo step-output; kill -s .+ \d+\.\d s\. Review the output above or look up the step in package\.json and scaffolding's docs\/gate\.md, then fix the failure and rerun the same scaffolding check\.$/m,
+    );
     expect(result.out).not.toMatch(/^\[scaffolding\] stopped /m);
   });
 
@@ -6212,7 +6272,7 @@ describe("scaffolding check", () => {
     test("rejects skip.retired if the repository does not pin brand", () => {
       const unpinned = gate({ skip: { ...skip, retired: "brand only in tests" } });
       expect(run(unpinned, [bin("scaffolding"), "check"], lock(unpinned)).out).toContain(
-        "scaffolding.skip names no shared step: retired",
+        "scaffolding.skip cannot skip retired because it is not a skippable shared step. Remove the entry from package.json or use a documented skip key from scaffolding's docs/gate.md.",
       );
     });
   });
@@ -6241,7 +6301,9 @@ describe("scaffolding check", () => {
     );
     write(dir, { "brand/package.json": '{"name":"@hackersandwizards/brand","version":"1.0.0"}' });
     const result = run(dir, [bin("scaffolding"), "check"], { CHECK_LOCK: join(dir, ".lock") });
-    expect(result.out).toContain(`scaffolding.${key} is unused`);
+    expect(result.out).toContain(
+      `scaffolding.${key} has no effect with the configured steps. Remove it from package.json or enable a step that uses it as described in scaffolding's docs/gate.md.`,
+    );
     expect(result.code).toBe(1);
   });
 
@@ -6522,7 +6584,9 @@ describe("scaffolding check", () => {
     const dir = gate({ skip: { ...skip, constructor: "not a step" } });
     const result = run(dir, [bin("scaffolding"), "check"], { CHECK_LOCK: join(dir, ".lock") });
     expect(result.code).toBe(1);
-    expect(result.out).toContain("scaffolding.skip names no shared step: constructor");
+    expect(result.out).toContain(
+      "scaffolding.skip cannot skip constructor because it is not a skippable shared step. Remove the entry from package.json or use a documented skip key from scaffolding's docs/gate.md.",
+    );
   });
 
   describe("brand scans in changed checks", () => {
@@ -7078,7 +7142,9 @@ describe("scaffolding check", () => {
   test.each([false, 0, {}, true, ""])("rejects %j as a skip reason", (lint) => {
     const dir = gate({ skip: { ...skip, lint } });
     const r = run(dir, [bin("scaffolding"), "check"], { CHECK_LOCK: join(dir, ".lock") });
-    expect(r.out).toContain("scaffolding.skip.lint has no reason");
+    expect(r.out).toContain(
+      "scaffolding.skip.lint has no valid reason for skipping the step. Set it to a non-blank string in package.json.",
+    );
     expect(r.code).toBe(1);
   });
 });

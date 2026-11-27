@@ -55,7 +55,10 @@ if (command === "test") {
   const config = readPackage(repoRoot()).scaffolding ?? {};
   const problem = browserTestProblem(config);
   if (problem || !config.browserTest)
-    fail(problem ?? "scaffolding test requires scaffolding.browserTest");
+    fail(
+      problem ??
+        "scaffolding test needs a folder to exclude from Vitest. Set scaffolding.browserTest in package.json to the repository-relative browser test folder.",
+    );
   const run = spawnSync(
     process.execPath,
     [...vitestRun, "--exclude", `${config.browserTest}/**`, ...commandArgs],
@@ -93,6 +96,9 @@ if (
   (!changed && args.length > 1) ||
   ranges.some((r) => !/^(?:(?!\.\.)\S)+\.\.(?!\.)(?:(?!\.\.)\S)+$/.test(r))
 ) {
+  console.error(
+    "[scaffolding] Invalid scaffolding invocation. Use the command and argument forms below, or run scaffolding --help for details.",
+  );
   console.error(usage);
   process.exit(2);
 }
@@ -144,8 +150,13 @@ if (config.browserTest)
 const named = new Set([...Object.keys(shared), ...full.keys(), ...local]);
 for (const [step, reason] of Object.entries(skip)) {
   if (step === "oxlint" || !(Object.hasOwn(shared, step) || full.has(step)))
-    fail(`scaffolding.skip names no shared step: ${step}`);
-  if (!isReason(reason)) fail(`scaffolding.skip.${step} has no reason`);
+    fail(
+      `scaffolding.skip cannot skip ${step} because it is not a skippable shared step. Remove the entry from package.json or use a documented skip key from scaffolding's docs/gate.md.`,
+    );
+  if (!isReason(reason))
+    fail(
+      `scaffolding.skip.${step} has no valid reason for skipping the step. Set it to a non-blank string in package.json.`,
+    );
   named.add(step);
   delete shared[step];
   full.delete(step);
@@ -153,7 +164,10 @@ for (const [step, reason] of Object.entries(skip)) {
 }
 
 const unusedKey = plan.unusedConfigKey(config);
-if (unusedKey) fail(`scaffolding.${unusedKey} is unused`);
+if (unusedKey)
+  fail(
+    `scaffolding.${unusedKey} has no effect with the configured steps. Remove it from package.json or enable a step that uses it as described in scaffolding's docs/gate.md.`,
+  );
 const placedErr = gatePlan.validatePlacedStepEntries(entries, replacements, named);
 if (placedErr) fail(placedErr);
 for (const [step, replacement] of replacements)

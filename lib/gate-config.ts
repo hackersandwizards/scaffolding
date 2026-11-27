@@ -43,7 +43,7 @@ function relativePath(path: unknown): path is string {
 
 export function brandSettingsProblem(brand: Record<string, unknown>): string | undefined {
   if (Object.keys(brand).some((key) => !["directory", "retired", "elements"].includes(key)))
-    return "scaffolding.brand accepts directory, retired and elements";
+    return "scaffolding.brand has an invalid shape or key. In package.json, use an object with only directory, retired and elements as keys.";
   if (brand.directory !== undefined && !relativePath(brand.directory))
     return "scaffolding.brand.directory must be a repository-relative path";
   if (
@@ -60,8 +60,9 @@ export function brandProblem(pkg: Package): string | undefined {
   const brand = config?.brand;
   if (brand !== undefined) {
     if (!pinsPackage(pkg, "@hackersandwizards/brand"))
-      return "scaffolding.brand requires a brand pin";
-    if (!isObject(brand)) return "scaffolding.brand accepts directory, retired and elements";
+      return "scaffolding.brand configures checks supplied by @hackersandwizards/brand, which this package does not pin. Pin @hackersandwizards/brand in package.json or remove scaffolding.brand.";
+    if (!isObject(brand))
+      return "scaffolding.brand has an invalid shape or key. In package.json, use an object with only directory, retired and elements as keys.";
     const problem = brandSettingsProblem(brand);
     if (problem !== undefined) return problem;
   }
@@ -93,9 +94,9 @@ export function serverProblem(
     Object.keys(server).some((key) => !["command", "timeout", "stderr"].includes(key)) ||
     !isReason(server.command)
   )
-    return "scaffolding.server requires a command and accepts timeout and stderr";
+    return "scaffolding.server must be an object with a non-blank command to start the server. Fix the object in package.json using command and, optionally, timeout and stderr.";
   if (server.timeout !== undefined && !serverTimeoutFits(server.timeout))
-    return "scaffolding.server.timeout must be a positive number of seconds within the timer range";
+    return "scaffolding.server.timeout sets how long the gate waits for the server. In package.json, set it to a number greater than 0 and at most 2147483.647 seconds, or omit it for the default.";
   if (server.stderr !== undefined && typeof server.stderr !== "boolean")
     return "scaffolding.server.stderr must be a boolean";
 }
@@ -103,7 +104,7 @@ export function serverProblem(
 export function linksProblem(config: NonNullable<Package["scaffolding"]>): string | undefined {
   const entries = (config.check ?? []).flat();
   if (entries.includes("links") && !config.server)
-    return "scaffolding.check requires scaffolding.server for links";
+    return "scaffolding.check lists links, which needs a running site to crawl. Set scaffolding.server.command in package.json to the server startup command or remove links from scaffolding.check.";
   const skips = config.linkSkips;
   if (skips === undefined) return;
   if (

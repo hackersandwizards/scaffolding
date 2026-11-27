@@ -7,7 +7,10 @@ export function help(name: string, usage?: string) {
   if (process.argv[2] !== "--help") return;
   const doc = readFileSync(join(import.meta.dir, "..", "docs", "commands.md"), "utf8");
   const row = doc.split("\n").find((line) => new RegExp(`^\\| \`${name}[ \`]`).test(line));
-  if (!row) throw new Error(`docs/commands.md has no row for ${name}`);
+  if (!row)
+    throw new Error(
+      `Help for ${name} is unavailable because its row is missing from scaffolding's docs/commands.md. Report the missing row to the package maintainer or restore it in the scaffolding source checkout.`,
+    );
   const [synopsis, runs, checks] = row
     .split("|")
     .slice(1, -1)

@@ -10,7 +10,11 @@ import {
 
 test.each([
   { result: { name: "lint", code: 0, ms: 1250 }, expected: "[scaffolding] ok   lint 1.3 s" },
-  { result: { name: "test", code: 1, ms: 400 }, expected: "[scaffolding] FAIL test 0.4 s" },
+  {
+    result: { name: "test", code: 1, ms: 400 },
+    expected:
+      "[scaffolding] FAIL test 0.4 s. Review the output above or look up the step in package.json and scaffolding's docs/gate.md, then fix the failure and rerun the same scaffolding check.",
+  },
 ])("formatStepLine formats $result.name", ({ result, expected }) => {
   expect(formatStepLine(result)).toBe(expected);
 });
@@ -35,7 +39,10 @@ test("reportStoppedStep flushes buffered output before printing the stopped line
   });
   try {
     reportStoppedStep("test", "partial\n", "SIGTERM");
-    expect(writes).toEqual(["partial\n", "[scaffolding] stopped test by SIGTERM"]);
+    expect(writes).toEqual([
+      "partial\n",
+      "[scaffolding] stopped test by SIGTERM because the gate was interrupted. Check any step output above, then rerun the same scaffolding check once the interruption is resolved.",
+    ]);
   } finally {
     writeSpy.mockRestore();
     errorSpy.mockRestore();
@@ -96,11 +103,16 @@ test("GateStepRunner.runStep flushes buffered output ahead of its status line an
     const runner = new GateStepRunner(process.cwd(), process.env, Infinity);
     const ok = await runner.runStep("echo", "echo hello", true);
     expect(ok.code).toBe(0);
-    expect(writes[0]).toBe("hello\n");
-    expect(writes[1]).toContain("[scaffolding] ok   echo");
+    expect(writes.slice(0, 2)).toEqual([
+      "hello\n",
+      expect.stringContaining("[scaffolding] ok   echo"),
+    ]);
 
     const killed = await runner.runStep("sig", "kill -TERM $$", true);
     expect(killed.code).toBe(1);
+    expect(writes[3]).toContain(
+      ". Review the output above or look up the step in package.json and scaffolding's docs/gate.md, then fix the failure and rerun the same scaffolding check.",
+    );
     expect(runner.results.map((r) => r.name)).toEqual(["echo", "sig"]);
   } finally {
     writeSpy.mockRestore();
@@ -143,7 +155,9 @@ test("GateStepRunner.installSignalHandlers reports running steps and re-raises S
       },
     );
     expect(exit.signal).toBe("SIGTERM");
-    expect(stderr).toContain("[scaffolding] stopped nap by SIGTERM");
+    expect(stderr).toContain(
+      "[scaffolding] stopped nap by SIGTERM because the gate was interrupted. Check any step output above, then rerun the same scaffolding check once the interruption is resolved.",
+    );
   } finally {
     terminateProcessGroup(pid);
   }

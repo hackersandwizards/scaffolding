@@ -49,7 +49,10 @@ export async function runTimed(
     });
     return timedOut ? 124 : (code ?? 1);
   } catch (error) {
-    console.error(`[${name}]`, error);
+    console.error(
+      `[${name}] Could not start ${command}. Use the error below to correct the executable path or its permissions.`,
+      error,
+    );
     return 1;
   } finally {
     clearTimeout(timer);
