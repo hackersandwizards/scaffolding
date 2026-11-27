@@ -1,12 +1,16 @@
 #!/bin/sh
 // 2>/dev/null; exec bun --no-env-file "$0" "$@"
-import { createOptions, createSession, type Issues } from "knip/session";
-import { relative } from "node:path";
+import type { Issues, Issue } from "knip/session";
+import { dirname, relative } from "node:path";
+import { eslintIgnorePatterns } from "../config/eslint-ignores.js";
 import { renderGuides } from "../lib/guides.ts";
+import { runKnipAudit } from "../lib/knip-audit.ts";
 import { javaScriptOrTypeScript } from "../lib/production-code.ts";
-import { repoRoot, withoutEnvFile } from "../lib/repo.ts";
+import { listFiles, repoRoot, withoutEnvFile } from "../lib/repo.ts";
 import { regularInput, trackedInputs } from "../lib/tracked-inputs.ts";
 import { gateToolDependencies } from "../lib/unused-gate-dependencies.ts";
+import { nonProductionEntry, unusedBuildEntries } from "../lib/unused-entry-files.ts";
+import { unusedStyleDependencies } from "../lib/unused-style-dependencies.ts";
 
 const productionIssues = {
   files: "unused-file",
@@ -36,39 +40,67 @@ function reportUnusedIssues(root: string, issues: Issues, include: Iterable<keyo
   return guides;
 }
 
-async function collectKnipIssues(root: string, production: boolean) {
-  const options = await createOptions({
-    cwd: root,
-    isProduction: production,
-    isSession: true,
-    isUseTscFiles: false,
-    includedIssueTypes: production ? productionKinds : ["dependencies"],
-    args: { "no-progress": true },
-  });
-  options.parsedConfig.ignoreExportsUsedInFile = true;
-  for (const workspace of Object.values(options.parsedConfig.workspaces ?? {}))
-    workspace.ignoreExportsUsedInFile = true;
-  return (await createSession(options)).getResults();
+function removeUnusedIssues(
+  issues: Issues,
+  kinds: (keyof Issues)[],
+  remove: (issue: Issue) => boolean,
+) {
+  for (const kind of kinds)
+    for (const records of Object.values(issues[kind]))
+      for (const [key, issue] of Object.entries(records)) if (remove(issue)) delete records[key];
+}
+
+function stylesheetUses(issue: Issue, styles: Map<string, Set<string>>, workspaces: string[]) {
+  const workspace = dirname(issue.filePath);
+  return [...(styles.get(issue.symbol) ?? [])].some(
+    (file) =>
+      file.startsWith(workspace + "/") &&
+      !workspaces.some(
+        (nested) =>
+          nested !== workspace &&
+          nested.startsWith(workspace + "/") &&
+          file.startsWith(nested + "/"),
+      ),
+  );
 }
 
 async function checkUnusedCode() {
   const root = repoRoot();
+  const tracked = trackedInputs(root);
   if (
     !regularInput(root, "package.json") ||
-    !trackedInputs(root).some((file) => javaScriptOrTypeScript.test(file))
+    !tracked.some((file) => javaScriptOrTypeScript.test(file))
   ) {
     console.log("[unused] no root package.json or no tracked JavaScript or TypeScript files");
     return 0;
   }
   if (root.includes("node_modules"))
     throw new Error("Knip cannot analyze source paths containing node_modules");
-  const production = await collectKnipIssues(root, true);
-  const development = await collectKnipIssues(root, false);
+  const ignores = eslintIgnorePatterns(root).map((glob) => new Bun.Glob(glob));
+  const selected = (file: string) => !ignores.some((glob) => glob.match(file));
+  const ignored = (issue: Issue) => !selected(relative(root, issue.filePath));
+  const { results: production } = await runKnipAudit(
+    root,
+    productionKinds,
+    unusedBuildEntries(root, listFiles(root, false).filter(selected)),
+  );
+  const { results: development, toolEntries } = await runKnipAudit(root, ["dependencies"]);
+  removeUnusedIssues(production.issues, productionKinds, ignored);
+  removeUnusedIssues(
+    production.issues,
+    ["files"],
+    ({ filePath }) => nonProductionEntry(relative(root, filePath)) || toolEntries.has(filePath),
+  );
+  const styles = await unusedStyleDependencies(root, tracked.filter(selected));
+  const cssUse = (issue: Issue) => stylesheetUses(issue, styles, production.includedWorkspaceDirs);
+  removeUnusedIssues(production.issues, ["dependencies"], cssUse);
   const used = gateToolDependencies(root);
-  const rootDev = Object.values(development.issues.devDependencies);
-  for (const records of rootDev)
-    for (const [key, issue] of Object.entries(records))
-      if (issue.workspace === "." && used.has(issue.symbol)) delete records[key];
+  removeUnusedIssues(
+    development.issues,
+    ["devDependencies"],
+    (issue) =>
+      ignored(issue) || cssUse(issue) || (issue.workspace === "." && used.has(issue.symbol)),
+  );
   const guides = new Set([
     ...reportUnusedIssues(root, production.issues, productionKinds),
     ...reportUnusedIssues(root, development.issues, ["devDependencies"]),

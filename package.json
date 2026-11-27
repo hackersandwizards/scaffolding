@@ -138,6 +138,11 @@
         "check": "coupling",
         "path": "test/code-audit.test.ts",
         "reason": "planted installed packages the unused step's gate-tool control reads"
+      },
+      {
+        "check": "coupling",
+        "path": "test/unused-consumers.test.ts",
+        "reason": "planted consumer fixtures the unused step reads, their relative imports included"
       }
     ],
     "check": [],

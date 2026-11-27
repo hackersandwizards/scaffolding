@@ -8,6 +8,7 @@ import { catalogAssetMime, catalogCopyPrefixes, type CatalogCopies } from "./cop
 import type { CatalogAstroHooks } from "./hooks.ts";
 import type { CatalogMount, CatalogSetupEvent } from "./mount.ts";
 import type { CatalogPageModules } from "./page-modules.ts";
+import { catalogStoryGlob } from "../lib/catalog-paths.ts";
 import { decodeCatalogPath } from "./path.ts";
 import { loadRoute, retitleLayout } from "./route.ts";
 
@@ -35,7 +36,7 @@ export function configureCatalogVite(
     vite: {
       ...(mount.mounted && !dev && { publicDir: false as const }),
       optimizeDeps: {
-        entries: [`${relative(root, stories)}/**/*.stories.*`],
+        entries: [catalogStoryGlob(relative(root, stories))],
         include: ROUTER,
       },
       plugins: [

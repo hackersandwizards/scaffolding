@@ -7,6 +7,9 @@ import { lintOverlaps } from "../lib/lint-disjoint.ts";
 import { testDirectory } from "./test-directory.ts";
 
 const playwrightImports = 'import { test, expect } from "@playwright/test";\n\n';
+const fixtureImports = 'import { test, expect } from "./fixture";\n\n';
+const playwrightFixture =
+  'import { test as base } from "@playwright/test"; export { expect } from "@playwright/test"; export const test = base.extend({});';
 const cleanPlaywright =
   'test("shows the title", async ({ page }) => { await expect(page.locator("h1")).toBeVisible(); });';
 const emptyCheck = 'test("runs the action", () => { console.log("action"); });';
@@ -87,6 +90,11 @@ test.each(Object.entries(violations))(
     expect(await playwrightMessages(directory.folder, playwrightImports + cleanPlaywright)).toEqual(
       [],
     );
+    writeFileSync(join(directory.folder, "fixture.ts"), playwrightFixture);
+    expect(await playwrightMessages(directory.folder, fixtureImports + source)).toContainEqual([
+      `playwright/${rule}`,
+      2,
+    ]);
   },
 );
 
@@ -100,10 +108,7 @@ test("ignores Vitest even when it calls Playwright-shaped methods", async () => 
 
 test("recognizes a spec importing an extended Playwright test from a local fixture", async () => {
   using directory = testDirectory();
-  writeFileSync(
-    join(directory.folder, "fixture.ts"),
-    'import { test as base } from "@playwright/test";\nexport const test = base.extend({});',
-  );
+  writeFileSync(join(directory.folder, "fixture.ts"), playwrightFixture);
   const source = 'import { test } from "./fixture";\n' + action("await page.waitForTimeout(500);");
   const messages = await playwrightMessages(directory.folder, source);
   expect(messages).toContainEqual(["playwright/no-wait-for-timeout", 2]);
@@ -138,8 +143,7 @@ test("the structure check and Oxlint leave Playwright constructs to ESLint", asy
     "eslint.config.js": `export { default } from ${JSON.stringify(join(shared, "eslint.js"))};`,
     "direct.prop.test.js": playwrightImports + playwrightOverlapSource,
     "extended.spec.js": 'import { test, expect } from "./fixture";\n' + playwrightOverlapSource,
-    "fixture.js":
-      'import { test as base } from "@playwright/test"; export { expect } from "@playwright/test"; export const test = base.extend({});',
+    "fixture.js": playwrightFixture,
     "unit.spec.js":
       'import { test, expect } from "vitest"; test.only("unit", () => { expect(1).toBe(1); });',
   };
@@ -157,5 +161,57 @@ test("the structure check and Oxlint leave Playwright constructs to ESLint", asy
   const nativeFindings = run.stdout.split("\n").filter((line) => line.includes("vitest("));
   expect(nativeFindings).toEqual([
     expect.stringMatching(/^unit\.spec\.js:.*vitest\(no-focused-tests\)/),
+  ]);
+});
+
+test.each([
+  [
+    'test("works in Chromium", ({ browserName }) => { test.skip(browserName !== "chromium", "Chromium only"); expect(true).toBe(true); });',
+    [],
+  ],
+  [cleanPlaywright.replace("test(", "test.skip("), [["playwright/no-skipped-test", 2]]],
+  [
+    'test.describe.skip("feature", () => { console.log(1); });',
+    [["playwright/no-skipped-test", 2]],
+  ],
+  [action("test.skip();"), [["playwright/no-skipped-test", 2]]],
+])("enforces the Playwright skip policy for %s", async (source, expected) => {
+  using directory = testDirectory();
+  const messages = await playwrightMessages(directory.folder, playwrightImports + source);
+  expect(messages.filter(([rule]) => rule === "playwright/no-skipped-test")).toEqual(expected);
+});
+
+const localPlaywrightNames = action(`
+  await page.evaluate(() => {
+    function describe(element) { return element.textContent; }
+    const required = (element) => element;
+    const expect = (value) => value;
+    const inspect = (test) => test.only("label", () => "local");
+    const link = document.querySelector("a");
+    return [describe(link), describe(required(link)), expect("local"), inspect({ only: (label) => label })];
+  });
+  await expect(page.locator("h1")).toBeVisible();
+`);
+
+test("ignores locally declared Playwright-shaped calls within page.evaluate", async () => {
+  using directory = testDirectory();
+  expect(
+    await playwrightMessages(directory.folder, playwrightImports + localPlaywrightNames),
+  ).toEqual([]);
+});
+
+test("reports an invalid imported suite beside local Playwright-shaped calls", async () => {
+  using directory = testDirectory();
+  const source = `${playwrightImports}${localPlaywrightNames}\n\ntest.describe("x", "not a function");`;
+  expect(await playwrightMessages(directory.folder, source)).toEqual([
+    ["playwright/valid-describe-callback", 2],
+  ]);
+});
+
+test("keeps reports on an unresolved Playwright-shaped global", async () => {
+  using directory = testDirectory();
+  const source = `${playwrightImports}${cleanPlaywright}\n\ndescribe("x", "not a function");`;
+  expect(await playwrightMessages(directory.folder, source)).toEqual([
+    ["playwright/valid-describe-callback", 2],
   ]);
 });

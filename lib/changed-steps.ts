@@ -37,6 +37,7 @@ const defaults = [
   { glob: new Bun.Glob(".github/actionlint.{yaml,yml}"), steps: ["workflows"] },
   { glob: new Bun.Glob(layerMapPath), steps: ["layers"] },
   { glob: new Bun.Glob("**/*.{js,jsx,cjs,mjs,ts,tsx,cts,mts,astro,mdx}"), steps: source },
+  { glob: new Bun.Glob("**/*.{css,astro}"), steps: ["unused"] },
   { glob: new Bun.Glob("**/*.{astro,mdx,css,scss,sass,less}"), steps: ["styles", "test"] },
   {
     glob: new Bun.Glob(

@@ -100,11 +100,13 @@ repository-relative glob that contains intentional copies.
 
 **Unused.** The `unused` step uses Knip's production mode for unused files, exports,
 namespace exports and dependencies. An export used within its own source file counts as live.
-An export referenced only by a test can fail this check. A second run includes test and tool
-code when checking devDependencies. Scaffolding consumers also count the package’s peer
-dependencies and the packages that provide its commands. Knip reads the
-repository's own configuration, or uses its defaults and plugins. Use the configuration
-to identify entry points that tools load by convention. The step runs when the checkout has
+The file report leaves out shared ESLint ignores, tests, stories, declarations and tool entry
+files. A production file reached only by a test can still fail the check. The catalog preset's
+conventional stories, pages, Head and Home count as application entries in catalog repositories.
+Tracked CSS and Astro style imports and dependencies imported by Astro and Vite build configs
+count as used. A second run includes test and tool code when checking devDependencies. Scaffolding
+consumers also count the package's peers, scaffolded tools and the packages that provide gate
+commands. Knip uses the repository's configuration, or its defaults and plugins. The step needs
 a root `package.json` and tracked JavaScript or TypeScript. A Knip error fails the step.
 
 Run either check on demand with `bun run scaffolding duplicates` or `bun run scaffolding unused`.
@@ -209,6 +211,7 @@ marks a full check.
 | `docs/architecture/layers.md`                                                                                         | layers                                                       |
 | `**/*.{js,jsx,cjs,mjs,ts,tsx,cts,mts}`                                                                                | duplicates, unused                                           |
 | `**/*.{js,jsx,cjs,mjs,ts,tsx,cts,mts,astro,mdx}`                                                                      | typecheck, lint, oxlint, cycles, names, layers, test         |
+| `**/*.{css,astro}`                                                                                                    | unused                                                       |
 | `**/*.{astro,mdx}`                                                                                                    | styles                                                       |
 | `**/*.{css,scss,sass,less}`                                                                                           | styles, test                                                 |
 | `{src,app,lib,bin,components,pages,catalog,site,talks,scripts,test,tests,fixtures,data,content,public,assets,e2e}/**` | typecheck, lint, oxlint, styles, cycles, names, layers, test |

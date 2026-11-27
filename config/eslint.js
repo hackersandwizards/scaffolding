@@ -1,5 +1,4 @@
 // Its plugins are this package's dependencies, so a repository installs none of them itself.
-import playwright from "eslint-plugin-playwright";
 import prettier from "eslint-config-prettier/flat";
 import globals from "globals";
 import tseslint from "typescript-eslint";
@@ -7,6 +6,7 @@ import noCatchFallbackRule from "./no-catch-fallback-rule.js";
 import noEmptyCatchRule from "./no-empty-catch-rule.js";
 import noLintDisableRule from "./no-lint-disable-rule.js";
 import { isPlaywrightFile } from "./playwright-files.js";
+import { playwrightPlugin, playwrightRecommendedErrors } from "./playwright-rules.js";
 import propertyRule from "./property-rule.js";
 import { eslintIgnorePatterns } from "./eslint-ignores.js";
 
@@ -80,12 +80,11 @@ export default [
   },
   {
     files: [[`**/*.${code}`, isPlaywrightFile]],
-    plugins: { playwright },
-    rules: Object.fromEntries(
-      Object.keys(playwright.configs["flat/recommended"].rules)
-        .filter((rule) => rule.startsWith("playwright/"))
-        .map((rule) => [rule, "error"]),
-    ),
+    plugins: { playwright: playwrightPlugin },
+    rules: {
+      ...playwrightRecommendedErrors,
+      "playwright/no-skipped-test": ["error", { allowConditional: true }],
+    },
   },
   prettier,
 ];

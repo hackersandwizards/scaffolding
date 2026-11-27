@@ -6,6 +6,7 @@ import { basename, join, resolve } from "node:path";
 import own from "../package.json";
 import { help } from "../lib/help.ts";
 import { companyRemote, installedCommit, newestTag, readPackage, tagCommit } from "../lib/repo.ts";
+import { scaffoldTools } from "../lib/scaffold-tools.ts";
 
 const usage =
   "usage: scaffold <dir> [--name <package name>] [--port <port>] [--catalog-in <repo>] [--admin-in <repo>]";
@@ -105,10 +106,7 @@ const company = (repo: string, tag: string): [string, string] => [
   `@hackersandwizards/${repo}`,
   `git+https://github.com/hackersandwizards/${repo}.git#${tag}`,
 ];
-// The eslint plugins come with this package, so only the tools themselves are pinned here.
-// `typescript` is the TypeScript 6 API that typescript-eslint imports;
-// `@typescript/native` brings `tsc` 7.
-const tools = ["@types/bun", "@typescript/native", "eslint", "prettier", "typescript"];
+const tools = [...scaffoldTools];
 if (!catalogIn) tools.push("astro", "astrobook", "eslint-plugin-astro", "stylelint");
 // Set here, not in the template: there it would govern this package's own template files with a
 // package that only resolves in a repository that installs it.

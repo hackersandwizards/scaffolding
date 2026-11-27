@@ -8,6 +8,7 @@ import { catalogAssetMiddleware, configureCatalogVite } from "./dev.ts";
 import { CatalogMount, type CatalogSetupEvent } from "./mount.ts";
 import { CatalogPageModules } from "./page-modules.ts";
 import type { CatalogOptions } from "./index.ts";
+import { catalogHead, catalogHome } from "../lib/catalog-paths.ts";
 import { SUBPATHS } from "./route.ts";
 
 export class CatalogAstroHooks {
@@ -34,8 +35,8 @@ export class CatalogAstroHooks {
       ...SUBPATHS,
       title: `${options.product} catalog`,
       css: [],
-      head: join(import.meta.dirname, "Head.astro"),
-      home: options.home ?? join(import.meta.dirname, "Home.astro"),
+      head: join(import.meta.dirname, catalogHead),
+      home: options.home ?? join(import.meta.dirname, catalogHome),
     });
     await this.inner.hooks["astro:config:setup"]?.(params);
   }

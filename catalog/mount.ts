@@ -2,7 +2,8 @@ import type { AstroIntegration } from "astro";
 import { existsSync, globSync, readdirSync, statSync } from "node:fs";
 import { basename, dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { catalogPath, decodeCatalogPath, storiesDir } from "./path.ts";
+import { catalogPagesDir, storiesDir } from "../lib/catalog-paths.ts";
+import { catalogPath, decodeCatalogPath } from "./path.ts";
 import { SUBPATHS } from "./route.ts";
 
 export type CatalogSetupEvent = Parameters<
@@ -95,7 +96,7 @@ export class CatalogMount {
     this.repo = packageDir(root);
     const base = (this.base = params.config.base.replace(/\/$/, ""));
     this.onDisk = catalogUsesFileUrls(params.config, dev);
-    const pages = join(fileURLToPath(params.config.srcDir), "pages");
+    const pages = catalogPagesDir(fileURLToPath(params.config.srcDir));
     const home = catalogPath({ base, pages: existsSync(pages) ? readdirSync(pages) : [] });
     this.atRoot = home === `${base}/`;
     this.forwards = this.atRoot && !this.mounted && !this.onDisk;

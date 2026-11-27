@@ -2,6 +2,7 @@ import { basename, join } from "node:path";
 import { buildSharedStepMap, resolveBrandStepCommand } from "./gate-plan.ts";
 import { brandSteps, pinsPackage } from "./gate-config.ts";
 import { isObject, readPackage } from "./repo.ts";
+import { scaffoldTools } from "./scaffold-tools.ts";
 
 const home = join(import.meta.dir, "..");
 const scaffolding = readPackage(home);
@@ -29,7 +30,11 @@ export function gateToolDependencies(root: string) {
   const pkg = readPackage(root);
   const name = scaffolding.name;
   if (!name || (pkg.name !== name && !pinsPackage(pkg, name))) return new Set<string>();
-  const used = new Set([name, ...Object.keys(scaffolding.peerDependencies ?? {})]);
+  const used = new Set([
+    name,
+    ...scaffoldTools,
+    ...Object.keys(scaffolding.peerDependencies ?? {}),
+  ]);
   // Match executable positions in the gate's commands, including Bun commands and brand's cd.
   const commands = gateToolCommands(root, pkg);
   const binaries = new Set(
