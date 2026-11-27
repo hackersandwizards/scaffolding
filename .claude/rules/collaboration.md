@@ -60,7 +60,9 @@ choice to please: agreement carries its reason.
   every repository a change touches before proposing it. Work another repository owns goes there in the
   same run, through a delegate the brief tells to read that repository's `CLAUDE.md` and every
   `.claude/rules/*.md` first, and as a brief for a session in that repository only where no
-  delegate reaches it.
+  delegate reaches it. A defect a review of a deck, page or document finds in its engine or the
+  brand is fixed there; a sibling checkout or a package path outside exports is its owner's and may
+  move.
 - Never fabricate a source, a statistic, a reason or words attributed to a named person: a draft or
   declaration carries only what its principal or a source states, and a missing reason, headcount
   or scope stays a question. An external or
