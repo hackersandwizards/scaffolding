@@ -9,13 +9,13 @@ A participant repository, a training repository without our `CLAUDE.md` at its r
 participants build in the training, carries no rules or skills of ours either. Its harness settings
 stay, and a sweep across every repository leaves it out and says so.
 
-The sync script, `~/.claude/scripts/sync-agent-config.sh`, says in its `GLOBAL_RULES` and `GLOBAL_SKILLS` arrays which files are mirrors, and
-`FORKS` names the repo-and-skill pairs the hub does not own. Check the file you are about to edit
-against all three, per file rather than once per task, and edit the hub copy. The next sync replaces a mirrored directory whole, so a repo-local file
+The sync script, `~/.claude/scripts/sync-agent-config.sh`, says in its `GLOBAL_RULES` and `GLOBAL_SKILLS` arrays which files are mirrors,
+`FORKS` names the repo-and-skill pairs the hub does not own, and `OMITTED` those it leaves out. Check the file you are about to edit
+against all four, per file rather than once per task, and edit the hub copy. The next sync replaces a mirrored directory whole, so a repo-local file
 inside a mirrored skill directory goes too, and no check reports either loss.
 
 Before syncing, run the sync script with `--dry-run` on the committed hub: it changes no mirror and
-prints an `update` line for every mirrored file or skill directory that differs from the hub. A line for a file you did not change is a hub change
+prints an `update` line for every mirrored file or skill directory that differs from the hub in each repository it visits, never in a held or missing one or a pair `FORKS` or `OMITTED` names. A line for a file you did not change is a hub change
 not yet synced or a mirror carrying edits the hub lacks: read its diff, and copy a mirror's own
 edits to the hub first, or the sync deletes them in every repo at once. A declared fork drifting
 from the hub is the fork working: leave it, and never lift it into the hub.

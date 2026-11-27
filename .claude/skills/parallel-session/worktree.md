@@ -27,7 +27,8 @@ time.
   the post-checkout hook on `origin/main`'s lockfile: run `bun install --frozen-lockfile` again
   before a render, measurement or gate. Where Git LFS files show as modified with no change and stop
   that rebase, `git checkout -- <path>` inside the worktree clears them. Check:
-  `git log origin/main..HEAD` prints nothing.
+  `git log origin/main..HEAD` prints nothing, and in a client's repository only the delegate's own
+  commits, whose hashes it hands to the principal.
 - A release reads the version in its worktree, gates there, pushes, and tags once the push has
   landed. After a rejected push, it fetches and bumps again from the new `origin/main`.
 - As soon as a delegate's work is on `main`, while the session goes on, fast-forward the shared

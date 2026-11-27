@@ -116,12 +116,13 @@ and `order` of what it costs if missed against the open items.
    files and commits them with their paths named. After merging another session's work, read
    back the fields you wrote: a commit made from a copy older than yours reverts them without a
    conflict. Each delegate gets one batch with its write paths and a completion check that includes
-   the goal's standing duties, and ends when that batch is committed. Further work goes to a fresh
+   the goal's standing duties, and ends when that batch is committed. A fix round of the batch goes back to its implementer thread; other work goes to a fresh
    delegate briefed from paths, commits and open findings, never to a running one. A delegate
    messages only a result, a blocker or a question.
 4. A finished work item is deleted in the commit that finishes it. An item the person decided
    takes `status: decided`, `decision` and `by`, then is deleted: in the commit that carries the
    decision out, or, where work remains, replaced by a `work` item naming the `id`.
+   The same commit removes its `id` from every other item's `needs`, or the admin check fails.
    `git log --all -- docs/agent-work/items/<id>.md` finds a deleted item.
    A goal criterion counts as verified only after a delegate that built none of it checks it
    against the real result and writes PASS or FAIL with its reason under the criterion; until then

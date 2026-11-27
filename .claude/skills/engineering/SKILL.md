@@ -91,9 +91,10 @@ handling that prevents data loss, security measures, or accessibility basics.
   test-local helper.
 - Removing a collection, a skill or an agent also deletes the tests that named it. Port every
   deleted case whose subject still exists: no gate goes red when coverage disappears.
-- A test or script that starts git gives it an environment without any `GIT_*` key: a hook exports
-  `GIT_DIR` and `GIT_INDEX_FILE`, and a fixture's `git init` or commit then writes into the real
-  repository, while the gate run outside a hook stays green.
+- A test or script that starts git in a fixture or another repository gives it an environment
+  without any `GIT_*` key: a hook exports `GIT_DIR` and `GIT_INDEX_FILE`, and a fixture's `git init`
+  or commit then writes into the real repository, while the gate run outside a hook stays green. A
+  hook reading its own repository's index keeps Git's environment.
 - Every file in a code repository of ours is English, its README included. A website's content
   pages keep the language they are published in.
 - In a public repository, code, tests and comments name no client: a fix found on a real record

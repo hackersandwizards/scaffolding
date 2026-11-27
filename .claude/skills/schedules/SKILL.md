@@ -33,8 +33,8 @@ out.`, so no skill a schedule runs depends on which scheduler started it.
    weekday in one expression are OR'd: `22-28 * 4` fires all seven days and every Thursday, and no
    five-field expression says "last Thursday". Read each trigger's next run to confirm an
    expression, and never try extended syntax such as `4L` on a live task: one the scheduler cannot
-   parse leaves the task unarmed. Where a trigger cannot express the cron, the file opens with
-   `bun ~/.claude/scripts/schedule/due.ts <name>`, ends the run where it prints `not due`, and
+   parse leaves the task unarmed. Where a trigger cannot express the cron, and the cron has a slot in every 35 days, the file opens with
+   `bun ~/.claude/scripts/schedule/due.ts <name>`, ends the run where it prints `not due`, ends it as blocked with the diagnostic where it exits non-zero, and
    branches on the `hour=` and `day=` it prints, never on the wall clock. Check: the file holds no
    step the skill could hold.
 4. Write the standing approval as a closed list of the outward acts and their limits, never the
