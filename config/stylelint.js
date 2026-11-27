@@ -41,6 +41,8 @@ const scopedDuplicatePropertyRule = `scaffolding/${duplicatePropertyRule}`;
 const declarationPositionRule = "no-invalid-position-declaration";
 const scopedDeclarationPositionRule = `scaffolding/${declarationPositionRule}`;
 const declarationValueRule = "declaration-property-value-no-unknown";
+const propertyRule = "property-no-unknown";
+const scopedPropertyRule = `scaffolding/${propertyRule}`;
 const scopedDeclarationValueRule = `scaffolding/${declarationValueRule}`;
 const tailwindImport = /^(["'])tailwindcss\1/;
 const hasTailwindImport = (root) =>
@@ -73,6 +75,28 @@ const declarationPosition = stylelint.createPlugin(
     if (root.source?.inline === true) return;
     const check = (await stylelint.rules[declarationPositionRule])(primary, secondary, context);
     return check(root, result);
+  },
+);
+
+const astroOverride = {
+  files: ["**/*.astro"],
+  customSyntax: astro,
+  rules: { [declarationPositionRule]: null, [scopedDeclarationPositionRule]: true },
+};
+
+// CSS Modules, as Vite and webpack read a *.module.* file, take `composes` as a declaration.
+const cssModule = /\.module\.(?:css|scss|sass|less)$/;
+const knownProperties = stylelint.createPlugin(
+  scopedPropertyRule,
+  (primary, secondary, context) => async (root, result) => {
+    const check = (await stylelint.rules[propertyRule])(primary, secondary, context);
+    if (!cssModule.test(root.source?.input.file ?? "")) return check(root, result);
+
+    const filtered = root.clone();
+    filtered.walkDecls(/^composes$/i, (decl) => {
+      decl.remove();
+    });
+    return check(filtered, result);
   },
 );
 
@@ -150,15 +174,10 @@ export default function styles({ importFrom = [] } = {}) {
       duplicateProperties,
       declarationPosition,
       declarationValues,
+      knownProperties,
     ],
     ignoreFiles: submodulePaths(root).map((path) => `${path}/**`),
-    overrides: [
-      {
-        files: ["**/*.astro"],
-        customSyntax: astro,
-        rules: { [declarationPositionRule]: null, [scopedDeclarationPositionRule]: true },
-      },
-    ],
+    overrides: [astroOverride],
     rules: {
       "selector-pseudo-class-no-unknown": [true, { ignorePseudoClasses: ["global"] }],
       "at-rule-no-unknown": [true, { ignoreAtRules: tailwindAtRules }],
@@ -169,6 +188,8 @@ export default function styles({ importFrom = [] } = {}) {
       [scopedDuplicatePropertyRule]: true,
       [declarationValueRule]: null,
       [scopedDeclarationValueRule]: true,
+      [propertyRule]: null,
+      [scopedPropertyRule]: true,
       "csstools/value-no-unknown-custom-properties": tokens.length
         ? [true, { importFrom: tokens.map(at) }]
         : null,

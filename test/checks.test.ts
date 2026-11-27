@@ -11122,6 +11122,30 @@ describe("shared stylelint config", () => {
     expect(output).not.toContain("src/ok.css");
   });
 
+  test("composes passes in a CSS Module and stays unknown elsewhere", () => {
+    const config = join(import.meta.dirname, "..", "config", "stylelint.js");
+    const dir = repo({
+      "package.json": JSON.stringify({ name: "fx", type: "module" }),
+      "stylelint.config.js": `import styles from "${config}";\nexport default styles();\n`,
+      "src/card.module.css": ".card { composes: base from './base.module.css'; colr: red; }\n",
+      "src/plain.css": ".card { composes: base; }\n",
+    });
+    const stylelint = join(import.meta.dirname, "..", "node_modules", ".bin", "stylelint");
+    const result = spawnSync(stylelint, ["--formatter", "compact", "src/*.css"], {
+      cwd: dir,
+      encoding: "utf8",
+    });
+    const output = result.stdout + result.stderr;
+    expect(result.status, output).toBe(2);
+    expect(output).toContain(
+      'src/plain.css: line 1, col 9, error - Unknown property "composes" (property-no-unknown)',
+    );
+    expect(output).toContain(
+      'src/card.module.css: line 1, col 50, error - Unknown property "colr" (property-no-unknown)',
+    );
+    expect(output).not.toContain("card.module.css: line 1, col 9");
+  });
+
   test("a submodule's files are not linted", () => {
     const config = join(import.meta.dirname, "..", "config", "stylelint.js");
     const dir = repo({

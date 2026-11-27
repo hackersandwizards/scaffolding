@@ -33,7 +33,8 @@ surrounding CSS rule, and checks the contents of `<style>` blocks. The parser bl
 before checking for empty CSS, preserving source line numbers.
 The declaration-value check resolves local `var()` assignments within the same declaration block,
 while retaining `@property` registrations and explicitly configured `referenceFiles`.
-To override a wrapped Stylelint rule, use `scaffolding/<rule>` as the rule name.
+In a CSS Module (`*.module.css`, `.scss`, `.sass`, `.less`), the unknown-property check passes
+`composes`. To override a wrapped Stylelint rule, use `scaffolding/<rule>` as the rule name.
 
 The base runs in repositories with or without brand. When the root `package.json` names the
 package `@hackersandwizards/brand` or declares it in dependencies or devDependencies, the token
