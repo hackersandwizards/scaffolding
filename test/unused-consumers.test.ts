@@ -5,6 +5,36 @@ import { testDirectory } from "./test-directory.ts";
 const manifest = (fields = {}) => JSON.stringify({ name: "consumer", main: "index.ts", ...fields });
 const entry = "export {};";
 
+test.each(["vitest.config.ts", "vite.config.ts"])(
+  "unused follows %s and tests when scaffolding supplies Vitest",
+  (config) => {
+    using directory = testDirectory();
+    const root = directory.folder;
+    auditFixture(root, {
+      "package.json": manifest({
+        scripts: { test: "scaffolding test" },
+        devDependencies: {
+          "@hackersandwizards/scaffolding": "1.0.0",
+          "@testing-library/jest-dom": "1.0.0",
+          "@testing-library/react": "1.0.0",
+          "@vitejs/plugin-react": "1.0.0",
+          jsdom: "1.0.0",
+        },
+      }),
+      "index.ts": entry,
+      [config]: `import react from "@vitejs/plugin-react";
+      export default { plugins: [react()], test: { environment: "jsdom", setupFiles: ["./test/setup.ts"] } };`,
+      "test/example.test.tsx": 'import { render } from "@testing-library/react"; render(<div />);',
+      "test/setup.ts": 'import "@testing-library/jest-dom";',
+    });
+    writeAuditFiles(root, {
+      "node_modules/@vitejs/plugin-react/package.json": '{"type":"module","exports":"./index.js"}',
+      "node_modules/@vitejs/plugin-react/index.js": "export default () => ({ name: 'react' });",
+    });
+    expect(runCodeAudit(root, "unused")).toEqual({ status: 0, output: "" });
+  },
+);
+
 test("unused ignores hub, hook and submodule file findings", () => {
   using directory = testDirectory();
   auditFixture(directory.folder, {
@@ -122,6 +152,67 @@ test("unused counts scaffolded tools even without installed binaries", () => {
     "index.ts": entry,
   });
   expect(runCodeAudit(directory.folder, "unused")).toEqual({ status: 0, output: "" });
+});
+
+test("unused counts exact node_modules paths in tracked Python", () => {
+  using directory = testDirectory();
+  const root = directory.folder;
+  auditFixture(root, {
+    "package.json": manifest({
+      dependencies: { "python-assets": "1.0.0" },
+      devDependencies: {
+        "@example/templates": "1.0.0",
+        "docs-only": "1.0.0",
+        "excluded-paths": "1.0.0",
+        "prefix-only": "1.0.0",
+        "unreferenced-package": "1.0.0",
+      },
+    }),
+    "index.ts": entry,
+    "scripts/render.py": [
+      'template = "node_modules/@example/templates/layout.json"',
+      'assets = "node_modules/python-assets"',
+      'other = "node_modules/prefix-onlyx/layout.json"',
+    ].join("\n"),
+    "assets/binary.dat": `${"x".repeat(9000)}\0node_modules/excluded-paths`,
+    "bun.lock": '["node_modules/excluded-paths"]',
+    "coverage/render.py": 'path = "node_modules/excluded-paths"',
+    "docs/reference.md": "Read `node_modules/docs-only/reference.json`.",
+    "node_modules/other/render.py": 'path = "node_modules/excluded-paths"',
+  });
+  writeAuditFiles(root, { "untracked.py": 'path = "node_modules/excluded-paths"' });
+  const result = runCodeAudit(root, "unused");
+  expect(result.status).toBe(1);
+  expect(result.output.match(/unused dependency \S+/g)?.sort()).toEqual([
+    "unused dependency docs-only",
+    "unused dependency excluded-paths",
+    "unused dependency prefix-only",
+    "unused dependency unreferenced-package",
+  ]);
+});
+
+test("unused keeps package path references in their own workspace", () => {
+  using directory = testDirectory();
+  const root = directory.folder;
+  const dependencies = { "workspace-assets": "1.0.0" };
+  const devDependencies = { "workspace-templates": "1.0.0" };
+  auditFixture(root, {
+    "package.json": manifest({ workspaces: ["packages/*"], dependencies, devDependencies }),
+    "index.ts": entry,
+    "packages/child/package.json": manifest({ name: "child", dependencies, devDependencies }),
+    "packages/child/index.ts": entry,
+    "packages/child/render.py":
+      'assets = "node_modules/workspace-assets"\ntemplates = "node_modules/workspace-templates"',
+  });
+  for (const ignoreWorkspaces of [["packages/child!"], ["packages/child"], []]) {
+    writeAuditFiles(root, { "knip.json": JSON.stringify({ ignoreWorkspaces }) });
+    const result = runCodeAudit(root, "unused");
+    expect(result.status).toBe(1);
+    expect(result.output.match(/^\[unused\].*$/gm)?.sort()).toEqual([
+      "[unused] package.json:1: unused dependency workspace-assets",
+      "[unused] package.json:1: unused dependency workspace-templates",
+    ]);
+  }
 });
 
 test("unused counts imports used only by hub skills and hooks in both modes", () => {

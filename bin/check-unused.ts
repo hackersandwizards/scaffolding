@@ -4,7 +4,7 @@ import type { Issues, Issue, Results } from "knip/session";
 import { dirname, relative } from "node:path";
 import { eslintIgnorePatterns, eslintToolIgnorePatterns } from "../config/eslint-ignores.js";
 import { renderGuides } from "../lib/guides.ts";
-import { runKnipAudit } from "../lib/knip-audit.ts";
+import { nodeModulesDependencyPaths, runKnipAudit } from "../lib/knip-audit.ts";
 import { javaScriptOrTypeScript } from "../lib/production-code.ts";
 import { listFiles, repoRoot, withoutEnvFile } from "../lib/repo.ts";
 import { regularInput, trackedInputs } from "../lib/tracked-inputs.ts";
@@ -90,6 +90,39 @@ function reportUnusedAudit(root: string, production: Results, development: Resul
   return Number(guides.size > 0);
 }
 
+async function removeUsedDependencyFindings(
+  root: string,
+  files: string[],
+  {
+    production,
+    development,
+    ignored,
+  }: {
+    production: Results;
+    development: Awaited<ReturnType<typeof runKnipAudit>>;
+    ignored: (issue: Issue) => boolean;
+  },
+) {
+  const styles = await unusedStyleDependencies(root, files);
+  const packagePaths = nodeModulesDependencyPaths(root, files);
+  const imported = (issue: Issue) =>
+    [styles, development.entryDependencies].some((uses) =>
+      workspaceUsesDependency(issue, uses, production.includedWorkspaceDirs),
+    ) || workspaceUsesDependency(issue, packagePaths, development.pathWorkspaceDirs);
+  const used = gateToolDependencies(root);
+  const gateTool = (issue: Issue) => issue.workspace === "." && used.has(issue.symbol);
+  removeUnusedIssues(
+    production.issues,
+    ["dependencies"],
+    (issue) => imported(issue) || gateTool(issue),
+  );
+  removeUnusedIssues(
+    development.results.issues,
+    ["devDependencies"],
+    (issue) => ignored(issue) || imported(issue) || gateTool(issue),
+  );
+}
+
 async function checkUnusedCode() {
   const root = repoRoot();
   const tracked = trackedInputs(root);
@@ -110,35 +143,20 @@ async function checkUnusedCode() {
     production: true,
     entries,
   });
-  const {
-    results: development,
-    toolEntries,
-    entryDependencies,
-  } = await runKnipAudit(root, ["dependencies"], { production: false, entries });
+  const development = await runKnipAudit(root, ["dependencies"], { production: false, entries });
   removeUnusedIssues(production.issues, productionKinds, ignored);
   removeUnusedIssues(
     production.issues,
     ["files"],
-    ({ filePath }) => nonProductionEntry(relative(root, filePath)) || toolEntries.has(filePath),
+    ({ filePath }) =>
+      nonProductionEntry(relative(root, filePath)) || development.toolEntries.has(filePath),
   );
-  const styles = await unusedStyleDependencies(root, tracked.filter(selected));
-  const imported = (issue: Issue) =>
-    [styles, entryDependencies].some((uses) =>
-      workspaceUsesDependency(issue, uses, production.includedWorkspaceDirs),
-    );
-  const used = gateToolDependencies(root);
-  const gateTool = (issue: Issue) => issue.workspace === "." && used.has(issue.symbol);
-  removeUnusedIssues(
-    production.issues,
-    ["dependencies"],
-    (issue) => imported(issue) || gateTool(issue),
-  );
-  removeUnusedIssues(
-    development.issues,
-    ["devDependencies"],
-    (issue) => ignored(issue) || imported(issue) || gateTool(issue),
-  );
-  return reportUnusedAudit(root, production, development);
+  await removeUsedDependencyFindings(root, tracked.filter(selected), {
+    production,
+    development,
+    ignored,
+  });
+  return reportUnusedAudit(root, production, development.results);
 }
 
 withoutEnvFile("unused");

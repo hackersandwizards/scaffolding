@@ -5,7 +5,12 @@ import {
   type MainOptions,
   type Results,
 } from "knip/session";
-import { resolve } from "node:path";
+import { spawnSync } from "node:child_process";
+import { readFileSync } from "node:fs";
+import { join, resolve } from "node:path";
+import { pinsPackage } from "./gate-config.ts";
+import { javaScriptOrTypeScript } from "./production-code.ts";
+import { pathChunks, readPackage, throwGitCommandFailure } from "./repo.ts";
 
 type KnipGraph = Map<
   string,
@@ -37,13 +42,48 @@ const { ConfigurationChief } = (await import(
   new URL("../ConfigurationChief.js", knipDist).href
 )) as {
   ConfigurationChief: new (options: MainOptions) => {
+    availableWorkspaceDirs: string[];
     getConfigForWorkspace(name: string): { entry: string[] };
+    getWorkspaces(): Promise<unknown>;
   };
 };
 
 const { getDependencyUsage } = (await import(
   new URL("../graph-explorer/operations/get-dependency-usage.js", knipDist).href
 )) as { getDependencyUsage(graph: KnipGraph): Map<string, DependencyNodes> };
+
+const suppliedPlugins = {
+  eslint: "eslintConfig",
+  oxlint: undefined,
+  prettier: "prettier",
+  stryker: undefined,
+  stylelint: "stylelint",
+  typescript: undefined,
+  vite: undefined,
+  vitest: undefined,
+} as const;
+type SuppliedPlugin = keyof typeof suppliedPlugins;
+
+const { Plugins } = (await import(new URL("../plugins.js", knipDist).href)) as {
+  Plugins: Record<SuppliedPlugin, { config: string[] }>;
+};
+const { _glob: globKnipConfigs } = (await import(new URL("../util/glob.js", knipDist).href)) as {
+  _glob(options: { cwd: string; patterns: string[]; gitignore: boolean }): Promise<string[]>;
+};
+
+async function enableSuppliedKnipPlugins({ cwd, parsedConfig }: MainOptions) {
+  const pkg = readPackage(cwd);
+  if (!pinsPackage(pkg, "@hackersandwizards/scaffolding")) return;
+
+  const config = parsedConfig.workspaces?.["."] ?? parsedConfig;
+  for (const name of Object.keys(suppliedPlugins) as SuppliedPlugin[]) {
+    if (config[name] !== undefined || parsedConfig[name] !== undefined) continue;
+    const key = suppliedPlugins[name];
+    const patterns = Plugins[name].config.filter((pattern) => !pattern.startsWith("package."));
+    const files = await globKnipConfigs({ cwd, patterns, gitignore: false });
+    if (files.length || (key && pkg[key] !== undefined)) config[name] = true;
+  }
+}
 
 function knipEntryDependencies(graph: KnipGraph, entryPaths: string[]) {
   const reached: KnipGraph = new Map();
@@ -75,6 +115,16 @@ function applyUnusedKnipPolicy(options: MainOptions, entries: string[]) {
   }
 }
 
+async function knipPathWorkspaceDirs(options: MainOptions, results: Results) {
+  if (!options.parsedConfig.ignoreWorkspaces?.length) return results.includedWorkspaceDirs;
+  const chief = new ConfigurationChief({
+    ...options,
+    parsedConfig: { ...options.parsedConfig, ignoreWorkspaces: [] },
+  });
+  await chief.getWorkspaces();
+  return chief.availableWorkspaceDirs;
+}
+
 export async function runKnipAudit(
   root: string,
   include: string[],
@@ -94,7 +144,9 @@ export async function runKnipAudit(
       results: (await createSession(options)).getResults(),
       toolEntries: new Set<string>(),
       entryDependencies: new Map<string, Set<string>>(),
+      pathWorkspaceDirs: [],
     };
+  await enableSuppliedKnipPlugins(options);
   const { results, session } = await run(options);
   if (!session) throw new Error("Knip did not return an analysis session");
   const toolEntries = new Set([
@@ -110,11 +162,56 @@ export async function runKnipAudit(
     session.getGraph(),
     entries.map((path) => resolve(root, path)),
   );
-  return { results: reported, toolEntries, entryDependencies };
+  const pathWorkspaceDirs = await knipPathWorkspaceDirs(options, results);
+  return { results: reported, toolEntries, entryDependencies, pathWorkspaceDirs };
 }
 
 export function knipStylesheetCompiler() {
   return import(new URL("../plugins/tailwind/compiler.js", knipDist).href) as Promise<{
     default(source: string): string;
   }>;
+}
+
+const lockfilePath =
+  /(?:\.lock(?:b|\.(?:hcl|json))?|(?:^|\/)(?:(?:npm-shrinkwrap|package-lock)\.json|pnpm-lock\.ya?ml))$/;
+const nodeModulesPackagePath = /(?<![\w.~-])node_modules\/(@[\w.~-]+\/[\w.~-]+|[\w.~-]+)/g;
+
+export function nodeModulesDependencyPaths(root: string, files: string[]) {
+  const candidates = files.filter(
+    (file) =>
+      !javaScriptOrTypeScript.test(file) && !/\.md$/i.test(file) && !lockfilePath.test(file),
+  );
+  const used = new Map<string, Set<string>>();
+  for (const chunk of pathChunks(candidates)) {
+    if (!chunk.length) continue;
+    const result = spawnSync(
+      "git",
+      [
+        "--literal-pathspecs",
+        "grep",
+        "--no-recurse-submodules",
+        "--color=never",
+        "-IlzF",
+        "-e",
+        "node_modules/",
+        "--",
+        ...chunk,
+      ],
+      { cwd: root, encoding: "utf8", maxBuffer: Infinity },
+    );
+    if (result.status === 1) continue;
+    if (result.status !== 0)
+      throwGitCommandFailure(result, "git grep could not find package paths");
+    for (const file of result.stdout.split("\0").filter(Boolean)) {
+      const path = join(root, file);
+      const source = readFileSync(path);
+      if (source.includes(0)) continue;
+      for (const [, name] of source.toString("utf8").matchAll(nodeModulesPackagePath)) {
+        const paths = used.get(name) ?? new Set<string>();
+        paths.add(path);
+        used.set(name, paths);
+      }
+    }
+  }
+  return used;
 }
