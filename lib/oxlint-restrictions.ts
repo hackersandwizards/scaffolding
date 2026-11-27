@@ -5,7 +5,7 @@ export const oxlintConfig = ".oxlintrc.json";
 
 export function parseOxlintConfig(text: string): Record<string, unknown> {
   const errors: ParseError[] = [];
-  const parsed: unknown = parse(text, errors);
+  const parsed: unknown = parse(text, errors, { allowTrailingComma: true });
   const error = errors[0];
   if (error)
     throw new SyntaxError(`${printParseErrorCode(error.error)} at position ${error.offset}`);

@@ -194,7 +194,8 @@ marks a full check.
 | `{src,app,lib,bin,components,pages,catalog,site,talks,scripts,test,tests,fixtures,data,content,public,assets,e2e}/**` | typecheck, lint, oxlint, styles, cycles, names, layers, test |
 | `**/*.md`                                                                                                             | markdown                                                     |
 | `**/*.{sh,bash}`, `**/.shellcheckrc`, shell shebangs, tracked shell sources                                           | shell                                                        |
-| `**/*.{py,pyi}`, root `ruff.toml`, `.ruff.toml`, `pyproject.toml`                                                     | python                                                       |
+| `**/*.{py,pyi}`, root `pyproject.toml`                                                                                | python, test                                                 |
+| Root `ruff.toml`, `.ruff.toml`                                                                                        | python                                                       |
 | `**/*.{tf,tfvars}`, root `.tflint.hcl`                                                                                | terraform                                                    |
 | `Dockerfile`, `Dockerfile.*`, `*.Dockerfile`, `Containerfile` at any depth and case, root `.hadolint.{yaml,yml}`      | dockerfile                                                   |
 | `.github/actionlint.{yaml,yml}`                                                                                       | workflows                                                    |

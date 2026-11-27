@@ -67,7 +67,6 @@ export function* unmatchedAllowItems(entry: AllowEntry, findings: Finding[]): It
   // Each text and each path of a list is its own exception and dies with its own case.
   const pathname = entry.path;
   const paths = Array.isArray(pathname) ? pathname : [];
-  // "file names" qualifies the paths beside it, which each keep it.
   const names = paths.includes(NAMES) ? [NAMES] : [];
   for (const path of paths.filter((item) => item !== NAMES)) {
     if (!findings.some((finding) => covers({ ...entry, path: [...names, path] }, finding)))
@@ -105,25 +104,26 @@ export function allowEntryProblem(
 /** The package.json is from the same snapshot as the findings, so a commit can add a case
  * and its entry together. */
 export function applyAllow(pkg: Package, check: string, findings: Finding[]): Finding[] {
-  const entries = (pkg.scaffolding?.allow ?? []).filter((entry) => entry.check === check);
-  const usable = entries.filter((entry) => allowText(entry.path) && allowText(entry.text));
-  const left = findings.filter((finding) => !usable.some((entry) => covers(entry, finding)));
-  for (const entry of entries) {
-    const problem = allowEntryProblem(check, entry, usable);
-    if (problem) left.push(problem);
-  }
-  return left;
+  return filterAllowFindings(pkg, findings, { check, reportStale: false });
 }
 
 /** A complete review can also detect an exception whose case vanished. */
 export function auditAllow(pkg: Package, check: string, findings: Finding[]): Finding[] {
+  return filterAllowFindings(pkg, findings, { check, reportStale: true });
+}
+
+function filterAllowFindings(
+  pkg: Package,
+  findings: Finding[],
+  { check, reportStale }: { check: string; reportStale: boolean },
+): Finding[] {
   const entries = (pkg.scaffolding?.allow ?? []).filter((entry) => entry.check === check);
   const usable = entries.filter((entry) => allowText(entry.path) && allowText(entry.text));
   const left = findings.filter((finding) => !usable.some((entry) => covers(entry, finding)));
   for (const entry of entries) {
     const problem = allowEntryProblem(check, entry, usable);
     if (problem) left.push(problem);
-    else
+    else if (reportStale)
       for (const item of unmatchedAllowItems(entry, findings))
         left.push(formatAllowFinding(check, item, staleMessage));
   }

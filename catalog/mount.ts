@@ -9,9 +9,7 @@ export type CatalogSetupEvent = Parameters<
   NonNullable<AstroIntegration["hooks"]["astro:config:setup"]>
 >[0];
 
-// The catalog's former pages under /catalog/, as the dev redirect reads them.
 const FORMER = new RegExp(`^/catalog(/(${Object.values(SUBPATHS).join("|")})(/|$)|/?$)`);
-/** The nearest folder at or above `from` holding a package.json. */
 function packageDir(from: string): string {
   for (let dir = from; ; dir = dirname(dir)) {
     if (existsSync(join(dir, "package.json"))) return dir;
@@ -43,8 +41,6 @@ export function catalogRedirects(mount: CatalogMount) {
     prefix && (p === prefix || p.startsWith(`${prefix}/`)) ? p.slice(prefix.length) || "/" : p;
   return (path: string) => {
     const unbased = strip(path, dev ? pagesBase : "");
-    // Only the catalog's own former pages move, as in the build: a site's page under
-    // /catalog/, at /catalog/ itself too, stays.
     const own = mount.pageRoutes.has(decodeCatalogPath(unbased).replace(/(.)\/$/, "$1"));
     const now = mount.atRoot && !own && FORMER.test(unbased) ? strip(unbased, "/catalog") : unbased;
     // A file Vite serves, a module under the root such as catalog/Head.astro or a public
@@ -75,7 +71,6 @@ export class CatalogMount {
   base = "";
   atRoot = false;
   mounted = false;
-  // A build writes forwarding pages at /catalog/ for a catalog at the site's root.
   forwards = false;
   pageRoutes = new Set<string>();
   // A build whose assetsPrefix is a file URL is opened from disk, where a root-relative link

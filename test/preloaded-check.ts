@@ -1,6 +1,7 @@
 import { execFileSync, spawnSync } from "node:child_process";
 import { writeFileSync } from "node:fs";
 import { join } from "node:path";
+import { gitFixtureEnv } from "./git-env.ts";
 
 export function runInputCheck(folder: string, command: string[], preload: string) {
   const hook = join(folder, "preload.ts");
@@ -16,12 +17,12 @@ export function runInputCheck(folder: string, command: string[], preload: string
         join(import.meta.dirname, "..", "bin", `${name}.ts`),
         ...args,
       ],
-      { cwd: folder, encoding: "utf8", input, env: { ...process.env, CI: "" } },
+      { cwd: folder, encoding: "utf8", input, env: { ...gitFixtureEnv(), CI: "" } },
     );
 }
 
 export function inputTestRepo(folder: string) {
-  execFileSync("git", ["init", "-q", "--template="], { cwd: folder });
+  execFileSync("git", ["init", "-q", "--template="], { cwd: folder, env: gitFixtureEnv() });
 }
 
 export const entry = (name: string) => join(import.meta.dirname, "..", "bin", `${name}.ts`);
@@ -31,6 +32,7 @@ export const runTool = (folder: string, source: string, args: string[]) => {
   return spawnSync(process.execPath, ["--no-env-file", "--preload", preload, ...args], {
     cwd: folder,
     encoding: "utf8",
+    env: gitFixtureEnv(),
   });
 };
 
@@ -41,6 +43,7 @@ export const fixtureGit = (cwd: string, ...args: string[]) =>
     {
       cwd,
       encoding: "utf8",
+      env: gitFixtureEnv(),
     },
   ).trim();
 

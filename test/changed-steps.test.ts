@@ -3,8 +3,8 @@ import {
   changedPathReasons,
   ChangedStepSelector,
   configuredPathMatches,
-  validGlob,
 } from "../lib/changed-steps.ts";
+import { validGlob } from "../lib/repo-inputs.ts";
 
 test.each([[" ", false]])("classifies the fixed changed glob %j", (glob, accepted) => {
   expect(validGlob(glob)).toBe(accepted);
@@ -82,4 +82,23 @@ test.each([
     since: "HEAD",
   });
   expect(result).toEqual({ steps: new Map([[step, `matches ${JSON.stringify(path)}`]]) });
+});
+
+test.each([
+  ["main.py", ["python", "test"]],
+  ["main.pyi", ["python", "test"]],
+  ["pyproject.toml", ["python", "test"]],
+  [".ruff.toml", ["python"]],
+  ["ruff.toml", ["python"]],
+] as const)("selects the Python steps for %s", (path, steps) => {
+  const selector = new ChangedStepSelector(new Set(["python", "test"]), [], []);
+  const result = selector.select({
+    paths: new Set([path]),
+    shellShebangs: new Set(),
+    sourcedPaths: new Set(),
+    since: "HEAD",
+  });
+  expect(result).toEqual({
+    steps: new Map(steps.map((step) => [step, `matches ${JSON.stringify(path)}`])),
+  });
 });

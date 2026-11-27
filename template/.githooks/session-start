@@ -48,13 +48,15 @@ if [ "$fetched" -eq 0 ]; then
       git merge --ff-only -q origin/main --no-autostash
   } >/dev/null 2>&1; then
     behind=$(git rev-list --count HEAD..origin/main 2>/dev/null)
-    [ "${behind:-0}" -eq 0 ] ||
+    if [ "$CLAUDE_CODE_REMOTE" = true ] && [ "$(git symbolic-ref -q HEAD)" != refs/heads/main ]; then
+      echo "main not switched to: switch to main per git.md before work"
+    elif [ "${behind:-0}" -ne 0 ]; then
       echo "origin/main is $behind commits ahead of HEAD and was not merged: update per git.md, whose failed-merge step reads each record from origin/main"
+    fi
   fi
 elif [ "$fetched" -eq 124 ]; then
   echo "origin main not fetched within $wait s: fetch and merge per git.md before work"
 else
   echo "git fetch origin main failed: fetch and merge per git.md before work"
 fi
-# Install after the fast-forward so it reads the updated lockfile.
 CHECK_LOCK_RUN_S=${CHECK_LOCK_RUN_S:-60} .githooks/install || true

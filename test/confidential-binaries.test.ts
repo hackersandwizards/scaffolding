@@ -82,6 +82,17 @@ test("computeReaderCachePaths changes when source or file bytes change", () => {
   }
 });
 
+test("computeReaderCachePaths distinguishes different readers for identical bytes", () => {
+  const files = [
+    { where: "sample.txt", data: Buffer.from("<p>sample</p>") },
+    { where: "sample.xml", data: Buffer.from("<p>sample</p>") },
+    { where: "sample.txt", data: Buffer.from("<p>sample</p>") },
+  ];
+  const [text, markup, repeated] = computeReaderCachePaths(files, "cache", []);
+  expect(text).not.toBe(markup);
+  expect(text).toBe(repeated);
+});
+
 test("BinaryContentScanner extracts zip XML, passes fonts, refuses unknown binaries, and caches read files", () => {
   const dir = mkdtempSync(join(tmpdir(), "bin-scan-"));
   try {

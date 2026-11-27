@@ -1,10 +1,5 @@
 #!/bin/sh
 // 2>/dev/null; exec bun --no-env-file "$0" "$@"
-// Astro's default compressHTML, "jsx", drops a line break where text meets an inline tag, so "drawn
-// by" on one line and "<code>brand</code>" on the next render as "drawn bybrand". Prettier writes
-// {" "} where a space is meant; this finds the line breaks that still carry one. compressHTML true
-// and false keep the break as a space, so where every Astro config sets one of them the check reads
-// only the components the package ships, which a consumer compiles under its own setting.
 import { auditAllow } from "../lib/allow-entries.ts";
 import { lostSpaceTag, spaceTemplateLines } from "../lib/astro-spaces.ts";
 import { readFileSync } from "node:fs";
@@ -55,7 +50,6 @@ const started = performance.now();
 const root = repoRoot();
 const pkg = readPackage(root);
 const files = listFiles(root, false);
-// The config names Astro looks for.
 const configs = files.filter((f) => /(?:^|\/)astro\.config\.m?[jt]s$/.test(f));
 const keeps = (config: string) =>
   /\bcompressHTML\s*:\s*(?:false|true)\b/.test(

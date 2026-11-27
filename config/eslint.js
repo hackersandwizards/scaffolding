@@ -8,7 +8,6 @@ import noLintDisableRule from "./no-lint-disable-rule.js";
 import propertyRule from "./property-rule.js";
 import { submodulePaths } from "./submodules.js";
 
-// The files check-coupling counts as tests.
 const code = "{js,jsx,ts,tsx,mjs,cjs,mts,cts}";
 export const scaffoldingPlugin = {
   rules: {

@@ -243,7 +243,6 @@ if (import.meta.main) {
     await requireTypeScriptProjects(root, oxlintFiles(root, args));
     const options = process.argv.slice(2);
     const command = [...options, ...args];
-    // Callers that ask for a particular format can consume its output directly.
     process.exitCode = options.some((arg) => arg.startsWith("-f") || arg.startsWith("--format"))
       ? (runOxlint(root, command).status ?? 1)
       : runOxlintWithGuides(root, command);

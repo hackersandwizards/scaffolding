@@ -18,8 +18,8 @@ checkout fetches on its own.
   entries. A font, known by its signature rather than its name, passes unread. Any other binary
   file, or one that cannot be read, refuses the commit until an allow entry names its path. OCR
   uses the macOS Vision framework, so a Linux machine commits no image to a public repository,
-  except under `--list-optional` without a list (below). A file's text is kept by its content in `node_modules/.cache/scaffolding/read/`,
-  so a gate reads it again only once the file or the reader changes.
+  except under `--list-optional` without a list (below). A file's text is kept by its repository-relative path and content in `node_modules/.cache/scaffolding/read/`.
+  The gate reads it again when its path, content or reader changes.
 - A Git LFS file is read from the working tree where it matches its pointer, else from the local
   LFS store; where neither holds it, the scan prints `Git LFS pointer, not read` and goes on.
 - With `CI=true` the `--index` and `--tree` audits skip the term and binary reading, so a deploy

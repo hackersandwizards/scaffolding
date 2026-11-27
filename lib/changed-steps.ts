@@ -7,23 +7,6 @@ import {
 } from "./extra-lint-inputs.ts";
 import { layerMapPath } from "./layers.ts";
 
-export function validGlob(pattern: string): boolean {
-  if (
-    !pattern.trim() ||
-    pattern.includes("\0") ||
-    pattern.split("/").some((part) => ["", ".", ".."].includes(part))
-  )
-    return false;
-  const outsideClasses = pattern.replace(/\\[^\n]|\[[^\]]+\]/g, "");
-  if (/[[\]\\]/.test(outsideClasses)) return false;
-  let depth = 0;
-  for (const char of outsideClasses) {
-    if (char === "{") depth++;
-    if (char === "}" && --depth < 0) return false;
-  }
-  return depth === 0;
-}
-
 const always = [
   "format",
   "structure",
@@ -38,11 +21,12 @@ const always = [
 ];
 const source = ["typecheck", "lint", "oxlint", "cycles", "names", "layers", "test"];
 const defaults = [
-  { glob: { match: pythonInput }, steps: ["python"] },
+  { glob: { match: pythonInput }, steps: ["python", "test"] },
   { glob: { match: terraformInput }, steps: ["terraform"] },
   { glob: { match: dockerfileInput }, steps: ["dockerfile"] },
   { glob: { match: workflowInput }, steps: ["workflows"] },
-  { glob: new Bun.Glob("{ruff.toml,.ruff.toml,pyproject.toml}"), steps: ["python"] },
+  { glob: new Bun.Glob("pyproject.toml"), steps: ["python", "test"] },
+  { glob: new Bun.Glob("{ruff.toml,.ruff.toml}"), steps: ["python"] },
   { glob: new Bun.Glob(".tflint.hcl"), steps: ["terraform"] },
   { glob: new Bun.Glob(".hadolint.{yaml,yml}"), steps: ["dockerfile"] },
   { glob: new Bun.Glob(".github/actionlint.{yaml,yml}"), steps: ["workflows"] },

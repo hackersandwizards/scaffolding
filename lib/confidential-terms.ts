@@ -192,7 +192,6 @@ export function validateTermListBuildTime(
   return {};
 }
 
-// A public repository's own scans refuse a never name too, under their casing rule.
 export function publicBadTermSet(list: TermList | undefined): Set<string> {
   return new Set([...(list?.hashes ?? []), ...(list?.never ?? [])]);
 }
@@ -325,7 +324,6 @@ export function neverPathFinding(where: string, term: string): Finding {
   };
 }
 
-// A value may nest: its object keys and every string in it are its text, so a deck goes in whole.
 export function extractNestedStrings(value: unknown): string[] {
   if (typeof value === "string") return [value];
   if (!value || typeof value !== "object") return [];

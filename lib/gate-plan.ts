@@ -1,5 +1,4 @@
 import { join } from "node:path";
-import { validGlob } from "./changed-steps.ts";
 import {
   brandProblem,
   brandSteps,
@@ -12,6 +11,7 @@ import {
   vitestRun,
 } from "./gate-config.ts";
 import { ownEntry } from "./own-entry.ts";
+import { validGlob } from "./repo-inputs.ts";
 import { isObject, isReason, submodulePaths, type Package } from "./repo.ts";
 
 type ScaffoldingConfig = NonNullable<Package["scaffolding"]>;
@@ -94,11 +94,9 @@ export function buildSharedStepMap(
 ): Record<string, string> {
   const config = pkg.scaffolding ?? {};
   const bin = (name: string) => scaffoldingBinCommand(home, name);
-  // A submodule is its own repository's to check: format, lint and styles walk past it.
   const submodules = submodulePaths(root).map((path) => shellQuote(`${path}/**`));
   const ignored = submodules.map((p) => ` --ignore-pattern ${p}`).join("");
   return {
-    // Ahead of lint, which waits for it where it runs Astro (below).
     typecheck: `bun --bun ${config.typecheck ?? "tsc --noEmit"}`,
     format: `bun --bun prettier --check --cache --log-level warn .${submodules.map((p) => ` '!'${p}`).join("")}`,
     // No --cache: a typed rule's verdict on a file changes with the types it imports, which the

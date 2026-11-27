@@ -188,6 +188,50 @@ describe.each(lintFixtures)("$step", (fixture) => {
   });
 });
 
+test("scaffolding fix leaves tracked Python unchanged when python is skipped", () => {
+  using repo = testDirectory();
+  lintFixtureGit(repo.folder, ["init", "-q"]);
+  const source = "x=1\n";
+  addLintFixture(repo.folder, "main.py", source);
+  writeFileSync(
+    join(repo.folder, "package.json"),
+    JSON.stringify({ scaffolding: { skip: { python: "fixture skips Ruff" } } }),
+  );
+  const tools = join(repo.folder, "node_modules/.bin");
+  mkdirSync(tools, { recursive: true });
+  for (const tool of ["eslint", "prettier"])
+    writeFileSync(join(tools, tool), "#!/bin/sh\nexit 0\n", { mode: 0o755 });
+  const ruff = join(tools, "ruff");
+  writeFileSync(ruff, '#!/bin/sh\nif [ "$1" = format ]; then printf "x = 1\\n" > main.py; fi\n', {
+    mode: 0o755,
+  });
+
+  const result = runLintFixture(repo.folder, "fix", { ruff });
+  expect(result.code, result.output).toBe(0);
+  expect(readFileSync(join(repo.folder, "main.py"), "utf8")).toBe(source);
+});
+
+test.each([
+  [">3.10", "py311"],
+  [">=3.9,<4,!=3.9.*,!=3.10.*", "py311"],
+  [">=3.10,<4", "py310"],
+  [">=3.10,!=3.10.1", "py310"],
+] as const)("Python target resolver maps %s to %s", (requires, target) => {
+  using repo = testDirectory();
+  lintFixtureGit(repo.folder, ["init", "-q"]);
+  addLintFixture(repo.folder, "main.py", "x = 1\n");
+  addLintFixture(repo.folder, "pyproject.toml", `[project]\nrequires-python = "${requires}"\n`);
+  const ruff = join(repo.folder, "ruff");
+  writeFileSync(
+    ruff,
+    '#!/bin/sh\nwhile [ "$1" != --target-version ]; do shift; done\nprintf "%s\\n" "$2"\n',
+    { mode: 0o755 },
+  );
+
+  const result = runLintFixture(repo.folder, "python", { ruff });
+  expect(result).toEqual({ code: 0, output: `${target}\n${target}\n` });
+});
+
 describe("python target version", () => {
   const file = "main.py";
   const utc = "import datetime\n\nNOW = datetime.timezone.utc\n";

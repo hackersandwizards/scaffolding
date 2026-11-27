@@ -8,9 +8,21 @@ import {
   runStagedOxlint,
   stagedOxlintInputs,
 } from "../lib/staged-oxlint.ts";
+import { parseOxlintConfig } from "../lib/oxlint-restrictions.ts";
 import { installCleanGitEnvHooks } from "./git-env.ts";
 
 installCleanGitEnvHooks();
+
+test("Oxlint config keeps rules with comments and a trailing comma", () => {
+  const config = '// fixture\n{"rules":{"no-debugger":"error",}}';
+  expect(parseOxlintConfig(config)).toEqual({ rules: { "no-debugger": "error" } });
+});
+
+test("Oxlint config rejects a double comma", () => {
+  expect(() => parseOxlintConfig('// fixture\n{"rules":{"no-debugger":"error",,}}')).toThrow(
+    /PropertyNameExpected/,
+  );
+});
 
 test("prepareStagedOxlintConfig turns off typeAware and typeCheck while keeping other options", () => {
   const prepared = JSON.parse(

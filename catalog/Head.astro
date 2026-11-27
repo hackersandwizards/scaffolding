@@ -187,7 +187,6 @@ const root = {
         throw error;
       }
     };
-    // A page without data-hw-night keeps the day theme its head set.
     if (document.documentElement.dataset.hwNight !== undefined) {
       const chosen = savedTheme();
       if ((chosen === "dark" || chosen === "light") && theme()?.getTheme() !== chosen)

@@ -95,7 +95,6 @@ if (argv[0] === "build") {
 if (argv[0] === "purged") exitWithResult(buildPurgedListJson(repoRoot(), argv.slice(1)));
 
 const neverMode = argv[0] === "never";
-// A deploy needs no access, nor a Git checkout.
 if (neverMode && process.env.CI === "true") {
   console.error("[check-confidential] CI: never scan skipped");
   process.exit(0);
@@ -138,12 +137,10 @@ if (argv[0] === "fetch") {
 const CHECK = neverMode ? "never-shown" : "confidential";
 const message = arg("--message-file");
 const commit = arg("--commit");
-// Only the hooks of an outside contributor's commit go without a list; an audit never does.
 const optional =
   argv.includes("--list-optional") && (argv.includes("--staged") || Boolean(message));
 const tree = arg("--tree");
 const index = argv.includes("--index");
-// A deploy's audit needs no access; a commit, its message or a push is scanned wherever it is made.
 const skipped = process.env.CI === "true" && Boolean(tree || index);
 // `private` and the allow list come from the snapshot scanned, so a commit adding a case and its
 // allow entry together is judged as one and an unstaged edit switches no scan off. A message
@@ -160,7 +157,6 @@ const report = (path: string, text: string, details: string) => {
 };
 
 let list: TermList | undefined;
-// No list reachable under --list-optional: the commit passes unscanned for terms.
 let unscanned = false;
 // Kept out of the allow check: no allow entry may switch the list requirement off.
 const listProblem: Finding[] = [];
@@ -174,8 +170,6 @@ else {
       ? listCache.loadPublicOptional(explicitList)
       : listCache.loadPublicRequired(explicitList);
   list = loaded.list;
-  // For a public repository's outside contributors, who cannot fetch the list: no list at all
-  // passes, a stale or broken one still refuses.
   unscanned = Boolean(loaded.absent && optional);
   if (unscanned) warn(`${loaded.problem}; --list-optional: terms not scanned`);
   else if (neverMode) listProblem.push(...neverListProblemFindings(loaded));
@@ -207,8 +201,6 @@ function scanBinaries(files: BinaryFile[]) {
     findings.push(...agentWorkCiFindings(files));
     return;
   }
-  // A file this machine lacks the tool to read. Where the commit goes unscanned for terms anyway, it
-  // passes with a warning; only the Company OS screenshot check is lost with it.
   const onMissingTool = unscanned
     ? (where: string, entry: string, why: string) =>
         warn(`${where}${entry && ` (${entry})`}: ${why}; --list-optional: passed unread`)

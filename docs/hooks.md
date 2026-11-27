@@ -51,6 +51,7 @@ switches to `main` first and can create it from `origin/main` in a single-branch
 
 If commits remain upstream because the branch diverged, an edit conflicts, or the checkout is on
 another branch, the hook reports the count in one line and directs the session to `git.md`.
+A cloud session the hook could not switch to `main` is told so in one line.
 A successful or unnecessary merge is silent. The hook runs `.githooks/install` after the update
 attempt so the install uses the current lockfile.
 

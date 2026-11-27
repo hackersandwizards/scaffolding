@@ -23,13 +23,12 @@ including `@apply`. The import-position check exempts only stylesheets and indiv
 blocks that directly import `"tailwindcss"` or `'tailwindcss'`, including imports with modifiers such
 as `layer()` or `source()`. The duplicate custom property check exempts declarations directly
 inside `@utility` blocks in those same stylesheets or Astro style blocks. In Astro files, the
-parser reads `style="…"` declarations without a surrounding CSS rule, so the base turns off
-`no-invalid-position-declaration` for `.astro` files. The rule still checks declaration placement
-in stylesheets. The parser blanks empty or whitespace-only `<style set:html={…}></style>` tags
+declaration-position check exempts `style="…"` attributes, which the parser reads without a
+surrounding CSS rule, and checks the contents of `<style>` blocks. The parser blanks empty or whitespace-only `<style set:html={…}></style>` tags
 before checking for empty CSS, preserving source line numbers.
 The declaration-value check resolves local `var()` assignments within the same declaration block,
 while retaining `@property` registrations and explicitly configured `referenceFiles`.
-To override any of the three wrapped Stylelint rules, use `scaffolding/<rule>` as the rule name.
+To override a wrapped Stylelint rule, use `scaffolding/<rule>` as the rule name.
 
 The base runs in repositories with or without brand. When the root `package.json` names the
 package `@hackersandwizards/brand` or declares it in dependencies or devDependencies, the token

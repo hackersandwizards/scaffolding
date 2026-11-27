@@ -135,7 +135,7 @@ const all=()=>document.querySelectorAll(".hw-catalog-preview").forEach(fit);all(
 const load=async(f)=>{const u=f.dataset.src;if(!u)return;delete f.dataset.src;if(!f.hasAttribute("data-srcdoc")){f.src=u;return;}
 const url=new URL(u,location.href);let r,h;
 try{r=await fetch(url);if(!r.ok)return;h=await r.text();}catch(error){if(!(error instanceof TypeError))throw error;return;}
-f.srcdoc=h.replace(/<head\b[^>]*>/i,(t)=>t+'<base href="'+r.url+'">');};
+f.srcdoc=h.replace(/<head\\b[^>]*>/i,(t)=>t+'<base href="'+r.url+'">');};
 let started=0;const start=()=>{if(started++)return;const frames=document.querySelectorAll(".hw-catalog-preview iframe[data-src]");if(document.hidden){frames.forEach(load);return;}const m=document.querySelector("main"),root=m&&m.scrollHeight>m.clientHeight?m:null;
 const near=new IntersectionObserver((seen)=>{for(const e of seen)if(e.isIntersecting){near.unobserve(e.target);load(e.target);}},{root,rootMargin:"200px 0px"});
 frames.forEach((f)=>near.observe(f));};
@@ -165,7 +165,6 @@ root.querySelectorAll(".hw-catalog-preview[data-hw-unfit]").forEach(fit);later()
 
 export function renderCatalog(data: CatalogData): string {
   const { search = "Search", groups: groupsLabel = "Groups" } = data.labels ?? {};
-  // A group of markup holding only whitespace draws nothing, as an empty group of tiles.
   const anchors = new Map<string, string>();
   const groups = data.groups
     .filter((g) => g.items.length > 0 || g.html?.trim())

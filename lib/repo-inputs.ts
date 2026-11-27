@@ -1,3 +1,20 @@
+export function validGlob(pattern: string): boolean {
+  if (
+    !pattern.trim() ||
+    pattern.includes("\0") ||
+    pattern.split("/").some((part) => ["", ".", ".."].includes(part))
+  )
+    return false;
+  const outsideClasses = pattern.replace(/\\[^\n]|\[[^\]]+\]/g, "");
+  if (/[[\]\\]/.test(outsideClasses)) return false;
+  let depth = 0;
+  for (const char of outsideClasses) {
+    if (char === "{") depth++;
+    if (char === "}" && --depth < 0) return false;
+  }
+  return depth === 0;
+}
+
 /** Whether a Git dependency's URL names a repository hackersandwizards owns, on any host and in
  * https, ssh or scp form, its #ref aside: a package of ours need not carry our scope. */
 export const ourRepository = (url: string) =>

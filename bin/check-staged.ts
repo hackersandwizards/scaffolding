@@ -55,7 +55,6 @@ const scan = spawnSync(
 if (scan.error) refuseCommit("gitleaks not found: brew install gitleaks");
 if (scan.status !== 0) process.exit(1);
 
-// The skips, scripts and pins as this commit holds them.
 const root = repoRoot();
 const pkg = readPackage(root, ":");
 const skip = pkg.scaffolding?.skip ?? {};
@@ -129,7 +128,6 @@ const whole = staged.filter((path) => !differs.has(path));
 // lints, and each skips what its own config ignores, so this and `bun run check` judge the same files.
 const mine = (tool: string, paths: string[]) =>
   tool === "stylelint" ? paths.filter(styled) : paths;
-// One list per tool for a staged file read whole and one read from stdin, so both judge alike.
 const flags: Record<string, string[]> = {
   prettier: ["--ignore-unknown", "--log-level", "warn"],
   eslint: [
@@ -273,7 +271,6 @@ async function checkStagedItems(): Promise<ToolRun> {
   }
 }
 
-// Concurrent for speed, reported in a fixed order so the output reads the same on every run.
 let failed = false;
 const rules = new Set<string>();
 for (const { out, code, rules: fired } of await Promise.all(runs)) {

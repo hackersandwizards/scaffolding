@@ -1,9 +1,28 @@
-import { execFileSync } from "node:child_process";
 import { writeFileSync } from "node:fs";
 import { join } from "node:path";
-import { expect, test } from "vitest";
-import { inputTestRepo, runInputCheck } from "./preloaded-check.ts";
+import { expect, test, vi } from "vitest";
+import { fixtureGit, inputTestRepo, runInputCheck, runTool } from "./preloaded-check.ts";
 import { testDirectory } from "./test-directory.ts";
+
+test.each([
+  [
+    "runInputCheck",
+    (folder: string, preload: string) => runInputCheck(folder, ["check-confidential"], preload)(),
+  ],
+  ["runTool", (folder: string, preload: string) => runTool(folder, preload, ["-e", "0"])],
+] as const)("%s removes GIT_ variables from its child", (_, run) => {
+  using fixture = testDirectory();
+  const preload =
+    'console.log(JSON.stringify(Object.keys(process.env).filter((key) => key.startsWith("GIT_")))); process.exit(0);';
+  vi.stubEnv("GIT_POLISH_FIXTURE_SENTINEL", "parent");
+  try {
+    const result = run(fixture.folder, preload);
+    expect(result.status, result.stderr).toBe(0);
+    expect(JSON.parse(result.stdout)).toEqual([]);
+  } finally {
+    vi.unstubAllEnvs();
+  }
+});
 
 function writeInputTestTerms(folder: string) {
   writeFileSync(
@@ -45,7 +64,7 @@ test("the confidential scan propagates unexpected ZIP parser failures", () => {
   zip.writeUInt32LE(0x04034b50, 0);
   zip.writeUInt32LE(0x06054b50, 4);
   writeFileSync(join(fixture.folder, "example.zip"), zip);
-  execFileSync("git", ["add", "--", "example.zip"], { cwd: fixture.folder });
+  fixtureGit(fixture.folder, "add", "--", "example.zip");
   const run = runInputCheck(
     fixture.folder,
     ["check-confidential", "--index", "--list", "terms.json"],

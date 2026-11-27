@@ -2,8 +2,14 @@ import { afterEach, beforeEach } from "vitest";
 
 let savedGitEnv: [string, string | undefined][] = [];
 
+const gitEnvKey = (key: string) => key.startsWith("GIT_");
+
+export function gitFixtureEnv(): NodeJS.ProcessEnv {
+  return Object.fromEntries(Object.entries(process.env).filter(([key]) => !gitEnvKey(key)));
+}
+
 export function clearGitEnv(): void {
-  savedGitEnv = Object.entries(process.env).filter(([key]) => key.startsWith("GIT_"));
+  savedGitEnv = Object.entries(process.env).filter(([key]) => gitEnvKey(key));
   for (const [key] of savedGitEnv) delete process.env[key];
 }
 

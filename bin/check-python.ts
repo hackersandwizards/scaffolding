@@ -15,11 +15,21 @@ import { regularInput, trackedInputs } from "../lib/tracked-inputs.ts";
 
 function ruffTargetVersion(requiresPython: unknown) {
   if (typeof requiresPython !== "string") return "py39";
-  let minor = -1;
-  for (const [, bound] of requiresPython.matchAll(/(?:^|,)\s*(?:>=?|~=|==)\s*3\.(\d+)\b/g)) {
-    minor = Math.max(minor, Number(bound));
+  let minor: number | undefined;
+  for (const [, operator, bound, patch] of requiresPython.matchAll(
+    /(?:^|,)\s*(>=?|~=|==)\s*3\.(\d+)\b(\.\d+)?/g,
+  )) {
+    const candidate = Number(bound) + (operator === ">" && !patch ? 1 : 0);
+    if (minor === undefined || candidate > minor) minor = candidate;
   }
-  return minor < 0 ? "py39" : `py3${minor}`;
+  const excluded = new Set(
+    [...requiresPython.matchAll(/(?:^|,)\s*!=\s*3\.(\d+)\.\*\s*(?=,|$)/g)].map(([, bound]) =>
+      Number(bound),
+    ),
+  );
+  let target = minor ?? 9;
+  while (excluded.has(target)) target++;
+  return `py3${target}`;
 }
 
 function ruffConfig(root: string) {

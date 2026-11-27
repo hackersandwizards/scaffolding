@@ -1,9 +1,5 @@
 #!/bin/sh
 // 2>/dev/null; exec bun --no-env-file "$0" "$@"
-// Raises every Git pin on a hackersandwizards repository, whatever the package's name, to the
-// newest v<version> tag of its remote, in dependency order, installing after each; then runs the
-// gate once and reports per package. With --commit, a green gate commits package.json, bun.lock
-// and what check-structure --fix wrote.
 import { spawnSync } from "node:child_process";
 import { existsSync, readFileSync, statSync, writeFileSync } from "node:fs";
 import { join } from "node:path";

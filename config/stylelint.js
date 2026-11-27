@@ -38,6 +38,8 @@ const importPositionRule = "no-invalid-position-at-import-rule";
 const scopedImportPositionRule = `scaffolding/${importPositionRule}`;
 const duplicatePropertyRule = "declaration-block-no-duplicate-custom-properties";
 const scopedDuplicatePropertyRule = `scaffolding/${duplicatePropertyRule}`;
+const declarationPositionRule = "no-invalid-position-declaration";
+const scopedDeclarationPositionRule = `scaffolding/${declarationPositionRule}`;
 const declarationValueRule = "declaration-property-value-no-unknown";
 const scopedDeclarationValueRule = `scaffolding/${declarationValueRule}`;
 const tailwindImport = /^(["'])tailwindcss\1/;
@@ -62,6 +64,15 @@ const duplicateProperties = stylelint.createPlugin(
       if (decl.parent.type === "atrule" && decl.parent.name === "utility") decl.remove();
     });
     return check(filtered, result);
+  },
+);
+
+const declarationPosition = stylelint.createPlugin(
+  scopedDeclarationPositionRule,
+  (primary, secondary, context) => async (root, result) => {
+    if (root.source?.inline === true) return;
+    const check = (await stylelint.rules[declarationPositionRule])(primary, secondary, context);
+    return check(root, result);
   },
 );
 
@@ -133,14 +144,19 @@ export default function styles({ importFrom = [] } = {}) {
       : importFrom;
   return {
     extends: [recommended],
-    plugins: [unknownProperties, importPosition, duplicateProperties, declarationValues],
+    plugins: [
+      unknownProperties,
+      importPosition,
+      duplicateProperties,
+      declarationPosition,
+      declarationValues,
+    ],
     ignoreFiles: submodulePaths(root).map((path) => `${path}/**`),
     overrides: [
       {
         files: ["**/*.astro"],
         customSyntax: astro,
-        // postcss-html parses style attribute declarations without a surrounding CSS rule.
-        rules: { "no-invalid-position-declaration": null },
+        rules: { [declarationPositionRule]: null, [scopedDeclarationPositionRule]: true },
       },
     ],
     rules: {

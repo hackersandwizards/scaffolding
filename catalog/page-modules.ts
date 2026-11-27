@@ -37,7 +37,6 @@ function checkout(dir: string): string {
   return basename(common?.endsWith("/.git") ? dirname(common) : top || dir);
 }
 
-/** The installed version of a package, read from the nearest node_modules holding it. */
 function installed(name: string, from: string): string | undefined {
   for (let dir = from; ; dir = dirname(dir)) {
     const file = join(dir, "node_modules", name, "package.json");
@@ -212,7 +211,6 @@ export function catalogAdminUrl(
   options: CatalogOptions,
   { pkg, repo }: Project,
 ): string | undefined {
-  // The hub serves only on this machine, so a published page carries no link to it.
   return dev && options.admin
     ? `http://admin.localhost:4329/${encodeURIComponent(isObject(pkg.admin) && typeof pkg.admin.name === "string" ? pkg.admin.name : checkout(repo))}/dashboard`
     : undefined;

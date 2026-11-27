@@ -18,13 +18,24 @@ function referencesCatchParameter(source, handler, parameter) {
   const [start, end] = parameter.range;
   const [scopeStart, scopeEnd] = (handler.type === "CatchClause" ? handler.body : handler).range;
   const inside = (node, from, to) => from <= node.range[0] && node.range[1] <= to;
-  return source
-    .getDeclaredVariables(handler)
-    .some(
-      (variable) =>
-        variable.identifiers.some((identifier) => inside(identifier, start, end)) &&
-        variable.references.some(({ identifier }) => inside(identifier, scopeStart, scopeEnd)),
-    );
+  return source.getDeclaredVariables(handler).some(
+    (variable) =>
+      variable.identifiers.some((identifier) => inside(identifier, start, end)) &&
+      variable.references.some((reference) => {
+        const { identifier } = reference;
+        const { parent } = identifier;
+        return (
+          reference.isRead() &&
+          inside(identifier, scopeStart, scopeEnd) &&
+          parent.type !== "ExpressionStatement" &&
+          !(
+            parent.type === "UnaryExpression" &&
+            parent.operator === "void" &&
+            parent.parent.type === "ExpressionStatement"
+          )
+        );
+      }),
+  );
 }
 
 function isCatchMethod(callee) {

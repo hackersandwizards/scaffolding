@@ -1,19 +1,9 @@
 #!/bin/sh
 // 2>/dev/null; exec bun --no-env-file "$0" "$@"
 import { spawnSync } from "node:child_process";
-import {
-  cpSync,
-  existsSync,
-  mkdirSync,
-  readdirSync,
-  readFileSync,
-  renameSync,
-  symlinkSync,
-  writeFileSync,
-} from "node:fs";
-import { basename, dirname, join, resolve } from "node:path";
+import { cpSync, existsSync, readdirSync, readFileSync, renameSync, writeFileSync } from "node:fs";
+import { basename, join, resolve } from "node:path";
 import own from "../package.json";
-import skeleton from "../skeleton.json";
 import { help } from "../lib/help.ts";
 import { companyRemote, installedCommit, newestTag, readPackage, tagCommit } from "../lib/repo.ts";
 
@@ -83,13 +73,6 @@ if (!catalogIn) cpSync(join(home, "template-catalog"), target, { recursive: true
 // holds a placeholder that is no TypeScript until it is filled.
 for (const file of readdirSync(target, { recursive: true, encoding: "utf8" }))
   if (file.endsWith(".tmpl")) renameSync(join(target, file), join(target, file.slice(0, -5)));
-// A Git dependency installs without symlinks, so the skeleton's links are made here.
-for (const [path, link] of Object.entries(skeleton.symlinks)) {
-  const parent = dirname(join(target, path));
-  if (!existsSync(join(parent, link))) continue;
-  mkdirSync(parent, { recursive: true });
-  symlinkSync(link, join(target, path));
-}
 const values: Record<string, string> = {
   name,
   // The repository's own name: the Pages path, the product and the README's title.
@@ -130,7 +113,6 @@ if (!catalogIn) tools.push("astro", "astrobook", "eslint-plugin-astro", "styleli
 // Set here, not in the template: there it would govern this package's own template files with a
 // package that only resolves in a repository that installs it.
 pkg.prettier = "@hackersandwizards/scaffolding/prettier";
-// The bun floor and the scripts every repository shares, as this package states them for itself.
 pkg.engines = { bun: own.engines.bun, ...pkg.engines };
 pkg.scripts = { prepare: own.scripts.prepare, ...pkg.scripts };
 pkg.devDependencies = Object.fromEntries(

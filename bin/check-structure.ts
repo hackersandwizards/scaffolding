@@ -217,8 +217,6 @@ if (existsSync(at("package.json"))) {
         "mutate must select whole files, without line ranges: remove the :start-end suffix from the mutate entry in the Stryker config so the entire file is mutated",
         entry,
       );
-  // The gate stretches a test's limit under load only through this variable, and no runner reads it
-  // unasked: bun takes it as a flag, vitest from its config.
   const config = pkg.scaffolding ?? {};
   const browserProblem = browserTestProblem(config);
   if (browserProblem) add("package.json", browserProblem);

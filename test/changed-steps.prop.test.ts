@@ -1,7 +1,8 @@
 import { defined } from "@hackersandwizards/scaffolding/defined";
 import { fc, test } from "@hackersandwizards/scaffolding/property";
 import { describe, expect } from "vitest";
-import { ChangedStepSelector, fastSteps, validGlob } from "../lib/changed-steps.ts";
+import { ChangedStepSelector, fastSteps } from "../lib/changed-steps.ts";
+import { validGlob } from "../lib/repo-inputs.ts";
 
 const name = fc.stringMatching(/^[a-z]{1,10}$/);
 const path = fc

@@ -1751,11 +1751,7 @@ describe("scaffold and check-structure", () => {
         missingSeverity,
         `ValueExpected at position ${closingBrace - (disabledRule.length - missingSeverity.length)}`,
       ],
-      [
-        "trailing comma",
-        `${disabledRule},`,
-        `PropertyNameExpected at position ${closingBrace + 1}`,
-      ],
+      ["double comma", `${disabledRule},,`, `PropertyNameExpected at position ${closingBrace}`],
     ])(
       "check-structure still reports malformed Oxlint configuration with %s",
       (name, rule, reason) => {
@@ -7651,6 +7647,20 @@ describe("skeleton SessionStart hook", () => {
     });
   });
 
+  test("reports a cloud switch blocked by an edit even when work contains main", () => {
+    const { dir, origin, path } = clone();
+    prepareGit(origin, ["switch", "-qc", "work"]);
+    write(origin, { "a.txt": "work commit\n" });
+    prepareGit(origin, ["commit", "-qam", "work"]);
+    prepareGit(dir, ["clone", "-q", "--single-branch", "--branch", "work", origin, "single"]);
+    const single = join(dir, "single");
+    cpSync(join(dir, ".githooks"), join(single, ".githooks"), { recursive: true });
+    write(single, { "a.txt": "uncommitted work\n" });
+    expect(start(single, { PATH: path, CLAUDE_CODE_REMOTE: "true" }).stdout).toBe(
+      "main not switched to: switch to main per git.md before work\n",
+    );
+  });
+
   // setTimeout ran a delay past 2^31 - 1 ms at once, and the fetch was stopped as it began.
   test("a bound past what setTimeout takes still waits for the fetch", async () => {
     const { dir, path } = clone();
@@ -8035,6 +8045,16 @@ describe("shared eslint config", () => {
       occurrences: 2,
       wording: "This catch can return without inspecting",
     },
+    ...["void error;", "error = new Error();", "error;"].map((discard) => ({
+      shape: `clauses discarding the error with ${discard}`,
+      file: "a.js",
+      hit: wrap(`try { return work(); } catch (error) { ${discard} return 0; }`),
+      pass: wrap(
+        "try { return work(); } catch (error) { if (error instanceof SyntaxError) return 0; throw error; }",
+      ),
+      occurrences: 1,
+      wording: "This catch can return without inspecting",
+    })),
     {
       shape: "callbacks with expression and block returns",
       file: "a.test.ts",
@@ -8884,7 +8904,6 @@ describe("catalog", () => {
     expect(await loadRoute(file, "stories/a.astro", false)).toContain(
       "virtual:scaffolding/catalog-css/stories",
     );
-    // The file on disk stays Astrobook's.
     expect(readFileSync(file, "utf8")).toBe(route);
     writeFileSync(file, "");
     const rewrite = (source: string) => rewriteRoute("stories/a.astro", source, false);
@@ -8961,13 +8980,11 @@ describe("catalog", () => {
         expect(home).toContain(
           '<p class="hw-catalog-provenance"><span>fx catalog/stories ·</span> <span>@acme/ui v1.2.3 ·</span> <span>3 components ·</span> <span>24 states</span></p>',
         );
-        // The admin hub serves only on this machine: a built page carries no link to it.
         expect(home).not.toContain("admin.localhost");
       });
 
       test("the rail displays groups in order with links to the selected preview states", () => {
         expect(home.indexOf(">Types <")).toBeLessThan(home.indexOf(">Parts <"));
-        // The rail names every element under its group, linked to the state its tile draws.
         expect(home).toMatch(
           /<ul class="hw-catalog-names"><li><a href="\/dashboard\/Parts\/box-parts\/two\/">Box parts<\/a>/,
         );
@@ -9285,7 +9302,6 @@ describe("catalog", () => {
         );
       });
       test("former catalog URLs forward to the built root", () => {
-        // Every page of the catalog's former place forwards to its page at the root.
         expect(page("catalog/dashboard/Parts/box-parts/two")).toContain(
           'http-equiv="refresh" content="0; url=/dashboard/Parts/box-parts/two/"',
         );
@@ -9425,7 +9441,6 @@ describe("catalog", () => {
 
       test("the build serves public assets and copies only the selected asset paths", () => {
         expect(readFileSync(join(dist, "fx.txt"), "utf8")).toBe("fx\n");
-        // `copy`: each match at its own path, the rest of the folder left out.
         expect(readdirSync(join(dist, "assets")).sort()).toEqual(["logo.svg", "nested"]);
         expect(readFileSync(join(dist, "assets/nested/page.css"), "utf8")).toBe(
           "a {\n  color: red;\n}\n",
@@ -9460,7 +9475,6 @@ describe("catalog", () => {
     test(
       "a project Pages base prefixes the catalog navigation and former URLs",
       () => {
-        // A project Pages site sets Astro's base: the links and the header's default follow it.
         prepareBuild(["--base", "/fx"]);
         const based = readFileSync(join(dist, "index.html"), "utf8");
         expect(based).toContain(
@@ -9582,7 +9596,6 @@ describe("catalog", () => {
     test(
       "rejects a redirect that takes over the catalog home",
       () => {
-        // A redirect from "/" would take the catalog's place: the build fails and says why.
         const redirecting = join(fixture, "catalog", "redirecting.config.mjs");
         writeFileSync(
           redirecting,
@@ -9599,7 +9612,6 @@ describe("catalog", () => {
     test(
       "refuses to copy a file omitted from a package's exports",
       () => {
-        // A package path outside the package's exports fails the build by name.
         const unexported = join(fixture, "catalog", "unexported.config.mjs");
         writeFileSync(
           unexported,
@@ -9617,7 +9629,6 @@ describe("catalog", () => {
     test(
       "rejects a current navigation item that does not exist",
       () => {
-        // A `nav.current` naming no item fails the build by name.
         const misnamed = join(fixture, "catalog", "misnamed.config.mjs");
         writeFileSync(
           misnamed,
@@ -9646,7 +9657,6 @@ describe("catalog", () => {
     test(
       "dashboard CSS replaces regular story CSS on the dashboard only",
       () => {
-        // `dashboardCss` replaces `css` on a state's page; a state alone keeps `css`.
         const dash = join(fixture, "catalog", "dash.css");
         writeFileSync(dash, ".dash{color:red}\n");
         prepareVariant("dashed", 'css: ["./fx.css"], dashboardCss: ["./dash.css"]');
@@ -9699,7 +9709,6 @@ describe("catalog", () => {
     test(
       "themeToggle false disables the catalog's theme and control",
       () => {
-        // `themeToggle: false`: the bar offers no dark theme.
         prepareVariant("light", "themeToggle: false");
         expect(page("dashboard/Parts/box-parts/two")).not.toContain(
           '<button type="button" data-hw-theme',
@@ -9712,7 +9721,6 @@ describe("catalog", () => {
     test(
       "a configured site makes canonical URLs absolute under the base",
       () => {
-        // With a `site` the canonical URL is absolute, under the base.
         prepareBuild(["--site", "https://fx.example", "--base", "/fx"]);
         expect(page("stories/Parts/box-parts/two")).toContain(
           '<link rel="canonical" href="https://fx.example/fx/dashboard/Parts/box-parts/two/"',
@@ -10011,7 +10019,6 @@ describe("catalog", () => {
       test(
         "an explicit focus.css is loaded once before the other story CSS",
         () => {
-          // A list naming focus.css itself loads it once, ahead of the list's other sheets.
           prepareVariant(
             "ringtwice",
             'css: ["./fx.css", "@hackersandwizards/brand/elements/focus.css"], htmlClass: ["hw-focus-ring"]',
@@ -10116,7 +10123,6 @@ describe("catalog", () => {
         "accepts a page with no head and adds no robots tag",
         () => {
           writeFileSync(join(pages, "headless.astro"), "<p>no head</p>\n");
-          // A page without <head> builds.
           prepareBuild();
           expect(page("headless")).toContain("no head");
           expect(page("headless")).not.toMatch(robots);
@@ -10504,7 +10510,6 @@ export default { ...config, vite: { plugins: [{
           spec: getComputedStyle(d.querySelector(".spec")).visibility, preview: getComputedStyle(d.querySelector("[data-hw-preview]")).visibility, ground: p.style.background, canvas: getComputedStyle(d.documentElement).backgroundColor };
       })()`) as Promise<Record<string, number | string>>;
       tiles = await Promise.all([fit(0), fit(1)]);
-      // Scrolled to the end, the last tile loads.
       await evaluate(`document.querySelector(".hw-catalog-grid li:last-child").scrollIntoView()`);
       await ready(
         `!!document.querySelector(".hw-catalog-grid li:last-child iframe").contentDocument?.querySelector("[data-hw-preview]")`,
@@ -10953,6 +10958,9 @@ describe("shared stylelint config", () => {
           "invalid-media.css": "@media (width >) { a { color: red; } }\n",
           "inline.astro": '<div style="display: grid; gap: 0.5rem"></div>\n',
           "bare.css": "color: red;\n",
+          "inline-color.astro": '<div style="color: red"></div>\n',
+          "bare.astro": "<style>color: red;</style>\n",
+          "bare-media.astro": "<style>@media (width > 40rem) { color: red; }</style>\n",
           "tailwind.css": `@import "tailwindcss";\n${lateImport}`,
           "tailwind.astro": `<style>\n@import 'tailwindcss' layer(utilities) source(none);\n${lateImport}</style>\n`,
           "late-import.css": lateImport,
@@ -10995,6 +11003,7 @@ describe("shared stylelint config", () => {
     test.each([
       "apply.css",
       "inline.astro",
+      "inline-color.astro",
       "tailwind.css",
       "tailwind.astro",
       "injected.astro",
@@ -11011,6 +11020,8 @@ describe("shared stylelint config", () => {
     test.each([
       ["invalid-media.css", "media-query-no-invalid"],
       ["bare.css", "no-invalid-position-declaration"],
+      ["bare.astro", "no-invalid-position-declaration"],
+      ["bare-media.astro", "no-invalid-position-declaration"],
       ["late-import.css", "no-invalid-position-at-import-rule"],
       ["tailwind-subpath.css", "no-invalid-position-at-import-rule"],
       ["mixed.astro", "no-invalid-position-at-import-rule"],
@@ -12566,6 +12577,19 @@ test.each([
       '[names] .oxlintrc.json: settings.scaffolding.names["src/**/exercises/**"] must be a non-blank reason string',
       '[names] .oxlintrc.json: settings.scaffolding.names["src/live.mjs"] must be a non-blank reason string',
     ],
+  },
+  {
+    title: "rejects invalid names exemption globs",
+    config: namesSettings(
+      Object.fromEntries(
+        ["", "/src/**", "../src/**", "src/{a,b"].map((glob) => [glob, "fixture reason"]),
+      ),
+    ),
+    expectedCode: 1,
+    expectedFindings: ["", "/src/**", "../src/**", "src/{a,b"].map(
+      (glob) =>
+        `[names] .oxlintrc.json: settings.scaffolding.names[${JSON.stringify(glob)}] must be a repository-relative glob`,
+    ),
   },
   {
     title: "fails when names is not an object",

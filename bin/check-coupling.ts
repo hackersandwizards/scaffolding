@@ -61,7 +61,6 @@ const main = basename(common) === ".git" ? dirname(common) : root;
 const devRoot = main.startsWith(`${home}/`) ? join(home, relative(home, main).split("/")[0]) : "";
 
 const own = readPackage(root).name;
-// The pins and the allow list as the commit holds them in a staged run.
 const pkg = readPackage(root, staged ? ":" : undefined);
 const registry = new PackageRegistry(root, pkg, own);
 const withoutAllow = (json: string) => {

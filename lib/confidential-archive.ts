@@ -89,7 +89,6 @@ function zipEntryBody(data: Buffer, entry: Exclude<ReturnType<typeof zipDirector
 }
 
 /** The entries of a zip archive (Office, OpenDocument, iWork, .zip), or why it cannot be read. */
-/** The entries of a zip archive (Office, OpenDocument, iWork, .zip), or why it cannot be read. */
 export function unzipArchive(data: Buffer): ZipEntry[] | string {
   const end = data.lastIndexOf(Buffer.from("PK\x05\x06", "latin1"));
   if (end < 0) return "no zip directory";
@@ -149,7 +148,6 @@ export function readLfsContent(
   pointer: LfsPointer,
 ): Buffer | undefined {
   for (const file of candidatePaths) {
-    // The size rules a differing file out without reading it.
     const found = statSync(file, { throwIfNoEntry: false });
     if (!found?.isFile() || found.size !== pointer.size) continue;
     const data = readFileSync(file);

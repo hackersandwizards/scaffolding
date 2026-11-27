@@ -7,6 +7,7 @@ import skeleton from "../skeleton.json";
 import { renderGuides } from "../lib/guides.ts";
 import { moduleFunctionNames } from "../lib/module-function-names.ts";
 import { oxlintConfig, oxlintFiles, parseOxlintConfig } from "../lib/oxlint.ts";
+import { validGlob } from "../lib/repo-inputs.ts";
 import {
   isObject,
   isReason,
@@ -37,12 +38,12 @@ function namesExemptions(settings: unknown, findings: Finding[]) {
     return [];
   }
   return Object.entries(names).flatMap(([pattern, reason]) => {
-    if (isReason(reason)) return [new Bun.Glob(pattern)];
-    findings.push(
-      namesConfigFinding(
-        `${namesSetting}[${JSON.stringify(pattern)}] must be a non-blank reason string`,
-      ),
-    );
+    const key = `${namesSetting}[${JSON.stringify(pattern)}]`;
+    if (!validGlob(pattern))
+      findings.push(namesConfigFinding(`${key} must be a repository-relative glob`));
+    else if (!isReason(reason))
+      findings.push(namesConfigFinding(`${key} must be a non-blank reason string`));
+    else return [new Bun.Glob(pattern)];
     return [];
   });
 }

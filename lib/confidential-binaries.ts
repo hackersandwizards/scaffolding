@@ -51,18 +51,17 @@ export function compileOcrBinary(ocrSource: string, cacheDir: string): string | 
   return built.status === 0 ? bin : undefined;
 }
 
-// Each file's text is kept by its content and this reader's code, so a gate reads a file again
-// only once either changes.
 export function computeReaderCachePaths(
   files: readonly BinaryFile[],
   cacheDir: string,
   sourcePaths: readonly string[],
 ): string[] {
-  const reader = createHash("sha256");
-  for (const source of sourcePaths) reader.update(readFileSync(source));
-  return files.map(({ data }) =>
-    join(cacheDir, "read", reader.copy().update(data).digest("hex").slice(0, 32)),
-  );
+  const reader = createHash("sha256").update("reader-cache-v2\0");
+  for (const source of sourcePaths) reader.update(readFileSync(source)).update("\0");
+  return files.map(({ where, data }) => {
+    const digest = reader.copy().update(where).update("\0").update(data).digest("hex");
+    return join(cacheDir, "read", digest.slice(0, 32));
+  });
 }
 
 class FileContentReader {
@@ -138,7 +137,6 @@ class FileContentReader {
       return;
     }
     const pictured = parsePdfImagePages(listed.stdout.toString());
-    // A page without a word is a scan, and an image may show text: OCR reads the page's rendering.
     pages.forEach((page, index) => {
       if (/[\p{L}\p{N}]/u.test(page) && !pictured.has(index + 1)) return;
       this.renderPdfPage(file, index + 1, entry);

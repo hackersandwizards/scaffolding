@@ -67,8 +67,9 @@ function runDirectCheck(step: string, flags: string[]) {
 if (fix) {
   const markdown = runDirectCheck("markdown", ["--fix"]);
   if (markdown) process.exit(markdown);
-  const python = runDirectCheck("python", ["--fix"]);
-  const terraform = runDirectCheck("terraform", ["--fix"]);
+  const skip = readPackage(repoRoot()).scaffolding?.skip ?? {};
+  const python = Object.hasOwn(skip, "python") ? 0 : runDirectCheck("python", ["--fix"]);
+  const terraform = Object.hasOwn(skip, "terraform") ? 0 : runDirectCheck("terraform", ["--fix"]);
   process.exit(python || terraform);
 }
 
@@ -183,8 +184,6 @@ function resolveChangedSteps(): Map<string, string> {
 }
 
 const { load, cores, factor } = machineLoad();
-// A test runner's per-test limit (bun's and vitest's default 5 s), stretched as serve's wait is;
-// the repository's test command passes it on, since the gate cannot add a flag to any runner.
 const env = {
   ...process.env,
   PATH: `${join(root, "node_modules/.bin")}:${process.env.PATH}`,
@@ -283,7 +282,6 @@ for (const steps of localGroups) {
   order.push(...steps.map(([s]) => s));
   ok = await runner.runParallel(steps);
 }
-// The red steps again, in the gate's own order, so the verdict reads the same on every run.
 const red = order.filter((name) => runner.results.some((r) => r.name === name && r.code));
 console.error(
   `[scaffolding] ${ok ? "passed" : "failed"} in ${((performance.now() - started) / 1000).toFixed(1)} s${red.length ? `: ${red.join(", ")}` : ""}`,
