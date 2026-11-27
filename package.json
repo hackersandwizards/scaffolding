@@ -108,11 +108,11 @@
   "devDependencies": {
     "@types/bun": "1.4.5",
     "@typescript/native": "npm:typescript@7.0.2",
-    "@vitest/coverage-v8": "5.1.0",
+    "@vitest/coverage-v8": "5.1.2",
     "astro": "7.4.13",
     "astrobook": "0.13.3",
     "eslint": "10.15.0",
-    "eslint-plugin-astro": "3.2.1",
+    "eslint-plugin-astro": "3.2.2",
     "prettier": "3.10.1",
     "stylelint": "18.1.0",
     "typescript": "npm:@typescript/typescript6@6.0.2"
@@ -144,7 +144,7 @@
     }
   },
   "dependencies": {
-    "@astrojs/astro2tsx": "0.1.4",
+    "@astrojs/astro2tsx": "0.1.5",
     "@astrojs/compiler-rs": "0.5.3",
     "@eslint/js": "10.0.1",
     "@fast-check/vitest": "0.5.0",
@@ -153,21 +153,21 @@
     "@stryker-mutator/vitest-runner": "10.1.1",
     "@volar/language-core": "2.4.31",
     "@volar/typescript": "2.4.31",
-    "chrome-devtools-mcp": "1.13.0",
-    "dependency-cruiser": "18.8.0",
+    "chrome-devtools-mcp": "1.14.0",
+    "dependency-cruiser": "18.9.0",
     "eslint-config-prettier": "10.1.8",
     "fast-check": "4.11.0",
     "globals": "17.14.0",
     "jsonc-parser": "3.3.1",
     "markdownlint-cli2": "0.24.2",
-    "oxlint": "1.94.0",
-    "oxlint-tsgolint": "7.0.2008",
+    "oxlint": "1.95.0",
+    "oxlint-tsgolint": "7.0.2009",
     "postcss-html": "2.0.1",
     "prettier-plugin-astro": "1.1.2",
     "stylelint-config-recommended": "19.1.0",
     "stylelint-value-no-unknown-custom-properties": "6.1.1",
-    "typescript-eslint": "8.73.0",
-    "vitest": "5.1.0"
+    "typescript-eslint": "8.74.0",
+    "vitest": "5.1.2"
   },
   "prettier": "./config/prettier.js",
   "overrides": {
