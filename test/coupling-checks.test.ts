@@ -15,7 +15,7 @@ import {
   stripCouplingComments,
   stripUnquotedComments,
 } from "../lib/coupling-checks.ts";
-import { defined } from "../lib/defined.ts";
+import { defined } from "../lib/defined.js";
 import { commentSyntax } from "../lib/repo.ts";
 import oxlintTemplate from "../template/.oxlintrc.json";
 

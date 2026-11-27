@@ -22,7 +22,7 @@ import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { setTimeout as delay } from "node:timers/promises";
 import { afterAll, assert, describe, expect, it, vi } from "vitest";
-import { defined } from "../lib/defined.ts";
+import { defined } from "../lib/defined.js";
 import { jsonObject } from "../lib/json.ts";
 import { limit } from "@hackersandwizards/scaffolding/test-timeout";
 import { fileReady, pathReady, until, untilBefore } from "./wait.ts";

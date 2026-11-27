@@ -51,8 +51,8 @@ import {
 } from "../lib/oxlint.ts";
 import { ESLint } from "eslint";
 import { activeSeverity } from "../lib/lint-rule-overlaps.ts";
-import { defined } from "../lib/defined.ts";
-import { rejection } from "../lib/rejection.ts";
+import { defined } from "../lib/defined.js";
+import { rejection } from "../lib/rejection.js";
 import { gitShellShebangs, shellInput } from "../lib/shell-inputs.ts";
 import { shellcheckBinary } from "../lib/shellcheck.ts";
 import { indexInputs, trackedInputs } from "../lib/tracked-inputs.ts";
@@ -71,6 +71,7 @@ import templateSettings from "../template/.claude/settings.json";
 import { limit } from "@hackersandwizards/scaffolding/test-timeout";
 import { fileReady, until } from "./wait.ts";
 import { testDirectory } from "./test-directory.ts";
+import { pathWithoutBunNode } from "./bun-node.ts";
 
 /** The member of parsed JSON at `path`, undefined where a step meets no object or list. */
 const member = (value: unknown, ...path: (string | number)[]): unknown =>
@@ -260,16 +261,6 @@ function write(dir: string, files: Record<string, string>) {
     mkdirSync(dirname(join(dir, path)), { recursive: true });
     writeFileSync(join(dir, path), text);
   }
-}
-
-function pathWithoutBunNode() {
-  const bun = realpathSync(process.execPath);
-  return process.env.PATH?.split(delimiter)
-    .filter((dir) => {
-      const node = join(dir, "node");
-      return !existsSync(node) || realpathSync(node) !== bun;
-    })
-    .join(delimiter);
 }
 
 function exploreFixture(runtime: "node" | "bun", folder?: string) {

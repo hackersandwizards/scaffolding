@@ -1,7 +1,7 @@
 import { runInNewContext } from "node:vm";
 import { expect, test, vi } from "vitest";
 import { renderCatalog } from "../catalog/render.ts";
-import { rejection } from "../lib/rejection.ts";
+import { rejection } from "../lib/rejection.js";
 
 test("catalog frame loading surfaces an error while assigning the decoded HTML", async () => {
   const rendered = renderCatalog({ title: "Catalog", lead: "", groups: [] });

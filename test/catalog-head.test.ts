@@ -1,7 +1,7 @@
 import { readFileSync } from "node:fs";
 import { runInNewContext } from "node:vm";
 import { expect, test, vi } from "vitest";
-import { defined } from "../lib/defined.ts";
+import { defined } from "../lib/defined.js";
 
 const component = readFileSync(new URL("../catalog/Head.astro", import.meta.url), "utf8");
 const afterOpen = defined(

@@ -1,7 +1,7 @@
 import { mkdirSync, writeFileSync } from "node:fs";
 import { basename, join } from "node:path";
 import { expect, test, vi } from "vitest";
-import { defined } from "../lib/defined.ts";
+import { defined } from "../lib/defined.js";
 import { jsonObject } from "../lib/json.ts";
 import { readCatalogPackage } from "../catalog/copy-assets.ts";
 import { CatalogMount } from "../catalog/mount.ts";

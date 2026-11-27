@@ -4,7 +4,7 @@ import { CatalogDevAssets, catalogAssetMiddleware, configureCatalogVite } from "
 import { CatalogAstroHooks } from "../catalog/hooks.ts";
 import { CatalogMount } from "../catalog/mount.ts";
 import { CatalogPageModules } from "../catalog/page-modules.ts";
-import { defined } from "../lib/defined.ts";
+import { defined } from "../lib/defined.js";
 import { catalogRequire, catalogSetupEvent, sampleCatalog } from "./catalog-fixtures.ts";
 import { testDirectory } from "./test-directory.ts";
 

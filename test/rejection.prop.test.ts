@@ -1,6 +1,6 @@
 import { fc, test } from "@hackersandwizards/scaffolding/property";
 import { expect, expectTypeOf } from "vitest";
-import { rejection } from "../lib/rejection.ts";
+import { rejection } from "../lib/rejection.js";
 
 test.prop([
   fc

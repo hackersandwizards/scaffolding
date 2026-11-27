@@ -1,5 +1,5 @@
 import { expect, expectTypeOf, test } from "vitest";
-import { defined } from "../lib/defined.ts";
+import { defined } from "../lib/defined.js";
 
 test.each([
   ["text", "text"],

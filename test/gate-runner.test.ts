@@ -1,6 +1,6 @@
 import { spawn } from "node:child_process";
 import { expect, test, vi } from "vitest";
-import { defined } from "../lib/defined.ts";
+import { defined } from "../lib/defined.js";
 import {
   formatStepLine,
   GateStepRunner,

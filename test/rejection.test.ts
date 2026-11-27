@@ -1,5 +1,5 @@
 import { expect, test } from "vitest";
-import { rejection } from "../lib/rejection.ts";
+import { rejection } from "../lib/rejection.js";
 
 test("rejection gives the error's text", async () => {
   expect(await rejection(Promise.reject(new Error("no answer")))).toBe("Error: no answer");

@@ -12,6 +12,11 @@
 | `./defined`                                    | `defined(value, "what")` in a test: returns `value` narrowed to non-null, or throws an `Error` naming `what` and whether `null` or `undefined` arrived                                                                                                                                                                                                                                                                                                                                               |
 | `./catalog`, `./catalog/*`                     | the catalog preset and the shell's files: [The catalog](catalog.md)                                                                                                                                                                                                                                                                                                                                                                                                                                  |
 
+`./defined`, `./rejection` and `./test-timeout` are JavaScript with declarations beside them, so
+plain Node loads them too, as in a Playwright spec or a child process a test forks: Node strips no
+types under `node_modules`. `./chrome`, `./serve` and the catalog are TypeScript, for Bun, Astro or
+Vitest.
+
 TypeScript comes as two packages until typescript-eslint can read TypeScript 7, which ships no
 compiler API yet: `"typescript": "npm:@typescript/typescript6@…"` for the TypeScript 6 API it
 imports, and `"@typescript/native": "npm:typescript@7…"` for `tsc`. A plain `typescript` 7 breaks

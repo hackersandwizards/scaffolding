@@ -17,7 +17,7 @@ import {
 } from "../lib/confidential-subcommands.ts";
 import { createTermHasher } from "../lib/confidential-terms.ts";
 import { failParsingInput } from "./json-parse-fault.ts";
-import { defined } from "../lib/defined.ts";
+import { defined } from "../lib/defined.js";
 import { installCleanGitEnvHooks } from "./git-env.ts";
 
 installCleanGitEnvHooks();

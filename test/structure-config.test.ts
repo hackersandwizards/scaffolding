@@ -1,5 +1,5 @@
 import { mkdirSync, writeFileSync } from "node:fs";
-import { rejection } from "../lib/rejection.ts";
+import { rejection } from "../lib/rejection.js";
 import { testDirectory } from "./test-directory.ts";
 import { join } from "node:path";
 import { expect, test, vi } from "vitest";

@@ -12,7 +12,7 @@ export default {
     "lib/licence-expression.ts",
     "lib/lint-rule-overlaps.ts",
     "lib/package-exports.ts",
-    "lib/rejection.ts",
+    "lib/rejection.js",
     "lib/repo-inputs.ts",
     "lib/staged-paths.ts",
   ],
