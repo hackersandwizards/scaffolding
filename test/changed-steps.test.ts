@@ -102,3 +102,19 @@ test.each([
     steps: new Map(steps.map((step) => [step, `matches ${JSON.stringify(path)}`])),
   });
 });
+
+test.each([
+  ["lib/code.ts", ["duplicates", "unused"]],
+  ["browser.js", ["duplicates", "unused"]],
+  ["package.json", ["duplicates", "unused"]],
+  ["src/Page.astro", []],
+] as const)("selects code audits for %s", (path, expected) => {
+  const selector = new ChangedStepSelector(new Set(["duplicates", "unused"]), [], []);
+  const result = selector.select({
+    paths: new Set([path]),
+    shellShebangs: new Set(),
+    sourcedPaths: new Set(),
+    since: "HEAD",
+  });
+  expect([...result.steps.keys()]).toEqual(expected);
+});

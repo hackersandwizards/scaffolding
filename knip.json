@@ -1,0 +1,20 @@
+{
+  "$schema": "./node_modules/knip/schema.json",
+  "entry": [
+    "bin/*.ts!",
+    "lib/{eslint-formatter,oxlint,shellcheck,stylelint-formatter}.ts!",
+    ".githooks/*.ts!",
+    ".claude/skills/engineering/check-staged.ts!",
+    ".claude/skills/polish/memory-twins.ts!",
+    "config/*.d.ts!",
+    "template/**/*.{js,mjs,ts}!",
+    "template/.githooks/*.ts!",
+    "template-catalog/**/*.{astro,js,mjs,ts}!",
+    "catalog/**/*.{astro,css,ts}!",
+    "vitest.mutation.config.mjs",
+    "test/{config-exports,extra-lint-preload,shellcheck-preload}.ts",
+    "test/fixture/**/*.{astro,js,mjs,ts}",
+    "test/**/*.test.ts"
+  ],
+  "project": ["**/*.{js,mjs,cjs,ts,tsx,astro}!", "!test/**!"]
+}

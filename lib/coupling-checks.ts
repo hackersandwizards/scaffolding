@@ -7,7 +7,7 @@ import { commentSyntax, jsonObject, ourRepository } from "./repo.ts";
 export type CouplingHit = { text: string; message: string };
 export type CssImportMatch = { name: string; raw: string; disk: boolean };
 
-export const DEPENDENCY_FIELDS = [
+const DEPENDENCY_FIELDS = [
   "dependencies",
   "devDependencies",
   "optionalDependencies",

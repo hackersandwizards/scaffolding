@@ -4805,6 +4805,8 @@ describe("scaffolding check", () => {
     coupling: "t",
     cycles: "t",
     names: "t",
+    duplicates: "This fixture tests other gate behavior.",
+    unused: "This fixture tests other gate behavior.",
     shell: "t",
     markdown: "t",
   };
@@ -6137,6 +6139,7 @@ describe("scaffolding check", () => {
     const home = join(temp(), "with space");
     for (const folder of ["bin", "lib", "config", "template/.githooks"])
       cpSync(join(import.meta.dirname, "..", folder), join(home, folder), { recursive: true });
+    symlinkSync(join(import.meta.dirname, "../node_modules"), join(home, "node_modules"));
     const dir = gate({ skip });
     const r = spawnSync(
       process.execPath,

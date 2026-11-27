@@ -93,24 +93,10 @@ export function collectShellRefs(
   return { shebangs, sourced };
 }
 
-export function collectRangeChanges(root: string, ranges: readonly string[]): ChangedFilesResult {
-  const paths = new Set<string>();
-  for (const range of ranges) {
-    const resolved = resolveRangePaths(root, range);
-    if ("fallback" in resolved) return resolved;
-    for (const path of resolved.touched) paths.add(path);
-  }
-  return {
-    paths,
-    shellShebangs: new Set(),
-    sourcedPaths: new Set(),
-    since: formatSince(ranges),
-  };
-}
-
-export function collectRangeChangesWithShell(
+export function collectRangeChanges(
   root: string,
   ranges: readonly string[],
+  readShellRefs?: typeof collectShellRefs,
 ): ChangedFilesResult {
   const paths = new Set<string>();
   const shellShebangs = new Set<string>();
@@ -119,20 +105,24 @@ export function collectRangeChangesWithShell(
   for (const range of ranges) {
     const resolved = resolveRangePaths(root, range);
     if ("fallback" in resolved) return resolved;
-    for (const path of resolved.touched) paths.add(path);
-    if (!resolved.touched.length) continue;
+    resolved.touched.forEach((path) => paths.add(path));
+    if (!readShellRefs || !resolved.touched.length) continue;
     const refs = [...new Set([resolved.base, resolved.head])].filter((ref) => !seenRefs.has(ref));
-    for (const ref of refs) seenRefs.add(ref);
+    refs.forEach((ref) => seenRefs.add(ref));
     try {
-      const inputs = collectShellRefs(root, refs);
-      for (const path of inputs.shebangs) shellShebangs.add(path);
-      for (const path of inputs.sourced) sourcedPaths.add(path);
+      const inputs = readShellRefs(root, refs);
+      inputs.shebangs.forEach((path) => shellShebangs.add(path));
+      inputs.sourced.forEach((path) => sourcedPaths.add(path));
     } catch (error) {
       if (!(error instanceof GitCommandError)) throw error;
       return { fallback: "git could not read shell inputs in the pushed ranges" };
     }
   }
   return { paths, shellShebangs, sourcedPaths, since: formatSince(ranges) };
+}
+
+export function collectRangeChangesWithShell(root: string, ranges: readonly string[]) {
+  return collectRangeChanges(root, ranges, collectShellRefs);
 }
 
 const unavailableShellPaths = new Set(["ENOENT", "ENOTDIR", "EISDIR", "EACCES", "EPERM"]);

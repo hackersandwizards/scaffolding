@@ -1,5 +1,5 @@
 import { ESLint } from "eslint";
-import { readdirSync, readFileSync } from "node:fs";
+import { readdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import recommendedStyles from "stylelint-config-recommended";
 import { expect, test } from "vitest";
@@ -9,8 +9,14 @@ import { guideId, guidesDirectory, renderGuides } from "../lib/guides.ts";
 import { isObject } from "../lib/json.ts";
 import { activeSeverity, type Rules } from "../lib/lint-rule-overlaps.ts";
 
+import { testDirectory } from "./test-directory.ts";
+
 const ownChecks = [
   "layers",
+  "duplicated-block",
+  "unused-file",
+  "unused-export",
+  "unused-dependency",
   "import-cycle",
   "duplicate-function-name",
   "generic-folder",
@@ -48,7 +54,18 @@ const eslintRules = async () => {
       return activeRules(config.rules);
     }),
   );
-  return rules.flat();
+  using directory = testDirectory();
+  const playwright = new ESLint({
+    cwd: directory.folder,
+    overrideConfigFile: join(import.meta.dirname, "../eslint.config.js"),
+  });
+  writeFileSync(
+    join(directory.folder, "example.spec.ts"),
+    'import { test } from "@playwright/test";',
+  );
+  const config: unknown = await playwright.calculateConfigForFile("example.spec.ts");
+  if (!isObject(config) || !isObject(config.rules)) throw new Error("No Playwright ESLint config");
+  return [...rules.flat(), ...activeRules(config.rules)];
 };
 const guideFiles = readdirSync(guidesDirectory).filter((file) => file.endsWith(".md"));
 
@@ -87,6 +104,7 @@ test("guide ids drop plugin names in ESLint, Oxlint and scaffolding rule names",
       "typescript-eslint(no-explicit-any)",
       "scaffolding/property",
       "vitest/expect-expect",
+      "playwright/expect-expect",
       "csstools/value-no-unknown-custom-properties",
     ].map(guideId),
   ).toEqual([
@@ -95,6 +113,7 @@ test("guide ids drop plugin names in ESLint, Oxlint and scaffolding rule names",
     "no-explicit-any",
     "property",
     "expect-expect",
+    "playwright-expect-expect",
     "value-no-unknown-custom-properties",
   ]);
 });

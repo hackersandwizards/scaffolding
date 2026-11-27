@@ -18,9 +18,17 @@ import { ownEntry } from "../lib/own-entry.ts";
 import { isReason, readPackage, repoRoot, underLock, withoutEnvFile } from "../lib/repo.ts";
 import { machineLoad } from "../lib/serve.ts";
 
-const directChecks = ["shell", "python", "terraform", "dockerfile", "workflows"];
+const directChecks = [
+  "shell",
+  "python",
+  "terraform",
+  "dockerfile",
+  "workflows",
+  "duplicates",
+  "unused",
+];
 const usage =
-  "usage: scaffolding check [--changed [<from>..<to>...]] | scaffolding <shell|python|terraform|dockerfile|workflows> | scaffolding markdown [--fix] | scaffolding layers [--write] | scaffolding test [<vitest args>...] | scaffolding fix";
+  "usage: scaffolding check [--changed [<from>..<to>...]] | scaffolding <shell|python|terraform|dockerfile|workflows|duplicates|unused> | scaffolding markdown [--fix] | scaffolding layers [--write] | scaffolding test [<vitest args>...] | scaffolding fix";
 help("scaffolding", usage);
 withoutEnvFile("scaffolding");
 

@@ -60,7 +60,7 @@ export const exportTargets = (value: unknown): string[] =>
       ? Object.values(value).flatMap(exportTargets)
       : [];
 
-export const styleFiles = "**/*.{css,astro}";
+const styleFiles = "**/*.{css,astro}";
 const styleGlob = new Bun.Glob(styleFiles);
 // The gate's glob skips dot folders, dot files and node_modules; a staged path is named explicitly.
 export const styled = (path: string) =>

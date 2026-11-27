@@ -224,14 +224,7 @@ export const reader = (root: string, staged: boolean) => (path: string) =>
   staged ? git(["show", `:${path}`], root) : readFileSync(`${root}/${path}`);
 
 export { isObject, isStrings, jsonObject } from "./json.ts";
-export {
-  commentSyntax,
-  exportTargets,
-  fetchWaitS,
-  ourRepository,
-  styled,
-  styleFiles,
-} from "./repo-inputs.ts";
+export { commentSyntax, exportTargets, fetchWaitS, ourRepository, styled } from "./repo-inputs.ts";
 
 export type Package = {
   name?: string;
@@ -241,6 +234,7 @@ export type Package = {
   scripts?: Record<string, string>;
   dependencies?: Record<string, string>;
   devDependencies?: Record<string, string>;
+  peerDependencies?: Record<string, string>;
   optionalDependencies?: Record<string, string>;
   scaffolding?: {
     allow?: AllowEntry[];

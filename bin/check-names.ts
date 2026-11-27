@@ -1,52 +1,15 @@
 #!/bin/sh
 // 2>/dev/null; exec bun --no-env-file "$0" "$@"
 import { lstatSync, readFileSync, realpathSync } from "node:fs";
-import { basename, join } from "node:path";
+import { join } from "node:path";
 import ts from "typescript";
 import skeleton from "../skeleton.json";
 import { renderGuides } from "../lib/guides.ts";
+import { lintPathExemptions } from "../lib/lint-path-exemptions.ts";
 import { moduleFunctionNames } from "../lib/module-function-names.ts";
 import { oxlintConfig, oxlintFiles, parseOxlintConfig } from "../lib/oxlint.ts";
-import { validGlob } from "../lib/repo-inputs.ts";
-import {
-  isObject,
-  isReason,
-  printCheckFindings,
-  repoRoot,
-  TEST,
-  type Finding,
-} from "../lib/repo.ts";
-
-const namesSetting = "settings.scaffolding.names";
-const namesConfigFinding = (message: string): Finding => ({
-  check: "names",
-  path: oxlintConfig,
-  text: "",
-  message,
-});
-
-function namesExemptions(settings: unknown, findings: Finding[]) {
-  const scaffolding = isObject(settings) ? settings.scaffolding : undefined;
-  const names = isObject(scaffolding) ? scaffolding.names : undefined;
-  if (names === undefined) return [];
-  if (!isObject(names)) {
-    findings.push(
-      namesConfigFinding(
-        `${namesSetting} must be an object mapping repository-relative globs to non-blank reason strings`,
-      ),
-    );
-    return [];
-  }
-  return Object.entries(names).flatMap(([pattern, reason]) => {
-    const key = `${namesSetting}[${JSON.stringify(pattern)}]`;
-    if (!validGlob(pattern))
-      findings.push(namesConfigFinding(`${key} must be a repository-relative glob`));
-    else if (!isReason(reason))
-      findings.push(namesConfigFinding(`${key} must be a non-blank reason string`));
-    else return [new Bun.Glob(pattern)];
-    return [];
-  });
-}
+import { productionCode } from "../lib/production-code.ts";
+import { printCheckFindings, repoRoot, type Finding } from "../lib/repo.ts";
 
 const frameworkNames = new Set([
   "GET",
@@ -80,18 +43,12 @@ const configPath = join(root, oxlintConfig);
 const findings: Finding[] = [];
 const hasConfig = lstatSync(configPath, { throwIfNoEntry: false }) !== undefined;
 const config = hasConfig ? parseOxlintConfig(readFileSync(configPath, "utf8")) : {};
-const exemptions = namesExemptions(config.settings, findings);
+const exemptions = lintPathExemptions("names", config.settings, findings);
 const files = hasConfig && findings.length === 0 ? oxlintFiles(root) : [];
 const declared = new Map<string, [string, ...string[]]>();
 for (const file of files.sort()) {
   if (exemptions.some((glob) => glob.match(file))) continue;
-  if (
-    !/\.(?:[cm]?[jt]s|[jt]sx)$/.test(file) ||
-    TEST.test(file) ||
-    /(?:\.d\.[cm]?ts$|\.min\.|\.stories\.)/.test(basename(file)) ||
-    /(?:^|\/)(?:dist|vendor|node_modules|public)\//.test(file)
-  )
-    continue;
+  if (!productionCode(file)) continue;
   // The skeleton copies these sources into repositories that run them without this package's lib/.
   // An installed verbatim copy has the same text as its source.
   if (root === home && /^(?:template|template-catalog)\//.test(file)) continue;

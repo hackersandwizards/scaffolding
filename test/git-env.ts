@@ -8,12 +8,12 @@ export function gitFixtureEnv(): NodeJS.ProcessEnv {
   return Object.fromEntries(Object.entries(process.env).filter(([key]) => !gitEnvKey(key)));
 }
 
-export function clearGitEnv(): void {
+function clearGitEnv(): void {
   savedGitEnv = Object.entries(process.env).filter(([key]) => gitEnvKey(key));
   for (const [key] of savedGitEnv) delete process.env[key];
 }
 
-export function restoreGitEnv(): void {
+function restoreGitEnv(): void {
   for (const [key, value] of savedGitEnv) {
     if (value === undefined) delete process.env[key];
     else process.env[key] = value;

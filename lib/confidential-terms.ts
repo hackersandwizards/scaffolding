@@ -212,28 +212,28 @@ export class ConfidentialTermMatcher {
   }
 
   matchPublicTexts(texts: readonly string[]): Set<string> {
-    const found = new Set<string>();
-    for (const text of texts) {
-      const tokens = tokenizeConfidentialWords(text);
-      const lower = tokens.map((word) => word.toLowerCase());
-      for (let i = 0; i < tokens.length; i++) {
-        this.collectCasedToken(tokens[i], found);
-        this.collectGramsAt(tokens, lower, i).forEach((hit) => found.add(hit));
-      }
-      this.collectSlugMatches(text, found);
-    }
-    return found;
+    return this.matchConfidentialTexts(texts, () => undefined);
   }
 
   matchNeverTexts(texts: readonly string[]): Set<string> {
+    return this.matchConfidentialTexts(texts, (token, lower) =>
+      this.bad.has(this.hash(`any:${lower}`)) ? token : undefined,
+    );
+  }
+
+  private matchConfidentialTexts(
+    texts: readonly string[],
+    findCaseIndependentHit: (token: string, lower: string) => string | undefined,
+  ): Set<string> {
     const found = new Set<string>();
     for (const text of texts) {
       const tokens = tokenizeConfidentialWords(text);
       const lower = tokens.map((word) => word.toLowerCase());
       for (let i = 0; i < tokens.length; i++) {
         this.collectCasedToken(tokens[i], found);
-        if (this.bad.has(this.hash(`any:${lower[i]}`))) found.add(tokens[i]);
-        this.collectGramsAt(tokens, lower, i).forEach((hit) => found.add(hit));
+        const hit = findCaseIndependentHit(tokens[i], lower[i]);
+        if (hit !== undefined) found.add(hit);
+        this.collectGramsAt(tokens, lower, i).forEach((gram) => found.add(gram));
       }
       this.collectSlugMatches(text, found);
     }

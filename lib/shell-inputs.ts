@@ -4,12 +4,12 @@ import { posix } from "node:path";
 
 import { pathChunks, throwGitCommandFailure } from "./repo.ts";
 
-export const shellExtension = /\.(?:sh|bash)$/;
+const shellExtension = /\.(?:sh|bash)$/;
 export const otherScript = /\.(?:[cm]?[jt]sx?|py[wz]?|rb|pl|php|lua|fish|zsh|ps1)$/;
 const shebang =
   /^#![ \t]*(?:\S*\/)?(?:env[ \t]+(?:(?:-S|--split-string|[A-Za-z_][A-Za-z0-9_]*=\S*)[ \t]+)*(?:\S*\/)?)?(?:sh|bash|dash|ksh)(?=\s|$)/;
 
-export function shellShebang(text: string): boolean {
+function shellShebang(text: string): boolean {
   return shebang.test(text.split("\n", 1)[0]);
 }
 

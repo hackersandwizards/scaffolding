@@ -1,3 +1,4 @@
+import { javaScriptOrTypeScript } from "./production-code.ts";
 import type { ChangedFilesResult } from "./changed-paths.ts";
 import {
   dockerfileInput,
@@ -21,6 +22,10 @@ const always = [
 ];
 const source = ["typecheck", "lint", "oxlint", "cycles", "names", "layers", "test"];
 const defaults = [
+  {
+    glob: { match: (path: string) => javaScriptOrTypeScript.test(path) },
+    steps: ["duplicates", "unused"],
+  },
   { glob: { match: pythonInput }, steps: ["python", "test"] },
   { glob: { match: terraformInput }, steps: ["terraform"] },
   { glob: { match: dockerfileInput }, steps: ["dockerfile"] },

@@ -117,6 +117,14 @@ files under `test/`, `tests/`, `__tests__/`, and `e2e/`, and for names matching 
 
 Rule guides live in `config/guides/`. In the gate, Oxlint prints each matching guide once after failures and ESLint and Stylelint after their findings. The layer and cycle checks do the same for stale or missing layer maps and runtime import cycles. The package test fails if the shared Oxlint or ESLint config enforces a rule without a guide.
 
+## Playwright
+
+The shared ESLint presets apply the Playwright plugin's recommended rules as errors to
+JavaScript and TypeScript files with runtime imports from `@playwright/test` or
+`playwright/test`. They follow relative imports of `test` or `expect` to fixtures that
+extend or re-export Playwright. The plugin owns checks on those Playwright bindings.
+Oxlint's Vitest checks continue to cover Vitest bindings, including in the same directory.
+
 ## Vitest and Stryker
 
 Oxlint checks test assertions, titles and hooks and rejects focused, disabled and commented-out

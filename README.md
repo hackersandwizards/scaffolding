@@ -68,6 +68,7 @@ Each runs through `bun run`, and [Commands](docs/commands.md) has the detail of 
   ones).
 - `scaffolding shell`: checks tracked shell scripts with ShellCheck.
 - `scaffolding python`, `scaffolding terraform`, `scaffolding dockerfile` and `scaffolding workflows` run their gate steps on demand.
+- `scaffolding duplicates` and `scaffolding unused` check for copied production code and unused files, exports and dependencies.
 - `scaffolding layers [--write]` prints the import map and layer restrictions. `--write` saves them to `docs/architecture/layers.md` for the `layers` gate step.
 - `scaffolding markdown [--fix]`: checks tracked Markdown and optionally applies markdownlint fixes.
 - `scaffolding test [<vitest args>...]` runs the fast Vitest suite when you declare a browser suite.

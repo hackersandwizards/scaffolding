@@ -2,7 +2,7 @@
 
 `scaffolding check` runs `bun install --frozen-lockfile`, then the shared steps side by side, the
 catalog build and lint once a typecheck that runs Astro has finished (it writes the content types the typed rules read):
-format, lint (ESLint), oxlint, styles (stylelint), typecheck, structure, coupling, cycles, names, layers, shell, python, terraform, dockerfile, workflows, markdown, spaces, confidential, licenses, the tests, the catalog build (`bun run build`) and admin (the item files, with the pinned
+format, lint (ESLint), oxlint, styles (stylelint), typecheck, structure, coupling, cycles, names, duplicates, unused, layers, shell, python, terraform, dockerfile, workflows, markdown, spaces, confidential, licenses, the tests, the catalog build (`bun run build`) and admin (the item files, with the pinned
 `@hackersandwizards/admin`'s `admin-check`; a repository without admin pinned needs `skip.admin`). Once those pass, the full-gate groups run in order. A red group stops the groups after it. Format, lint and styles walk past every
 submodule `.gitmodules` names, which its own repository checks. A shared step drops only with a reason, a
 non-blank string in `skip`:
@@ -90,6 +90,25 @@ To exempt paths from `names`, add a `settings.scaffolding.names` object to the r
 
 The step leaves matching files out of the name collection. It reports a shared name only when
 two or more checked files declare it.
+
+**Duplicates.** The `duplicates` step reports both line ranges of a copied block of at least
+five lines and 50 tokens. It uses the same production JavaScript and TypeScript filter as
+`names` and reads regular files tracked by Git that the shared ESLint config does not ignore. Astro
+files are outside this check. Use
+`settings.scaffolding.duplicates` in `.oxlintrc.json` to give a non-blank reason for each
+repository-relative glob that contains intentional copies.
+
+**Unused.** The `unused` step uses Knip's production mode for unused files, exports,
+namespace exports and dependencies. An export used within its own source file counts as live.
+An export referenced only by a test can fail this check. A second run includes test and tool
+code when checking devDependencies. Scaffolding consumers also count the package’s peer
+dependencies and the packages that provide its commands. Knip reads the
+repository's own configuration, or uses its defaults and plugins. Use the configuration
+to identify entry points that tools load by convention. The step runs when the checkout has
+a root `package.json` and tracked JavaScript or TypeScript. A Knip error fails the step.
+
+Run either check on demand with `bun run scaffolding duplicates` or `bun run scaffolding unused`.
+To skip a gate step, set `scaffolding.skip.duplicates` or `scaffolding.skip.unused` with a reason.
 
 **Layers.** The `layers` step compares `docs/architecture/layers.md` with the generated map. Each Oxlint override
 with an enabled `no-restricted-imports` rule contributes to a layer named for its file globs.
@@ -188,6 +207,7 @@ marks a full check.
 | Default paths                                                                                                         | Additional steps                                             |
 | --------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------ |
 | `docs/architecture/layers.md`                                                                                         | layers                                                       |
+| `**/*.{js,jsx,cjs,mjs,ts,tsx,cts,mts}`                                                                                | duplicates, unused                                           |
 | `**/*.{js,jsx,cjs,mjs,ts,tsx,cts,mts,astro,mdx}`                                                                      | typecheck, lint, oxlint, cycles, names, layers, test         |
 | `**/*.{astro,mdx}`                                                                                                    | styles                                                       |
 | `**/*.{css,scss,sass,less}`                                                                                           | styles, test                                                 |
@@ -204,7 +224,7 @@ marks a full check.
 The shell and Markdown matches add their steps. A path covered only by those matches still
 selects all enabled fast steps under the fallback, as does an unmatched path or a path below.
 
-- `**/package.json`
+- `**/package.json`, which also selects duplicates and unused
 - `**/{bun.lock,bun.lockb,package-lock.json,pnpm-lock.yaml,yarn.lock,bunfig.toml,.npmrc}`
 - `**/{tsconfig*.json,eslint.config.*,oxlint.config.*,.oxlintrc*,prettier.config.*,.prettierrc*,.prettierignore,stylelint.config.*,.stylelintrc*,.stylelintignore,astro.config.*,vite.config.*,vitest.config.*,playwright*.config.*}`
 - `.gitmodules`, `.githooks/**`, `.github/workflows/**`, `.gitlab-ci.yml`

@@ -4,6 +4,7 @@ import { restrictionRuleName } from "./oxlint-restrictions.ts";
 export const guidesDirectory = new URL("../config/guides/", import.meta.url);
 
 export function guideId(rule: string) {
+  if (rule.startsWith("playwright/")) return rule.replace("/", "-");
   return /\(([^()]+)\)$/.exec(rule)?.[1] ?? restrictionRuleName(rule).replace(/^csstools\//, "");
 }
 

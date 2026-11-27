@@ -109,6 +109,8 @@ export function buildSharedStepMap(
     coupling: bin("check-coupling"),
     cycles: bin("check-cycles"),
     names: bin("check-names"),
+    duplicates: bin("check-duplicates"),
+    unused: bin("check-unused"),
     layers: `${bin("check-layers")} --check`,
     shell: bin("check-shell"),
     python: bin("check-python"),

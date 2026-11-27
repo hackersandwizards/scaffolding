@@ -133,6 +133,11 @@
         "check": "coupling",
         "path": "test/checks.test.ts",
         "reason": "planted cases the coupling tests feed to the check"
+      },
+      {
+        "check": "coupling",
+        "path": "test/code-audit.test.ts",
+        "reason": "planted installed packages the unused step's gate-tool control reads"
       }
     ],
     "check": [],
@@ -156,9 +161,11 @@
     "chrome-devtools-mcp": "1.14.0",
     "dependency-cruiser": "18.9.0",
     "eslint-config-prettier": "10.1.8",
-    "fast-check": "4.11.0",
+    "eslint-plugin-playwright": "2.12.2",
     "globals": "17.14.0",
+    "jscpd": "5.4.3",
     "jsonc-parser": "3.3.1",
+    "knip": "6.48.0",
     "markdownlint-cli2": "0.24.2",
     "oxlint": "1.95.0",
     "oxlint-tsgolint": "7.0.2009",

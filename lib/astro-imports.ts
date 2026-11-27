@@ -88,31 +88,26 @@ export class AstroModuleMirror {
     this.originals.set(module, path);
   }
 
-  compileComponent(path: string): Finding[] {
+  compileComponent(path: string, recordFrontmatter?: (code: string) => void): Finding[] {
     const code = readFileSync(join(this.root, path), "utf8");
     const result = this.compiler.transform(code, { filename: path });
     const errors = result.diagnostics.filter(({ severity }) => severity === "error");
     if (errors.length) return errors.map(({ text }) => cycleFinding(text, path));
 
     const serverProblem = this.writeAstroServer(path, result.code);
+    recordFrontmatter?.(code);
     const scriptProblems = this.writeAstroScripts(path, result.scripts);
     return serverProblem ? [serverProblem, ...scriptProblems] : scriptProblems;
   }
 
   compileComponentWithFrontmatter(path: string): Finding[] {
-    const code = readFileSync(join(this.root, path), "utf8");
-    const result = this.compiler.transform(code, { filename: path });
-    const errors = result.diagnostics.filter(({ severity }) => severity === "error");
-    if (errors.length) return errors.map(({ text }) => cycleFinding(text, path));
-
-    const serverProblem = this.writeAstroServer(path, result.code);
-    // The server bundle repeats frontmatter imports to populate Astro's metadata.
-    this.frontmatter.set(
-      join(this.directory, `${path}.ts`),
-      astroFrontmatterCode(code, this.compiler.parse(code).ast),
-    );
-    const scriptProblems = this.writeAstroScripts(path, result.scripts);
-    return serverProblem ? [serverProblem, ...scriptProblems] : scriptProblems;
+    return this.compileComponent(path, (code) => {
+      // The server bundle repeats frontmatter imports to populate Astro's metadata.
+      this.frontmatter.set(
+        join(this.directory, `${path}.ts`),
+        astroFrontmatterCode(code, this.compiler.parse(code).ast),
+      );
+    });
   }
 
   writeAstroServer(path: string, code: string): Finding | undefined {

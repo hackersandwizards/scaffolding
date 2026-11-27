@@ -1,12 +1,9 @@
 #!/bin/sh
 // 2>/dev/null; exec bun --no-env-file "$0" "$@"
 import { spawn } from "node:child_process";
-import { readFileSync } from "node:fs";
-import { createRequire } from "node:module";
-import { dirname, join } from "node:path";
+import { fileURLToPath } from "node:url";
 import { cachedChrome, chromeBinary, INSTALL_HINT, NO_KEYCHAIN } from "../lib/chrome.ts";
 import { help } from "../lib/help.ts";
-import { isObject, jsonObject } from "../lib/json.ts";
 
 help("chrome-mcp");
 
@@ -18,9 +15,11 @@ if (!chrome) {
   console.error(`[chrome-mcp] ${INSTALL_HINT}`);
   process.exit(1);
 }
-const pkg = createRequire(import.meta.url).resolve("chrome-devtools-mcp/package.json");
-const { bin } = jsonObject(readFileSync(pkg));
-const entry = isObject(bin) ? bin["chrome-devtools-mcp"] : undefined;
+const pkg = import.meta.resolve("chrome-devtools-mcp/package.json");
+const {
+  default: { bin },
+} = await import("chrome-devtools-mcp/package.json", { with: { type: "json" } });
+const entry = bin["chrome-devtools-mcp"];
 if (typeof entry !== "string") {
   console.error("[chrome-mcp] chrome-devtools-mcp names no bin of that name");
   process.exit(1);
@@ -28,7 +27,7 @@ if (typeof entry !== "string") {
 const server = spawn(
   process.execPath,
   [
-    join(dirname(pkg), entry),
+    fileURLToPath(new URL(entry, pkg)),
     `--executablePath=${chrome}`,
     "--headless",
     "--isolated",

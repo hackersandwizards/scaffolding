@@ -8,7 +8,7 @@ export type LicenseListRun = { status: number | null; stdout: string; stderr: st
 const LIBVIPS =
   "LGPL libvips, a shared library sharp loads at build or request time on our own machines; conveyed in nothing we hand out";
 
-export const DEFAULT_LICENSE_EXCEPTIONS: Record<string, LicenseException> = {
+const DEFAULT_LICENSE_EXCEPTIONS: Record<string, LicenseException> = {
   "@hackersandwizards/*": { reason: "our own packages, PolyForm Strict 1.0.0" },
   "@img/sharp-libvips-*": { license: "LGPL-3.0-or-later", reason: LIBVIPS },
   "@img/sharp-win32-*": { license: "Apache-2.0 AND LGPL-3.0-or-later", reason: LIBVIPS },

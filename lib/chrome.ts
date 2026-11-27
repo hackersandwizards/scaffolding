@@ -160,19 +160,28 @@ function place(staged: string, output: string): string | undefined {
   return existsSync(path) && stateOf(folder, build) === "whole" ? path : undefined;
 }
 
+function* pendingChromeUnpack(options: Options) {
+  let found = lookup(options);
+  const end = Date.now() + UNPACK_WAIT_MS;
+  while (!found.path && found.unpacking && Date.now() < end) {
+    yield;
+    found = lookup(options);
+  }
+  return found;
+}
+
 /** CHROME_BINARY, else the cached build, else that build (or stable) installed into the cache,
  * blocking; undefined when the install fails, so a test can skip and a command can say how to
  * install. */
 export function chromeBinary(options: Options = {}): string | undefined {
   if (process.env.CHROME_BINARY) return process.env.CHROME_BINARY;
-  let found = lookup(options);
-  for (
-    const end = Date.now() + UNPACK_WAIT_MS;
-    !found.path && found.unpacking && Date.now() < end;
-  ) {
+  const pending = pendingChromeUnpack(options);
+  let next = pending.next();
+  while (!next.done) {
     Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, UNPACK_POLL_MS);
-    found = lookup(options);
+    next = pending.next();
   }
+  const found = next.value;
   const { key, path } = found;
   if (path) return path;
   const { folder, executable } = chromeInstallInputs();
@@ -193,14 +202,13 @@ export function chromeBinary(options: Options = {}): string | undefined {
  * calls share one install to avoid downloading the same build twice. */
 export async function chromeBinaryAsync(options: Options = {}): Promise<string | undefined> {
   if (process.env.CHROME_BINARY) return process.env.CHROME_BINARY;
-  let found = lookup(options);
-  for (
-    const end = Date.now() + UNPACK_WAIT_MS;
-    !found.path && found.unpacking && Date.now() < end;
-  ) {
+  const pending = pendingChromeUnpack(options);
+  let asyncLookup = pending.next();
+  while (!asyncLookup.done) {
     await new Promise((go) => setTimeout(go, UNPACK_POLL_MS));
-    found = lookup(options);
+    asyncLookup = pending.next();
   }
+  const found = asyncLookup.value;
   const { key, path } = found;
   if (path) return path;
   const running = installs.get(key);

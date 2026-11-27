@@ -123,20 +123,13 @@ export class ConfidentialListCache {
   }
 
   private refreshPublicRequired(): string | undefined {
-    const cacheAge = fileAgeMs(this.cacheFile);
-    if (!isCachedListStale(cacheAge)) return undefined;
-    if (fileAgeMs(this.attemptFile) >= HOUR || cacheAge === Infinity)
-      return this.fetchOrWarnFallback();
-    this.onWarn(describeStaleCacheWarning(existsSync(this.cacheFile), cacheAge));
-    return undefined;
+    const age = fileAgeMs(this.cacheFile);
+    if (isCachedListStale(age)) return this.refreshStaleList(age, true);
   }
 
   private refreshPublicOptional(): string | undefined {
-    const cacheAge = fileAgeMs(this.cacheFile);
-    if (!isCachedListStale(cacheAge)) return undefined;
-    if (fileAgeMs(this.attemptFile) >= HOUR) return this.fetchOrWarnFallback();
-    this.onWarn(describeStaleCacheWarning(existsSync(this.cacheFile), cacheAge));
-    return undefined;
+    const age = fileAgeMs(this.cacheFile);
+    if (isCachedListStale(age)) return this.refreshStaleList(age, false);
   }
 
   private isNeverStale(cacheAge: number): boolean {
@@ -148,19 +141,19 @@ export class ConfidentialListCache {
   }
 
   private refreshNeverRequired(): string | undefined {
-    const cacheAge = fileAgeMs(this.cacheFile);
-    if (!this.isNeverStale(cacheAge)) return undefined;
-    if (fileAgeMs(this.attemptFile) >= HOUR || cacheAge === Infinity)
-      return this.fetchOrWarnFallback();
-    this.onWarn(describeStaleCacheWarning(existsSync(this.cacheFile), cacheAge));
-    return undefined;
+    const age = fileAgeMs(this.cacheFile);
+    if (this.isNeverStale(age)) return this.refreshStaleList(age, true);
   }
 
   private refreshNeverOptional(): string | undefined {
-    const cacheAge = fileAgeMs(this.cacheFile);
-    if (!this.isNeverStale(cacheAge)) return undefined;
-    if (fileAgeMs(this.attemptFile) >= HOUR) return this.fetchOrWarnFallback();
-    this.onWarn(describeStaleCacheWarning(existsSync(this.cacheFile), cacheAge));
+    const age = fileAgeMs(this.cacheFile);
+    if (this.isNeverStale(age)) return this.refreshStaleList(age, false);
+  }
+
+  private refreshStaleList(age: number, retryWithoutCopy: boolean): string | undefined {
+    if (fileAgeMs(this.attemptFile) >= HOUR || (retryWithoutCopy && age === Infinity))
+      return this.fetchOrWarnFallback();
+    this.onWarn(describeStaleCacheWarning(existsSync(this.cacheFile), age));
     return undefined;
   }
 
