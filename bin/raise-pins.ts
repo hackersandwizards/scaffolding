@@ -17,8 +17,17 @@ import {
 help("raise-pins");
 withoutEnvFile("raise-pins");
 const args = process.argv.slice(2).filter((arg) => arg !== "--locked");
-if (args.some((arg) => arg !== "--commit")) {
-  console.error("usage: raise-pins [--commit]");
+const trailerArgs: string[] = [];
+for (let at = 0; at < args.length; at++) {
+  const arg = args[at];
+  if (arg === "--commit") continue;
+  const value = args[at + 1];
+  if (arg === "--trailer" && value !== undefined && !value.startsWith("--")) {
+    trailerArgs.push(arg, value);
+    at++;
+    continue;
+  }
+  console.error("usage: raise-pins [--commit] [--trailer <line>]...");
   process.exit(2);
 }
 const root = repoRoot();
@@ -147,7 +156,7 @@ if (args.includes("--commit")) {
     say("nothing committed: package.json and bun.lock keep the raise until committed or reverted");
   else if (
     succeeds(["git", "add", "--", ...list]) &&
-    succeeds(["git", "commit", "-qm", message, "--", ...list])
+    succeeds(["git", "commit", "-qm", message, ...trailerArgs, "--", ...list])
   )
     say(`committed "${message}"`);
   else {

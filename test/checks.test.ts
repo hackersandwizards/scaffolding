@@ -12230,6 +12230,7 @@ describe("raise-pins", () => {
     let installed: unknown;
     let revisions: string;
     let subject: string;
+    let trailers: string;
     let status: string;
     let repeated: ReturnType<typeof run>;
 
@@ -12247,8 +12248,20 @@ describe("raise-pins", () => {
       installed = version(dir, "a");
       revisions = sh(dir, ["rev-list", "--count", "HEAD"]).stdout.toString().trim();
       sh(dir, ["checkout", "--", "package.json", "bun.lock"]);
-      committed = run(dir, [bin("raise-pins"), "--commit"], identity);
+      committed = run(
+        dir,
+        [
+          bin("raise-pins"),
+          "--commit",
+          "--trailer",
+          "Co-Authored-By: T <t@t>",
+          "--trailer",
+          "Reviewed-By: R <r@r>",
+        ],
+        identity,
+      );
       subject = sh(dir, ["log", "-1", "--format=%s"]).stdout.toString().trim();
+      trailers = sh(dir, ["log", "-1", "--format=%(trailers)"]).stdout.toString().trim();
       status = sh(dir, ["status", "--porcelain"]).stdout.toString();
       repeated = run(dir, [bin("raise-pins"), "--commit"], identity);
     });
@@ -12265,9 +12278,10 @@ describe("raise-pins", () => {
       expect(revisions).toBe("1");
     });
 
-    test("--commit leaves a named commit and a clean tree", () => {
+    test("--commit leaves a named commit with ordered trailers and a clean tree", () => {
       expect(committed.code).toBe(0);
       expect(subject).toBe("pins: raise a v1.10.0, b v1.10.0");
+      expect(trailers).toBe("Co-Authored-By: T <t@t>\nReviewed-By: R <r@r>");
       expect(status).toBe("");
     });
 
@@ -12276,6 +12290,12 @@ describe("raise-pins", () => {
         "[raise-pins] nothing raised, so the gate did not run",
       );
     });
+  });
+
+  test("rejects --trailer without a value", () => {
+    const r = run(temp(), [bin("raise-pins"), "--trailer"]);
+    expect(r.code).toBe(2);
+    expect(r.out).toBe("usage: raise-pins [--commit] [--trailer <line>]...\n");
   });
 
   test("selects a pin by its repository's owner, not its name: an unscoped one of ours rises, a foreign one stays", () => {

@@ -79,7 +79,7 @@ Each runs through `bun run`, and [Commands](docs/commands.md) has the detail of 
 - `check-confidential`: confidential terms, Company OS screenshots and purged commits.
 - `check-lock <command>`: runs the command once no other locked command runs in the checkout.
 - `chrome-mcp`: the chrome-devtools MCP server on Chrome for Testing, for `.mcp.json`.
-- `raise-pins [--commit]`: raises every Git pin on a `hackersandwizards` repository to its newest tag, then gates.
+- `raise-pins [--commit] [--trailer <line>]...`: raises every Git pin on a `hackersandwizards` repository to its newest tag, then gates. `--trailer` applies only with `--commit`.
 - `with-server [--timeout <seconds>] [--limit <seconds>] [--stderr] "<server command>" -- <check> [args...]` runs a check against a server it starts on a free port. `--limit` sets the check’s wall limit on an idle machine (120 seconds by default). The limit increases with machine load.
 - `check-links` checks the internal links and redirects of a running site by pathname using the first URL seen for each path, including its query string.
 
