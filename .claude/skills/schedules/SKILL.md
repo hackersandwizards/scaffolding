@@ -10,7 +10,8 @@ description: >-
 
 A schedule is one file, `~/.claude/schedules/<name>.md`, and the triggers that start it. Every
 trigger carries only the line `Scheduled run <name>: read ~/.claude/schedules/<name>.md and carry it
-out.`, so no skill a schedule runs depends on which scheduler started it.
+out.`, so no skill a schedule runs depends on which scheduler started it. `~/.claude` is a git
+repository of its own: commit and push every change to a schedule file there, a deletion included.
 
 1. Decide whether it needs a schedule. Only work that must notice an absence earns one.
    Deterministic work becomes a gate, and event-driven work becomes an agent the event calls. A run
