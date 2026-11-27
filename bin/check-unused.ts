@@ -126,13 +126,17 @@ async function checkUnusedCode() {
     [styles, entryDependencies].some((uses) =>
       workspaceUsesDependency(issue, uses, production.includedWorkspaceDirs),
     );
-  removeUnusedIssues(production.issues, ["dependencies"], imported);
   const used = gateToolDependencies(root);
+  const gateTool = (issue: Issue) => issue.workspace === "." && used.has(issue.symbol);
+  removeUnusedIssues(
+    production.issues,
+    ["dependencies"],
+    (issue) => imported(issue) || gateTool(issue),
+  );
   removeUnusedIssues(
     development.issues,
     ["devDependencies"],
-    (issue) =>
-      ignored(issue) || imported(issue) || (issue.workspace === "." && used.has(issue.symbol)),
+    (issue) => ignored(issue) || imported(issue) || gateTool(issue),
   );
   return reportUnusedAudit(root, production, development);
 }

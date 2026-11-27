@@ -1,6 +1,7 @@
 import { basename, join } from "node:path";
 import { buildSharedStepMap, resolveBrandStepCommand } from "./gate-plan.ts";
 import { brandSteps, pinsPackage } from "./gate-config.ts";
+import { ownEntry } from "./own-entry.ts";
 import { isObject, readPackage } from "./repo.ts";
 import { scaffoldTools } from "./scaffold-tools.ts";
 
@@ -11,6 +12,10 @@ function gateToolCommands(root: string, pkg: ReturnType<typeof readPackage>) {
   const shared = buildSharedStepMap(pkg, root, home);
   const config = pkg.scaffolding ?? {};
   const commands = Object.values(shared);
+  for (const name of [config.typecheck, config.test]) {
+    const script = name && ownEntry(pkg.scripts, name);
+    if (script) commands.push(script);
+  }
   if (pinsPackage(pkg, "@hackersandwizards/brand")) {
     for (const step of brandSteps) {
       const resolved = resolveBrandStepCommand(step, config, home);
@@ -36,16 +41,19 @@ export function gateToolDependencies(root: string) {
     ...Object.keys(scaffolding.peerDependencies ?? {}),
   ]);
   // Match executable positions in the gate's commands, including Bun commands and brand's cd.
-  const commands = gateToolCommands(root, pkg);
-  const binaries = new Set(
-    commands.flatMap((command) =>
-      Array.from(
-        command.matchAll(/(?:^|&& )(?:\w+=\S+ )*(?:bun --bun |exec )?([\w@./-]+)(?=\s|$)/g),
-        ([, bin]) => basename(bin),
+  const invocations = gateToolCommands(root, pkg).flatMap((command) =>
+    Array.from(
+      command.matchAll(
+        /(?:^|&& )(?:\w+=\S+ )*(?:bun --bun |exec )?([\w@./-]+)(?=\s|$)(?:\s+([\w-]+))?/g,
       ),
+      ([, bin, subcommand]) => ({ binary: basename(bin), subcommand }),
     ),
   );
-  for (const dependency of Object.keys(pkg.devDependencies ?? {})) {
+  // Astro's CLI loads @astrojs/check dynamically with getPackage() when running astro check.
+  if (invocations.some(({ binary, subcommand }) => binary === "astro" && subcommand === "check"))
+    used.add("@astrojs/check");
+  const binaries = new Set(invocations.map(({ binary }) => binary));
+  for (const dependency of Object.keys({ ...pkg.dependencies, ...pkg.devDependencies })) {
     if (declaredBinaries(root, dependency).some((bin) => bin !== undefined && binaries.has(bin)))
       used.add(dependency);
   }

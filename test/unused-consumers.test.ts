@@ -180,3 +180,56 @@ test("unused counts imports from Astro build configs with Knip's Astro plugin en
   expect(result.output).toContain("unused dependency catalog-addon");
   expect(result.output).toContain("unused dependency astro-addon");
 });
+
+test("unused credits gate peers and binaries declared as production dependencies", () => {
+  using directory = testDirectory();
+  const root = directory.folder;
+  const consumer = {
+    devDependencies: { "@hackersandwizards/scaffolding": "1.0.0" },
+    scaffolding: { typecheck: "fixture-tsc --noEmit" },
+  };
+  const dependencies = { astrobook: "1.0.0", "fixture-compiler": "1.0.0" };
+  auditFixture(root, {
+    "package.json": manifest({ ...consumer, dependencies }),
+    "index.ts": entry,
+  });
+  writeAuditFiles(root, {
+    "node_modules/fixture-compiler/package.json": '{"bin":{"fixture-tsc":"bin.js"}}',
+  });
+
+  expect(runCodeAudit(root, "unused")).toEqual({ status: 0, output: "" });
+  writeAuditFiles(root, {
+    "package.json": manifest({
+      ...consumer,
+      dependencies: { ...dependencies, unrelated: "1.0.0" },
+    }),
+  });
+  const result = runCodeAudit(root, "unused");
+  expect(result.status).toBe(1);
+  expect(result.output.match(/^\[unused\].*$/gm)).toEqual([
+    expect.stringContaining("unused dependency unrelated"),
+  ]);
+});
+
+test("unused credits the package dynamically loaded by astro check", () => {
+  using directory = testDirectory();
+  const root = directory.folder;
+  const project = {
+    dependencies: { "@astrojs/check": "1.0.0" },
+    devDependencies: { "@hackersandwizards/scaffolding": "1.0.0", astro: "1.0.0" },
+  };
+  const packageWithTypecheck = (typecheck: string) =>
+    manifest({
+      ...project,
+      scaffolding: { typecheck },
+    });
+  auditFixture(root, {
+    "package.json": packageWithTypecheck("astro check"),
+    "index.ts": entry,
+  });
+  expect(runCodeAudit(root, "unused")).toEqual({ status: 0, output: "" });
+  writeAuditFiles(root, { "package.json": packageWithTypecheck("astro sync") });
+  const result = runCodeAudit(root, "unused");
+  expect(result.status).toBe(1);
+  expect(result.output).toContain("unused dependency @astrojs/check");
+});

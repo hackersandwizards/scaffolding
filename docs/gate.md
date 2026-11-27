@@ -109,7 +109,8 @@ imports.
 The audit omits findings located in the hub and hook paths. A second run also includes test and
 tool code when checking devDependencies. Scaffolding
 consumers also count the package's peers, scaffolded tools and the packages that provide gate
-commands. Knip uses the repository's configuration, or its defaults and plugins. The step needs
+commands in either dependency section. This includes `@astrojs/check` when the gate runs
+`astro check`. Knip uses the repository's configuration, or its defaults and plugins. The step needs
 a root `package.json` and tracked JavaScript or TypeScript. A Knip error fails the step.
 
 Run either check on demand with `bun run scaffolding duplicates` or `bun run scaffolding unused`.
