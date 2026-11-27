@@ -1,4 +1,5 @@
 import { spawn, type ChildProcessWithoutNullStreams } from "node:child_process";
+import { finished } from "node:stream/promises";
 import { isStrings, jsonObject } from "./repo.ts";
 
 export type ToolRun = { out: string; code: number; stdout: Buffer; rules?: string[] };
@@ -100,8 +101,12 @@ export async function spawnStagedEslint(
     env: { ...process.env, SCAFFOLDING_STAGED_ESLINT: "1" },
   }) as ChildProcessWithoutNullStreams;
   const metadata: Buffer[] = [];
-  child.stdio[3]?.on("data", (data: Buffer) => metadata.push(data));
-  const run = await collectChildOutput(child, stdin);
+  const metadataStream = child.stdio[3];
+  metadataStream?.on("data", (data: Buffer) => metadata.push(data));
+  const [run] = await Promise.all([
+    collectChildOutput(child, stdin),
+    metadataStream && finished(metadataStream, { writable: false, cleanup: true }),
+  ]);
   return parseEslintRuleMetadata(Buffer.concat(metadata), run);
 }
 

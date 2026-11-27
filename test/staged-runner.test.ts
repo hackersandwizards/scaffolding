@@ -103,6 +103,19 @@ test("spawnStagedEslint sets SCAFFOLDING_STAGED_ESLINT and reads fd 3 metadata",
   expect(run.rules).toEqual(["demo/rule"]);
 });
 
+test("spawnStagedEslint reads fd 3 metadata written after the child exits", async () => {
+  const script = [
+    'import { spawn } from "node:child_process";',
+    `spawn("sh", ["-c", 'sleep 0.2; printf "%s" "$1" >&3', "sh", '{"rules":["demo/late-rule"]}'], {
+      detached: true,
+      stdio: ["ignore", "ignore", "ignore", 3],
+    }).unref();`,
+  ].join("\n");
+  const run = await spawnStagedEslint("-e", [script]);
+  expect(run.code).toBe(0);
+  expect(run.rules).toEqual(["demo/late-rule"]);
+});
+
 test.each<{ label: string; input: string; run: ToolRun; expected: string }>([
   {
     label: "fails when prettier exited non-zero",
