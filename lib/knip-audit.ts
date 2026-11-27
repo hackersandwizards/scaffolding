@@ -38,7 +38,7 @@ type KnipRun = {
   };
 };
 
-// Knip 6.48's public session descriptor omits entry files with no exports, including setup files.
+// Use Knip 6.48's internal session for the complete entry-path set, including setup files with no exports.
 const knipDist = import.meta.resolve("knip/session");
 const { run } = (await import(new URL("../run.js", knipDist).href)) as {
   run(options: MainOptions): Promise<KnipRun>;

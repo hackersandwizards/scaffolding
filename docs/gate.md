@@ -234,7 +234,7 @@ marks a full check.
 | `**/*.{tf,tfvars}`, root `.tflint.hcl`                                                                                | terraform                                                    |
 | `Dockerfile`, `Dockerfile.*`, `*.Dockerfile`, `Containerfile` at any depth and case, root `.hadolint.{yaml,yml}`      | dockerfile                                                   |
 | `.github/actionlint.{yaml,yml}`                                                                                       | workflows                                                    |
-| `docs/**/*.txt`, `.claude/skills/**/*.{yaml,yml}`                                                                     | Always-run steps only                                        |
+| `docs/**/*.txt`, `.claude/skills/**`                                                                                  | unused                                                       |
 
 The shell and Markdown matches add their steps. A path covered only by those matches still
 selects all enabled fast steps under the fallback, as does an unmatched path or a path below.

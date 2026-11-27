@@ -29,8 +29,7 @@ export function catalogUsesFileUrls(config: CatalogSetupEvent["config"], dev: bo
 }
 
 export function catalogForwardLink(base: string, home: string, pages: string): string {
-  // Every link to the catalog reads /catalog/: a mounted catalog's home already does, a
-  // build opened from disk forwards nothing, and a site's own page there keeps its place.
+  // Use the forwarding URL for the catalog home link unless the site already owns the /catalog/ route.
   return !globSync(["catalog.*", "catalog/index.*"], { cwd: pages }).length
     ? `${base}/catalog/`
     : home;

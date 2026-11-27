@@ -78,7 +78,6 @@ const values: Record<string, string> = {
   name,
   // The repository's own name: the Pages path, the product and the README's title.
   repo: name.replace(/^@[^/]+\//, ""),
-  // A catalog brings .astro files, which only the Astro config lints.
   eslint: catalogIn ? "eslint" : "eslint/astro",
   port,
   version: own.version,

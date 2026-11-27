@@ -181,17 +181,17 @@ export function describeStaleCacheWarning(hasCache: boolean, cacheAgeMs: number)
 export function validateTermListBuildTime(
   list: TermList,
   source: string,
-  now: number,
+  { now, recovery }: { now: number; recovery: string },
 ): { problem?: string; warning?: string } {
   const built = Date.parse(list.built ?? "");
   if (Number.isNaN(built) || built > now + HOUR)
     return {
-      problem: `${source} has an invalid built timestamp, so the scan cannot tell whether the list is current. To refresh the list, ${termListRefresh}.`,
+      problem: `${source} has an invalid built timestamp, so the scan cannot tell whether the list is current. ${recovery}`,
     };
   const days = (now - built) / DAY;
   if (days > 7)
     return {
-      problem: `The list at ${source} was built ${Math.floor(days)} days ago and is too old to scan with. To refresh the list, ${termListRefresh}.`,
+      problem: `The list at ${source} was built ${Math.floor(days)} days ago and is too old to scan with. ${recovery}`,
     };
   if (days > 3)
     return { warning: `list built ${Math.floor(days)} days ago; Company OS has not rebuilt it` };

@@ -67,7 +67,6 @@ export default [
     },
   },
   {
-    // An `it("...", () => {})` passes, so a gutted test reads as a covered one.
     files: testFiles,
     rules: {
       "no-restricted-syntax": ["error", ...testRules],

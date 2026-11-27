@@ -9,14 +9,6 @@
   "options": {
     "typeAware": true
   },
-  "settings": {
-    "scaffolding": {
-      "duplicates": {
-        "template/**": "The repository skeleton ships verbatim copies for consumers.",
-        "template-catalog/**": "The catalog skeleton ships verbatim copies for consumers."
-      }
-    }
-  },
   "overrides": [
     {
       "files": ["lib/**", "config/**"],

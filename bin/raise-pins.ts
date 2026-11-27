@@ -131,7 +131,6 @@ for (const [at, { name, spec, url, from }] of ordered.entries()) {
   }
   say(`${name}: ${from} -> ${to}`);
   raised.push(`${name.replace(/^@hackersandwizards\//, "")} ${to}`);
-  // A raise of this package brings its skeleton files, which the commit takes with it.
   if (name !== "@hackersandwizards/scaffolding") continue;
   const before = new Map([...changed()].map((path) => [path, read(path)]));
   if (!succeeds(["bun", "run", "check-structure", "--fix"])) blocked = failed = true;

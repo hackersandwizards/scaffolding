@@ -114,6 +114,18 @@ test("recognizes a spec importing an extended Playwright test from a local fixtu
   expect(messages).toContainEqual(["playwright/no-wait-for-timeout", 2]);
 });
 
+test("reports a focused test on a Playwright fixture extended in the spec", async () => {
+  using directory = testDirectory();
+  const source =
+    'import { test as base, expect } from "@playwright/test";\n' +
+    "const test = base.extend({});\n\n" +
+    violations["no-focused-test"];
+  expect(await playwrightMessages(directory.folder, source)).toContainEqual([
+    "playwright/no-focused-test",
+    2,
+  ]);
+});
+
 const lintOxlint = join(import.meta.dirname, "../node_modules/oxlint/bin/oxlint");
 const playwrightOverlapSource = `
 test.describe("feature", () => {

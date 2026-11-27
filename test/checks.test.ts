@@ -1157,7 +1157,6 @@ describe("check-coupling", () => {
         exports: {
           "./tokens.css": "./tokens/tokens.css",
           "./fonts/*": "./tokens/fonts/*",
-          // A conditional export's target is a target too.
           "./elements.css": {
             style: "./elements/elements.css",
             default: "./elements/elements.css",
@@ -3574,7 +3573,7 @@ describe("check-confidential", () => {
       CI: "",
     });
     expect(r.out).toContain(
-      "The scan needs a valid term list at /nonexistent. Supply a current list through --list or SCAFFOLDING_CONFIDENTIAL_TERMS, or run `check-confidential fetch` to refresh the cache.",
+      "The scan needs a valid term list at /nonexistent. Replace or rebuild the list, or remove --list and unset SCAFFOLDING_CONFIDENTIAL_TERMS to use the cache.",
     );
     expect(r.code).toBe(1);
   });
@@ -5754,13 +5753,17 @@ describe("scaffolding check", () => {
       ".claude/skills/s/agents/a.yaml": "a\n",
     });
     const quick = run(bare, [bin("scaffolding"), "check", "--changed"], lock);
-    expect(quick.out).toContain("selected check:src: no path scope configured");
+    expect(quick).toEqual({
+      code: 0,
+      out: containingText("selected check:src: no path scope configured"),
+    });
     expect(quick.out).toContain("src-ran");
-    expect(quick.code).toBe(0);
-    // Skill data outside the default map falls back to the fast gate.
     write(bare, { ".claude/skills/s/x.json": "{}\n" });
+    const skillData = run(bare, [bin("scaffolding"), "check", "--changed"], lock);
+    expect(skillData).toEqual({ code: 0, out: withoutText("all fast steps run") });
+    write(bare, { ".claude/local.json": "{}\n" });
     expect(run(bare, [bin("scaffolding"), "check", "--changed"], lock).out).toContain(
-      '".claude/skills/s/x.json" matches no path glob: all fast steps run',
+      '".claude/local.json" matches no path glob: all fast steps run',
     );
     const own = gate({ skip, ...steps, changed: { ".claude/**": ["check:src"] } }, scripts);
     write(own, { ".claude/rules/r.md": "r\n" });
@@ -5957,7 +5960,6 @@ describe("scaffolding check", () => {
       };
       commit(dir, { "docs/a.md": "a\n" });
       first = push(dir, "HEAD:refs/heads/main");
-      // check-confidential got the refs git handed the hook, line for line.
       const head = sh(dir, ["rev-parse", "HEAD"]).stdout.toString().trim();
       firstRefs = readFileSync(refs, "utf8");
       expectedFirstRefs = `HEAD ${head} refs/heads/main ${"0".repeat(40)}\n`;
@@ -5965,7 +5967,6 @@ describe("scaffolding check", () => {
       commit(dir, { ".claude/rules/r.md": "r\n", ".claude/skills/s/SKILL.md": "s\n" });
       write(dir, { "other.txt": "another session's file\n" });
       hub = push(dir, "HEAD:refs/heads/main");
-      // A mapped path runs its step.
       commit(dir, { "docs/b.md": "b\n" });
       docs = push(dir, "HEAD:refs/heads/main");
       const previous = sh(dir, ["rev-parse", "HEAD"]).stdout.toString().trim();
@@ -10268,8 +10269,6 @@ describe("catalog", () => {
       test(
         "keeps an explicit /catalog route beside a catalog at the root",
         () => {
-          // A page of the site's own at /catalog/ beside a root catalog keeps its place: the catalog
-          // links its home.
           writeFileSync(join(pages, "catalog", "index.astro"), head("<p>site catalog page</p>"));
           prepareBuild();
           expect(page("catalog")).toContain("site catalog page");
@@ -12095,7 +12094,6 @@ describe("check-staged", () => {
 
   test("the index decides: its package.json, no submodule as a file, the item copy in the checkout", () => {
     const tools = {
-      // prettier logs the paths it gets and fails a.ts; admin-check logs the folder it gets.
       "node_modules/.bin/prettier":
         '#!/bin/sh\necho "$@" >> args.log\ncase "$*" in *a.ts*) exit 1;; esac\n',
       "node_modules/.bin/admin-check": '#!/bin/sh\necho "$1" >> items.log\n',

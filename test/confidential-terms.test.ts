@@ -21,6 +21,7 @@ import {
   publicTermFinding,
   splitPipedTermLists,
   stripPackageAllowTargets,
+  termListRefresh,
   TermVariantHasher,
   termVariants,
   tokenizeConfidentialWords,
@@ -194,7 +195,12 @@ test.each<{
   },
 ])("validateTermListBuildTime: $label", ({ built, expected }) => {
   const list = { built, salt: "s", maxTokens: 1, hashes: [] };
-  expect(validateTermListBuildTime(list, "/cache/list.json", 10 * DAY)).toEqual(expected);
+  expect(
+    validateTermListBuildTime(list, "/cache/list.json", {
+      now: 10 * DAY,
+      recovery: `To refresh the list, ${termListRefresh}.`,
+    }),
+  ).toEqual(expected);
 });
 
 test("publicBadTermSet and neverBadTermSet select the right hash sets", () => {

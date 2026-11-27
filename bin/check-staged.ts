@@ -85,7 +85,6 @@ if (claudeStaged) {
       `package.json script differs between index and working tree: ${JSON.stringify(changed)}. Stage package.json (\`git add package.json\`) or discard its unstaged script edit so check:skills runs the script version being committed`,
     );
 }
-// The script's former name would otherwise turn the validation off without a word.
 if (claudeStaged && pkg.scripts?.["validate:skills"] && !pkg.scripts["check:skills"])
   refuseCommit("rename the script validate:skills to check:skills: check-staged runs check:skills");
 const skills = Boolean(pkg.scripts?.["check:skills"]) && claudeStaged;
@@ -96,7 +95,6 @@ const items =
   // The old folder counts too: an item staged there would otherwise pass unread.
   spawnSync("git", ["diff", "--cached", "--quiet", "--", "docs/agent-work/items", "docs/tracking"])
     .status !== 0;
-// Fail closed: an item file that does not parse would reach the commit unread.
 if (items && !existsSync("node_modules/.bin/admin-check"))
   refuseCommit(
     "admin-check is not installed, so the staged work items cannot be validated. Run bun install and retry the commit.",
@@ -129,8 +127,6 @@ const differs = new Set(names(["diff"]));
 const partial = staged.filter((path) => differs.has(path));
 const whole = staged.filter((path) => !differs.has(path));
 
-// Prettier and eslint get every staged path, stylelint the CSS and Astro ones the gate's styles step
-// lints, and each skips what its own config ignores, so this and `bun run check` judge the same files.
 const mine = (tool: string, paths: string[]) =>
   tool === "stylelint" ? paths.filter(styled) : paths;
 const flags: Record<string, string[]> = {
@@ -179,8 +175,6 @@ function runStagedLint(tool: string, args: string[], stdin?: Buffer): Promise<To
   });
 }
 
-// Run what the gate runs: each tool unless scaffolding.skip gives its gate step a reason, declared
-// or not. Every install is checked before any run starts, so a refusal leaves no tool running.
 const gateStep: Record<string, string> = {
   prettier: "format",
   eslint: "lint",
@@ -189,6 +183,7 @@ const gateStep: Record<string, string> = {
 const active = Object.entries(tools).filter(
   ([tool]) => mine(tool, staged).length && !isReason(skip[gateStep[tool]]),
 );
+// Check that every active linter is installed before launching any of them.
 for (const [tool] of active)
   // Fail closed: a checkout without `bun install`, such as a fresh worktree, or a package that
   // does not pin the tool, would pass every file.
@@ -250,8 +245,7 @@ if (skills)
   );
 if (items) runs.push(checkStagedItems());
 
-// admin-check over the index, not the working tree: docs/agent-work as staged, written to a temporary
-// folder, so another session's unstaged item edit neither blocks nor passes this commit.
+// Give admin-check an index snapshot of docs/agent-work, docs/tracking and GOAL.md so unstaged edits cannot change the verdict.
 async function checkStagedItems(): Promise<ToolRun> {
   // Inside the checkout, never the system's temp folder: item files can hold company data.
   const cache = join(process.cwd(), "node_modules/.cache/scaffolding");

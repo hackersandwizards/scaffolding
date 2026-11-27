@@ -10,8 +10,6 @@ const { name, exports } = JSON.parse(readFileSync("package.json", "utf8")) as {
   exports: Record<string, string>;
 };
 
-// Node refuses to strip types from a .ts file under node_modules, so a consumer's Node-run code
-// (a forked child, a Playwright spec) can import these only as JavaScript.
 test.each([
   ["defined", "defined"],
   ["rejection", "rejection"],

@@ -72,13 +72,14 @@ function scanDuplicateBlocks(directory: string) {
 }
 
 async function checkDuplicateInputs(root: string, files: string[]) {
+  const started = performance.now();
   const config = regularInput(root, oxlintConfig)
     ? parseOxlintConfig(readFileSync(join(root, oxlintConfig), "utf8"))
     : {};
   const findings: Finding[] = [];
   const exemptions = lintPathExemptions("duplicates", config.settings, findings);
   if (findings.length) {
-    printCheckFindings("duplicates", findings, performance.now());
+    printCheckFindings("duplicates", findings, started);
     return 1;
   }
   const ignored = [...eslintIgnorePatterns(root).map((glob) => new Bun.Glob(glob)), ...exemptions];

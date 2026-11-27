@@ -100,24 +100,24 @@ export class ConfidentialListCache {
 
   loadPublicRequired(explicitFile: string | undefined): LoadedTermList {
     const problem = explicitFile ? undefined : this.refreshPublicRequired();
-    return this.readValidatedList(explicitFile ?? this.cacheFile, problem);
+    return this.readValidatedList(explicitFile, problem);
   }
 
   /** A hook that passes without a list tries gh at most hourly even without a copy, since gh may
    * take 20 s offline; a hook that refuses without one tries on every commit. */
   loadPublicOptional(explicitFile: string | undefined): LoadedTermList {
     const problem = explicitFile ? undefined : this.refreshPublicOptional();
-    return this.readValidatedList(explicitFile ?? this.cacheFile, problem);
+    return this.readValidatedList(explicitFile, problem);
   }
 
   loadNeverRequired(explicitFile: string | undefined): LoadedTermList {
     const problem = explicitFile ? undefined : this.refreshNeverRequired();
-    return this.readValidatedList(explicitFile ?? this.cacheFile, problem);
+    return this.readValidatedList(explicitFile, problem);
   }
 
   loadNeverOptional(explicitFile: string | undefined): LoadedTermList {
     const problem = explicitFile ? undefined : this.refreshNeverOptional();
-    return this.readValidatedList(explicitFile ?? this.cacheFile, problem);
+    return this.readValidatedList(explicitFile, problem);
   }
 
   private fetchOrWarnFallback(): string | undefined {
@@ -162,19 +162,23 @@ export class ConfidentialListCache {
     return undefined;
   }
 
-  private readValidatedList(source: string, fetchProblem: string | undefined): LoadedTermList {
+  private readValidatedList(
+    explicitFile: string | undefined,
+    fetchProblem: string | undefined,
+  ): LoadedTermList {
+    const source = explicitFile ?? this.cacheFile;
+    const recovery =
+      explicitFile === undefined
+        ? `To refresh the list, ${termListRefresh}.`
+        : "Replace or rebuild the list, or remove --list and unset SCAFFOLDING_CONFIDENTIAL_TERMS to use the cache.";
     const list = existsSync(source) ? parseTermList(readFileSync(source, "utf8")) : undefined;
     if (!list) {
-      const recovery =
-        source === this.cacheFile
-          ? `To refresh the list, ${termListRefresh}.`
-          : "Supply a current list through --list or SCAFFOLDING_CONFIDENTIAL_TERMS, or run `check-confidential fetch` to refresh the cache.";
       return {
         problem: fetchProblem ?? `The scan needs a valid term list at ${source}. ${recovery}`,
         absent: !existsSync(source),
       };
     }
-    const checked = validateTermListBuildTime(list, source, Date.now());
+    const checked = validateTermListBuildTime(list, source, { now: Date.now(), recovery });
     if (checked.problem) return { problem: checked.problem };
     if (checked.warning) this.onWarn(checked.warning);
     return { list };

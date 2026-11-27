@@ -45,10 +45,11 @@ const defaults = [
     ),
     steps: [...source, "styles"],
   },
-  { glob: new Bun.Glob("docs/**/*.{md,txt}"), steps: [] },
+  { glob: new Bun.Glob("docs/**/*.md"), steps: [] },
+  { glob: new Bun.Glob("docs/**/*.txt"), steps: ["unused"] },
   { glob: new Bun.Glob("{README,CONTRIBUTING,SECURITY,CLAUDE,AGENTS}.md"), steps: [] },
   { glob: new Bun.Glob(".claude/rules/**/*.md"), steps: [] },
-  { glob: new Bun.Glob(".claude/skills/**/*.{md,yaml,yml}"), steps: [] },
+  { glob: new Bun.Glob(".claude/skills/**"), steps: ["unused"] },
 ];
 const additional = [
   { glob: new Bun.Glob("**/*.md"), steps: ["markdown"] },

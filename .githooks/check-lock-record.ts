@@ -71,8 +71,8 @@ const commandRuns = (group: number, signalled: true | undefined): boolean =>
 const live = (holder: Holder): boolean =>
   running(holder.pid) ||
   (holder.group !== undefined && commandRuns(holder.group, holder.signalled));
-// An unreadable lock is a half-written or corrupt one, and nobody can prove it is live. A live
-// holder is never reclaimed on age: a slow run under load outlasted any bound and a second check
+// A readable lock with invalid contents can be reclaimed.
+// A live holder is never reclaimed on age: a slow run under load outlasted any bound and a second check
 // ran beside it. A reused pid reads as live too, which ends in the wait timeout, not an overlap.
 const stale = (raw: string | undefined, holder: Holder | undefined): raw is string =>
   raw !== undefined && !(holder && live(holder));
@@ -160,7 +160,6 @@ export function inspectCheckLock(lockFile: string) {
   return {
     id: read ? `${read.pid} ${read.startedAt}` : `inode ${stat.ino}`,
     read,
-    // What dropIfStale removes: the first waiter reclaims it within a poll.
     stale: stale(raw, read),
   };
 }

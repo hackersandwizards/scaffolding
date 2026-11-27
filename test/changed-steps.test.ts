@@ -109,6 +109,10 @@ test.each([
   ["package.json", ["duplicates", "unused"]],
   ["src/Page.astro", ["unused"]],
   ["src/styles.css", ["unused"]],
+  ["docs/setup/tools.txt", ["unused"]],
+  [".claude/skills/example/SKILL.md", ["unused"]],
+  [".claude/skills/example/settings.yml", ["unused"]],
+  [".claude/skills/example/settings.json", ["unused"]],
 ] as const)("selects code audits for %s", (path, expected) => {
   const selector = new ChangedStepSelector(new Set(["duplicates", "unused"]), [], []);
   const result = selector.select({

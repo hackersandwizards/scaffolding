@@ -47,7 +47,7 @@ export function gateToolDependencies(root: string) {
     ...scaffoldTools,
     ...Object.keys(scaffolding.peerDependencies ?? {}),
   ]);
-  // Match executable positions in the gate's commands, including Bun commands and brand's cd.
+  // Look past `bun --bun` wrappers and `cd … &&` prefixes to find the binaries provided by dependencies.
   const invocations = gateToolCommands(root, pkg).flatMap((command) =>
     Array.from(
       command.matchAll(

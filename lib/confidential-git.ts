@@ -76,7 +76,6 @@ export function hasLfsOrLockableAttr(checkAttrOutput: string): boolean {
   );
 }
 
-// An empty objects folder holds nothing to upload.
 export function directoryHoldsFile(dir: string): boolean {
   return (
     existsSync(dir) &&

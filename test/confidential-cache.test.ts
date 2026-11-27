@@ -8,6 +8,7 @@ import {
   publicListProblemFindings,
 } from "../lib/confidential-cache.ts";
 import { DAY } from "../lib/confidential-terms.ts";
+import { testDirectory } from "./test-directory.ts";
 
 function makeListJson(overrides: { built?: string; never?: string[] } = {}): string {
   return JSON.stringify({
@@ -32,13 +33,37 @@ test("ConfidentialListCache.loadPublicRequired reads explicit valid and missing 
 
     const missing = cache.loadPublicRequired(join(dir, "missing.json"));
     expect(missing).toEqual({
-      problem: `The scan needs a valid term list at ${join(dir, "missing.json")}. Supply a current list through --list or SCAFFOLDING_CONFIDENTIAL_TERMS, or run \`check-confidential fetch\` to refresh the cache.`,
+      problem: `The scan needs a valid term list at ${join(dir, "missing.json")}. Replace or rebuild the list, or remove --list and unset SCAFFOLDING_CONFIDENTIAL_TERMS to use the cache.`,
       absent: true,
     });
   } finally {
     rmSync(dir, { recursive: true, force: true });
   }
 });
+
+test.each([
+  [
+    "a stale",
+    new Date(Date.now() - 8 * DAY).toISOString(),
+    "The list at SOURCE was built 8 days ago and is too old to scan with.",
+  ],
+  [
+    "an invalid",
+    "invalid",
+    "SOURCE has an invalid built timestamp, so the scan cannot tell whether the list is current.",
+  ],
+])(
+  "ConfidentialListCache advises how to replace a list with %s build time",
+  (_, built, problem) => {
+    using directory = testDirectory();
+    const cache = new ConfidentialListCache(directory.folder, () => {});
+    const listFile = join(directory.folder, "terms.json");
+    writeFileSync(listFile, makeListJson({ built }));
+    expect(cache.loadPublicRequired(listFile)).toEqual({
+      problem: `${problem.replace("SOURCE", listFile)} Replace or rebuild the list, or remove --list and unset SCAFFOLDING_CONFIDENTIAL_TERMS to use the cache.`,
+    });
+  },
+);
 
 test("ConfidentialListCache.loadPublicOptional warns instead of refetching within the hour", () => {
   const dir = mkdtempSync(join(tmpdir(), "conf-opt-"));

@@ -40,7 +40,15 @@ function localPlaywrightCall(sourceCode, node) {
     const variable = scope.set.get(root.name);
     if (variable)
       return (
-        variable.defs.length > 0 && variable.defs.every(({ type }) => type !== "ImportBinding")
+        variable.defs.length > 0 &&
+        variable.defs.every(
+          ({ type, node }) =>
+            type === "FunctionName" ||
+            type === "Parameter" ||
+            (type === "Variable" &&
+              (node.init?.type === "FunctionExpression" ||
+                node.init?.type === "ArrowFunctionExpression")),
+        )
       );
   }
   return false;
