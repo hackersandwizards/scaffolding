@@ -1,8 +1,8 @@
 #!/bin/sh
 // 2>/dev/null; exec bun --no-env-file "$0" "$@"
-import type { Issues, Issue } from "knip/session";
+import type { Issues, Issue, Results } from "knip/session";
 import { dirname, relative } from "node:path";
-import { eslintIgnorePatterns } from "../config/eslint-ignores.js";
+import { eslintIgnorePatterns, eslintToolIgnorePatterns } from "../config/eslint-ignores.js";
 import { renderGuides } from "../lib/guides.ts";
 import { runKnipAudit } from "../lib/knip-audit.ts";
 import { javaScriptOrTypeScript } from "../lib/production-code.ts";
@@ -50,9 +50,13 @@ function removeUnusedIssues(
       for (const [key, issue] of Object.entries(records)) if (remove(issue)) delete records[key];
 }
 
-function stylesheetUses(issue: Issue, styles: Map<string, Set<string>>, workspaces: string[]) {
+function workspaceUsesDependency(
+  issue: Issue,
+  uses: Map<string, Set<string>>,
+  workspaces: string[],
+) {
   const workspace = dirname(issue.filePath);
-  return [...(styles.get(issue.symbol) ?? [])].some(
+  return [...(uses.get(issue.symbol) ?? [])].some(
     (file) =>
       file.startsWith(workspace + "/") &&
       !workspaces.some(
@@ -62,6 +66,28 @@ function stylesheetUses(issue: Issue, styles: Map<string, Set<string>>, workspac
           file.startsWith(nested + "/"),
       ),
   );
+}
+
+function unusedAuditEntries(root: string, selected: (path: string) => boolean) {
+  const files = listFiles(root, false);
+  const toolPaths = eslintToolIgnorePatterns.map((glob) => new Bun.Glob(glob));
+  const tools = files.filter(
+    (path) =>
+      javaScriptOrTypeScript.test(path) &&
+      toolPaths.some((glob) => glob.match(path)) &&
+      regularInput(root, path),
+  );
+  return [...tools, ...unusedBuildEntries(root, files.filter(selected))];
+}
+
+function reportUnusedAudit(root: string, production: Results, development: Results) {
+  const guides = new Set([
+    ...reportUnusedIssues(root, production.issues, productionKinds),
+    ...reportUnusedIssues(root, development.issues, ["devDependencies"]),
+  ]);
+  process.stderr.write(renderGuides(guides));
+  if (production.hasConfigLoadErrors || development.hasConfigLoadErrors) return 2;
+  return Number(guides.size > 0);
 }
 
 async function checkUnusedCode() {
@@ -79,12 +105,16 @@ async function checkUnusedCode() {
   const ignores = eslintIgnorePatterns(root).map((glob) => new Bun.Glob(glob));
   const selected = (file: string) => !ignores.some((glob) => glob.match(file));
   const ignored = (issue: Issue) => !selected(relative(root, issue.filePath));
-  const { results: production } = await runKnipAudit(
-    root,
-    productionKinds,
-    unusedBuildEntries(root, listFiles(root, false).filter(selected)),
-  );
-  const { results: development, toolEntries } = await runKnipAudit(root, ["dependencies"]);
+  const entries = unusedAuditEntries(root, selected);
+  const { results: production } = await runKnipAudit(root, productionKinds, {
+    production: true,
+    entries,
+  });
+  const {
+    results: development,
+    toolEntries,
+    entryDependencies,
+  } = await runKnipAudit(root, ["dependencies"], { production: false, entries });
   removeUnusedIssues(production.issues, productionKinds, ignored);
   removeUnusedIssues(
     production.issues,
@@ -92,22 +122,19 @@ async function checkUnusedCode() {
     ({ filePath }) => nonProductionEntry(relative(root, filePath)) || toolEntries.has(filePath),
   );
   const styles = await unusedStyleDependencies(root, tracked.filter(selected));
-  const cssUse = (issue: Issue) => stylesheetUses(issue, styles, production.includedWorkspaceDirs);
-  removeUnusedIssues(production.issues, ["dependencies"], cssUse);
+  const imported = (issue: Issue) =>
+    [styles, entryDependencies].some((uses) =>
+      workspaceUsesDependency(issue, uses, production.includedWorkspaceDirs),
+    );
+  removeUnusedIssues(production.issues, ["dependencies"], imported);
   const used = gateToolDependencies(root);
   removeUnusedIssues(
     development.issues,
     ["devDependencies"],
     (issue) =>
-      ignored(issue) || cssUse(issue) || (issue.workspace === "." && used.has(issue.symbol)),
+      ignored(issue) || imported(issue) || (issue.workspace === "." && used.has(issue.symbol)),
   );
-  const guides = new Set([
-    ...reportUnusedIssues(root, production.issues, productionKinds),
-    ...reportUnusedIssues(root, development.issues, ["devDependencies"]),
-  ]);
-  process.stderr.write(renderGuides(guides));
-  if (production.hasConfigLoadErrors || development.hasConfigLoadErrors) return 2;
-  return Number(guides.size > 0);
+  return reportUnusedAudit(root, production, development);
 }
 
 withoutEnvFile("unused");

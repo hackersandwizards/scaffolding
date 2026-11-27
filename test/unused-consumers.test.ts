@@ -123,3 +123,60 @@ test("unused counts scaffolded tools even without installed binaries", () => {
   });
   expect(runCodeAudit(directory.folder, "unused")).toEqual({ status: 0, output: "" });
 });
+
+test("unused counts imports used only by hub skills and hooks in both modes", () => {
+  using directory = testDirectory();
+  const root = directory.folder;
+  auditFixture(root, {
+    "package.json": manifest({
+      dependencies: { "skill-renderer": "1.0.0" },
+      devDependencies: { "hook-support": "1.0.0" },
+    }),
+    "index.ts": entry,
+    ".claude/skills/example/run.ts": 'import "./lib/render.ts";',
+    ".claude/skills/example/lib/render.ts": 'import "skill-renderer";',
+    ".githooks/check.ts": 'import "hook-support";',
+  });
+  expect(runCodeAudit(root, "unused")).toEqual({ status: 0, output: "" });
+  writeAuditFiles(root, {
+    ".claude/skills/example/lib/render.ts": entry,
+    ".githooks/check.ts": entry,
+  });
+  const result = runCodeAudit(root, "unused");
+  expect(result.status).toBe(1);
+  expect(result.output).toContain("unused dependency skill-renderer");
+  expect(result.output).toContain("unused dependency hook-support");
+});
+
+test("unused counts imports from Astro build configs with Knip's Astro plugin enabled", () => {
+  using directory = testDirectory();
+  const root = directory.folder;
+  auditFixture(root, {
+    "package.json": manifest({
+      dependencies: {
+        "@tailwindcss/vite": "1.0.0",
+        "catalog-addon": "1.0.0",
+        "astro-addon": "1.0.0",
+      },
+      devDependencies: { astro: "1.0.0" },
+    }),
+    "index.ts": entry,
+    "astro.config.ts":
+      'import { defineConfig } from "astro/config"; import "@tailwindcss/vite"; import "./astro-options.ts"; export default defineConfig({});',
+    "astro-options.ts": 'import "astro-addon";',
+    "catalog/astro.config.ts": 'import "./configure.ts"; export default {};',
+    "catalog/configure.ts": 'import "catalog-addon";',
+  });
+  expect(runCodeAudit(root, "unused")).toEqual({ status: 0, output: "" });
+  writeAuditFiles(root, {
+    "astro.config.ts":
+      'import { defineConfig } from "astro/config"; import "./astro-options.ts"; export default defineConfig({});',
+    "astro-options.ts": entry,
+    "catalog/configure.ts": entry,
+  });
+  const result = runCodeAudit(root, "unused");
+  expect(result.status).toBe(1);
+  expect(result.output).toContain("unused dependency @tailwindcss/vite");
+  expect(result.output).toContain("unused dependency catalog-addon");
+  expect(result.output).toContain("unused dependency astro-addon");
+});

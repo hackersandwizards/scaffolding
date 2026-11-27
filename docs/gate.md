@@ -103,8 +103,11 @@ namespace exports and dependencies. An export used within its own source file co
 The file report leaves out shared ESLint ignores, tests, stories, declarations and tool entry
 files. A production file reached only by a test can still fail the check. The catalog preset's
 conventional stories, pages, Head and Home count as application entries in catalog repositories.
-Tracked CSS and Astro style imports and dependencies imported by Astro and Vite build configs
-count as used. A second run includes test and tool code when checking devDependencies. Scaffolding
+Tracked CSS and Astro style imports count as used. Astro and Vite build configs, hub scripts
+under `.claude/`, and hooks under `.githooks/` count as dependency entry points, including their local
+imports.
+The audit omits findings located in the hub and hook paths. A second run also includes test and
+tool code when checking devDependencies. Scaffolding
 consumers also count the package's peers, scaffolded tools and the packages that provide gate
 commands. Knip uses the repository's configuration, or its defaults and plugins. The step needs
 a root `package.json` and tracked JavaScript or TypeScript. A Knip error fails the step.

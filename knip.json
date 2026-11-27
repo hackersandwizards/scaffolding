@@ -3,9 +3,6 @@
   "entry": [
     "bin/*.ts!",
     "lib/{eslint-formatter,oxlint,shellcheck,stylelint-formatter}.ts!",
-    ".githooks/*.ts!",
-    ".claude/skills/engineering/check-staged.ts!",
-    ".claude/skills/polish/memory-twins.ts!",
     "config/*.d.ts!",
     "template/**/*.{js,mjs,ts}!",
     "template/.githooks/*.ts!",
