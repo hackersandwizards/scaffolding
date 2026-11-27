@@ -46,8 +46,11 @@ name, in each repository given:
    pins: a checkout or merge hook can leave an older one installed, and `raise-pins` then answers
    "Script not found". Skip a repository with no `node_modules/.bin/raise-pins` after it, and name
    it: it pins a scaffolding older than v5.18.0.
-3. `bun run raise-pins --commit`. Read its `[raise-pins]` lines, never its exit status: a pin it
-   keeps because it read no tag from the remote exits 1 after a green commit too.
+3. `bun run raise-pins --commit --trailer "<line>"`, one `--trailer` per trailer line your commits
+   end with. A scaffolding older than v5.47.9 answers `usage:`: run it without `--trailer`, then
+   `git commit --amend --no-edit --trailer "<line>" -- package.json bun.lock` before the push.
+   Read its `[raise-pins]` lines, never its exit status: a pin it keeps because it read no tag from
+   the remote exits 1 after a green commit too.
 4. After a `committed "<message>"` line, push. A rejected push repeats step 1 once. After `gate
    red`, fix what broke as step 2 of the first list says, then commit and push. A run whose approval
    excludes fixes changes nothing instead: the raise stays uncommitted in `package.json` and
