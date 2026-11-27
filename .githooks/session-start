@@ -42,10 +42,10 @@ if [ "$fetched" -eq 0 ]; then
       # start after a failed switch added it again.
       { git show-ref -q --verify refs/heads/main ||
         git config --replace-all remote.origin.fetch "$ref" '^[+]?refs/heads/main:'; } &&
-        git switch -q main
+        git switch -q --no-overwrite-ignore main
     fi &&
       [ "$(git symbolic-ref -q HEAD)" = refs/heads/main ] &&
-      git merge --ff-only -q origin/main --no-autostash
+      git merge --ff-only -q --no-autostash --no-overwrite-ignore origin/main
   } >/dev/null 2>&1; then
     behind=$(git rev-list --count HEAD..origin/main 2>/dev/null)
     if [ "$CLAUDE_CODE_REMOTE" = true ] && [ "$(git symbolic-ref -q HEAD)" != refs/heads/main ]; then

@@ -1,7 +1,7 @@
 import { failParsingInput } from "./json-parse-fault.ts";
 import { readHolder as readHookHolder } from "../.githooks/check-lock-record.ts";
 import { createHash } from "node:crypto";
-import { existsSync, mkdirSync, readFileSync, statSync, writeFileSync } from "node:fs";
+import fs, { existsSync, mkdirSync, readFileSync, statSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { expect, test, vi } from "vitest";
 import {
@@ -12,9 +12,13 @@ import {
   inspectCheckLock,
   readHolder,
   running,
-  type Holder,
 } from "../template/.githooks/check-lock-record.ts";
 import { testDirectory } from "./test-directory.ts";
+
+vi.mock("node:fs", async (importOriginal) => {
+  const original = await importOriginal<typeof import("node:fs")>();
+  return { ...original, readFileSync: vi.fn(original.readFileSync) };
+});
 
 test.each([{ command: ["echo", "two words"], expected: ["pid", "startedAt", "command"] }])(
   "writes holder fields in their original order",
@@ -61,16 +65,26 @@ test.each([{ waited: 5999, expected: false }])(
   },
 );
 
-test.each([{ command: "echo", expected: TypeError }])(
-  "throws when a parsed holder names its command as a string",
-  ({ command, expected }) => {
-    const read = { pid: process.pid, startedAt: 1, command } as unknown as Holder;
-    const snapshot = { id: "live", read, stale: false };
-    expect(() => new CheckLockDeadline(0, 900_000).expired(snapshot, 1, ["echo"])).toThrow(
-      expected,
-    );
-  },
-);
+function failCheckLockRead(lock: string) {
+  return vi.mocked(readFileSync).mockImplementation((path, options) => {
+    if (path === lock) throw Object.assign(new Error("lock read failed"), { code: "EIO" });
+    return fs.readFileSync(path, options);
+  });
+}
+
+test("keeps a lock busy and unreclaimable after an EIO read error", () => {
+  using fixture = testDirectory();
+  const lock = join(fixture.folder, "check.lock");
+  writeFileSync(lock, "an invalid lock");
+  using _read = failCheckLockRead(lock);
+  expect(inspectCheckLock(lock)).toEqual({
+    id: `inode ${statSync(lock).ino}`,
+    read: undefined,
+    stale: false,
+  });
+  expect(() => dropIfStale(lock)).not.toThrow();
+  expect(fs.readFileSync(lock, "utf8")).toBe("an invalid lock");
+});
 
 test.each([{ raw: '{"pid":10,"startedAt":2,"group":1}', expected: { pid: 10, startedAt: 2 } }])(
   "does not keep process group one in a holder record",

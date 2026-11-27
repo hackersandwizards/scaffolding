@@ -280,6 +280,17 @@ describe("check-lock serialises the checks", () => {
     limit(30_000),
   );
 
+  it("refuses to run beside a live holder whose command is a string", () => {
+    const lock = lockPath();
+    const raw = JSON.stringify({ pid: process.pid, startedAt: Date.now(), command: "echo" });
+    writeFileSync(lock, raw);
+    const result = run(lock, [SCRIPT, "echo", "ran"], { CHECK_LOCK_WAIT_MS: "0" });
+    expect(result.status).toBe(1);
+    expect(result.stdout).toBe("");
+    expect(result.stderr).toContain(`pid ${process.pid} still holds`);
+    expect(readFileSync(lock, "utf8")).toBe(raw);
+  });
+
   // A first poll inside the millisecond it started measured a wait of 0, not above 0, and slept
   // 2 s: about one run in three. So ten runs, each read by the wait it reports, which a loaded
   // machine's slow start leaves alone.

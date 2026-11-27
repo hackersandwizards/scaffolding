@@ -21,14 +21,14 @@ function readLock(lockFile: string, forReclaim = false): string | undefined {
   try {
     return readFileSync(lockFile, "utf8");
   } catch (error) {
-    const { code } = error as NodeJS.ErrnoException;
-    if (code === "ENOENT") return undefined;
     // A directory or an unreadable holder must still go through the wait deadline.
-    if (forReclaim && (code === "EISDIR" || code === "EACCES" || code === "EPERM"))
-      return undefined;
+    if (forReclaim || (error as NodeJS.ErrnoException).code === "ENOENT") return undefined;
     throw error;
   }
 }
+
+const validCheckLockCommand = (command: unknown): boolean =>
+  Array.isArray(command) && command.every((arg) => typeof arg === "string");
 
 function parseHolder(raw: string | undefined): Holder | undefined {
   if (raw === undefined) return undefined;
@@ -43,6 +43,7 @@ function parseHolder(raw: string | undefined): Holder | undefined {
   // kill(-1) and kill(0) address every process or this one's group, never the command's.
   if (holder.group === undefined || !Number.isInteger(holder.group) || holder.group <= 1)
     delete holder.group;
+  if (!validCheckLockCommand(holder.command)) delete holder.command;
   return holder;
 }
 
@@ -154,7 +155,6 @@ export function inspectCheckLock(lockFile: string) {
     // Released between the two reads: free, not a path no waiter can reclaim.
     const { code } = error as NodeJS.ErrnoException;
     if (code === "ENOENT") return free;
-    if (code !== "EACCES" && code !== "EPERM") throw error;
   }
   const read = parseHolder(raw);
   return {

@@ -7522,6 +7522,7 @@ describe("skeleton SessionStart hook", () => {
   const head = (dir: string) => sh(dir, ["rev-parse", "HEAD"]).stdout.toString().trim();
   const notMerged =
     "origin/main is 1 commits ahead of HEAD and was not merged: update per git.md, whose failed-merge step reads each record from origin/main\n";
+  const notSwitched = "main not switched to: switch to main per git.md before work\n";
 
   describe("a clean checkout and subsequent SessionStart calls", () => {
     let checkout: ReturnType<typeof clone>;
@@ -7576,6 +7577,38 @@ describe("skeleton SessionStart hook", () => {
       expect(readFileSync(join(dir, "a.txt"), "utf8")).toBe("another session's\n");
     },
   );
+
+  const ignoredFileCheckout = () => {
+    const { dir, origin, path } = clone();
+    const ignored = "local.txt";
+    write(origin, { [ignored]: "incoming content\n" });
+    prepareGit(origin, ["add", "--", ignored]);
+    prepareGit(origin, ["commit", "--amend", "--no-edit", "-q"]);
+    const local = "ignored local content\n";
+    write(dir, { ".git/info/exclude": `${ignored}\n`, [ignored]: local });
+    return { dir, path, ignored, local };
+  };
+
+  test("refuses a fast-forward that would overwrite an ignored file", () => {
+    const { dir, path, ignored, local } = ignoredFileCheckout();
+    const before = head(dir);
+    expect(prepareGit(dir, ["check-ignore", "--", ignored])).toBe(ignored);
+    expect(start(dir, { PATH: path }).stdout).toBe(notMerged);
+    expect(head(dir)).toBe(before);
+    expect(readFileSync(join(dir, ignored), "utf8")).toBe(local);
+  });
+
+  test("refuses a cloud switch that would overwrite an ignored file", () => {
+    const { dir, path, ignored, local } = ignoredFileCheckout();
+    prepareGit(dir, ["switch", "-qc", "work"]);
+    prepareGit(dir, ["fetch", "-q", "origin"]);
+    prepareGit(dir, ["branch", "-f", "main", "origin/main"]);
+    const before = head(dir);
+    expect(prepareGit(dir, ["check-ignore", "--", ignored])).toBe(ignored);
+    expect(start(dir, { PATH: path, CLAUDE_CODE_REMOTE: "true" }).stdout).toBe(notSwitched);
+    expect(head(dir)).toBe(before);
+    expect(readFileSync(join(dir, ignored), "utf8")).toBe(local);
+  });
 
   test("a clone of one other branch still learns how far main is ahead", () => {
     const { dir, origin, path } = clone();
@@ -7647,9 +7680,7 @@ describe("skeleton SessionStart hook", () => {
     const single = join(dir, "single");
     cpSync(join(dir, ".githooks"), join(single, ".githooks"), { recursive: true });
     write(single, { "a.txt": "uncommitted work\n" });
-    expect(start(single, { PATH: path, CLAUDE_CODE_REMOTE: "true" }).stdout).toBe(
-      "main not switched to: switch to main per git.md before work\n",
-    );
+    expect(start(single, { PATH: path, CLAUDE_CODE_REMOTE: "true" }).stdout).toBe(notSwitched);
   });
 
   // setTimeout ran a delay past 2^31 - 1 ms at once, and the fetch was stopped as it began.
