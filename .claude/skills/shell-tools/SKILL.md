@@ -19,8 +19,11 @@ Prefer `fd` (`bfs` for `find` syntax), `rg` (`ugrep` inside archives, compressed
   block on stdin, and wraps `grep` in a function that has kept a line `grep -v` should drop. Prove a
   filter a safeguard rests on with a control: `diff` shows exactly the dropped line.
 - `rg` recurses by default. Never pass `-r`: it is `--replace` and silently rewrites output. Write `rg -il`, never `rg -ril`.
-- A pattern starting with `-` reads as flags; pass it as `grep -F -e '-de-DE' f`. The error goes to
-  stderr, so a run discarding stderr and testing only for empty output reads the failure as zero hits.
+- An argument starting with `-` reads as flags, a pattern or a path alike (every folder under
+  `~/Library/Caches/claude-code-tmp/claude-$UID/` starts with `-`): pass a pattern as
+  `grep -F -e '-de-DE' f` and a relative path as `./-name`. The error goes to stderr, so a run
+  discarding stderr and testing only for empty output reads the failure as zero hits, and a
+  `grep -q … || <act>` test acts on every item.
 - `jq`'s `strftime` renders UTC, while `date` renders local time. Bucketing an epoch timestamp
   into a day through `jq` puts everything before local 02:00 on the previous day.
 - `rg` skips dot-directories, so `rg <pattern> .` reports zero hits across every skill, rule, agent and memory under `.claude/`. Pass `--hidden`, name the directory, or use `git grep`. A "no references remain" sweep run without it cannot fail.
