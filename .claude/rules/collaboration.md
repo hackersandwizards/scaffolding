@@ -51,8 +51,9 @@ choice to please: agreement carries its reason.
   CI variable.
 - Never weaken a check to make it pass. Fix what the gate caught, or report that you could not. An
   allow entry that lets through what the check exists to stop, such as a name past a confidential
-  scan, is such a weakening, whatever a brief asks. Any other allow entry goes in only where no fix
-  exists.
+  scan, is such a weakening, whatever a brief asks. A person's own name, allowed only in their own
+  folder and published with their consent, is not what a confidential scan exists to stop. Any
+  other allow entry goes in only where no fix exists.
 - Write only into your own repository, a git submodule whose rules it carries included, and into
   the hub's copy of a rule or skill the hub mirrors into it, whichever repository finds the fix. A
   nested repository's `CLAUDE.md`, rules and skills do not load from a parent directory, nor its
