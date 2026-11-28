@@ -125,5 +125,5 @@ codex exec -c model_reasoning_effort="high" --skip-git-repo-check --ephemeral -s
 agy --mode plan --model gemini-4-neon-high --print-timeout 600s -p="<prompt>"
 ```
 
-The reviewer is never the model that authored the work: code Sol wrote goes to Opus at medium, at high for a medium or large review and for security, code Neon wrote to Sol, a change against this repository's rules and a text Neon wrote to Opus, and a long document Claude wrote to Neon. Neon reviews nothing else, and never security. Where only the author's family is left, a fresh session
+The reviewer is never the model that authored the work: code Sol wrote goes to Opus at medium, at high for a medium or large review and for security, code Neon wrote, and code a Claude model wrote, to Sol, a change against this repository's rules and a text Neon wrote to Opus, and a long document Claude wrote to Neon. Neon reviews nothing else, and never security. Where only the author's family is left, a fresh session
 of it reviews and the report says so.
