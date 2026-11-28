@@ -44,6 +44,10 @@ none, because receipt".
    Use neutral labels, in file paths and names too, and a shuffled order per reviewer. Score the unchanged current state
    alongside, where one exists. Quote one reviewer prompt verbatim in the report. Check: no prompt names an author or
    a version's age.
+   A reviewer of a text (a document, brief, plan or offer) opens with a paraphrase in its own words
+   of what the text proposes and of the current state as the text describes it, before any finding.
+   The author compares it with the intent: a wrong paraphrase is a must-fix. Check: the report
+   quotes each paraphrase.
 4. Show each visual at its real display size in its real context and at full size. A candidate on a
    third-party surface (a chat app, a phone, a booth wall) goes on a mock first checked against a
    real screenshot of that surface. Downscale a screenshot judged only on layout, content or
@@ -79,6 +83,13 @@ none, because receipt".
 6. A person's preferred variant is a hypothesis the next round tests blind, never a score.
 7. Between rounds, ask every reviewer what keeps each criterion below the maximum, group the reasons
    by element and fix one or two causes. Fix only what a real reader or user would notice.
+   Sort each finding before fixing. Contest it only with evidence the reviewer could read in what
+   it was given, named by file and line. Where that evidence lies outside, such as a ruling or a
+   call, name the record holding it, which settles the finding; with none on record, it goes to the
+   person among the bundled questions. A nit may stay unfixed. Never contest a gap in comprehension: the real reader
+   misses the same context. Add context only where the real reader needs it, never for the
+   reviewer alone. The author's wish to contest is no evidence, and the author changes no severity.
+   Check: every contest names its evidence.
 8. Noise is the score spread between two runs of the same reviewer. A lead inside the noise is a
    tie, and a tie goes to the variant with fewer exceptions. A surface keeps an exception to the
    shared standard only where its lead stands outside the noise in both runs and with both models
@@ -88,10 +99,17 @@ none, because receipt".
    element is such an exception, scored as in step 5 before it is built. Check: the report gives the
    noise next to the lead, or says it was not measured, and a per-surface value has its
    cross-surface score.
-9. Stop on a plateau and report it instead of starting another round. Once a review says ship with
-   no must-fix, order no confirming review. For long prose, stop after two consecutive rounds
-   without a finding in classes named before round one (contradiction, counts, a statement against
-   its fetched source, language parity, a broken sentence); the rest is a list for the author.
+9. A round is clean when no reviewer raises a must-fix that is not settled. A finding is settled
+   once contested with named evidence or accepted by the person, and raised again without new
+   evidence it stays settled. A fixed finding is not settled: raised again at the same place, the
+   fix failed. A reviewer that failed or returned nothing did not review: rerun it once, then
+   report it as not run, never as zero findings, and its round is not clean. Long prose at any
+   size, and a large review, end after two consecutive clean rounds; any other review ends on its
+   first clean round, with no confirming review. Long prose counts as must-fix only the classes
+   named before round one (contradiction, counts, a statement against its fetched source, language
+   parity, a broken sentence); the rest is a list for the author. Stop instead at the fifth round, on a plateau, or on churn, a new finding at the
+   place of an applied fix that reverting the fix would resolve, and report the open findings
+   rather than start another round.
 
 ## Reviewer commands
 
