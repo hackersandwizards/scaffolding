@@ -34,6 +34,9 @@ What leads and the person section hold where that mail cannot be reached.
   cut wherever it stands, since he wrote it himself; agreement is one word (`gern`, `passt`). Name
   his point only where the answer would otherwise be ambiguous, such as which of two questions a
   `ja` answers.
+- Write at the reader's level: what they need to act or decide, in the words of their own work.
+  Evidence that serves the sender (file paths, branch names, product versions, internal tool names)
+  stays out unless the reader works with it. A reader who cannot use the message got none.
 - Bullets only for groups or dates, numbered `1)` where the text refers back to them.
 - The signer's typed mail carries the odd typo and comma splice. A draft never imitates one.
 
