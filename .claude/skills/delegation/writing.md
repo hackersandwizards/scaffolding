@@ -11,10 +11,13 @@ template fixes; a quote's prices, scope and terms come from the records.
 One writer per run, on Neon high. In T3 Code it is a child thread on T3's Antigravity provider
 (`delegate_task`), every later text sent with `t3_thread_send` to that thread. Elsewhere:
 `agy --model gemini-4-neon-high --output-format json --print-timeout 600s -p="<brief>"`. The brief
-tells it to write no file and to read the `voice` skill and the channel's skill,
-and hands over every text the run already knows under `=== <id> ===`, each with sender and
-signature, recipients, language, purpose, must and must-not facts, new message or reply with its
-thread, for a mail subject and body; it asks for the texts only, under their ids. Every later text
+tells it to write no file and to read itself the `voice` skill, the channel's skill and any approved
+example text that skill points to; the session does not summarise them. The brief hands over facts
+only, every text the run already knows under `=== <id> ===`, each with sender and signature,
+names, dates, links, recipients, language, purpose, must and must-not facts, new message or reply
+with its thread, for a mail subject and body; it asks for the texts only, under their ids. It
+carries no phrasing, tone, style, structure, example sentence or word list of the session's: where
+a skill holds the rule, the brief names that skill. Every later text
 and every revision goes to the same writer: outside T3, `agy --conversation <conversation_id>`
 with the id the first call returned. Measured: about 30 s
 for the first text and 25 s for each later one.

@@ -7,6 +7,11 @@ for the person's return.
   to ask.
 - Delegating never widens scope. Name the work in the prompt; anything the delegate judges to need
   more comes back as a decision for the principal.
+- A session that handed its procedure to a delegate answers no message a person types later
+  itself: it hands the message on word for word, before reading anything for it, with SendMessage
+  to that delegate, else to a delegate started the way the first one was, and relays the answer.
+  The one exception is a send that person releases: the session performs it, since a delegate
+  cannot act on a relayed release.
 - Carry the person's request into the brief in their own words and mark your own framing: a
   delegate answers the question the brief asks.
 - Before a brief states what a file, release or checkout holds, or repeats a point from an earlier

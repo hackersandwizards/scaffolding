@@ -25,7 +25,6 @@ Only where none reaches it, call the target's CLI: `claude -p`, `codex exec`, `a
   another run's files. Never delete scratch by a glob while a delegate runs.
 - A brief's stop condition names which hits count: the consumer's tracked source
   (`git -C <repo> grep`), never reports or build output.
-- A session that delegates its procedure delegates every request a person adds later too.
 - Prod a quiet agent with SendMessage; never spawn a replacement. Where it is gone for good, do its
   phase yourself.
 - Stop a finished delegate's task before the process it left, or it wakes to re-report everything.
