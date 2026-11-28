@@ -5026,6 +5026,23 @@ describe("scaffolding check", () => {
     );
   });
 
+  test.each([
+    { deploy: null },
+    { deploy: "main" },
+    { deploy: [""] },
+    { deploy: ["  "] },
+    { deploy: ["main", 7] },
+  ])("reports an invalid deploy branch list ($deploy)", ({ deploy }) => {
+    const dir = gate({ skip, deploy });
+    const result = run(dir, [bin("scaffolding"), "check"], { CHECK_LOCK: join(temp(), "lock") });
+    expect(result).toEqual({
+      code: 1,
+      out: containingText(
+        "scaffolding.deploy must be a JSON array of non-blank branch names. Use branch names such as main in package.json, or remove the key.",
+      ),
+    });
+  });
+
   test("an allow entry naming a check that reads no allow list fails", () => {
     const entry = (check: string) => ({ allow: [{ check, path: "a.ts", reason: "r" }] });
     const lock = { CHECK_LOCK: join(temp(), "lock") };
@@ -14404,7 +14421,9 @@ describe.each([".githooks/pre-push", "template/.githooks/pre-push"])("%s", (path
     mkdirSync(fake, { recursive: true });
     writeFileSync(
       join(fake, "bun"),
-      '#!/bin/sh\nif [ "$3" = check-confidential ]; then cat > refs.log; exit; fi\nprintf "%s\\n" "${GIT_DIR-unset}" "${GIT_INDEX_FILE-unset}" "$@"\n',
+      '#!/bin/sh\nif [ "$1" = --no-env-file ]; then exec "' +
+        process.execPath +
+        '" "$@"; fi\nif [ "$3" = check-confidential ]; then cat > refs.log; exit; fi\nprintf "%s\\n" "${GIT_DIR-unset}" "${GIT_INDEX_FILE-unset}" "$@"\n',
       { mode: 0o755 },
     );
   });
@@ -14421,6 +14440,47 @@ describe.each([".githooks/pre-push", "template/.githooks/pre-push"])("%s", (path
       input,
       encoding: "utf8",
     });
+  beforeEach(() => write(dir, { "package.json": "{}" }));
+
+  test.each([
+    ["only the deploy branch", "refs/heads/local a1 refs/heads/main a0\n"],
+    [
+      "another branch and the deploy branch",
+      "refs/heads/a a1 refs/heads/a a0\nrefs/heads/local b1 refs/heads/main b0\n",
+    ],
+    ["a deploy branch with a slash", "refs/heads/local a1 refs/heads/releases/docs a0\n"],
+  ])("runs the full gate once for %s", (_, refs) => {
+    write(dir, {
+      "package.json": JSON.stringify({ scaffolding: { deploy: ["main", "releases/docs"] } }),
+    });
+    const r = push(refs);
+    expect(r.status, r.stderr).toBe(0);
+    expect(r.stdout.trim().split("\n")).toEqual(["unset", "unset", "run", "--silent", "check"]);
+    expect(readFileSync(join(dir, "refs.log"), "utf8")).toBe(refs);
+  });
+
+  test.each([
+    ["no deploy key", {}],
+    ["an empty deploy list", { deploy: [] }],
+    ["a matching source and deletion only", { deploy: ["topic"] }],
+  ])("runs changed checks for non-deploy destinations with %s", (_, scaffolding) => {
+    write(dir, { "package.json": JSON.stringify({ scaffolding }) });
+    const refs =
+      "refs/heads/topic a1 refs/heads/review/topic a0\n(delete) 0000 refs/heads/topic b0\n";
+    const r = push(refs);
+    expect(r.status, r.stderr).toBe(0);
+    expect(r.stdout.trim().split("\n")).toEqual([
+      "unset",
+      "unset",
+      "run",
+      "--silent",
+      "check",
+      "--changed",
+      "a0..a1",
+    ]);
+    expect(readFileSync(join(dir, "refs.log"), "utf8")).toBe(refs);
+  });
+
   test("clears Git-local variables and passes each branch range to the gate", () => {
     const refs = "refs/heads/a a1 refs/heads/a a0\nHEAD@{1 day ago} b1 refs/heads/b b0\n";
     const r = push(refs);

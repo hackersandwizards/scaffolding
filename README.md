@@ -65,7 +65,7 @@ Each runs through `bun run`, and [Commands](docs/commands.md) has the detail of 
 - `scaffold <dir>`: creates a repository from the skeleton with this version pinned.
 - `scaffolding check [--changed [<from>..<to>...]]` runs the whole gate. With `--changed`, it selects
   fast steps from the changed paths and scopes [related tests](docs/gate.md#related-tests).
-  The pre-push hook supplies the pushed ranges.
+  The pre-push hook supplies the pushed ranges or runs the full gate for a [deployment branch](docs/gate.md#deployment-branches).
 - `scaffolding shell`: checks tracked shell scripts with ShellCheck.
 - `scaffolding python`, `scaffolding terraform`, `scaffolding dockerfile` and `scaffolding workflows` run their gate steps on demand.
 - `scaffolding duplicates` and `scaffolding unused` check for copied production code and unused files, exports and dependencies.

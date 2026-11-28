@@ -255,6 +255,15 @@ step still checks the working tree. Shell and Markdown lint judge new files once
 even if an untracked path already selected the step. Astro lint also selects the enabled
 typecheck that generates its content types and waits for it.
 
+### Deployment branches
+
+Set `scaffolding.deploy` in `package.json` to an array of non-blank destination branch names,
+for example `["main"]`. The pre-push hook runs the full gate once when a push updates any
+listed branch, even if the same push updates other branches. Names match exactly, including
+any slash in the name. Branch deletions do not count as updates. An omitted or empty list
+keeps the changed gate for every branch push. A manual `scaffolding check --changed` still
+uses changed paths.
+
 ### Related tests
 
 When changed paths select the shared `test` step, the gate runs recognized Vitest commands

@@ -22,13 +22,13 @@ In a new worktree `post-checkout` also deletes `.githooks/post-commit` unless gi
 writes its hooks there when it checks out an LFS file ahead of `.githooks/`, git writes the hooks it
 tracks over theirs, and the post-commit left behind made `git worktree remove` refuse the worktree.
 
-After `check-confidential prepush` and Git LFS (below), a push that carries a branch (a remote ref
-under `refs/heads/` and a local commit, not a deletion) runs the gate once over the working tree,
-`bun run check --changed <remote tip>..<local tip>` with one range per pushed branch, and a red gate
-stops the push. The runner selects fast steps from the pushed paths. The test step selects
-[related tests](gate.md#related-tests) where supported and supplies the changed paths to scripts.
-A fallback runs all fast steps with the configured test commands. The full gate runs separately
-with `bun run check`. A tag alone runs no gate.
+The pre-push hook runs `check-confidential prepush` and any applicable Git LFS check before the
+gate. If the push updates a [deployment branch](gate.md#deployment-branches), the hook runs
+`bun run check` once over the working tree. Otherwise a push that updates branches runs
+`bun run check --changed <remote tip>..<local tip>` with one range per destination branch.
+A red gate stops the push. The changed gate selects fast steps from the pushed paths, including
+[related tests](gate.md#related-tests) where supported. A fallback runs all fast steps with the
+configured test commands. Pushes containing only tags or deletions run no gate.
 
 The pre-push hook hands the refs to `git lfs pre-push` where the push may carry LFS objects or
 touch a lockable file. That is the case where the repository's LFS store holds a file (`lfs/objects`

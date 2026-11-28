@@ -11,6 +11,11 @@ export const placedSteps = new Set(["colours", "copies", ...fullOnlySteps.keys()
 
 export const vitestRun = ["--bun", "vitest", "run"];
 
+export function deployBranchesProblem(branches: unknown): string | undefined {
+  if (branches !== undefined && (!Array.isArray(branches) || !branches.every(isReason)))
+    return "scaffolding.deploy must be a JSON array of non-blank branch names. Use branch names such as main in package.json, or remove the key.";
+}
+
 export function browserTestProblem(
   config: NonNullable<Package["scaffolding"]>,
 ): string | undefined {

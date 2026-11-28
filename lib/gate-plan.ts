@@ -3,6 +3,7 @@ import {
   brandProblem,
   brandSteps,
   browserTestProblem,
+  deployBranchesProblem,
   fullOnlySteps,
   linksProblem,
   pinsPackage,
@@ -34,6 +35,7 @@ const KEYS = new Set(
     licenses: 0,
     changed: 0,
     fullOnly: 0,
+    deploy: 0,
   } satisfies Record<keyof ScaffoldingConfig, 0>),
 );
 
@@ -83,6 +85,7 @@ export function validateGateIntegrations(pkg: Package): string | undefined {
     serverProblem(config.server),
     linksProblem(config),
     browserTestProblem(config),
+    deployBranchesProblem(config.deploy),
   ])
     if (problem) return problem;
   return undefined;

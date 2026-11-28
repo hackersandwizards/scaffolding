@@ -262,6 +262,7 @@ export type Package = {
     licenses?: Record<string, { license?: string; reason?: unknown }>;
     changed?: Record<string, string[]>;
     fullOnly?: Record<string, unknown>;
+    deploy?: string[];
   };
   [field: string]: unknown;
 };
