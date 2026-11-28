@@ -15,14 +15,14 @@ pieces, podcast scripts. Not for short Slack messages, replies, status updates.
    you break even. Sprint 5-6 you're faster."*
 3. Deeper Question. The reframe, where peer language replaces vendor language. *"The dip is the
    cost of the foundation the team is building."*
-4. Practical Insight. The thing the reader can do Monday, concrete and tied to the story. *"In the
+4. Practical Insight. The first thing the reader can do, concrete and tied to the story. *"In the
    first two weeks, track one number: how much the team has encoded into CLAUDE.md and shared
    agents."*
 5. Human Impact. The translate-up to engineering culture, team health, programming joy. *"By
    sprint 6, standup is about what to build next."*
 6. Call to Adventure. Forward motion, not summary: on LinkedIn a closing statement the reader can
    act on, a question only where it is a real one; a clear next step for blog and long-form; a
-   Monday-morning first move for a talk.
+   first move for a talk.
 
 In an article, the thesis and the rule the reader should take away sit in the first quarter: most
 readers leave at 50 to 60% of the page (Chartbeat, 2013).

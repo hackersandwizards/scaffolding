@@ -92,6 +92,7 @@ Banned in all forms:
 | Urgency frame | "The window for X is closing." | name the deadline or cut the urgency |
 | Paradox opener | "The more you try to X, the less Y you get." | drop the paradox framing |
 | Community segmentation | "Whether you're a founder, a marketer, or a..." | address one audience at a time |
+| Weekday next step | "What to set up on Monday", "your Monday-morning move", "am Montag" | name the first step without a weekday |
 
 ## 3. Transition and bridge fillers
 
