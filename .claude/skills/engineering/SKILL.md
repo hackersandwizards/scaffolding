@@ -29,8 +29,9 @@ handling that prevents data loss, security measures, or accessibility basics.
   on a breach, or say that review is its only catch. Check: every rule names a check file that
   exists, or says review.
 - Verify each change with the checks that fit it, from the commands the repository's CLAUDE.md
-  lists. You choose which; nothing requires the full gate every time, and your run is the only
-  full one before the deploy.
+  lists. You choose which; nothing requires the full gate every time. Before a push that deploys,
+  the full gate runs once: by the pre-push hook where the repository's configuration makes it
+  run there, else by you.
 - A pre-commit hook holds only what is irreversible or takes under about a second, run over the staged
   changes: the secret scan, format and lint, and checks of that size such as the
   `check-staged` set or a repository's own `check:skills` when `.claude/` is staged. CI builds, runs the integration tests a deploy needs, deploys and applies Terraform after

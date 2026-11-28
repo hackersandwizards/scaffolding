@@ -19,6 +19,9 @@ Only where none reaches it, call the target's CLI: `claude -p`, `codex exec`, `a
 ## Running a delegate
 
 - A whole gate, a browser suite or a load run runs one at a time.
+- Commits several delegates finished and had reviewed land as one merge train: the session merges
+  them and runs the gate once on the train, never one gate run per branch. A red train goes back
+  only to the delegate whose files fail.
 - A brief for work in another repository tells the delegate to read a skill it needs there as that
   skill's `SKILL.md` file.
 - Prefix every scratch file with its run: delegates share the scratchpad, and a resume guard adopts
