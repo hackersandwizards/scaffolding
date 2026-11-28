@@ -1,6 +1,6 @@
 {
   "name": "@hackersandwizards/scaffolding",
-  "version": "5.47.10",
+  "version": "5.47.11",
   "description": "Repository skeleton, gate commands, shared configs and the catalog shell: scaffold, scaffolding check, check-structure, check-confidential, check-staged, check-lock, chrome-mcp, raise-pins, and the catalog preset.",
   "keywords": [
     "astro-component"
@@ -111,7 +111,7 @@
     "@vitest/coverage-v8": "5.1.2",
     "astro": "7.4.13",
     "astrobook": "0.13.3",
-    "eslint": "10.15.0",
+    "eslint": "10.16.0",
     "eslint-plugin-astro": "3.2.2",
     "prettier": "3.10.1",
     "stylelint": "18.1.0",
@@ -165,12 +165,12 @@
     "@volar/typescript": "2.4.31",
     "chrome-devtools-mcp": "1.14.0",
     "dependency-cruiser": "18.9.0",
-    "eslint-config-prettier": "10.1.8",
+    "eslint-config-prettier": "10.1.9",
     "eslint-plugin-playwright": "2.12.2",
     "globals": "17.14.0",
     "jscpd": "5.4.3",
     "jsonc-parser": "3.3.1",
-    "knip": "6.48.0",
+    "knip": "6.49.0",
     "markdownlint-cli2": "0.24.2",
     "oxlint": "1.95.0",
     "oxlint-tsgolint": "7.0.2009",

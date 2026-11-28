@@ -65,9 +65,11 @@ test.each([["a.astro", ["Astro frontmatter", "Astro client script"]]])(
     using directory = testDirectory();
     writeFileSync(join(directory.folder, file), "example");
     const eslint = new ESLint({ overrideConfigFile: true });
-    vi.spyOn(eslint, "calculateConfigForFile").mockResolvedValue({
-      rules: { "no-debugger": "error" },
-    });
+    const config = await new ESLint({
+      overrideConfigFile: true,
+      overrideConfig: { rules: { "no-debugger": "error" } },
+    }).calculateConfigForFile("example.js");
+    vi.spyOn(eslint, "calculateConfigForFile").mockResolvedValue(config);
     const processor = {
       preprocess: () => [
         "content",
