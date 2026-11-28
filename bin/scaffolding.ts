@@ -13,6 +13,7 @@ import { allChangedSteps, ChangedStepSelector, fastSteps } from "../lib/changed-
 import { browserTestProblem, pinsPackage, placedSteps, vitestRun } from "../lib/gate-config.ts";
 import * as gatePlan from "../lib/gate-plan.ts";
 import { GateStepRunner, stepConcurrencyLimit } from "../lib/gate-runner.ts";
+import { relatedTestCommand } from "../lib/gate-test-selection.ts";
 import { help } from "../lib/help.ts";
 import { ownEntry } from "../lib/own-entry.ts";
 import { isReason, readPackage, repoRoot, underLock, withoutEnvFile } from "../lib/repo.ts";
@@ -184,7 +185,7 @@ const mappings = mappingsBuilt.mappings;
 const fast = fastSteps([...Object.keys(shared), ...local], fullOnly);
 const changedStepSelector = new ChangedStepSelector(fast, local, mappings);
 
-function resolveChangedSteps(): Map<string, string> {
+function resolveChangedSteps(): { steps: Map<string, string>; paths?: Set<string> } {
   const collected = ranges.length
     ? fast.has("shell")
       ? collectRangeChangesWithShell(root, ranges)
@@ -194,23 +195,30 @@ function resolveChangedSteps(): Map<string, string> {
       : collectWorkingTreeChanges(root);
   if ("fallback" in collected) {
     console.error(`[scaffolding] --changed: ${collected.fallback}: all fast steps run`);
-    return allChangedSteps(fast, collected.fallback);
+    return { steps: allChangedSteps(fast, collected.fallback) };
   }
   const { steps, fallback: why } = changedStepSelector.select(collected);
-  if (why !== undefined) console.error(`[scaffolding] --changed: ${why}: all fast steps run`);
-  else
-    console.error(
-      `[scaffolding] --changed: ${collected.paths.size} paths since ${collected.since}`,
-    );
-  return steps;
+  if (why !== undefined) {
+    console.error(`[scaffolding] --changed: ${why}: all fast steps run`);
+    return { steps };
+  }
+  console.error(`[scaffolding] --changed: ${collected.paths.size} paths since ${collected.since}`);
+  return { steps, paths: collected.paths };
 }
 
 const { load, cores, factor } = machineLoad();
+const started = performance.now();
+const selection = changed ? resolveChangedSteps() : undefined;
+const selected = selection?.steps;
+const scopedPaths = selection?.paths;
+if (scopedPaths && selected?.has("test"))
+  shared.test = relatedTestCommand(pkg, scopedPaths) ?? shared.test;
 const env = {
   ...process.env,
   PATH: `${join(root, "node_modules/.bin")}:${process.env.PATH}`,
   SCAFFOLDING_TEST_TIMEOUT_MS: String(Math.round(5000 * factor)),
   SCAFFOLDING_CHANGED: changed ? "1" : "0",
+  SCAFFOLDING_CHANGED_PATHS: scopedPaths ? JSON.stringify([...scopedPaths]) : undefined,
   SCAFFOLDING_EXPLORING: undefined,
   SCAFFOLDING_EXPLORE_SEED: undefined,
   SCAFFOLDING_EXPLORE_RUNS: undefined,
@@ -222,7 +230,6 @@ if (Number.isFinite(width))
     `[scaffolding] load ${Math.round(load)} on ${cores} cores: ${changed ? "test runs after the other shared steps" : "test and catalog run one after another"}, the repository's steps ${width} at a time`,
   );
 
-const started = performance.now();
 const runner = new GateStepRunner(root, env, width);
 runner.installSignalHandlers();
 
@@ -233,7 +240,6 @@ runner.installSignalHandlers();
 // for it too: the sync writes the content types (.astro/), and without them the typed rules read
 // every content entry as `any` (1,724 findings against 899 in one fresh checkout).
 const sync = gatePlan.usesAstroTypecheck(config.typecheck ?? "", pkg.scripts);
-const selected = changed ? resolveChangedSteps() : undefined;
 if (
   selected &&
   sync &&

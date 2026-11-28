@@ -63,9 +63,9 @@ For `eslint.config.js`, copy
 Each runs through `bun run`, and [Commands](docs/commands.md) has the detail of each.
 
 - `scaffold <dir>`: creates a repository from the skeleton with this version pinned.
-- `scaffolding check [--changed [<from>..<to>...]]`: the whole gate, the script `check`; `--changed`
-  only the steps the changed paths map to, of the ranges given (the pre-push hook passes the pushed
-  ones).
+- `scaffolding check [--changed [<from>..<to>...]]` runs the whole gate. With `--changed`, it selects
+  fast steps from the changed paths and scopes [related tests](docs/gate.md#related-tests).
+  The pre-push hook supplies the pushed ranges.
 - `scaffolding shell`: checks tracked shell scripts with ShellCheck.
 - `scaffolding python`, `scaffolding terraform`, `scaffolding dockerfile` and `scaffolding workflows` run their gate steps on demand.
 - `scaffolding duplicates` and `scaffolding unused` check for copied production code and unused files, exports and dependencies.

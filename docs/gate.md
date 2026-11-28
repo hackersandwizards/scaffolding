@@ -255,6 +255,26 @@ step still checks the working tree. Shell and Markdown lint judge new files once
 even if an untracked path already selected the step. Astro lint also selects the enabled
 typecheck that generates its content types and waits for it.
 
+### Related tests
+
+When changed paths select the shared `test` step, the gate runs recognized Vitest commands
+with `vitest related --run --passWithNoTests`. Vitest selects changed test files and tests
+that depend on changed files through its import graph. Vitest reports when no tests match,
+and the step passes. Related runs disable suite-wide coverage and keep any `--project`
+filter and the `browserTest` folder exclusion.
+
+The gate recognizes `vitest run` and `bun --bun vitest run`, directly in `scaffolding.test`
+or through a package script containing one of those commands. Simple environment assignments
+and `env -u` prefixes carry over. A script with lifecycle hooks or additional shell logic
+runs as configured.
+
+For other runners and custom scripts, including local `check:*` steps, the gate supplies
+`SCAFFOLDING_CHANGED_PATHS` as a JSON array of repository-relative paths. Scripts can
+use it to select affected tests and report an empty selection as a pass. Until a script
+uses the variable, it runs its configured suite. The variable is absent in the full gate
+and when changed paths trigger a fallback. Both use the configured test command for any
+test step they run. A direct `bun run test` uses the repository's own script.
+
 ### package.json fields
 
 `scaffolding.markdown.content` selects the folders that use the [Markdown content rules](#markdown).

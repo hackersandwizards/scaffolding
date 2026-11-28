@@ -4887,6 +4887,136 @@ describe("scaffolding check", () => {
     admin: "t",
   };
 
+  describe("related tests in changed checks", () => {
+    const { test: _, ...enabled } = skip;
+    const env = {
+      CHECK_LOCK: join(temp(), "lock"),
+      SCAFFOLDING_CHANGED_PATHS: "inherited-path",
+    };
+    let dir: string;
+    const ran = (name: string) => join(dir, "node_modules", name);
+    const check = (...args: string[]) => run(dir, [bin("scaffolding"), "check", ...args], env);
+
+    beforeAll(() => {
+      dir = gate({ skip: enabled, test: "bun --bun vitest run" });
+      write(dir, {
+        "src/-input file.ts": "export const value = 42;",
+        "src/unused.ts": "export const unused = 0;",
+        "test/transitive.ts": 'export { value } from "../src/-input file.ts";',
+        "test/related.test.ts": `${vitestImports}
+          import { writeFileSync } from "node:fs";
+          import { value } from "./transitive.ts";
+          test("dependent", () => { writeFileSync("node_modules/related", ""); expect(value).toBe(42); });
+        `,
+        "test/unrelated.test.ts": `${vitestImports}
+          import { writeFileSync } from "node:fs";
+          test("independent", () => { writeFileSync("node_modules/unrelated", ""); expect(1).toBe(1); });
+        `,
+      });
+      prepareGit(dir, ["add", "."]);
+      prepareGit(dir, ["commit", "-m", "add test fixtures"]);
+      install(dir);
+      mkdirSync(join(dir, "node_modules/.bin"), { recursive: true });
+      symlinkSync(
+        join(import.meta.dirname, "../node_modules/vitest"),
+        join(dir, "node_modules/vitest"),
+      );
+      symlinkSync("../vitest/vitest.mjs", join(dir, "node_modules/.bin/vitest"));
+    });
+
+    afterEach(() => {
+      for (const name of ["related", "unrelated"]) rmSync(ran(name), { force: true });
+    });
+
+    test.each([
+      ["src/-input file.ts", "related", "unrelated"],
+      ["test/unrelated.test.ts", "unrelated", "related"],
+    ])("selects only the tests for %s", (file, selectedFile, otherFile) => {
+      const original = readFileSync(join(dir, file), "utf8");
+      try {
+        write(dir, { [file]: original + "\n" });
+        const result = check("--changed");
+        expect(result.code, result.out).toBe(0);
+        expect(existsSync(ran(selectedFile))).toBe(true);
+        expect(existsSync(ran(otherFile))).toBe(false);
+      } finally {
+        write(dir, { [file]: original });
+      }
+    });
+
+    test("passes and reports an empty related suite", () => {
+      const file = "src/unused.ts";
+      const original = readFileSync(join(dir, file), "utf8");
+      try {
+        write(dir, { [file]: original + "\n" });
+        const result = check("--changed");
+        expect(result.code, result.out).toBe(0);
+        expect(result.out).toMatch(/No (?:affected )?test files found, exiting with code 0/);
+        expect([existsSync(ran("related")), existsSync(ran("unrelated"))]).toEqual([false, false]);
+      } finally {
+        write(dir, { [file]: original });
+      }
+    });
+
+    test("preserves Vitest environment and project options on a script alias", () => {
+      const wrapped = gate(
+        { skip: enabled, test: "test:unit" },
+        { "test:unit": "env -u GIT_DIR COVERAGE=1 bun --bun vitest run --project unit" },
+      );
+      write(wrapped, {
+        "src/changed.ts": "",
+        "node_modules/.bin/vitest": `#!/usr/bin/env bun
+          console.log(JSON.stringify([process.env.COVERAGE, ...process.argv.slice(2)]));
+        `,
+      });
+      chmodSync(join(wrapped, "node_modules/.bin/vitest"), 0o755);
+      const scoped = run(wrapped, [bin("scaffolding"), "check", "--changed"], env);
+      expect(scoped.code, scoped.out).toBe(0);
+      expect(scoped.out).toContain(
+        JSON.stringify([
+          "1",
+          "related",
+          "--run",
+          "--passWithNoTests",
+          "--coverage.enabled=false",
+          "--project",
+          "unit",
+          "./src/changed.ts",
+        ]),
+      );
+      write(wrapped, { "unknown.file": "" });
+      const fallback = run(wrapped, [bin("scaffolding"), "check", "--changed"], env);
+      expect(fallback.code, fallback.out).toBe(0);
+      expect(fallback.out).toContain(JSON.stringify(["1", "run", "--project", "unit"]));
+    });
+
+    test("passes scoped paths to custom tests and local checks only when the scope is known", () => {
+      const probe = `bun -e 'console.log(process.env.SCAFFOLDING_CHANGED_PATHS ?? "whole suite")'`;
+      const custom = gate(
+        { skip: enabled, test: "test", check: ["check:probe"] },
+        { test: probe, "check:probe": probe },
+      );
+      const runCustom = (...args: string[]) =>
+        run(custom, [bin("scaffolding"), "check", ...args], env);
+      write(custom, { "src/input path.ts": "" });
+      const scoped = runCustom("--changed");
+      expect(
+        {
+          code: scoped.code,
+          pathReports: scoped.out.match(/^\["src\/input path\.ts"\]$/gm)?.length,
+        },
+        scoped.out,
+      ).toEqual({ code: 0, pathReports: 2 });
+      const full = runCustom();
+      expect(full.code, full.out).toBe(0);
+      expect(full.out.match(/^whole suite$/gm)).toHaveLength(2);
+      write(custom, { "vitest.config.ts": "" });
+      const fallback = runCustom("--changed");
+      expect(fallback.code, fallback.out).toBe(0);
+      expect(fallback.out.match(/^whole suite$/gm)).toHaveLength(2);
+    });
+  });
+
   test("explains why the test subcommand needs a browser test folder", () => {
     const dir = gate({ skip });
     const result = run(dir, [bin("scaffolding"), "test"]);
@@ -6500,9 +6630,10 @@ describe("scaffolding check", () => {
         "node_modules/.bin/vitest": `#!/usr/bin/env bun
         const args = process.argv.slice(2);
         console.log("vitest arguments", JSON.stringify(args));
-        if (args[1] !== "--exclude" && !(await Bun.file("built").exists())) process.exit(9);
-        if (args[1] !== "--exclude" && await Bun.file("broken").exists()) process.exit(1);
-        if (args[1] === "--exclude" && await Bun.file("broken-fast").exists()) process.exit(7);
+        const isFast = args.includes("--exclude");
+        if (!isFast && !(await Bun.file("built").exists())) process.exit(9);
+        if (!isFast && await Bun.file("broken").exists()) process.exit(1);
+        if (isFast && await Bun.file("broken-fast").exists()) process.exit(7);
       `,
       });
       chmodSync(join(dir, "node_modules/.bin/vitest"), 0o755);
@@ -6533,7 +6664,18 @@ describe("scaffolding check", () => {
       const changed = run(dir, [bin("scaffolding"), "check", "--changed"], env);
       expect(changed.code, changed.out).toBe(0);
       expect(changed.out).toContain("deferred browser-test");
-      expect(changed.out).toContain(JSON.stringify(["run", "--exclude", `${folder}/**`]));
+      expect(changed.out).toContain(
+        JSON.stringify([
+          "related",
+          "--run",
+          "--passWithNoTests",
+          "--coverage.enabled=false",
+          "--exclude",
+          `${folder}/**`,
+          "./src/broken.ts",
+          "./src/input.ts",
+        ]),
+      );
       expect(changed.out).not.toContain(JSON.stringify(["run", folder]));
     });
 

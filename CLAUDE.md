@@ -22,8 +22,8 @@ blocks relative imports from `lib/` and `config/` into `bin/`, including type im
 suite on Bun through `bun run test`. The catalog build test builds a copy of `test/fixture/` with the
 preset. The pre-commit hook runs `bun run check:staged`.
 
-Changed checks run the same test step with the browser, build and lock integration suites excluded.
-The full gate and direct `bun run test` run every suite.
+Changed checks use Vitest's import graph to select related tests. The full gate, fallback changed
+checks and direct `bun run test` run every suite.
 
 - Keep lint enable and disable directives out of source. ESLint checks `scaffolding/no-lint-disable`.
 - Give module-scope functions repository-wide unique names, subject to the framework and skeleton
